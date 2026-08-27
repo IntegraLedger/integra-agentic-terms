@@ -1,0 +1,91 @@
+---
+title: Decline codes
+description: Every code the gate can return, what it means, and which side can act on it.
+---
+
+A decline carries three things: a `haltClass`, a `code`, and a `detail` sentence written to be forwarded
+to the counterparty.
+
+```ts
+import type { GateDecision } from "@integraledger/agentic-terms";
+
+declare const decision: GateDecision;
+
+if (decision.kind === "decline") {
+  console.error(`[${decision.haltClass}] ${decision.code}: ${decision.detail}`);
+}
+```
+
+## Verification failures
+
+The guard cannot say the document is the one that was advertised. **The seller can act on all of these.**
+
+| Code | Raised when | What the seller should do |
+|---|---|---|
+| `gate/terms-unfetchable` | the advertised terms URL did not serve — a non-2xx status, a TLS failure, a redirect, a body over the cap, or a host that failed the public-unicast check | serve the document at the URL advertised, over HTTPS, without a redirect |
+| `gate/fingerprint-mismatch` | the recomputed SHA-256 over the served bytes ≠ the advertised `atrHash` | re-advertise the hash of the bytes actually being served, or serve the bytes the hash was taken over |
+
+`gate/terms-unfetchable` carries the fetcher's own message verbatim, so the detail names *which* failure it
+was — the status, the cap, or the resolved address that was refused. That precision is the point: a buyer
+that cannot say which failure occurred cannot report it.
+
+<Callout type="info">
+A redirect is a fetch failure here, deliberately. The fetcher sets `redirect: "error"`, so a seller whose
+terms URL 301s to the real document sees `gate/terms-unfetchable` rather than a silent follow to wherever
+the redirect pointed.
+</Callout>
+
+## Policy rejections
+
+The document was established. **Your stated policy refused it** — the seller may be operating entirely
+correctly.
+
+| Code | Raised when |
+|---|---|
+| `gate/below-required-level` | the proposal's level is below your `requiredLevel` |
+| `gate/assurance` | the seller's assurance is below your `requiredAssurance` |
+| `gate/unparseable-terms` | the terms are not machine-readable legal-context JSON, and your `onNotAttempted` is `decline` |
+| `policy/jurisdiction` | the declared dispute jurisdiction is not in your `acceptableJurisdictions` |
+| `policy/dispute-method` | the declared dispute method is not in your `acceptableDisputeMethods` |
+| `policy/unit` | you declared no cap for the offer's unit |
+| `policy/over-cap` | the offer amount exceeds your cap for that unit |
+| `policy/forbidden-clause` | the record declares a clause category you forbid |
+
+## The seller's own defects
+
+Also `policy-rejection`, but distinct in what they say: the field is present and **malformed**. These are
+named as the seller's defect rather than read as absence, because a refusal that misdescribes the defect
+cannot be acted on.
+
+| Code | Raised when |
+|---|---|
+| `policy/malformed-dispute-resolution` | `disputeResolution` is not an object, or one of `jurisdiction` / `method` is present and not a string |
+| `policy/malformed-clause-categories` | `clauseCategories` is present and not an array |
+
+A seller publishing `"disputeResolution": "arbitration"` gets *"your disputeResolution is a string, not an
+object"* — not *"jurisdiction (none) not acceptable"*, which would tell it to fix a jurisdiction that was
+never the problem.
+
+## Parser refusals
+
+These are **thrown**, not returned, because they happen before a proposal exists — there is nothing yet to
+decide about. Fail-fast at the trust boundary.
+
+| Thrown when | Message names |
+|---|---|
+| the challenge does not match the protocol's shape | the Zod validation failure |
+| both x402 carriers advertise, and they disagree | the field, and both advertised values |
+| neither x402 carrier advertises the field | which field, and both carriers that were checked |
+| the advertised hash is not `0x` + 64 hex | the value received |
+| the terms URL is not HTTPS | the URL |
+| the offer amount is not a base-unit integer | the value received |
+| a document matches more than one protocol's discriminant | every protocol that matched |
+| the protocol is identified but this build cannot read its offer | which protocols *are* parseable |
+
+Ambiguity refusing rather than guessing is covered in [protocols](/protocols#ambiguity-refuses).
+
+## Codes that are not declines
+
+Two more codes exist, and neither is ever returned as a decision. `gate/proceed` and `gate/escalate` are
+what the [record](/ports#log) carries for the other two outcomes, so a log reader can tell the three apart
+by one field. A `switch` over decision codes never sees them.

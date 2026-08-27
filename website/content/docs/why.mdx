@@ -1,0 +1,69 @@
+---
+title: Why verify before sign
+description: The failure this prevents is not a fingerprint that disagrees — it is a seller who advertised no fingerprint at all.
+---
+
+A seller can publish terms and *commit* to them, by advertising a fingerprint over the exact bytes. You
+recompute that fingerprint over the bytes you were actually served. If they disagree, the document you
+read is not the document the seller committed to.
+
+**Reading the terms is not verifying them. Only a fingerprint the seller advertised binds the seller.**
+
+## The failure people expect
+
+An agent is told the advertised hash does not match, and pays anyway.
+
+This is largely not what happens. **Told that a fingerprint disagrees, agents already halt** — reliably,
+and without being instructed to. A stated mismatch reads as a stop sign to essentially every model, and no
+library is needed to produce that behaviour.
+
+Note what that baseline is and is not. It is about an agent that has been *handed* a comparison. It is not
+evidence that agents perform one: nothing in an agent's ordinary path fetches a terms document and
+recomputes [its fingerprint](/introduction#the-fingerprint-and-why-it-is-new), because until LCP defined
+`atrHash` there was no advertised value to recompute against.
+
+## The failure that actually happens
+
+An agent meets a seller that advertised **no** fingerprint, concludes there is nothing to check, hashes
+the bytes it was served itself, and records that hash as though the gap were closed.
+
+That record binds the seller to nothing.
+
+- The terms sit at a **mutable URL**. The seller can change them after you pay.
+- The seller can serve **one document to you and another to someone else**, and nothing in your record
+  contradicts that.
+- **Your own hash proves only that you hashed something.** It is evidence about your own reading, not a
+  commitment by the counterparty. In a dispute it establishes what you saw, which was never in question.
+
+Paying here can be perfectly correct. What must not happen is paying **while believing the terms were
+verified** — because the record you keep will read, later, as though they were.
+
+## What the guard does about it
+
+The guard never converts an absence into a pass:
+
+- Every `GateProposal` carries a **validated advertised fingerprint**. There is no path that constructs a
+  proposal from a document advertising nothing, so there is no path on which verification is silently
+  skipped.
+- A document that is fetched but is **not machine-readable legal-context JSON** is a coverage gap, and a
+  gap is resolved by [your stated disposition](/dispositions) — `decline`, `escalate`, or an explicit
+  election to `proceed`. Never by a default the library chose.
+- Your policy's `requiredLevel` is a **floor you state**, so transacting at Level 1 is a decision you made
+  and can point to, not a silence.
+
+The MCP tool takes the same line. `lcp_verify_before_pay` answers `unverifiable` with `wouldHalt: true`
+against a Level 1 document, and says why in one sentence:
+
+> the document declares no atrHash (LCP Level 1) — there is nothing to verify, so this tool cannot say the
+> served terms are the ones committed to
+
+## The distinction, stated once
+
+| | Binds the seller | Records your reading |
+|---|---|---|
+| A fingerprint the **seller** advertised, recomputed by you and matching | yes | yes |
+| A fingerprint **you** computed over bytes you were served | no | yes |
+| No fingerprint anywhere | no | no |
+
+Storing your own hash may be worth doing for your own records. It is not verification, and it must not be
+counted as any part of one.

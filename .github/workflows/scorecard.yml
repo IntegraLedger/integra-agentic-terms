@@ -1,0 +1,54 @@
+name: scorecard
+# OpenSSF Scorecard — a standing, externally-defined audit of this repository's supply-chain posture.
+#
+# ⚠️ IT IS A MEASUREMENT, NOT A GATE, and the distinction is deliberate. Scorecard scores things this
+# repository has decided AGAINST on purpose: branch protection is absent because required-PR protection
+# contradicts a direct-push policy, and "CI-Tests" reads PR checks that a repository with no PR surface
+# never produces. Wiring those to a red build would either force a policy reversal or teach everyone to
+# ignore the colour. It publishes to the code-scanning dashboard instead, where a person reads it.
+#
+# What it is genuinely good at here is the class of drift a human sweep misses: an action that stopped
+# being pinned, a workflow that quietly gained a write permission, a dependency-update path that lapsed.
+# Those are all things this repository already claims, and this is a second opinion that does not come
+# from us.
+#
+# The results are PUBLIC by design (`publish_results: true`) — that is what makes the score checkable by
+# someone deciding whether to install these packages, which is the whole point of publishing a guard.
+on:
+  schedule:
+    # Weekly. The posture changes on the timescale of dependency and action updates, not commits, and a
+    # per-push run would add a third workflow to a push that already fans out `mutation` per package.
+    - cron: "41 5 * * 2"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload the SARIF to code scanning
+      id-token: write # sign the results so the published score is attributable
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # Scorecard's own advice: nothing here needs to push
+
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      # Code scanning, not an artifact: the point is a dashboard a person opens, beside CodeQL's findings.
+      - uses: github/codeql-action/upload-sarif@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,23 @@
+{
+  // Doc snippets: the workspace's full strictness, minus the flags that only make sense for shipped code.
+  // A teaching fence declares values it never uses and nothing here emits, so `noUnusedLocals`,
+  // `noUnusedParameters` and `isolatedDeclarations` are relaxed and nothing else is. Every other strictness
+  // flag in the base config — `strict`, `skipLibCheck: false`, `exactOptionalPropertyTypes` and the rest —
+  // still applies, because a fence a reader copies must compile under the same rules their code will.
+  //
+  // `types: ["node"]` matches what each package tsconfig declares. It narrows automatic @types inclusion
+  // rather than relaxing a check: a fence that imports the guarded fetcher reaches `node:dns/promises`
+  // through `nodeDnsLookup`'s signature, and under `skipLibCheck: false` that resolution has to succeed.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "isolatedDeclarations": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "types": ["node"]
+  },
+  "include": ["reports/doc-snippets"]
+}

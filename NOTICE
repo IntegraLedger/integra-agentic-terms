@@ -1,0 +1,16 @@
+Integra Agentic Terms
+Copyright 2026 Integra Ledger
+
+This repository includes software developed by Integra Ledger (https://integraledger.com).
+
+"Integra", "Integra Ledger", and the Integra logo are trademarks of Integra Ledger.
+Trademark use is not granted by the Apache License 2.0 (see Section 6).
+
+The Legal Context Protocol is co-stewarded by Integra Ledger and AAA-ICDR. The packages in this
+repository implement the buyer side of that standard and are published free under the Apache License 2.0;
+the specification itself is published at https://legalcontextprotocol.org/standard and is not part of
+this distribution.
+
+These packages verify terms served by ANY seller, whether or not that seller uses Integra software. The
+seller-side application they are designed to interoperate with is separately licensed and is not part of
+this distribution.

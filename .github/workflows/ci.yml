@@ -1,0 +1,129 @@
+name: ci
+on: [push]        # work lands directly on main; there is no PR surface to trigger on
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # FULL HISTORY, because `check:commit-messages` reads the range a push introduced and the default
+          # `fetch-depth: 1` does not contain the `before` commit — the range check failed with
+          # `Invalid revision range` on its first CI run. Free here: this repository is a dozen commits.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10    # no version input — package.json's packageManager is the single source of truth
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec lcp-conformance   # seam canary: proves @integraledger/lcp-* installs and runs from npmjs here, where a broken publish would otherwise hide
+      # THE RANGE IS THE POINT. `verify` checks HEAD's message; a push can introduce several, and the one
+      # carrying a marker may not be the tip. Event data goes through `env` rather than into the run line —
+      # these are SHAs from GitHub rather than user text, but a workflow that interpolates event data
+      # directly is the shape that becomes an injection the day one of them is not.
+      - name: Commit messages introduced by this push
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: node scripts/check-commit-messages.mjs --range "$BEFORE..$AFTER"
+      - run: pnpm verify        # verify builds first (pnpm -r build): workspace packages consume each other via built dist/
+      - run: pnpm -r exec publint
+      - run: pnpm -r exec attw --pack . --profile esm-only   # packages are ESM-only
+
+  # THE DOCUMENTATION SITE IS PUBLIC SURFACE, AND UNTIL THIS JOB NOTHING BUILT IT. `verify` typechecks the
+  # TypeScript fences inside the pages (`check:docs`); it never compiles the site itself, so a page that
+  # fails to render, a broken MDX component import, or a framework upgrade that changed an API could all
+  # reach `main` green. The site has its own npm lockfile and is deliberately not a workspace member, so it
+  # gets its own job with its own install. Nothing is deployed from here — Cloudflare Pages deploys are
+  # manual — this only proves the export exists and carries what the headers file and the sitemap expect.
+  docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The site dates every page from its last git commit (sitemap <lastmod>, "last updated"). A
+          # shallow clone has no history to read, so every page would silently date to the build.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: The export carries what the site promises
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in index.html 404.html sitemap.xml robots.txt llms.txt llms-full.txt manifest.webmanifest icon.svg apple-icon opengraph-image api/search _headers .well-known/security.txt; do
+            test -s "out/$f" || { echo "missing out/$f"; exit 1; }
+          done
+          # The origin is spelled out here on purpose: this gate exists to fail if it ever moves
+          # without the site's single source (website/src/lib/site.ts) moving with it.
+          grep -q 'rel="canonical" href="https://agenticterms.integraledger.com/quickstart"' out/quickstart.html
+          grep -q 'property="og:image"' out/quickstart.html
+          test -s out/md/quickstart.md && test -s out/md/mcp/tools.md
+          # The export must reach no other origin at runtime — fonts included.
+          ! grep -rlIE 'https?://(fonts\.googleapis\.com|fonts\.gstatic\.com)' out || { echo "third-party font request in the export"; exit 1; }
+          # The Markdown exports must be Markdown: no serializer entities, no leaked JSX.
+          ! grep -qE '&#x[0-9A-Fa-f]+;' out/llms-full.txt || { echo "HTML entities in llms-full.txt"; exit 1; }
+          ! grep -qE '^\s*</?[A-Z]' out/llms-full.txt || { echo "component tags in llms-full.txt"; exit 1; }
+
+  # THE RUNTIME TABLE IN packages/agentic-terms/README.md IS AN ENFORCED CLAIM, AND UNTIL THIS JOB IT WAS NOT.
+  # AGENTS.md says the claims in the READMEs are enforced claims. That table asserts this package works on
+  # Bun and Deno on the strength of an argument about the import graph — the one Node built-in that arrives,
+  # `node:crypto`, is polyfilled there. A sound argument is still an argument. This runs the guard's whole
+  # decision on each runtime and finds out.
+  #
+  # It measures the PACKED TARBALL installed as a stranger installs it, not the workspace: `verify` already
+  # covers the source tree on Node, and the claim is about the published package. That also puts the caret
+  # peer range under test on every runtime — whatever the protocol line resolves to today is what runs.
+  #
+  # Vitest is deliberately absent: running it under Bun would measure Vitest's Bun support as much as ours.
+  runtime:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one runtime's failure must not hide another's result
+      matrix:
+        runtime: [node, bun, deno]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: matrix.runtime == 'bun'
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        if: matrix.runtime == 'deno'
+        with:
+          deno-version: v2.x
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build # the tarball is packed from dist/, so it has to exist first
+      - run: node scripts/runtime-consumer.mjs
+      - name: Smoke the guard on ${{ matrix.runtime }}
+        shell: bash
+        working-directory: .runtime-consumer
+        run: |
+          case "${{ matrix.runtime }}" in
+            node) node runtime-smoke.mjs ;;
+            bun)  bun run runtime-smoke.mjs ;;
+            # Deno resolves the npm tree that is already on disk rather than fetching its own, so the run is
+            # over the same bytes the other two legs saw. Permissions are explicit: the smoke reads modules
+            # and touches no network — an `-A` here would hide a dependency that started reaching out.
+            deno) deno run --allow-read --allow-env --allow-sys --node-modules-dir=manual runtime-smoke.mjs ;;
+          esac

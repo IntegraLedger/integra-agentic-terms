@@ -1,0 +1,28 @@
+{
+  "title": "Agentic Terms",
+  "root": true,
+  "pages": [
+    "---Overview---",
+    "introduction",
+    "why",
+    "---Get started---",
+    "quickstart",
+    "ports",
+    "buyer-policy",
+    "---How it works---",
+    "verify-before-sign",
+    "dispositions",
+    "typed-proposal",
+    "decline-codes",
+    "---Protocols---",
+    "...protocols",
+    "---MCP server---",
+    "...mcp",
+    "---Reference---",
+    "...reference",
+    "---Operating it---",
+    "runtimes",
+    "security",
+    "agent-skill"
+  ]
+}

@@ -1,0 +1,76 @@
+---
+title: "@integraledger/lcp-mcp-server"
+description: Every export of the MCP packaging.
+---
+
+```bash
+npm install @integraledger/lcp-mcp-server
+```
+
+Node ≥ 24. ESM only. Built on the MCP v2 SDK.
+
+## Serving
+
+### `serveLcpStdio(ports)`
+
+Serve over stdio — what every desktop agent host speaks.
+
+### `createLcpMcpServer(ports)`
+
+Build an `McpServer` and connect any transport yourself. A **factory**, not a singleton: transports may
+build one instance per connection, and a shared instance would make one client's state another's.
+
+### `nodePorts(env)`
+
+The Node wiring — the real guarded fetcher, plus `LCP_MCP_REVERSE_DOMAIN` if the environment states one.
+
+### `isoNow()`
+
+The wall clock as an ISO-8601 instant.
+
+### `REVERSE_DOMAIN_ENV`
+
+The environment variable name a deployment states its reverse-domain namespace in.
+
+### `LcpMcpPorts`
+
+`{ fetcher, deployment? }` — no defaults. See [ports](/mcp#ports).
+
+## Identity
+
+### `SERVER_NAME`
+
+`"lcp-mcp"`.
+
+### `LCP_TOOL_NAMES`
+
+Every tool this server exposes, in registration order. Exported so the
+[boundary](/mcp/boundary) can be **asserted** rather than described.
+
+### `serverVersion()`
+
+## Annotations
+
+### `readOnlyToolAnnotations(title, reach)`
+
+The annotations every tool carries. `reach` is `"network" | "closed"` — the only axis on which these tools
+differ. See [annotations](/mcp/tools#annotations).
+
+### `ToolReach`
+
+## Dispatch helpers
+
+### `resolveAdapter(protocol, deployment?)`
+
+### `manifestSummary(manifest)`
+
+### `refusalResult(message)`
+
+## Discovery
+
+### `legalContextUrl(serviceUrl)`
+
+Normalizes a service origin to its well-known legal-context URL. A query string, a fragment, or
+credentials in the authority are **refused** — §2.1 defines the well-known URI with none of them.
+
+### `WELL_KNOWN_PATH`

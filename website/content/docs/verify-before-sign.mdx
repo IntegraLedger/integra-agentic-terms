@@ -1,0 +1,155 @@
+---
+title: Verify before sign
+description: The order the gate runs its steps in, what each one can conclude, and where the signing key becomes reachable.
+---
+
+`transact` is `evaluate` plus one rule: invoke the signing key **only** when the decision is `proceed`.
+
+```ts
+import {
+  type BuyerPolicy,
+  type GatePorts,
+  type GateProposal,
+  type GatedSigner,
+  evaluate,
+  transact,
+} from "@integraledger/agentic-terms";
+
+declare const proposal: GateProposal;
+declare const policy: BuyerPolicy;
+declare const ports: GatePorts;
+declare const signer: GatedSigner;
+
+// The decision on its own — the signing key is not involved at all.
+const decision = await evaluate(proposal, policy, ports);
+
+// The decision, enforced against your key.
+const result = await transact(proposal, policy, ports, signer);
+```
+
+`evaluate` never touches a key. `transact` is the only place a signer appears, and it appears after a
+single `kind !== "proceed"` early return. That is what makes "before any signing key is invoked" a
+structural claim rather than a discipline.
+
+## The order, and why it is that order
+
+<Steps>
+
+<Step>
+
+### Fetch and retain the terms
+
+Always — even at Level 1. Retaining the evidence is a policy decision, never a silent skip.
+
+The fetch is **caught**, not allowed to throw. Every failure the shipped fetcher raises is
+counterparty-reachable: a 404 on a URL the seller chose, a TLS error, a body over the cap, a host that
+resolves to a private address. Each arrives as a value you can act on — `gate/terms-unfetchable`, carrying
+the fetcher's own message verbatim so you can tell *which* failure it was.
+
+It is classed `verification-failure`, not `policy-rejection`: no policy of yours rejected anything. The
+terms could not be obtained, so the fingerprint could not be recomputed, so the guard cannot say the
+document is the one that was advertised — the same thing a mismatch says, arrived at one step earlier.
+
+</Step>
+
+<Step>
+
+### Check the level floor
+
+`proposal.level < policy.requiredLevel` declines with `gate/below-required-level`.
+
+</Step>
+
+<Step>
+
+### Recompute the fingerprint — the halt
+
+SHA-256 over the fetched bytes, compared to `proposal.advertisedAtrHash`. A mismatch declines with
+`gate/fingerprint-mismatch` and the halt class `verification-failure`.
+
+Every `GateProposal` carries a validated advertised hash, so this step **always runs**. There is no
+"verify if present" path, because skipping a present, verifiable hash is a silent fail-open.
+
+</Step>
+
+<Step>
+
+### Check the seller-assurance floor
+
+Independent of the terms format, so it gates every proceed path and is checked *before* the
+typed/coverage-gap branch. A buyer that tolerates non-machine-readable terms must not thereby lose its
+assurance floor.
+
+</Step>
+
+<Step>
+
+### Evaluate policy on the typed envelope
+
+The fetched bytes are parsed into a conformant legal-context record and policy runs on **that** — never on
+the prose. See [the typed proposal](/typed-proposal).
+
+If the bytes are not a conformant record, that is a **coverage gap**, and your `onNotAttempted`
+disposition decides it. Never a silent proceed.
+
+</Step>
+
+<Step>
+
+### Proceed
+
+The decision is recorded and returned. `transact` calls your signer exactly once, with the fingerprint
+that was proved.
+
+</Step>
+
+</Steps>
+
+## The three decisions
+
+```ts
+import type { GateDecision } from "@integraledger/agentic-terms";
+
+declare const decision: GateDecision;
+
+switch (decision.kind) {
+  case "proceed":
+    break;
+  case "decline":
+    // decision.haltClass, decision.code, decision.detail
+    break;
+  case "escalate":
+    // decision.bytes, decision.hash, decision.reason
+    break;
+}
+```
+
+### Escalate binds display to signature
+
+An escalation hands back the **exact bytes** that were fetched and their hash, where
+`hash === sha256(bytes)`. Show those bytes to your approver. What a human reads is then provably what a
+key would sign — which is the whole point of routing a gap to a human rather than to a default.
+
+## Post-settlement verification
+
+Separately from the gate, `verifySettled` turns a settled receipt into a transaction record: it recovers
+the on-chain `atrHash` through an injected binding adapter and runs a mechanical verification.
+
+```ts
+import { type MechanicalPorts, verifySettled } from "@integraledger/agentic-terms";
+
+// `SettlementRef` and the `recover` half of `WeldAdapter` are types from the peer
+// `@integraledger/lcp-binding-core`. Taken off the function's own signature here so the
+// example needs one import, but you may import them directly instead.
+type Args = Parameters<typeof verifySettled>;
+
+declare const ref: Args[0];
+declare const adapter: Args[1];
+declare const ports: MechanicalPorts;
+
+const report = await verifySettled(ref, adapter, ports);
+```
+
+`verified` is raised **only** if the ATR bytes hash to the recovered on-chain hash and the class-required
+steps hold. A refused recovery leaves the settled hash absent, which makes the fingerprint indeterminate,
+which keeps `verified` false. The chain reader is injected, which is what keeps the guard viem-free.

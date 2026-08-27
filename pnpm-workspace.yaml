@@ -1,0 +1,39 @@
+packages:
+  - "packages/*"
+
+catalog:
+  zod: "4.4.3"                      # trust boundaries only — never inside verification logic
+  vitest: "4.1.11"
+  "@types/node": "24.13.3"          # FLOOR-pinned to engines (>=24.0.0): types never exceed the oldest supported runtime
+  # The MCP v2 SDK, split from v1's monolithic @modelcontextprotocol/sdk. 2.0.0 is the STABLE line
+  # implementing the 2026-07-28 MCP revision.
+  "@modelcontextprotocol/server": "2.0.0"   # lcp-mcp-server's tool surface
+  "@modelcontextprotocol/client": "2.0.0"   # its tests' real client, over the SDK's in-memory transport
+
+minimumReleaseAge: 1440    # supply-chain default: 24h quarantine on new third-party releases
+minimumReleaseAgeExclude:
+  - "@integraledger/*"     # first-party packages are trusted; quarantining them makes a fresh publish unconsumable for 24h
+
+# Transitive-CVE overrides. Each has a resolution path in THIS
+# graph (dev tooling: stryker, vitest/vite). Reviewed on every audit run; `pnpm audit` in verify is the
+# gate that decides whether an entry is still needed or a new one is.
+overrides:
+  qs: ">=6.15.2"      # stringify DoS on null entries in comma-format arrays; dev-only, via @stryker-mutator/core
+  # GHSA-rgw5-rvv9-x895 (high): unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation.
+  # Dev-only, via @stryker-mutator/core > minimatch — no consumer path.
+  brace-expansion: ">=5.0.9"
+  # GHSA-fxqj-rqcc-2cmp (moderate): incomplete fix of GHSA-6g55-p6wh-862q — attacker-controlled
+  # sourceMappingURL still reads arbitrary .map files when `from` is unset. Dev-only, via vite under vitest.
+  postcss: ">=8.5.23"
+  # GHSA-7p8r-x3mc-p8w7 (high): host confusion via a backslash authority introducer. Dev-only,
+  # via @stryker-mutator/core > ajv — no consumer path.
+  fast-uri: ">=3.1.5"
+  # nanoid <3.3.18 — TWO advisories, one entry. GHSA-2v37-7h3g-55p8 (high): a custom generator loops
+  # indefinitely when size is zero, fixed in 3.3.18; it supersedes the predictable-output advisory that
+  # first added this entry, fixed in 3.3.17. Dev-only, via vitest > vite > postcss. The floor states 3.3.18
+  # rather than relying on resolution: `>=3.3.17` happens to install 3.3.18 today because that is the newest
+  # match, but a range that still admits a known-vulnerable version is safe by accident rather than by
+  # decision, and a regenerated lockfile could quietly take 3.3.17 back. Bounded `<4` deliberately: nanoid
+  # went ESM-only at 4.0.0 and postcss is CJS, so an unbounded `>=3.3.18` resolves to 6.x and satisfies the
+  # auditor by breaking the dependency.
+  nanoid: ">=3.3.18 <4"

@@ -1,0 +1,84 @@
+---
+title: MPP
+description: The decoded charge-request body — and why nothing in it can tell you it is MPP.
+---
+
+```ts
+import { parseProposalFromMppRequest } from "@integraledger/agentic-terms";
+
+declare const request: unknown; // the DECODED `request` auth-param body
+
+const proposal = parseProposalFromMppRequest(request, {
+  level: 3,
+  sellerAssurance: "domain-controlled",
+});
+```
+
+## The document is the body, not the challenge
+
+MPP's identity lives one layer **out**, in the `WWW-Authenticate: Payment` challenge's auth-params —
+`realm`, `method`, `id`, `request`, `expires`, `digest`, `opaque`.
+
+The document this parser reads is the base64url(JCS(JSON)) payload that the challenge's `request`
+auth-param carries. A caller holding a decoded body is expected to have decoded it from there.
+
+## Why it must be named
+
+MPP is the one protocol recorded as **`undiscriminable`** in the discriminant table. That is a finding
+with a citation, not a hole.
+
+The charge-intent body's members are `amount` and `currency` (both required strings) plus optional
+`recipient`, `description`, `externalId` and `methodDetails`. **Not one of them names MPP** — and an
+amount/currency pair is the shape of almost every payment document there is.
+
+```ts
+import { detectProtocol } from "@integraledger/agentic-terms";
+
+declare const request: unknown;
+
+detectProtocol(request); // undefined — and PROTOCOL_DISCRIMINANTS records why, with the citation
+```
+
+Adding an `mpp` row to the universal dispatch map would not make it reachable. It would make the map claim
+a discrimination it cannot perform.
+
+<Callout type="info">
+`expires` is an auth-param **only**. The specification states that expiry is conveyed in the challenge and
+that request objects MUST NOT duplicate it — so a body carrying one is malformed rather than
+discriminating.
+</Callout>
+
+## What it reads
+
+| Proposal field | Source |
+|---|---|
+| `advertisedAtrHash` | `methodDetails.atrHash` |
+| `legalContextUrl` | `methodDetails.legalContextUrl` |
+| `offer.amount` | `amount`, a decimal base-unit integer string |
+| `offer.unit` | `currency` |
+
+Both `methodDetails` fields are the ones the MPP placement declares, which is what makes the round trip
+compose.
+
+`methodDetails` is **optional** in the charge intent, so its absence is a refusal that says so — a request
+body with no `methodDetails` is a perfectly conformant MPP document that simply advertises no LCP
+reference, and saying that is more useful than a schema path error.
+
+## Base units, and why a decimal amount is refused
+
+The grammar is the host's, not this library's. The charge-intent draft defines `amount` as the payment
+amount in base units — the smallest denomination of a currency or asset; for USD, cents. Every example in
+the specification agrees: `"5000"`/usd, `"1000000"`/token, `"100000"`/sat.
+
+So a decimal amount is **malformed MPP**, and it is refused at the parser rather than thrown from inside
+the gate — where `BigInt("10.50")` would throw and escape the gate's contract to *return* a decision.
+
+## The carrier is a bare value
+
+The MPP placement declares `methodDetails.atrHash` with `encoding: "bare-value"` and
+`carrierTypes: ["sha256"]` — the wire carries the raw hash, not an `lcp:sha256:0x…` string.
+
+That is why this parser validates the hash itself through the kernel's own ATR-hash predicate, as the x402
+parser validates its raw `extra.atrHash`, and why it does **not** decode through the reference codec as
+the ACP parser does. Using the kernel's predicate rather than restating its regex keeps one definition of
+what an ATR hash is.

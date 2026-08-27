@@ -1,0 +1,156 @@
+---
+title: Quickstart
+description: Install the guard, wire its ports, state a policy, and halt on a fingerprint that disagrees.
+---
+
+Node ≥ 24 (or Bun, or Deno — see [runtimes](/runtimes)).
+
+```bash
+npm install @integraledger/agentic-terms
+```
+
+The guard peers the `@integraledger/lcp-*` protocol line as `^0.14.0`. Your package manager installs one
+copy that satisfies both it and any sibling; see [one protocol line](/mcp#one-protocol-line-in-the-tree)
+for why that shape matters.
+
+## The whole gate
+
+```ts
+import {
+  type BuyerPolicy,
+  type GatedSigner,
+  makeCachingFetcher,
+  nodeDnsLookup,
+  parseProposalFromChallenge,
+  transact,
+} from "@integraledger/agentic-terms";
+
+declare const challenge: unknown; // the 402 body the seller returned
+declare const policy: BuyerPolicy; // your risk posture — caps, jurisdictions, forbidden clauses
+declare const signer: GatedSigner; // your key. Reachable only on Proceed.
+
+const now = () => new Date().toISOString();
+const fetcher = makeCachingFetcher({ httpFetch: fetch, now, lookup: nodeDnsLookup });
+
+const proposal = parseProposalFromChallenge(challenge, {
+  level: 3,
+  sellerAssurance: "domain-controlled",
+});
+
+const result = await transact(proposal, policy, { fetcher, now }, signer);
+```
+
+`result.kind === "signed"` only on Proceed. On Decline or Escalate the signer is never called.
+
+## Reading the result
+
+```ts
+import {
+  type BuyerPolicy,
+  type GatedSigner,
+  type GateProposal,
+  type GatePorts,
+  transact,
+} from "@integraledger/agentic-terms";
+
+declare const proposal: GateProposal;
+declare const policy: BuyerPolicy;
+declare const ports: GatePorts;
+declare const signer: GatedSigner;
+
+const result = await transact(proposal, policy, ports, signer);
+
+if (result.kind === "signed") {
+  // result.signature — produced by YOUR signer, over the atrHash the gate verified.
+  // result.atrHash   — the fingerprint that was proved before the key was reached.
+} else if (result.decision.kind === "decline") {
+  // result.decision.haltClass — "verification-failure" | "policy-rejection" | …
+  // result.decision.code      — e.g. "gate/fingerprint-mismatch"
+  // result.decision.detail    — one sentence you can report to the seller
+} else {
+  // result.decision.kind === "escalate"
+  // result.decision.bytes  — the EXACT terms to display to a human approver
+  // result.decision.hash   — sha256(bytes): what is displayed is what would be signed
+  // result.decision.reason — why it escalated
+}
+```
+
+The [decline codes](/decline-codes) page lists every `code` the gate can return and what a seller should
+do about each.
+
+## A minimal policy
+
+Every field is a decision you are making on the record. There are no defaults, because a default here is a
+risk posture nobody chose.
+
+```ts
+import type { BuyerPolicy } from "@integraledger/agentic-terms";
+
+const policy: BuyerPolicy = {
+  requiredLevel: 2,                       // 2 = a fingerprint must be advertised
+  acceptableJurisdictions: ["US-NY"],     // or "any"
+  acceptableDisputeMethods: ["arbitration"],
+  maxCommitment: {                        // per unit, in base units, as strings
+    "eip155:8453:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": "5000000",
+  },
+  forbiddenClauseCategories: ["unilateral-amendment"],
+  requiredAssurance: "domain-controlled", // or "any"
+  onNotAttempted: "decline",              // how a coverage gap resolves
+};
+```
+
+Field by field, with the reasoning behind each: [buyer policy](/buyer-policy).
+
+## A signer the gate can gate
+
+`GatedSigner` is the seam that makes "before any signing key is invoked" true rather than aspirational.
+Give the gate an object whose `sign` is the only route to your key, and the guarantee holds by
+construction.
+
+```ts
+import type { GatedSigner } from "@integraledger/agentic-terms";
+
+declare function signWithMyKey(hash: `0x${string}`): Promise<`0x${string}`>;
+
+const signer: GatedSigner = {
+  async sign(verifiedAtrHash) {
+    // Reached ONLY on Proceed. `verifiedAtrHash` is the fingerprint that was proved.
+    return { signature: await signWithMyKey(verifiedAtrHash) };
+  },
+};
+```
+
+The gate binds the `atrHash` it verified. Your signer signs *through* its own authority artifact — a grant
+or an acceptance — by its own contract, never a bare hash.
+
+## Keeping a record
+
+Pass a log and the gate records every decision it reaches, including the document the decision was about.
+
+```ts
+import {
+  InMemoryOrc4Log,
+  type GatePorts,
+  type TermsFetcher,
+} from "@integraledger/agentic-terms";
+
+declare const fetcher: TermsFetcher;
+
+const log = new InMemoryOrc4Log();
+const ports: GatePorts = {
+  fetcher,
+  now: () => new Date().toISOString(),
+  log,
+};
+// log.entries — timestamp, decision, haltClass, code, detail, atrHash, legalContextUrl
+```
+
+`InMemoryOrc4Log` is a real, complete sink rather than a stand-in; a deployment injects a durable one by
+implementing the same one-method interface.
+
+## Next
+
+- **[Ports](/ports)** — what you are trusting when you wire the fetcher, and why there are no defaults.
+- **[Verify before sign](/verify-before-sign)** — the order the gate runs its steps in, and what each one
+  can conclude.
+- **[Protocols](/protocols)** — you are not on x402? Start here.

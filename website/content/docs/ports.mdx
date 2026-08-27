@@ -1,0 +1,106 @@
+---
+title: Ports
+description: GatePorts is a trust boundary, not just a seam for testing — what you are trusting when you wire it, and why nothing is defaulted.
+---
+
+The gate takes its capabilities as injected ports:
+
+```ts
+import type { GatePorts } from "@integraledger/agentic-terms";
+
+declare const ports: GatePorts;
+// ports.fetcher — decides which bytes the fingerprint is recomputed over
+// ports.now     — dates every entry in the record
+// ports.log     — optional ORC-4 sink; the gate appends every decision it reaches
+```
+
+Injection is what keeps the guard viem-free and runnable off Node. It is also the reason the guard is
+**exactly as trustworthy as the ports you give it** — a property worth stating rather than discovering.
+
+## The fetcher is the load-bearing one
+
+`fetcher` decides which bytes the fingerprint is recomputed over. **A fetcher that returns the wrong body
+defeats verification completely** — the comparison will happily prove that the wrong document matches its
+own hash.
+
+Use the fetcher shipped here unless you have a specific reason not to, and hold your ports to the standard
+you hold the key they protect.
+
+```ts
+import { makeCachingFetcher, nodeDnsLookup } from "@integraledger/agentic-terms";
+
+const fetcher = makeCachingFetcher({
+  httpFetch: fetch,
+  now: () => new Date().toISOString(),
+  lookup: nodeDnsLookup,
+});
+```
+
+What that fetcher enforces, and why each rule exists, is in [security](/security). In short: HTTPS-only,
+`redirect: "error"`, every resolved address re-checked public unicast on every network fetch, a streaming
+byte cap with a declared-length pre-check, and LCP §2.6 cache discipline.
+
+## Why `lookup` has no default
+
+`HostLookup` is required and deliberately not defaulted.
+
+The buyer fetches a URL the **seller** chose. That makes this port the guard between your agent's HTTP
+client and your own network — and a configuration that can omit it silently omits the guard.
+
+```ts
+import type { HostLookup } from "@integraledger/agentic-terms";
+
+// Node: the shipped adapter over `node:dns/promises`.
+// Anywhere else: supply your own, returning literal-IP hosts unchanged.
+const lookup: HostLookup = async (host) => [{ address: host, family: 4 }];
+```
+
+The port must return literal-IP hosts unchanged, as `node:dns` does. On a runtime whose platform already
+blocks private-range egress, a port that throws — stating that reliance explicitly — is an honest wiring;
+a port that returns an empty list is refused by the fetcher rather than treated as "nothing to check".
+
+## Tuning the fetcher
+
+```ts
+import { makeCachingFetcher, nodeDnsLookup } from "@integraledger/agentic-terms";
+
+const fetcher = makeCachingFetcher({
+  httpFetch: fetch,
+  now: () => new Date().toISOString(),
+  lookup: nodeDnsLookup,
+  maxAgeSeconds: 3600, // LCP §2.6 SHOULD-NOT-exceed; default 24h
+  maxBytes: 512 * 1024, // fail-loud ceiling; default 1 MiB
+  maxEntries: 64, // distinct URLs retained; default 256
+});
+```
+
+`maxAgeSeconds` caps a *should*; re-fetching after expiry is a *must* and is unconditional. When an entry
+expires, the public-unicast check runs again — an expiring cache entry never grandfathers a host.
+
+## `now`
+
+A function returning an ISO-8601 instant. It dates every entry in the record, and the cache measures
+freshness against it. Injecting it is what makes the gate's own tests able to hold a clock still; it also
+means a deployment can source time from wherever it trusts.
+
+## `log`
+
+Optional. Implement one method and the gate appends every decision:
+
+```ts
+import type { Orc4Entry, Orc4Log } from "@integraledger/agentic-terms";
+
+declare function persist(entry: Orc4Entry): void;
+
+const log: Orc4Log = {
+  append(entry) {
+    persist(entry);
+  },
+};
+```
+
+Every entry the gate writes carries `legalContextUrl` alongside `atrHash`, and the reason is worth
+knowing: on the decision that matters most — a fingerprint mismatch — the advertised hash is *by
+construction* not the hash of what was served. A reader holding only that value cannot say which document
+disagreed with it. A seller told "your terms did not match" and handed a hash it cannot reproduce learns
+nothing it can act on. Given the URL, it can fetch the bytes and see.

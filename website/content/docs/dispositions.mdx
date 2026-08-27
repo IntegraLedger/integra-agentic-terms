@@ -1,0 +1,85 @@
+---
+title: Statuses and dispositions
+description: A step's four-valued status maps totally onto a disposition — a failure always declines, and gaps resolve by your stated policy.
+---
+
+The gate's refusal model is one small total function, and it is load-bearing enough to be exported.
+
+```ts
+import { decideOutcome, foldDispositions } from "@integraledger/agentic-terms";
+
+const disposition = decideOutcome("indeterminate", {
+  onIndeterminate: "escalate",
+  onNotAttempted: "decline",
+});
+```
+
+## The four statuses
+
+| `StepStatus` | Means | Maps to |
+|---|---|---|
+| `proved` | the step ran and succeeded | `proceed` |
+| `failed` | the step ran and did not succeed | `decline`, always |
+| `indeterminate` | the step ran and could not conclude | your `onIndeterminate` |
+| `not-attempted` | the step did not run | your `onNotAttempted` |
+
+Three properties hold, and each rules out a category of quiet failure:
+
+- **The map is total.** Every status has a disposition. Nothing falls through to an implicit outcome.
+- **`failed` is always `decline`.** No policy can proceed past a failure. It is not a knob.
+- **Gaps are your stated dispositions, never silent defaults.** `indeterminate` and `not-attempted` mean
+  the gate does not know, and what to do when the gate does not know is a risk decision that belongs to
+  you.
+
+The switch is exhaustive against a `never`, so adding a fifth status would fail the build rather than
+silently acquire a default.
+
+## Folding a ladder
+
+```ts
+import { foldDispositions } from "@integraledger/agentic-terms";
+
+const overall = foldDispositions(["proceed", "escalate", "proceed"]);
+// "escalate"
+```
+
+Decline dominates; then escalate; otherwise proceed. Any single decline in a ladder declines the whole
+thing, which is the same rule stated at a different scale.
+
+## Which of these the gate itself reaches
+
+`evaluate` yields `proved`, `failed` and `not-attempted` — never `indeterminate`. The fingerprint proves
+or fails, and the record parses or does not.
+
+That is exactly why `BuyerPolicy` carries `onNotAttempted` and **not** `onIndeterminate`: a required field
+promising a disposition the gate cannot reach reads to a buyer as a control it does not have. See
+[buyer policy](/buyer-policy#why-there-is-no-onindeterminate).
+
+`decideOutcome` keeps both, because a consumer folding its own step ladders — steps the gate does not run
+— may well have one that comes back indeterminate.
+
+## Halt classes
+
+A decline carries a `haltClass` alongside its `code`. The class says *what kind* of refusal it is.
+
+`HaltClass` is **protocol vocabulary, not this package's type** — it comes from
+`@integraledger/lcp-binding-core` and has three values. The gate raises two of them:
+
+| Halt class | Raised by the gate | Means |
+|---|---|---|
+| `verification-failure` | yes | the guard cannot say the document is the one advertised |
+| `policy-rejection` | yes | the document was established, and your stated policy refused it |
+| `risk-block` | **no** | in the vocabulary; neither package emits it |
+
+<Callout type="info">
+Write your `switch` against all three. `risk-block` is unreachable from this gate today, but it is a
+legal value of the type you are narrowing, so an exhaustive switch needs the arm — and a `default` that
+throws will not be dead code the first time a protocol-side surface raises it.
+</Callout>
+
+The distinction between the two the gate does raise is not cosmetic. `verification-failure` is something the **seller** can fix — serve the
+document, serve the bytes that match the hash. `policy-rejection` is a statement about *your* posture, and
+the seller may be operating entirely correctly. Reporting one as the other sends a counterparty to fix
+something that is not broken.
+
+Full list of codes: [decline codes](/decline-codes).

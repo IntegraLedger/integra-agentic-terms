@@ -1,0 +1,86 @@
+name: mutation
+# A green suite proves the tests RAN; the mutation score is the only thing that says they CONSTRAIN. A
+# defect can sit under a fully green suite indefinitely, and this is the instrument that finds it.
+#
+# It matters more here than in an ordinary library. This package's entire job is to refuse — to halt before
+# a signing key when a fingerprint does not match, when a level is below the floor, when a seller's field is
+# malformed. A test that exercises a refusal without asserting the reason still passes when the refusal
+# stops happening. `stryker.config.mjs` carries per-package ratchets (raise them, never lower them) and
+# until this workflow existed nothing enforced them outside a laptop.
+#
+# Fanned out one job per package so the wall-clock is the slowest package rather than their sum. The package
+# list comes from `scripts/mutation.mjs --list`, so it lives in exactly one place and cannot drift from the
+# ratchet table beside it.
+#
+# Its own workflow rather than a step in `verify` — it re-runs the suite once per surviving mutant and has
+# no business in the inner loop.
+on:
+  # TAGS ARE EXCLUDED VIA `branches`, NOT `tags-ignore`, AND THE DIFFERENCE IS NOT COSMETIC. A `push` block
+  # carrying only `tags-ignore` means "tags, minus these" — after ignoring `**` that is NOTHING, and the
+  # workflow stops firing on branch pushes entirely, with no error and no run to notice. Branch and tag
+  # filters are independent, so `branches: ["**"]` is the form that means "every branch, no tags".
+  #
+  # `**` and not `*`: Dependabot's branches contain slashes (`dependabot/npm_and_yarn/...`), which `*` does
+  # not match. Those branches must keep CI — `dependabot.yml` relies on a red build to hold the 24h
+  # quarantine.
+  #
+  # Verify any change here with `gh run list --commit <sha>`, never by reading the YAML. The failure mode of
+  # a trigger is silence.
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # The fan-out is the most expensive thing in CI; a superseded push should not keep one runner busy per
+  # package.
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.enumerate.outputs.list }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        # package-manager-cache OFF: setup-node auto-detects `packageManager` and tries to prime a pnpm
+        # cache, but this job runs one plain node script — pnpm is never installed here, and the detection
+        # fails the step before it reaches the only command that matters.
+        with: { node-version-file: ".nvmrc", package-manager-cache: false }
+      - id: enumerate
+        run: echo "list=$(node scripts/mutation.mjs --list)" >> "$GITHUB_OUTPUT"
+
+  mutation:
+    needs: packages
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one package below its ratchet must not hide the others' results
+      matrix:
+        package: ${{ fromJSON(needs.packages.outputs.list) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: ".nvmrc", cache: "pnpm" }
+      - run: pnpm install --frozen-lockfile
+      # Stryker instruments the SOURCE, but the suite it re-runs imports each package's built `dist/` —
+      # workspace packages consume each other that way. Without this the run measures nothing and says so
+      # only through a wall of import errors.
+      - run: pnpm -r build
+      # Through `env`, never interpolated into the shell line. The matrix comes from our own
+      # `scripts/mutation.mjs --list` rather than from event data, so this is not reachable injection today
+      # — but a workflow that interpolates a computed value into `run:` is one refactor away from being so,
+      # and the env form costs nothing.
+      - run: pnpm mutation "$PKG"
+        env:
+          PKG: ${{ matrix.package }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() # the report is most useful precisely when the score fell below its ratchet
+        with:
+          name: mutation-${{ matrix.package }}
+          path: reports/mutation/
+          retention-days: 30

@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": [
+      "packages/**/*.ts",
+      "scripts/**/*.mjs",
+      "website/src/**/*.{ts,tsx}",
+      "website/functions/**/*.ts",
+      "website/*.ts",
+      "stryker.config.mjs",
+      "!**/dist",
+      "!**/.stryker-tmp",
+      "!**/reports"
+    ]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": { "noExplicitAny": "error" },
+      "complexity": { "noBannedTypes": "error" }
+    }
+  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 }
+}

@@ -1,0 +1,106 @@
+---
+title: Reading any protocol
+description: readAdvertisedTerms works across all nine registered protocols, because the reference is read out of each one's own placement manifest.
+---
+
+When you only need to know **what a document advertises** — not to gate a payment — one call covers every
+registered protocol:
+
+```ts
+import { readAdvertisedTerms } from "@integraledger/agentic-terms";
+
+declare const wire: unknown;
+
+const advertised = readAdvertisedTerms("ucp", wire);
+// advertised.protocol           — the protocol whose manifest was used
+// advertised.advertisedAtrHash  — `0x${string}`, reconciled across every integrity carrier
+// advertised.legalContextUrl    — a union: read | no-field-declared | declared-fields-empty
+```
+
+Nine protocols work and none is listed in the implementation, because the reference is read out of each
+protocol's own `PlacementManifest` — **every carrier it declares**, not the first one that answers.
+
+## Handling the terms-URL union
+
+```ts
+import { readAdvertisedTerms } from "@integraledger/agentic-terms";
+
+declare const wire: unknown;
+
+const { legalContextUrl } = readAdvertisedTerms("acp", wire);
+
+switch (legalContextUrl.kind) {
+  case "read":
+    // legalContextUrl.url — a declared slot carried it; where several were declared, they agreed
+    break;
+  case "no-field-declared":
+    // A fact about the PROTOCOL: it has nowhere to put a locator.
+    // No document of this protocol can be faulted for lacking one.
+    break;
+  case "declared-fields-empty":
+    // A fact about THIS DOCUMENT: the protocol has room and this seller left every slot empty.
+    // legalContextUrl.fields — which slots were checked
+    break;
+}
+```
+
+Reporting `declared-fields-empty` as `no-field-declared` would blame a protocol for a seller's silence.
+That is why a bare `undefined` was not good enough.
+
+<Callout type="info">
+This union used to carry a fourth state, `undeclared-at-answering-carrier`, and it is gone because the
+defect that required it is fixed. The manifest's terms-URL member was singular, so x402 could declare only
+one of its two slots. It is plural now, every declared slot is read and reconciled, and a slot riding a
+container the placement owns is declared on that container — so there is no carrier a declaration fails to
+reach, and the state is unreachable rather than merely unused.
+</Callout>
+
+## What it refuses
+
+`readAdvertisedTerms` throws rather than answering vaguely:
+
+| Refuses when | Because |
+|---|---|
+| no placement is registered for the protocol | this build cannot read that protocol's documents at all |
+| no declared integrity carrier advertises anything | the message names every slot that was checked |
+| two integrity carriers advertise **different** references | a seller could otherwise advertise different terms to different readers |
+| the reference is not a `sha256` carrier | the advertised value is compared against a recomputed record hash, and only a hash can be |
+| the placement's own extract refuses | the document carries no readable advertisement; the code and detail are carried through |
+
+## Integrity carriers only
+
+The reference walk is the **buyer's** rule, not the placement's: a discovery link locates a standing page
+and attests nothing, so it is never a candidate here — even though the placement will happily read one.
+
+UCP's `links[type=terms_of_service]` is the concrete case. It is skipped rather than accepted as a weaker
+answer. See [a located-but-unattested carrier is not a reference](/protocols#a-located-but-unattested-carrier-is-not-a-reference).
+
+The **terms URL** is the placement's rule, because every fact about it belongs to the manifest — which
+slots a protocol declares, that a slot riding a container the placement owns is addressed through that
+container, that two slots disagreeing is a refusal rather than a preference. A second implementation here
+could only agree with it until the day it did not.
+
+## Namespaced placements
+
+One protocol's placement is namespaced under the deployment's own reverse domain — Mastercard VI, whose
+custom Layer-2 constraint type has no default.
+
+```ts
+import { readAdvertisedTerms } from "@integraledger/agentic-terms";
+
+declare const wire: unknown;
+
+readAdvertisedTerms("mastercard-vi", wire, { reverseDomain: "com.example" });
+```
+
+Omitting it there throws from the registry rather than answering about some invented namespace. The other
+eight placements are singletons and need nothing.
+
+## What this does *not* give you
+
+An `AdvertisedTerms` is not a `GateProposal`. It has no offer, so it cannot be handed to `transact` or
+`evaluate`.
+
+If you need to gate a payment on a protocol outside the parseable four, you supply the offer yourself and
+build the proposal in your own client — the amount and unit are yours to name, because no manifest
+declares them. See [protocol coverage](/protocols#why-readadvertisedterms-is-universal-and-parseproposaluniversal-is-not).

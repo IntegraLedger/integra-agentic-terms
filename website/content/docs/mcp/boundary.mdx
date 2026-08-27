@@ -1,0 +1,57 @@
+---
+title: The boundary
+description: Five tools LCP's appendix lists that are not here, and will not be — each asserts a custodian or forum role.
+---
+
+Every tool on this server **reads**. Nothing publishes a document, transmits one, or holds a credential:
+`lcp_generate_legal_context` returns a document for *you* to serve, and `lcp_place_reference` returns a
+document for *your* agent to send with *its own* keys.
+
+## The five that are absent
+
+LCP v1.38 §C.9's illustrative table lists `accept_terms`, `create_agreement`, `get_agreement`,
+`initiate_dispute` and `get_dispute_status`. None of them is here, and none is coming.
+
+Each asserts a role:
+
+| Tool | The role it would assert |
+|---|---|
+| `accept_terms` | recording the acceptance |
+| `create_agreement` / `get_agreement` | holding the agreement record |
+| `initiate_dispute` / `get_dispute_status` | running the dispute |
+
+**Integra is the record engine. The custodian of the record and the forum for the dispute are the
+deployment's and the counterparties' own.** A server offering `initiate_dispute` would be asserting an
+operating role the mandate forbids.
+
+There is a test asserting their absence, for a practical reason as much as a principled one: it is far
+easier not to add a seventh tool than to remove one after an agent has learned to call it.
+
+## No resources, no prompts
+
+The server serves tools. Beside them it declares exactly one capability — [the LCP
+extension](/mcp#the-lcp-capability-declaration), which says this server speaks LCP and says nothing about
+any seller's terms. There are no resources and no prompts.
+
+§C.9 illustrates both a resource surface (`lcp://agreement/{id}`) and a prompt
+(`dispute_evidence_assembly`) — and every one of its examples is an agreement or dispute surface, which is
+the boundary above. When there is a resource to serve that is not one of those, it will be declared then.
+
+## Why the appendix does not bind here
+
+This is the place LCP's Appendix C is an **illustration** and the host protocol **binds**.
+
+The server was checked against the live MCP specification, revision `2026-07-28`, rather than against the
+appendix. Two findings came out of that check and both are visible in the shipped surface:
+
+- **Annotations do not carry legal significance.** There is no MCP annotation meaning that, and
+  repurposing one would assert something no client can read. See
+  [annotations](/mcp/tools#annotations).
+- **`lcp_verify_before_pay` is narrower than a naive verifier.** Re-grounding on the shipped discovery
+  package drops a seller-signature block LCP does not define, and inherits the machine-readable-format
+  rule — so a PDF listing is reported `unverifiable` rather than passed through.
+
+The same reasoning governs the tool **names**. §C.9 shows a different vocabulary and says in the same
+breath that the standard canonizes no tool registry. An appendix example is not an interoperability fact;
+a name an agent host has already learned is, because a host that has learned a name breaks when it
+changes.

@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.source/
+.wrangler/
+*.tsbuildinfo
+# `next dev` scaffolds these into the project directory when it detects an AI coding agent.
+# The repository's instructions live at its root; nothing here should shadow them.
+AGENTS.md
+CLAUDE.md

@@ -1,0 +1,82 @@
+{
+  "name": "@integraledger/agentic-terms",
+  "version": "0.12.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IntegraLedger/integra-agentic-terms.git",
+    "directory": "packages/agentic-terms"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "@integraledger/lcp-authority": "^0.14.0",
+    "@integraledger/lcp-binding-core": "^0.14.0",
+    "@integraledger/lcp-discovery": "^0.14.0",
+    "@integraledger/lcp-evidence": "^0.14.0",
+    "@integraledger/lcp-kernel": "^0.14.0",
+    "@integraledger/lcp-placement-ack": "^0.14.0",
+    "@integraledger/lcp-placement-ap2": "^0.14.0",
+    "@integraledger/lcp-placements": "^0.14.0",
+    "@integraledger/lcp-verify": "^0.14.0"
+  },
+  "devDependencies": {
+    "@integraledger/lcp-authority": "0.14.0",
+    "@integraledger/lcp-binding-core": "0.14.0",
+    "@integraledger/lcp-discovery": "0.14.0",
+    "@integraledger/lcp-evidence": "0.14.0",
+    "@integraledger/lcp-kernel": "0.14.0",
+    "@integraledger/lcp-placement-ack": "0.14.0",
+    "@integraledger/lcp-placement-acp": "0.14.0",
+    "@integraledger/lcp-placement-ap2": "0.14.0",
+    "@integraledger/lcp-placements": "0.14.0",
+    "@integraledger/lcp-verify": "0.14.0",
+    "@types/node": "catalog:",
+    "fast-check": "4.9.0",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "description": "Integra Agentic Terms — the buyer-side verify-before-sign guard for agentic purchases. Fetches the terms a seller advertised, recomputes the fingerprint, and halts before any signing key is invoked if they disagree. Works against any seller.",
+  "keywords": [
+    "lcp",
+    "legal-context-protocol",
+    "agentic-commerce",
+    "ai-agent",
+    "x402",
+    "ap2",
+    "acp",
+    "verify-before-pay",
+    "buyer-protection",
+    "agentic-terms"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "bugs": {
+    "url": "https://github.com/IntegraLedger/integra-agentic-terms/issues"
+  },
+  "homepage": "https://github.com/IntegraLedger/integra-agentic-terms/tree/main/packages/agentic-terms#readme"
+}

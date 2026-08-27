@@ -1,0 +1,121 @@
+---
+title: Protocol coverage
+description: Reading the advertised reference is universal across nine protocols; parsing a full proposal is not — and the difference is a fact about the protocols.
+---
+
+A buyer that does not know which protocol it is on has two universal entry points, both dispatching
+through `@integraledger/lcp-placements` so that a protocol this package supports is precisely one the
+build can also place a reference into.
+
+```ts
+import {
+  detectProtocol,
+  parseProposalUniversal,
+  readAdvertisedTerms,
+} from "@integraledger/agentic-terms";
+
+declare const wire: unknown; // whatever document the counterparty handed you
+
+detectProtocol(wire); // "acp" | … | undefined — never a guess
+readAdvertisedTerms("ucp", wire); // { protocol, advertisedAtrHash, legalContextUrl }
+parseProposalUniversal(wire, { level: 3, sellerAssurance: "domain-controlled" });
+```
+
+## The coverage table
+
+| | Protocols | Entry point |
+|---|---|---|
+| **Read the advertised reference** | all nine registered | `readAdvertisedTerms(protocol, wire)` |
+| **Parse a full proposal, protocol detected** | x402, ACP | `parseProposalUniversal(wire, ctx)` |
+| **Parse a full proposal, protocol named** | AP2, MPP | the named parser |
+| **Detect the protocol** | eight structurally; MPP cannot be | `detectProtocol(wire)` |
+
+The nine registered protocols are **x402, ACP, UCP, AP2, MPP, A2A, ACK-Pay, Visa TAP and Mastercard VI**.
+
+## Why `readAdvertisedTerms` is universal and `parseProposalUniversal` is not
+
+`readAdvertisedTerms` reads the reference out of each protocol's own `PlacementManifest` — every carrier
+it declares, not the first one that answers. That generalizes, so all nine work and nothing is special-cased.
+
+A `GateProposal` additionally carries an **offer**, and an amount with its unit is protocol-native
+economics that no manifest declares and the standard does not standardize. x402 quotes it in
+`accepts[].amount` with a `network:asset` unit; ACP in the `totals` row typed `total` with an ISO 4217
+currency; the other seven each differently again.
+
+Inventing an offer-locator axis product-side would put protocol knowledge in a second place and put it
+there **ungated** — which is the one thing the placement seam exists to prevent. So the difference is a
+fact about the protocols, not a gap in the library.
+
+## Four answers where a friendlier library would guess
+
+### Ambiguity refuses
+
+Detection collects **every** discriminant that fires, never the first.
+
+An AP2 envelope *is* an A2A message. A UCP checkout response shares `id`, `status`, `currency`, `totals`
+and `line_items` with an ACP session. Those documents come back named twice, and the caller has to say
+which protocol it is on rather than being handed a coin flip.
+
+The two overlaps differ in strength, and the difference matters:
+
+- The **ACP/UCP** overlap is *contingent* on the document — a given session may or may not collide.
+- The **AP2** rule is a strict subset of the A2A rule, so **every** AP2 envelope matches both. AP2 is a
+  detect-and-name protocol here, and no AP2 envelope is reachable through `parseProposalUniversal`.
+
+### An absent terms URL says *which* absence it is
+
+`legalContextUrl` on `AdvertisedTerms` is a union, because a bare `undefined` conflates two different
+facts:
+
+| State | The fact it states |
+|---|---|
+| `read` | a declared slot carried a URL; where several were declared, they agreed |
+| `no-field-declared` | a fact about the **protocol** — it has nowhere to put a locator, and no document of it can be faulted for lacking one |
+| `declared-fields-empty` | a fact about **this document** — the protocol has room, and this seller left every declared slot empty |
+
+Reporting the second as the first would blame a protocol for a seller's silence.
+
+### Carrier disagreement refuses
+
+Where a protocol declares more than one carrier, all of them are read and compared. Two different hashes
+on one document would let a seller advertise different terms to different readers of it.
+
+This is deliberately stricter than the placement adapter's own `extract`, which answers with the canonical
+field and does not adjudicate the host's document.
+
+### A located-but-unattested carrier is not a reference
+
+UCP's `links[type=terms_of_service]` entry is a **discovery** carrier: it says where the terms are and
+attests nothing. It is skipped rather than accepted as a weaker answer.
+
+## Detection, and the one protocol that cannot be detected
+
+```ts
+import { detectProtocol, matchProtocols, PROTOCOL_DISCRIMINANTS } from "@integraledger/agentic-terms";
+
+declare const wire: unknown;
+
+matchProtocols(wire); // every protocol whose discriminant fires
+detectProtocol(wire); // the single match, or undefined when zero or many
+```
+
+`PROTOCOL_DISCRIMINANTS` is exported as data — each row carries the rule and a **citation** to the host
+specification it was derived from, because a claim about somebody else's protocol is exactly the kind that
+goes stale.
+
+One row is not a rule at all. **MPP** is recorded as `undiscriminable`, with the reason: the document its
+placement operates on is the decoded `request` auth-param body, whose members are an amount and a currency
+plus a few optional fields — and an amount/currency pair is the shape of nearly every payment document
+there is. MPP's identity lives one layer out, in the `WWW-Authenticate: Payment` challenge.
+
+That row is a **finding with a citation, not a hole**. It records that the live specification was read and
+no identifying member exists, and it keeps the table total over the placement registry, so a newly
+registered protocol cannot slip in unnoticed.
+
+## Per-protocol pages
+
+- **[x402](/protocols/x402)** — two carriers, reconciled field by field
+- **[ACP](/protocols/acp)** — the eleven-value status enum, and the UCP overlap
+- **[AP2](/protocols/ap2)** — four mandates, one named halt point
+- **[MPP](/protocols/mpp)** — why it must be named
+- **[Reading any protocol](/protocols/reading-any-protocol)** — `readAdvertisedTerms` in detail

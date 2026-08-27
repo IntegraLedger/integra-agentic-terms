@@ -1,0 +1,97 @@
+---
+title: Introduction
+description: What Integra Agentic Terms is, what it guarantees, and what it deliberately does not do.
+---
+
+Integra Agentic Terms is the buyer side of agentic commerce: two packages for an agent that is about to
+pay, and wants to know that the terms it read are the terms the seller committed to.
+
+<Callout type="info">
+**LCP** is the [**Legal Context Protocol**](https://legalcontextprotocol.org) — the open standard for
+legal context in agentic commerce, co-stewarded by Integra Ledger and AAA-ICDR. It defines where a service
+publishes its terms, and the fingerprint that binds it to them. These docs refer to it constantly, and to
+its numbered sections (`LCP §5.3`, and so on); this is what that means.
+</Callout>
+
+Both are **Apache-2.0 and free forever — no account, no key, no token, nothing to sign up for.**
+
+| Package | What it is | |
+|---|---|---|
+| [`@integraledger/agentic-terms`](/reference/agentic-terms) | Verify before sign, as a type and as a runtime guarantee. | [npm](https://www.npmjs.com/package/@integraledger/agentic-terms) |
+| [`@integraledger/lcp-mcp-server`](/mcp) | A read-only Model Context Protocol server exposing the same checks as tools. | [npm](https://www.npmjs.com/package/@integraledger/lcp-mcp-server) |
+
+```bash
+npm install @integraledger/agentic-terms
+npm install @integraledger/lcp-mcp-server
+```
+
+## The fingerprint, and why it is new
+
+The check below rests on one artifact, and it is worth being plain that the artifact did not exist until
+recently.
+
+**ATR** stands for **Agentic Transaction Record**, and in the [Legal Context
+Protocol](https://legalcontextprotocol.org/standard) the ATR *is the terms document itself* — the
+standalone artifact the seller publishes. **`atrHash` is its SHA-256 digest**, `0x`-prefixed hex.
+
+None of the nine agentic commerce protocols carries a terms fingerprint of its own. They carry prices,
+payment rails, mandates and receipts; not one of them commits the seller to a particular terms document.
+LCP defines `atrHash` and defines where it rides inside each of those protocols' own extension points, so
+a seller who adopts LCP advertises the digest alongside the terms.
+
+That advertised digest is the **only** thing that binds a seller to a document. Everything on this site
+follows from that one fact — including [why a seller who advertises nothing cannot be verified at
+all](/why).
+
+<Callout type="info">
+Two `atrHash` values are equal when their decoded 32-byte values are equal, so a conformant implementation
+compares the decoded bytes rather than the strings. The guard does; you get this for free unless you are
+writing your own comparison.
+</Callout>
+
+## The guarantee
+
+The guard fetches the terms the seller advertised, recomputes that fingerprint over the bytes it was
+actually served, and **halts before any signing key is invoked** if the two disagree.
+
+That last clause is the whole product. `transact` reaches your signer on exactly one path — a `proceed`
+decision — and on any other outcome the signer is not called at all. The key is structurally gated rather
+than gated by a check you have to remember to write.
+
+## It works against any seller
+
+Every check runs over what a seller **publicly advertises** in its own commerce protocol document — an
+x402 challenge, an ACP checkout session, an AP2 envelope, an MPP charge request. Nothing requires the
+seller to run Integra software, or to know Integra exists.
+
+Nothing here calls home either: no telemetry, no callback, no registry check. The only network request
+either package makes is fetching the terms the seller pointed you at, and it makes that request through a
+[guarded fetcher](/security).
+
+## What it is not
+
+The guard decides whether terms are bound to a payment. It has no opinion on **how you pay**, and that
+boundary is deliberate:
+
+- **It does not choose a payment requirement.** An x402 `accepts` array lists alternatives; which one to
+  pay is a matter of rails, balances and preference, and the guard does not pick for you. Narrow `accepts`
+  to the requirement you intend to pay before calling.
+- **It does not hold offer-expiry policy.** Whether a quote has gone stale is agent operations. Hold that
+  in your own client and reach `transact` only when you still intend to pay.
+- **It does not custody, broadcast, or settle.** It returns a decision. What you do with a signature is
+  yours.
+- **It does not record an acceptance, hold an agreement, or run a dispute.** Those assert a custodian or
+  forum role. See [the MCP boundary](/mcp/boundary).
+
+## The standard
+
+These packages implement the buyer side of the [Legal Context Protocol](https://legalcontextprotocol.org/standard),
+co-stewarded by Integra Ledger and AAA-ICDR, over the public `@integraledger/lcp-*` protocol packages. The
+seller-side application they interoperate with is separately licensed and is not part of this repository.
+
+## Where to go next
+
+- **[Why verify before sign](/why)** — the failure this prevents, which is not the one most people expect.
+- **[Quickstart](/quickstart)** — a working gate in about twenty lines.
+- **[Protocols](/protocols)** — what is universal, what is by-name, and why the difference exists.
+- **[MCP server](/mcp)** — the same checks as tools for an agent host.

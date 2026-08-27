@@ -1,0 +1,69 @@
+---
+title: Runtimes
+description: Node, Bun and Deno are measured on every release. The rest of the table is reasoned from the import graph, and says so.
+---
+
+**This package's own source imports no Node built-in.** The one Node-specific helper, `nodeDnsLookup`, is
+imported lazily and injected rather than sitting at the top of the graph, so a build that never calls it
+never pulls `node:dns` in. Supply your own `HostLookup` and the public-unicast check works on a runtime
+with no DNS module at all.
+
+That much is enforced by the code, and it is the part worth relying on.
+
+## One Node built-in arrives transitively
+
+The honest statement is that it is a dependency's, not ours. `@integraledger/lcp-evidence` re-exports its
+CAR support from its index, which pulls the `multiformats` Node SHA-2 build, which statically imports
+`node:crypto`.
+
+| Target | Works | How we know |
+|---|---|---|
+| Node | yes | **measured** — every release runs the guard's whole decision here |
+| Bun | yes | **measured** — same run, same assertions |
+| Deno | yes | **measured** — same run, same assertions |
+| Workers with `nodejs_compat` | yes — `node:crypto` is polyfilled | reasoned from the import graph, not measured |
+| A bundler honouring the `multiformats` `browser` export condition | yes — it maps to the browser SHA-2 build | reasoned from the export conditions, not measured |
+| A plain unbundled ESM import in a browser or service worker | **no** | reasoned — `node:crypto` has nothing to resolve to |
+
+## What "measured" means here
+
+The measured rows run against **the packed tarball**, installed the way you would install it, with the
+protocol line resolved from npmjs — not against the repository's own tree.
+
+**Both halves of the guarantee are asserted on each runtime**, and that pairing is the point: a runtime
+where the guard refused everything would pass a check that only looked for the halt. So each run asserts
+that tampered terms **halt with the signer never reached**, and that matching terms **sign with the signer
+reached exactly once**.
+
+<Callout type="info">
+The runtime matrix runs in CI, not in the repository's local `verify` chain — it packs a tarball and
+installs from npmjs, which does not belong in an inner loop. `pnpm check:runtime` runs the Node leg
+locally; Bun and Deno run only in CI. A green local `verify` does not cover them.
+</Callout>
+
+## What the guard actually needs
+
+`fetch` and Web Crypto. Nothing else of its own.
+
+Removing the last hop is an **upstream** change — a subpath export on `lcp-evidence`, so that importing
+one predicate does not drag CAR and `multiformats` into every consumer's bundle. Until that lands, the
+table above is the claim.
+
+## Running off Node
+
+```ts
+import { makeCachingFetcher, type HostLookup } from "@integraledger/agentic-terms";
+
+// Supply your own resolver rather than `nodeDnsLookup`. It must return
+// literal-IP hosts unchanged, as `node:dns` does.
+declare const platformLookup: HostLookup;
+
+const fetcher = makeCachingFetcher({
+  httpFetch: fetch,
+  now: () => new Date().toISOString(),
+  lookup: platformLookup,
+});
+```
+
+The MCP server's `nodePorts` is Node-specific by name and by design; on another runtime, construct
+`LcpMcpPorts` yourself with a fetcher wired to your own lookup.

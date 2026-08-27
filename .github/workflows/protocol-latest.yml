@@ -1,0 +1,102 @@
+name: protocol-latest
+# THE CARET IS A PROMISE ABOUT VERSIONS THE LOCKFILE NEVER INSTALLS, AND THIS IS WHAT KEEPS IT.
+#
+# `agentic-terms` peers `@integraledger/lcp-*` at `^X.Y.0` and `lcp-mcp-server` ships the same range, so the
+# version a CONSUMER resolves is whatever is newest on that line — not the exact pin in `devDependencies`
+# that `ci.yml` installs. `check:wire` cannot close that gap: a caret anchored at the dev pin satisfies
+# every rule it has, by construction. It proves the declarations are COHERENT. This proves they are TRUE.
+#
+# ⛔ WHY A SCHEDULE AND NOT A MATRIX LEG ON `ci.yml`. The failure this exists to catch is SILENCE. Two
+# protocol releases shipped while this repository sat pinned to an earlier one and nothing here could say
+# so. A push-triggered job is silent exactly when the repository is idle — which is when drift accumulates,
+# and is precisely the window that went unnoticed. It would also compete for runners with `mutation.yml`,
+# which fans out one job per package with `cancel-in-progress`, making it likelier that no full mutation
+# run ever completes.
+#
+# ⚠️ A RED HERE IS NOT A RED COMMIT. Nothing in this repository changed; the world did. That is why it
+# opens an issue instead of failing a branch, and why `main` stays green while someone reads it.
+on:
+  schedule:
+    # Weekdays, early. Offset off the hour: scheduled workflows queue behind everything else GitHub runs
+    # at :00, and a late start costs nothing here but makes run times harder to compare.
+    - cron: "17 6 * * 1-5"
+  workflow_dispatch:
+
+# ⚠️ LEAST PRIVILEGE IS PER-JOB, NOT PER-WORKFLOW. A top-level `permissions:` block grants its scopes to
+# EVERY job, including ones added later that have no business holding them. OpenSSF Scorecard flags a
+# top-level write for exactly that reason, and it flagged this repository. Job-level blocks REPLACE the
+# top-level one rather than merging with it, so each block below states every scope its job needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: protocol-latest
+  cancel-in-progress: true
+
+jobs:
+  latest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # the whole point of the job is to be able to say something happened
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10 # no version input — package.json's packageManager is the single source of truth
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      # The pinned tree must resolve before moving it, so a failure below is attributable to the move.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Move the exercised line to latest
+        # `--dev` IS LOAD-BEARING. A bare `pnpm up` also rewrites the caret ranges — it turns `^0.12.0`
+        # into `^0.12.2`, RAISING the floor and stranding consumers on earlier patches of the same line,
+        # which `check:wire` refuses outright. The exercised version lives in `devDependencies` and that is
+        # the only thing this job may move; the ranges under test must reach `verify` exactly as published.
+        run: |
+          pnpm up --dev "@integraledger/lcp-*@latest" -r
+          echo "### Exercised line after update" >> "$GITHUB_STEP_SUMMARY"
+          node -p "'  '+require('./packages/agentic-terms/package.json').devDependencies['@integraledger/lcp-kernel']" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify against latest
+        id: verify
+        # ⛔ `shell: bash` IS NOT DECORATION — IT IS WHAT MAKES THIS STEP ABLE TO FAIL. The default shell
+        # for `run:` on Linux is `bash -e {0}`, WITHOUT pipefail, so `pnpm verify | tee` would exit with
+        # `tee`'s status and this job would report green through every failure it exists to catch. Naming
+        # the shell explicitly gets `-eo pipefail`. This repository has been bitten by the piped-exit-status
+        # trap before; a gate that cannot go red is worse than no gate.
+        shell: bash
+        # Full `verify`, not a subset: it is this repository's single definition of "does this tree pass",
+        # so it cannot drift from what CI runs. The honest cost is that `audit` is non-hermetic, so a newly
+        # published advisory can redden this job for reasons unrelated to the protocol — the issue body
+        # carries the tail of the log so that is a two-second triage rather than a false signal.
+        run: pnpm verify 2>&1 | tee /tmp/verify.log
+
+      - name: Open or update the issue
+        # ANY failure, not just `verify`'s. If the install or the update step is what broke, that is still
+        # something a person needs to be told — scoping this to `steps.verify.outcome` would leave the job
+        # red and silent in exactly the cases nobody is watching for.
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "protocol-latest: the caret range does not hold against latest"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # `gh`, not a marketplace action: this repository pins every action by SHA and declares
+        # per-workflow permissions, and widening the supply-chain surface to file an issue would be a poor
+        # trade. `gh` is preinstalled on the runner and uses the built-in token.
+        run: |
+          LINE=$(node -p "require('./packages/agentic-terms/package.json').devDependencies['@integraledger/lcp-kernel']" 2>/dev/null || echo "unknown")
+          # The log may not exist: an earlier step can fail before `verify` ever runs, and this step now
+          # fires on any failure. Say which happened rather than pasting an empty block.
+          TAIL=$(tail -n 40 /tmp/verify.log 2>/dev/null || echo "(verify did not run — an earlier step failed; see the run log)")
+          BODY=$(printf 'This job failed with the protocol line installed at **%s** (latest), while the lockfile pins an earlier version.\n\nThe published peer range `^X.Y.0` admits this version, so a consumer installing today resolves it. Either the range is now wrong, or the newer line changed something this guard depends on, or the failure is in `audit` and unrelated to the protocol — the tail below says which.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$LINE" "$RUN_URL" "$TAIL")
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi

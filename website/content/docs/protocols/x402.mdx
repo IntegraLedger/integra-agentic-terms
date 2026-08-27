@@ -1,0 +1,105 @@
+---
+title: x402
+description: Two Tier A carriers, reconciled field by field — and a first requirement the gate deliberately does not choose.
+---
+
+```ts
+import { parseProposalFromChallenge } from "@integraledger/agentic-terms";
+
+declare const challenge: unknown; // the 402 body the seller returned
+
+const proposal = parseProposalFromChallenge(challenge, {
+  level: 3,
+  sellerAssurance: "domain-controlled",
+});
+```
+
+Also reachable through [`parseProposalUniversal`](/protocols#the-coverage-table) — x402 is one of the two
+protocols whose document identifies itself and whose offer this build can read.
+
+## The two carriers
+
+x402 v2 carries the LCP reference in **two** places, and both are optional in the wire format:
+
+| Carrier | Path | Notes |
+|---|---|---|
+| Per-requirement | `accepts[].extra.atrHash` / `.legalContextUrl` | binds to the requirement actually being paid |
+| Challenge-level | `extensions.legalContext.info` | `.value` is the hash, `.type` must be `sha256` |
+
+Requiring `extra` alone would reject a spec-legal seller that advertises only in `extensions` — a carrier
+shape real implementations emit. So both are read.
+
+## Reconciliation is field by field, not carrier by carrier
+
+The two carriers are **not required to be symmetric**. LCP v1.38 §C.4's own illustration puts `atrHash`
+and `legalContextUrl` in `accepts[].extra` while `extensions.legalContext.info` carries only `type` and
+`value` — so treating each carrier as an atomic `{hash, url}` pair would reject the specification's
+canonical example.
+
+Each field is reconciled on its own:
+
+- **Both present and equal** → `accepts[].extra` wins, because it is the per-requirement carrier and binds
+  to the requirement being paid. (Hash comparison is case-insensitive; the URL comparison is exact.)
+- **One present** → that one.
+- **Neither present** → refuse, naming the field and both carriers that were checked.
+- **Both present and different** → **refuse.**
+
+<Callout type="warn">
+Disagreement is not resolved by preference. Two different values on one challenge would let a seller
+advertise different terms to different readers of the same document, and a buyer that quietly picked one
+would gate against terms the seller can later disown.
+</Callout>
+
+An `extensions.legalContext.info.type` that is anything but `sha256` is refused rather than read — the
+advertised value is compared against a recomputed record hash, and nothing but a hash can be.
+
+## The first requirement, and why the gate does not choose
+
+`accepts` is a list of **alternative** payment requirements. `parseProposalFromChallenge` takes the first
+one, and that is deliberately not a preference rule:
+
+> Which requirement to pay is the agent's own decision — a matter of rails, balances and preference — and
+> this gate has no opinion on it, because choosing *how* to pay is agent operations rather than binding
+> terms to a payment.
+
+If you want a different requirement, **narrow `accepts` to it before calling**. You then get a proposal
+gated against that one, and the amount checked against your cap is always the amount on the requirement
+you passed in.
+
+A silent choice of requirement would gate you against a price you did not pick — the same class of defect
+that makes carrier disagreement a refusal.
+
+## The offer
+
+| Field | Source |
+|---|---|
+| `amount` | `accepts[].amount`, validated as a decimal base-unit integer string |
+| `unit` | `` `${network}:${asset}` `` from the same requirement |
+
+## What is validated at the boundary
+
+The parser throws — before a proposal exists — on any of:
+
+- a challenge that does not match the schema (`x402Version` plus a non-empty `accepts`)
+- an `extensions.legalContext.info.type` other than `sha256`
+- carriers that disagree on `atrHash` or `legalContextUrl`
+- neither carrier advertising `atrHash` or `legalContextUrl`
+- an `atrHash` that is not `0x` followed by 64 hex characters
+- a `legalContextUrl` that is not HTTPS
+- an `amount` that is not a decimal base-unit integer
+
+That last one closes the empty-string and decimal-point cases at the trust boundary, before they can reach
+a `BigInt` comparison inside the gate.
+
+## Detection
+
+```ts
+import { detectProtocol } from "@integraledger/agentic-terms";
+
+declare const challenge: unknown;
+
+detectProtocol(challenge); // "x402"
+```
+
+The rule is a numeric `x402Version` plus an `accepts` array — cited to the x402 v2 `PaymentRequired`
+definition, §5.1.2.

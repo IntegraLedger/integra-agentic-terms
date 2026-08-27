@@ -1,0 +1,111 @@
+name: codeql
+# Static security analysis. `verify` proves the code does what the tests say; CodeQL looks for the classes
+# of defect tests are structurally bad at finding — injection, unsafe deserialization, path traversal,
+# prototype pollution — by data-flow rather than by example.
+#
+# The threat model here is not hypothetical. Every input this package parses is authored by the
+# counterparty being verified: an x402 challenge, an ACP session, an AP2 envelope, an MPP request body, and
+# the terms document itself. The fetcher takes a counterparty-chosen URL and is the SSRF boundary for the
+# whole design. Prototype pollution is a live class rather than a theoretical one — `policy.ts` reads a
+# seller-controlled string as an object key and guards it with `Object.hasOwn` for exactly that reason.
+#
+# RESULTS GO TO THE SECURITY TAB, and are ALSO gated in-job. The tab is a place to go and look; the gate
+# fails the run. Work lands directly on `main` here, so a finding that only appears somewhere you have to
+# visit is a finding nobody sees until someone visits.
+#
+# Its own workflow rather than a step in `verify`: a full database build is minutes, and it has no business
+# in the inner loop. Runs on push plus a weekly sweep, because the QUERIES improve even when the code does
+# not, and a finding that only exists after a query update would otherwise never surface.
+on:
+  # TAGS ARE EXCLUDED VIA `branches`, NOT `tags-ignore`, AND THE DIFFERENCE IS NOT COSMETIC. A `push` block
+  # carrying only `tags-ignore` means "tags, minus these" — after ignoring `**` that is NOTHING, and the
+  # workflow stops firing on branch pushes entirely, with no error and no run to notice.
+  #
+  # `**` and not `*`: Dependabot's branches contain slashes, which `*` does not match, and they must keep
+  # CI — `dependabot.yml` relies on a red build to hold the 24h quarantine.
+  push:
+    branches: ["**"]
+  workflow_dispatch: # re-run on demand — e.g. after a repository security setting changes
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+
+# ⚠️ LEAST PRIVILEGE IS PER-JOB, NOT PER-WORKFLOW. A top-level `permissions:` block grants its scopes to
+# EVERY job, including ones added later that have no business holding them. OpenSSF Scorecard flags a
+# top-level write for exactly that reason, and it flagged this repository. Job-level blocks REPLACE the
+# top-level one rather than merging with it, so each block below states every scope its job needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      # ⚠️ EXHAUSTIVE, NOT ADDITIVE — declaring this block sets every scope not named here to `none`.
+      contents: read
+      security-events: write # upload the SARIF to the Security tab
+      # `actions: read` is REQUIRED on a private repository: the analyze step reads its own workflow-run
+      # metadata, and without it the step 403s with "Resource not accessible by integration" — an error
+      # naming the workflow-runs API that looks nothing like a permissions problem. This repository is
+      # PUBLIC, where code scanning needs neither this nor the `code_security` setting. Declared anyway, so
+      # that going private cannot silently break it.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: github/codeql-action/init@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          languages: javascript-typescript
+          # security-extended over the default pack: the default set is tuned to keep false positives near
+          # zero for a general audience, and a package whose inputs are all counterparty-authored justifies
+          # the extra queries.
+          queries: security-extended
+
+      # No build step: the JS/TS analyzer extracts from source directly. Building first would add minutes
+      # and analyse the emitted `dist/` rather than the sources anyone reads.
+      - uses: github/codeql-action/analyze@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          category: "/language:javascript-typescript"
+          output: sarif-results
+
+      - name: Fail on any error-severity finding
+        # The gate. An uploaded SARIF alerts; it does not block. This turns an error-severity finding into a
+        # red run, which is the only signal that reaches someone pushing to main.
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const dir = "sarif-results";
+            let errors = 0, total = 0;
+            for (const f of fs.readdirSync(dir).filter((f) => f.endsWith(".sarif"))) {
+              const sarif = JSON.parse(fs.readFileSync(`${dir}/${f}`, "utf8"));
+              for (const run of sarif.runs ?? []) {
+                // Severity lives on the RULE, not the result, so build the lookup first.
+                const level = new Map();
+                for (const rule of run.tool?.driver?.rules ?? [])
+                  level.set(rule.id, rule.defaultConfiguration?.level ?? "warning");
+                for (const r of run.results ?? []) {
+                  total++;
+                  const lvl = r.level ?? level.get(r.ruleId) ?? "warning";
+                  const where = r.locations?.[0]?.physicalLocation?.artifactLocation?.uri ?? "?";
+                  const line = r.locations?.[0]?.physicalLocation?.region?.startLine ?? "?";
+                  console.log(`  [${lvl}] ${r.ruleId} — ${where}:${line}`);
+                  if (lvl === "error") errors++;
+                }
+              }
+            }
+            console.log(`\n${total} finding(s), ${errors} at error severity`);
+            if (errors > 0) {
+              console.error(`::error::CodeQL reported ${errors} error-severity finding(s)`);
+              process.exit(1);
+            }
+          '
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: codeql-sarif
+          path: sarif-results/
+          retention-days: 30

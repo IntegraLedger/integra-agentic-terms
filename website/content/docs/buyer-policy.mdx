@@ -1,0 +1,104 @@
+---
+title: Buyer policy
+description: Every field of BuyerPolicy is a risk decision you are making on the record — there are no defaults.
+---
+
+`BuyerPolicy` is your stated risk posture. The gate reads it and nothing else: it never infers a
+preference, and it never fills a field you left out, because a default here would be a risk posture nobody
+chose.
+
+```ts
+import type { BuyerPolicy } from "@integraledger/agentic-terms";
+
+const policy: BuyerPolicy = {
+  requiredLevel: 2,
+  acceptableJurisdictions: ["US-NY"],
+  acceptableDisputeMethods: ["arbitration"],
+  maxCommitment: { "iso4217:USD": "25000" },
+  forbiddenClauseCategories: ["unilateral-amendment"],
+  requiredAssurance: "domain-controlled",
+  onNotAttempted: "decline",
+};
+```
+
+## `requiredLevel`
+
+`1 | 2 | 3 | 4` — the LCP trust level floor you require. A proposal whose level is below it declines with
+`gate/below-required-level`.
+
+Level 1 is a **decision**, not a fallback. Setting `requiredLevel: 1` says you have elected to transact
+against a service that advertised terms without committing to them, and the record shows you elected it.
+See [why](/why).
+
+## `acceptableJurisdictions` / `acceptableDisputeMethods`
+
+`readonly string[] | "any"`. Checked against the seller's `disputeResolution.jurisdiction` and
+`disputeResolution.method` in the typed legal-context record.
+
+Absence stays absence: a seller that declares no jurisdiction yields `undefined`, and it is your policy
+that decides whether that is acceptable. `"any"` accepts absence; a list does not.
+
+A `disputeResolution` that is present but *malformed* — a string where an object belongs, a non-string
+member — declines as the seller's defect (`policy/malformed-dispute-resolution`) rather than being read as
+absent. A gate whose refusals misdescribe the defect cannot be acted on.
+
+## `maxCommitment`
+
+`Record<string, string>` — a cap per unit, in **base units**, as decimal integer strings.
+
+The unit is protocol-native and the gate does not translate between protocols:
+
+| Protocol | Unit string | Amount |
+|---|---|---|
+| x402 | `` `${network}:${asset}` `` from the requirement | `accepts[].amount` |
+| ACP | the session `currency` | the `totals` row typed `total` |
+| MPP | the charge intent `currency` | `amount`, in base units |
+
+A unit with **no declared cap** declines with `policy/unit`. That is deliberate: an undeclared unit is one
+you have not thought about, and proceeding would spend it at whatever the seller quoted. The lookup is an
+own-property read, so a seller quoting a unit named `constructor` or `__proto__` gets the ordinary "no cap
+declared" decline rather than an unhandled throw.
+
+Over the cap declines with `policy/over-cap`, comparing as `BigInt`.
+
+## `forbiddenClauseCategories`
+
+`readonly string[]`. If the seller's record carries a `clauseCategories` array containing any of these,
+the gate declines with `policy/forbidden-clause`.
+
+`clauseCategories` is not in the discovery schema — it arrives as whatever the seller wrote. A seller
+publishing a string where an array belongs is named as such (`policy/malformed-clause-categories`) and
+declined, rather than crashing the gate.
+
+## `requiredAssurance`
+
+`Assurance | "any"` — the seller-identity floor, from `@integraledger/lcp-authority`.
+
+This is a counterparty-trust dimension **independent of the terms format**, so it is checked on every
+proceed path, before the typed/coverage-gap branch. A buyer that tolerates non-machine-readable terms via
+`onNotAttempted` must not thereby lose its assurance floor.
+
+The value the gate compares against comes from your `ProposalContext`, not from the seller's document — it
+is what *you* resolved about the counterparty.
+
+## `onNotAttempted`
+
+`"proceed" | "decline" | "escalate"` — how a coverage gap resolves.
+
+The gap this reaches is a fetched terms document that is **not machine-readable legal-context JSON**. The
+document was retained as evidence; policy simply cannot be evaluated on it.
+
+- `decline` — refuse (`gate/unparseable-terms`).
+- `escalate` — hand back the exact bytes and their hash for a human to approve. What is displayed is what
+  would be signed.
+- `proceed` — a stated election to proceed without a typed record. Yours to make; it is on the record that
+  you made it.
+
+### Why there is no `onIndeterminate`
+
+An earlier shape required one, and `evaluate` never read it — nor could it, because no step the gate runs
+yields `indeterminate`. The fingerprint proves or fails; the record parses or does not.
+
+A required field promising a disposition the gate cannot reach is worse than no field, because a buyer
+reads it as a control. If you fold your own step ladders, [`decideOutcome`](/dispositions) carries its own
+four-valued gaps shape and does handle `indeterminate`.

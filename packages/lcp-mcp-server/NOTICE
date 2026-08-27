@@ -1,0 +1,16 @@
+Integra LCP MCP Server
+Copyright 2026 Integra Ledger
+
+This product includes software developed by Integra Ledger (https://integraledger.com).
+
+"Integra", "Integra Ledger", and the Integra logo are trademarks of Integra Ledger.
+Trademark use is not granted by the Apache License 2.0 (see Section 6).
+
+The Legal Context Protocol is co-stewarded by Integra Ledger and AAA-ICDR. This package exposes
+read-only LCP tools over the Model Context Protocol and is published free under the Apache License 2.0;
+the specification itself is published at https://legalcontextprotocol.org/standard and is not part of
+this distribution.
+
+Its tools read and verify documents served by ANY party, whether or not that party uses Integra
+software. The seller-side application referenced in the scaffolding output is separately licensed and is
+not part of this distribution.

@@ -1,0 +1,135 @@
+---
+title: AP2
+description: Four mandates signed by different keys in different modes — so the halt point has to be named, and it is.
+---
+
+```ts
+import { parseProposalFromAp2Envelope } from "@integraledger/agentic-terms";
+
+declare const envelope: unknown; // the A2A message carrying an AP2 mandate
+
+const proposal = parseProposalFromAp2Envelope(envelope, {
+  level: 3,
+  sellerAssurance: "domain-controlled",
+  step: "mandate-content-built",
+  legalContextUrl: "https://seller.example/.well-known/legal-context.json",
+  offer: { amount: "5000", unit: "iso4217:USD" },
+});
+```
+
+**By name, always.** AP2's discriminant is a strict subset of A2A's, so *every* AP2 envelope matches two
+rows and `parseProposalUniversal` refuses it as ambiguous before any lookup. An `ap2` entry in the
+universal dispatch map would be unreachable.
+
+## AP2 needs more context than the other wires
+
+`Ap2ProposalContext` asks for three things the other parsers do not, and each is a property of AP2 rather
+than a gap here.
+
+### `legalContextUrl` — because AP2's placement is integrity-only
+
+The AP2 placement declares **no terms-URL field**. The A2A `Message.metadata` map holds the reference, and
+AP2 models no terms-URL field anywhere — so unlike ACP (`metadata.legal_context_url`) and x402
+(`extra.legalContextUrl`), the locator simply cannot come off the wire.
+
+It comes from LCP §2 discovery — the seller's `/.well-known/legal-context.json` — resolved by your client
+before it calls the parser. HTTPS is enforced here exactly as on every other wire.
+
+### `offer` — because the price is inside an opaque SD-JWT
+
+AP2 v0.2 carries the price inside the merchant-signed Checkout JWT, referenced from the closed mandate
+only by `checkout_hash`. The transport carries mandates as **opaque SD-JWT compact strings**.
+
+This parser does not decode one, and decoding one would mean trusting an unverified payload to produce the
+number the gate compares against your policy cap. Your client already holds the checkout it built its
+mandate content from, so it supplies the amount it is about to commit — the honest source.
+
+### `step` — because the halt point has to be checked
+
+Covered below. The step is asserted **first**, before any reading: a gate that parses and then discovers it
+was too late has already spent your time pretending a decision was available.
+
+## Why the halt point has to be named
+
+AP2 is the one wire in this set where the sign moment is genuinely ambiguous.
+
+- **x402** has one sign moment: the payment authorization.
+- **ACP** has one: the checkout confirmation.
+- **AP2 has four mandates** — Checkout and Payment, each in an Open and a Closed stage — signed by
+  different keys in different modes.
+
+A gate that says "verify before sign" without saying **which** sign is a gate that cannot be audited. So
+the halt point is exported as data:
+
+```ts
+import { AP2_HALT_POINT } from "@integraledger/agentic-terms";
+
+AP2_HALT_POINT.lastSafeStep; // where the gate must have finished
+AP2_HALT_POINT.haltBefore;   // the first step at which a key is invoked
+AP2_HALT_POINT.signingSteps; // every step at which some key signs, in flow order
+AP2_HALT_POINT.rationale;    // why this step and not another
+AP2_HALT_POINT.specRef;      // the host protocol text it is defended against
+```
+
+## The halt point
+
+**Immediately before the Trusted Surface is invoked.**
+
+The defence comes from AP2 v0.2's own specification rather than from the LCP appendix:
+
+- **Human Present (Direct).** With a Checkout JWT in hand, the Shopping Agent constructs the Checkout and
+  Payment Mandate content and passes it to a Trusted Surface for display and signing. The user's key signs
+  *at* the Trusted Surface. Nothing signs before it.
+- **Human Not Present (Autonomous).** The agent creates *open* mandate content and has it authorized by
+  the Trusted Surface, including the agent's public key as a `cnf` claim. The Trusted Surface is invoked
+  first here too; the agent's own key signs the closed mandates only afterwards.
+
+Both modes place the Trusted Surface first. That makes it the halt point for **both** — so the gate does
+not need to know which mode it is in, which is the property that makes it auditable.
+
+`agent-key-signing` is a *later* signing step, not an earlier one. Gating there would already be too late.
+
+## The flow steps
+
+`Ap2Step` is a closed union, in the order a Shopping Agent passes through them:
+
+| Step | |
+|---|---|
+| `checkout-jwt-received` | |
+| `mandate-content-built` | ← `lastSafeStep` |
+| `trusted-surface-authorization` | ← `haltBefore` — a key signs here |
+| `agent-key-signing` | Autonomous mode only; a key signs here |
+| `key-binding-presentation` | a key signs here — the `kb+sd-jwt` binding made when the closed mandate is **presented** to the merchant, which is why it is a separate step from the signature that created the mandate |
+
+Closed on purpose: an unknown token is a wire this parser has no halt point for, and inventing one would
+be the whole defect the type exists to prevent.
+
+`AP2_HALT_POINT.signingSteps` is those last **three** steps, in flow order, and `haltBefore` is the first
+of them. `isAp2SigningStep` answers the same question for a single step.
+
+## Enforcing it
+
+```ts
+import {
+  assertBeforeAp2HaltPoint,
+  isAp2SigningStep,
+  type Ap2Step,
+} from "@integraledger/agentic-terms";
+
+declare const step: Ap2Step;
+
+isAp2SigningStep(step);        // does some key sign at this step?
+assertBeforeAp2HaltPoint(step); // throws if the gate is running too late to matter
+```
+
+`parseProposalFromAp2Envelope` calls the assertion itself: it **refuses to run at or after the halt
+point**, because a proposal parsed after a key has signed cannot gate anything.
+
+## Detection
+
+The rule is an AP2 mandate DataPart — a `parts[].data` object carrying
+`ap2.mandates.CheckoutMandateSdJwt` or `ap2.mandates.PaymentMandateSdJwt` — **and** the document being a
+valid A2A message.
+
+AP2's own half is asked first, because the mandate part is what makes this AP2 rather than any other A2A
+message. `detectProtocol` returns `undefined` on an AP2 envelope, since the A2A row fires too.

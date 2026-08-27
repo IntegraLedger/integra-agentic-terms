@@ -1,0 +1,149 @@
+---
+title: The six tools
+description: What each tool takes, what it returns, and what it refuses — every one of them read-only.
+---
+
+```ts
+import { LCP_TOOL_NAMES } from "@integraledger/lcp-mcp-server";
+
+// The exported list — the boundary is asserted, not just described.
+```
+
+| Tool | Reaches the network | What it does |
+|---|---|---|
+| `lcp_compute_atrhash` | when given a URL | SHA-256 over terms bytes → the hash and its `lcp:sha256:0x…` carrier |
+| `lcp_generate_legal_context` | yes | builds a validated, ready-to-publish `/.well-known/legal-context.json` |
+| `lcp_verify_before_pay` | yes | fetch, recompute, compare — and say whether an agent must halt |
+| `lcp_scaffold_integration` | no | starter code for the seller side or the buyer side |
+| `lcp_place_reference` | no | puts a reference into any registered protocol's own document |
+| `lcp_extract_reference` | no | reads one back out |
+
+<Callout type="info">
+**These `lcp_*` names are stable.** LCP v1.38 §C.9 illustrates a different vocabulary
+(`get_legal_context`, `verify_terms`, …) and says in the same breath that the standard canonizes no tool
+registry. Names a deployed server already answers to are the stronger interoperability fact, so renaming
+them to match an appendix's example would break working integrations and make nothing canonical.
+</Callout>
+
+## `lcp_verify_before_pay`
+
+The agent guardrail. Give it a service origin; it fetches the discovery document and the terms it points
+at, recomputes the fingerprint, and answers.
+
+**Input** — `serviceUrl`: the origin (`https://seller.example`) or a full legal-context URL.
+`/.well-known/legal-context.json` is appended when absent, and a query string, a fragment, or credentials
+in the authority are **refused** — §2.1 defines the well-known URI with none of them.
+
+**Output**
+
+| Field | |
+|---|---|
+| `verdict` | `verified` · `mismatch` · `unverifiable` |
+| `wouldHalt` | true when an agent MUST NOT pay against these terms |
+| `atrHashMatch` | true only on `verified` — the comparison itself |
+| `legalContextUrl` | the discovery document actually read |
+| `termsUrl` | the terms document that document points at |
+| `declaredAtrHash` | what the service declared; absent at Level 1 |
+| `computedAtrHash` | what was recomputed here; absent when nothing was fetched |
+| `termsBytes` | how many bytes were hashed |
+| `acceptanceRequired` | present only where the document declares it |
+| `disputeResolutionDeclared` | whether a dispute-resolution block is carried |
+| `detail` | why this verdict, in one sentence |
+
+Three things follow from it being re-grounded on the shipped protocol packages, and a hand-rolled verifier
+typically gets each one wrong:
+
+1. **The intake throws on a non-conformant document.** Reading fields off whatever JSON came back would let
+   a document that is not a legal-context document at all still produce a verdict.
+2. **The comparison is the shipped rule, not a local `sha256` and `===`.** It carries a check a hand-rolled
+   comparison omits: a listing whose format is not machine-readable is `unverifiable` rather than passed
+   through, because an agent cannot evaluate terms it cannot read. That **narrows** the tool —
+   `application/pdf` is refused rather than accepted.
+3. **There is no ES256 `signing` block, and its absence is correct.** A verifier that reads a seller-signed
+   JWS out of a `signing` object is reading a field LCP does not define: Level 3 is the *buyer's* signed
+   acceptance over the fingerprint, and the discovery document carries no seller signature at any level.
+   Serving one would ship a private extension as though it were LCP.
+
+<Callout type="warn">
+**Absence of a fingerprint is not a pass.** A Level 1 document halts, with the detail: *the document
+declares no atrHash (LCP Level 1) — there is nothing to verify, so this tool cannot say the served terms
+are the ones committed to*. A buyer that intends to transact at Level 1 does so through its own policy
+engine, never by reading a green light out of a tool that verified nothing.
+</Callout>
+
+A halting verdict is returned as a tool **execution** error rather than a protocol error, because MCP
+routes those to the model — which is the party that needs to see it.
+
+## `lcp_compute_atrhash`
+
+**Input** — `terms` (raw UTF-8 text) **or** `termsUrl` (an HTTPS URL to fetch). One or the other, never
+both.
+
+**Output** — `atrHash` (`0x`-prefixed SHA-256) and `bytes` (how many were hashed), plus the
+`lcp:sha256:0x…` carrier string that `lcp_place_reference` takes verbatim.
+
+## `lcp_generate_legal_context`
+
+Builds a validated `/.well-known/legal-context.json` for you to serve.
+
+**Input** — `termsUrl` (fetched, so it must be live), `termsFormat` (an LCP §2.5 token), and optionally
+`acceptanceRequired`, `disputeResolution`, `returns`, `api`.
+
+It **returns** a document. It does not publish one.
+
+## `lcp_place_reference`
+
+Puts a reference into a host protocol's own document.
+
+**Input** — `protocol`, `reference` (the `lcp:{type}:{value}` carrier string), `document` (the host's JSON),
+and `termsUrl` where the protocol declares a slot for one.
+
+`termsUrl` is **required** where the protocol declares a slot and the reference is a digest: a hash no
+counterparty can resolve is unverifiable to anyone who does not already hold the terms. Where the protocol
+declares no slot, supplying it is **refused rather than silently dropped**.
+
+The input document is never mutated; a copy is returned with the reference added, for **your** agent to
+send with **its own** keys.
+
+## `lcp_extract_reference`
+
+Reads a reference back out of a host protocol's document.
+
+**Output** — `type` (the §8.2 carrier type), `value`, and a terms-URL union with the same three states as
+[`readAdvertisedTerms`](/protocols/reading-any-protocol#handling-the-terms-url-union): `read`,
+`no-field-declared`, `declared-fields-empty`.
+
+## `lcp_scaffold_integration`
+
+**Input** — `target`: `seller` or `buyer`. Returns starter code. Touches nothing.
+
+## Annotations
+
+Every tool carries `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, with
+`openWorldHint` true for exactly the three that fetch.
+
+**Stating them is load-bearing, not decoration.** MCP's defaults are `readOnlyHint: false`,
+`destructiveHint: true`, `idempotentHint: false`, `openWorldHint: true` — so an *unannotated* tool reads
+to a client as possibly destructive, possibly non-idempotent, and open to an arbitrary external world.
+Silence would actively misdescribe these.
+
+`destructiveHint: false` is stated even though `readOnlyHint: true` formally makes it not-meaningful. The
+specification says it is meaningful only when `readOnlyHint === false`; it does not require a client to
+consult `readOnlyHint` first, and a client reading `annotations.destructiveHint` directly would otherwise
+inherit the `true` default. Stating it closes that read at no cost.
+
+### There is no annotation meaning "legally significant"
+
+LCP §C.9 says annotations "such as `destructiveHint` and `openWorldHint` signal that LCP-aware tools
+perform legally significant actions". MCP defines `destructiveHint` as *may perform destructive updates to
+its environment* — something narrower and different.
+
+Repurposing one to imply legal significance would assert something no client can read. So these
+annotations say what MCP defines them to say, and the legal significance is carried where a client
+actually reads it: in each tool's `description`.
+
+<Callout type="warn">
+MCP requires clients to consider tool annotations **untrusted** unless they come from trusted servers.
+These are hints a server asserts about itself. They are not a security control, and nothing here treats
+them as one.
+</Callout>

@@ -1,0 +1,9 @@
+name = "integra-agentic-terms"
+compatibility_date = "2026-08-26"
+pages_build_output_dir = "out"
+
+# Read by functions/_middleware.ts. "true" folds integra-agentic-terms.pages.dev into the canonical
+# host with a 301. Leave "false" until agenticterms.integraledger.com is attached to this project
+# and answering — with no apex, the alias is the only host that serves.
+[vars]
+CANONICAL_HOST_ATTACHED = "true"

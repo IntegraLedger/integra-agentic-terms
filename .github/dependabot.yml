@@ -1,0 +1,120 @@
+# Automated dependency updates.
+#
+# Action pins drift silently without it: manual sweeps only happen when someone goes looking.
+#
+# Dependabot rather than Renovate: Renovate needs its GitHub App installed on the org before a config file
+# does anything at all, and a config that silently does nothing is worse than no config. Dependabot is
+# native, so this file takes effect on merge.
+#
+# THE 24h QUARANTINE STILL GOVERNS. `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440`, enforced at
+# INSTALL time — so even if Dependabot opens a PR for a release minutes old, `pnpm install` refuses it and
+# the PR fails CI until the release is 24h old. That is why the CI workflows must keep running on
+# Dependabot's branches: a red build is what holds the quarantine, and a workflow that does not fire on
+# `dependabot/**` silently removes it. The `/website` entry below installs with npm, which has no
+# release-age setting, so its quarantine is Dependabot's own `cooldown` instead.
+#
+# ⛔ SECURITY UPDATES FOR TRANSITIVE DEPENDENCIES DO NOT WORK, and the failure mode is a FALSE NEGATIVE.
+# Dependabot cannot author a pnpm `overrides:` entry, so a transitive dependency it cannot reach through a
+# direct manifest reads to it as unfixable — and it reports that as `security_update_not_possible` with a
+# `latest-resolvable-version` equal to the version already installed and an EMPTY conflicting-dependencies
+# list. That verdict means "Dependabot cannot do this". It never means "this cannot be done". Check every
+# such report by hand; a one-line override in `pnpm-workspace.yaml` usually resolves it.
+#
+# The `github-actions` ecosystem below is unaffected by that limitation.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for the routine action bumps — they move together and reviewing them apart is noise.
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      dev-tooling:
+        patterns:
+          - "@biomejs/*"
+          - "@stryker-mutator/*"
+          - "dependency-cruiser"
+          - "publint"
+          - "@arethetypeswrong/*"
+        update-types: ["minor", "patch"]
+      # ONE PR PER PROTOCOL RELEASE, not ten. The `lcp-*` packages are versioned in lockstep and
+      # `check:wire` refuses a tree exercising more than one line, so ten separate PRs would each be red
+      # until the last one merged — an inseparable set presented as ten independent decisions.
+      protocol-line:
+        patterns: ["@integraledger/lcp-*"]
+    ignore:
+      # ⛔ MEASURED 2026-08-25, and the answer is that a catalog dependency CANNOT be updated by Dependabot
+      # at all. The comment here used to say "partly inert … check a batch of PRs and record the answer
+      # rather than assuming". A batch has now run. Every manifest reference to these five is the literal
+      # string `catalog:`, and the version lives in `pnpm-workspace.yaml`, which Dependabot does not edit.
+      # So it rewrites the MANIFEST to a real version, the lockfile still records the specifier as
+      # `catalog:`, and every downstream job dies at install:
+      #
+      #     ERR_PNPM_OUTDATED_LOCKFILE … specifiers in the lockfile don't match specifiers in package.json
+      #     - vitest (lockfile: catalog:, manifest: 4.1.11)
+      #
+      # That is not a mergeable PR that needs review; it is an unmergeable PR by construction, and left
+      # ungated it puts a permanent red run beside the real ones — which is how a red build stops carrying
+      # information. Bump these by editing the catalog in `pnpm-workspace.yaml` by hand.
+      - dependency-name: "vitest"
+      - dependency-name: "zod"
+      - dependency-name: "@modelcontextprotocol/*"
+      # @types/node is catalog-managed too, AND is FLOOR-pinned to `engines.node` on purpose: the types must
+      # never describe APIs the oldest supported runtime lacks, or code typechecks against something that is
+      # not there at runtime. A major bump here follows raising the engines floor — never the other way
+      # around, and never automatically.
+      - dependency-name: "@types/node"
+      # ⛔ THE PROTOCOL LINE IS NOT IGNORED HERE ANY MORE, AND THE REASON IT WAS IS WORTH KEEPING.
+      # It was ignored on the grounds that "a bump is a decision, not a merge" — which is true, and was the
+      # wrong conclusion. A Dependabot PR IS the decision: it does not merge itself, it arrives with the
+      # full chain already run against the bumped tree on its own branch, and a person still has to push it.
+      # What the ignore actually removed was the NOTIFICATION. Two protocol releases shipped while this
+      # repository sat pinned to an earlier one, and nothing here could say so — noticing depended entirely
+      # on someone remembering to look.
+      #
+      # The old justification also cited a control that did not hold: "`check:wire` fails the build if the
+      # identities moved". It could not detect a moved identity caused by the installed tree drifting from
+      # the pin, and it failed loudly on version bumps where NO identity moved. Both are fixed, and the
+      # version no longer sits in the seal at all — so a bump PR is now silent unless something real changed.
+      #
+      # ⚠️ WATCH THE PEER RANGE ON THESE PRs. Dependabot updates `peerDependencies` like any other field, so
+      # it will propose `^0.12.0 → ^0.12.2`, which RAISES the floor and strands consumers on earlier
+      # patches of the same line. `check:wire` refuses any protocol range that is not `^X.Y.0`, so such a PR
+      # fails on its own branch rather than on review attention.
+    commit-message:
+      prefix: "chore"
+
+  # The documentation site has its own npm lockfile and is not a workspace member, so the entry above
+  # never sees it. Next and Fumadocs move in lockstep (Fumadocs pins the Next major), so they arrive as
+  # one PR rather than two that are each red without the other.
+  - package-ecosystem: npm
+    directory: "/website"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 1
+    groups:
+      site-framework:
+        patterns: ["next", "react", "react-dom", "fumadocs-*", "@types/react", "@types/react-dom"]
+      site-tooling:
+        patterns: ["tailwindcss", "@tailwindcss/*", "typescript", "@types/*", "@cloudflare/workers-types", "server-only"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Floor-pinned to `engines.node`, for the reason given on the root entry above.
+      - dependency-name: "@types/node"
+    commit-message:
+      prefix: "chore(website)"

@@ -1,0 +1,92 @@
+---
+title: Security
+description: What the shipped fetcher enforces, why the URL it fetches is hostile input, and the one limitation stated rather than hidden.
+---
+
+The buyer fetches a URL the **seller** chose, off a challenge the seller sent. That makes the terms
+fetcher a boundary between your agent's HTTP client and your own network, and it is why
+`makeCachingFetcher` exists rather than a bare `fetch`.
+
+## What the fetcher enforces
+
+| Rule | Why |
+|---|---|
+| **HTTPS only** | a non-HTTPS terms URL is refused before any request is made |
+| **`redirect: "error"`** | a redirect to a non-HTTPS or internal host fails loudly rather than being followed silently |
+| **Every resolved address must be public unicast** | the naive "name resolves to a private IP" case is blocked outright |
+| **Re-checked on every network fetch** | an expiring cache entry must not grandfather a host |
+| **A streaming byte cap** | plus a `Content-Length` pre-check |
+| **LCP §2.6 cache discipline** | re-fetch after expiry is a MUST and is unconditional |
+
+The public-unicast predicate is `@integraledger/lcp-evidence`'s — the one implementation. This package
+does not re-derive it.
+
+### The byte cap is enforced while streaming
+
+Reading the whole body and measuring afterwards protects the *check* but not the *memory*, and a chunked
+response with no declared length is exactly the case the cap exists for. So the cap is applied as chunks
+arrive, and the reader is cancelled the moment it is exceeded.
+
+The declared-length pre-check is an additional early refusal, not the mechanism.
+
+### IPv6 literals
+
+Brackets are URL syntax, not address syntax. `new URL("https://[::1]/x").hostname` is `"[::1]"`, and a DNS
+resolver answers that with `ENOTFOUND` — so a loopback literal would be refused for the right *outcome*
+and the wrong *reason*, and a legitimate **public** IPv6 literal would be refused identically.
+
+The fetcher normalizes the bracketed form before resolution, so a literal reaches the guard as an address
+and gets the answer it deserves — and every `HostLookup` port inherits that rather than having to repeat
+it.
+
+## The limitation, stated
+
+<Callout type="warn">
+**DNS rebinding is not closed.** The guard validates what `lookup` returns, but `httpFetch` performs its
+own resolution, and nothing pins the connection to the validated address.
+
+This is real defense-in-depth — the naive name-to-private-IP case is blocked outright — but it is **not a
+complete guarantee**. Closing it needs connection-level IP pinning inside the injected `httpFetch`.
+</Callout>
+
+That limitation is carried verbatim from the evidence package's resolver, and it is stated here rather
+than discovered because a security property you half-have is worse than one you know the shape of.
+
+## The ports are a trust boundary
+
+`GatePorts` is not merely a seam for testing.
+
+`fetcher` decides which bytes the fingerprint is recomputed over, so **a fetcher that returns the wrong
+body defeats verification completely**. `now` dates every entry in the record.
+
+This is not a weakness to fix — injection is what keeps the guard viem-free and runnable off Node — but it
+is a property worth stating. Use the shipped fetcher unless you have a specific reason not to, and hold
+your ports to the standard you hold the key they protect.
+
+## The prompt-injection boundary
+
+Terms documents are attacker-influenced text, and the typed proposal **cannot carry prose**. See
+[the typed proposal](/typed-proposal) — the boundary is architectural rather than a matter of discipline.
+
+## Failing closed is not the same as failing well
+
+The gate **catches** the terms fetch rather than letting it throw. Every failure the fetcher raises is
+counterparty-reachable — a 404, a TLS error, an over-cap body, a private-address host — and each has to
+arrive as a value you can act on.
+
+A throw would fail closed, since the signer is unreachable on any path that does not reach a Proceed. But
+the buyer would get an exception where it needed a `haltClass`, a `code`, and a sentence naming which
+failure occurred. This package's own security policy names that difference as a defect rather than as
+acceptable behaviour.
+
+## The MCP server inherits all of it
+
+`nodePorts` wires the same fetcher. The URLs that server fetches are chosen by a counterparty, so bare
+`fetch` there would turn `lcp_verify_before_pay` into an SSRF primitive an agent can be talked into aiming
+anywhere.
+
+## Reporting
+
+Vulnerability reporting is covered by
+[`SECURITY.md`](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/SECURITY.md) in the
+repository.

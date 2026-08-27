@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Stryker mutation testing: sandbox + generated reports
+**/.stryker-tmp/
+reports/
+
+# macOS Finder metadata
+.DS_Store
+
+# `check:runtime`'s scratch consumer: a packed tarball installed with npm, rebuilt from scratch on every
+# run. Never edit it — `scripts/runtime-consumer.mjs` deletes and recreates it.
+.runtime-consumer/

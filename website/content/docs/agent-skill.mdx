@@ -1,0 +1,58 @@
+---
+title: The agent skill
+description: A plain-markdown Agent Skill for an agent about to pay — no dependency on either package.
+---
+
+[`skills/verifying-terms-before-paying`](https://github.com/IntegraLedger/integra-agentic-terms/tree/main/skills/verifying-terms-before-paying)
+is an Agent Skill: plain markdown, with **no dependency on anything in this repository**. Copy the
+directory into wherever your tool reads skills from.
+
+It is for an agent that is about to pay and wants to know whether the terms it read are the terms the
+seller committed to.
+
+## Why it exists
+
+Because the failure is not the one people expect. Agents handed a fingerprint that disagrees already halt,
+reliably and unprompted. What they do instead is treat a seller who advertised **no** fingerprint as
+nothing to check — and then hash the bytes themselves and call the gap closed, which records what they saw
+and binds the seller to nothing.
+
+The skill's job is to make that specific move feel wrong. See [why](/why).
+
+## The rationalizations it names
+
+The skill carries a table of them, because a policy an agent can talk itself out of is not a policy:
+
+| Rationalization | Reality |
+|---|---|
+| "It's only $49 — binding is disproportionate here" | The amount bounds your loss, not whether you know what you agreed to. Cheap purchases are where unread auto-renewals live. |
+| "I'll hash it myself and store that" | Records what you saw. Binds the seller to nothing. Not verification. |
+| "The vendor is legitimate and it's served over TLS" | TLS authenticates the channel at fetch time. It says nothing about what the document says tomorrow. |
+| "The terms read fine — nothing unusual in them" | You read *a* document. Without a commitment there is nothing establishing it is the one governing your payment. |
+| "I'll close the evidentiary gap myself" | The gap is the seller's missing commitment. You cannot close it from your side. |
+
+## The red flags
+
+Stop and say *unverified* rather than *verified* when:
+
+- you computed the only hash in the transaction
+- the words "low-stakes", "routine" or "proportionate" are load-bearing in your reasoning
+- you are describing what you would do *instead of* verification as though it were verification
+
+## What it points at
+
+`lcp_verify_before_pay`, from the [MCP server](/mcp). Give it the service origin; it fetches the discovery
+document and the terms it points at, recomputes the fingerprint, and answers:
+
+| `verdict` | Means | `wouldHalt` |
+|---|---|---|
+| `verified` | served terms hash to the advertised fingerprint | false |
+| `mismatch` | they do not — the document was changed, swapped or stale | **true** |
+| `unverifiable` | nothing was committed, or the terms are not machine-readable | **true** |
+
+Run it with `npx -y @integraledger/lcp-mcp-server`. It never signs, never pays, and never holds a key.
+
+## Out of scope
+
+Whether the price is good, which offer to take, whether to negotiate, and whether to buy at all. The skill
+answers one question — *are these the terms the seller committed to* — and nothing about how you trade.

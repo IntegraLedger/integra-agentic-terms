@@ -1,0 +1,73 @@
+{
+  "name": "@integraledger/lcp-mcp-server",
+  "version": "0.12.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "lcp-mcp": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IntegraLedger/integra-agentic-terms.git",
+    "directory": "packages/lcp-mcp-server"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@integraledger/agentic-terms": "workspace:*",
+    "@integraledger/lcp-authority": "^0.14.0",
+    "@integraledger/lcp-binding-core": "^0.14.0",
+    "@integraledger/lcp-discovery": "^0.14.0",
+    "@integraledger/lcp-evidence": "^0.14.0",
+    "@integraledger/lcp-kernel": "^0.14.0",
+    "@integraledger/lcp-placement-ack": "^0.14.0",
+    "@integraledger/lcp-placement-ap2": "^0.14.0",
+    "@integraledger/lcp-placements": "^0.14.0",
+    "@integraledger/lcp-verify": "^0.14.0",
+    "@modelcontextprotocol/server": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "catalog:",
+    "@types/node": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "description": "Read-only Model Context Protocol server exposing Legal Context Protocol tools to an AI agent — verify before pay, compute an atrHash, extract and place references across the nine commerce protocols that have one. Works against any seller.",
+  "keywords": [
+    "lcp",
+    "legal-context-protocol",
+    "mcp",
+    "model-context-protocol",
+    "agentic-commerce",
+    "ai-agent",
+    "verify-before-pay",
+    "tools"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "bugs": {
+    "url": "https://github.com/IntegraLedger/integra-agentic-terms/issues"
+  },
+  "homepage": "https://github.com/IntegraLedger/integra-agentic-terms/tree/main/packages/lcp-mcp-server#readme"
+}

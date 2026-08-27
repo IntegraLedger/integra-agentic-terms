@@ -1,0 +1,53 @@
+{
+  "capability": {
+    "LCP_CAPABILITY_NAME": "com.integraledger.legal_context",
+    "LEGAL_CONTEXT_WELL_KNOWN_PATH": "/.well-known/legal-context.json"
+  },
+  "placements": {
+    "a2a": {
+      "field": "metadata.legalContext",
+      "encoding": "reference-object",
+      "tier": "A"
+    },
+    "ack": {
+      "field": "credentialSubject.metadata.legalContext",
+      "encoding": "reference-object",
+      "tier": "A"
+    },
+    "acp": {
+      "field": "metadata.legal_context",
+      "encoding": "lcp-string",
+      "tier": "A"
+    },
+    "ap2": {
+      "field": "metadata.legalContext",
+      "encoding": "reference-object",
+      "tier": "A"
+    },
+    "mastercard-vi": {
+      "field": "constraints[type=dev.seal.lcp_terms_hash].value",
+      "encoding": "bare-value",
+      "tier": "B"
+    },
+    "mpp": {
+      "field": "methodDetails.atrHash",
+      "encoding": "bare-value",
+      "tier": "A"
+    },
+    "ucp": {
+      "field": "policies[type=com.integraledger.policy.legal_context]",
+      "encoding": "reference-object",
+      "tier": "A"
+    },
+    "visa-tap": {
+      "field": "headers.x-lcp-hash",
+      "encoding": "bare-value",
+      "tier": "A"
+    },
+    "x402": {
+      "field": "extensions.legalContext.info",
+      "encoding": "reference-object",
+      "tier": "A"
+    }
+  }
+}

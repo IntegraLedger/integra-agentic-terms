@@ -1,0 +1,85 @@
+---
+title: ACP
+description: The checkout session, the row typed `total`, and the overlap with UCP that makes detection refuse.
+---
+
+```ts
+import { parseProposalFromAcpCheckout } from "@integraledger/agentic-terms";
+
+declare const session: unknown; // the ACP checkout session
+
+const proposal = parseProposalFromAcpCheckout(session, {
+  level: 3,
+  sellerAssurance: "domain-controlled",
+});
+```
+
+Also reachable through [`parseProposalUniversal`](/protocols#the-coverage-table), when the session does
+not also match UCP's discriminant.
+
+## The document
+
+The session object is **top level**, and `totals` is an **array**. There is no `checkout` wrapper and no
+`total` string.
+
+| Field | Role |
+|---|---|
+| `metadata.legal_context` | the reference, as a canonical `lcp:sha256:0x…` string |
+| `metadata.legal_context_url` | the terms document for **this transaction** |
+| `totals[]` | typed rows — `items_base_amount`, `tax`, `fee`, `discount`, `total` |
+| `currency` | the offer unit, an ISO 4217 code |
+
+`legal_context_url` is the field the ACP placement manifest declares as its terms-URL slot, which is what
+makes the round trip compose: the field this parser demands is the field a placement writes.
+
+<Callout type="info">
+It is deliberately **not** read from ACP's native `links[type=terms_of_use]`. That link is the merchant's
+standing policy page; `legal_context_url` names the terms document for this transaction. Falling back to
+one would substitute it for the other.
+</Callout>
+
+## The row typed `total`
+
+The offer amount comes from the row whose `type` is `total` — **never** the first row, and never a sum.
+
+There is deliberately no fallback. A session with no `total` row is malformed, and picking another row
+would gate you against a number nobody quoted. The amount must be a non-negative safe-integer minor unit.
+
+## The reference is decoded, never sliced
+
+`metadata.legal_context` is decoded through the binding codec rather than by slicing a prefix. The codec
+enforces the canonical `sha256` carrier form, so a bare-digits value throws here instead of being silently
+re-prefixed into something that looks valid.
+
+There is no second `0x`-and-64-hex re-check afterwards, and the asymmetry with the x402 parser is the
+point rather than an oversight: the codec's own validation for a `sha256` carrier *is* the kernel's ATR
+hash predicate. A second copy could not reject anything the decode admitted — it would be a branch no
+input reaches. The x402 parser carries its own check because it reads a **raw** `extra.atrHash` string
+that no codec has validated.
+
+## Detection, and the UCP overlap
+
+The ACP discriminant is four facts together:
+
+- `status` is one of the closed **eleven-value** enum
+- `currency` is a string
+- `totals` is an array
+- `line_items` is an array
+
+The eleven values are `incomplete`, `not_ready_for_payment`, `requires_escalation`,
+`authentication_required`, `ready_for_payment`, `pending_approval`, `complete_in_progress`, `completed`,
+`canceled`, `in_progress`, `expired`.
+
+A UCP checkout response shares `id`, `status`, `currency`, `totals` and `line_items` with an ACP session.
+Where a document satisfies both discriminants, `detectProtocol` returns `undefined` and
+`parseProposalUniversal` **refuses as ambiguous**, naming both protocols. Call the parser you mean.
+
+This overlap is *contingent* on the document — unlike the AP2/A2A one, which always fires. See
+[ambiguity refuses](/protocols#ambiguity-refuses).
+
+<Callout type="warn">
+The eleven-value enum is hand-kept. It was once pinned against the placement's own write condition, but
+the protocol line no longer declares one for ACP, so there is nothing published to pin against — and an
+assertion over an absent field guards nothing. Re-derive it against the live ACP schema when touching it;
+the discriminant tests prove only that it matches the fixtures.
+</Callout>

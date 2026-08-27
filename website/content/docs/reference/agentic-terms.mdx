@@ -1,0 +1,192 @@
+---
+title: "@integraledger/agentic-terms"
+description: Every export of the buyer-side guard, grouped by what it is for.
+---
+
+```bash
+npm install @integraledger/agentic-terms
+```
+
+Node ≥ 24. ESM only. Peers the `@integraledger/lcp-*` protocol line at `^0.14.0`.
+
+## Gating a transaction
+
+### `transact(proposal, policy, ports, signer)`
+
+Verify-before-sign as a runtime gate. Evaluates the proposal and invokes the signing key **only** when the
+decision is `proceed`.
+
+Returns `TransactResult`: `{ kind: "signed", signature, atrHash }` or `{ kind: "halted", decision }`.
+
+### `evaluate(proposal, policy, ports)`
+
+The decision on its own — no signer involved. Returns a `GateDecision`.
+
+### `GatedSigner`
+
+```ts
+import type { GatedSigner } from "@integraledger/agentic-terms";
+
+declare const signer: GatedSigner;
+// signer.sign(verifiedAtrHash) => Promise<{ signature: `0x${string}` }>
+```
+
+Reached only on Proceed. The gate binds the `atrHash` it verified; the signer signs *through* its own
+authority artifact by its own contract, never a bare hash.
+
+### `GatePorts`
+
+`{ fetcher, now, log? }` — see [ports](/ports).
+
+## The decision model
+
+### `GateDecision`
+
+A discriminated union: `{ kind: "proceed" }`, `{ kind: "decline", haltClass, code, detail }`, or
+`{ kind: "escalate", bytes, hash, reason }`.
+
+### `decideOutcome(status, gaps)`
+
+The total map from a four-valued `StepStatus` onto a `Disposition`. See
+[statuses and dispositions](/dispositions).
+
+### `foldDispositions(dispositions)`
+
+Decline dominates, then escalate, else proceed.
+
+### `StepStatus` · `Disposition`
+
+`"proved" | "failed" | "indeterminate" | "not-attempted"` and
+`"proceed" | "decline" | "escalate"`.
+
+## Policy
+
+### `BuyerPolicy`
+
+Your stated risk posture. Field by field: [buyer policy](/buyer-policy).
+
+### `evaluatePolicy(policy, terms, offer)`
+
+Evaluates policy on the **typed** legal-context envelope and the typed offer — never on prose.
+
+### `PolicyResult`
+
+What `evaluatePolicy` returns: `{ ok: true }`, or `{ ok: false, code, detail }` naming the refusal. The
+codes are listed under [decline codes](/decline-codes).
+
+## Parsing a proposal
+
+### `parseProposalFromChallenge(challenge, ctx)`
+
+x402. [Details](/protocols/x402).
+
+### `parseProposalFromAcpCheckout(session, ctx)`
+
+ACP. [Details](/protocols/acp).
+
+### `parseProposalFromAp2Envelope(envelope, ctx)`
+
+AP2 — takes an `Ap2ProposalContext`, which additionally carries `legalContextUrl`, `offer` and `step`.
+[Details](/protocols/ap2).
+
+### `parseProposalFromMppRequest(request, ctx)`
+
+MPP, by name. [Details](/protocols/mpp).
+
+### `parseProposalUniversal(wire, ctx)`
+
+Detects the protocol and routes. Reaches x402 and ACP. Refuses on an unidentifiable wire, an **ambiguous**
+wire, a protocol whose offer this build cannot read, and any refusal from the parser it routes to.
+
+There is no "try them all and take the first that works" path — that is a fallback chain, and it would let
+a malformed document of one protocol be silently reinterpreted as a valid document of another.
+
+### `GateProposal` · `ProposalContext` · `Ap2ProposalContext`
+
+See [the typed proposal](/typed-proposal).
+
+### `PROPOSAL_PARSERS` · `parseableProtocols()`
+
+The dispatch map, frozen, and the protocols it covers. Frozen because a published package is consumed as
+JavaScript, where the type alone does not stop a consumer swapping the parser that decides what a buyer is
+agreeing to.
+
+### `ProposalParser`
+
+The shape every entry in that map has: `(wire: unknown, ctx: ProposalContext) => GateProposal`.
+
+## Reading any protocol
+
+### `readAdvertisedTerms(protocol, wire, deployment?)`
+
+Universal across all nine registered protocols.
+[Details](/protocols/reading-any-protocol).
+
+### `detectProtocol(wire)` · `matchProtocols(wire)`
+
+`matchProtocols` returns **every** protocol whose discriminant fires. `detectProtocol` returns the single
+match, or `undefined` when zero or more than one matched.
+
+### `PROTOCOL_DISCRIMINANTS`
+
+The discriminant table as data — each row carries its rule (or the recorded fact that it cannot have one)
+and a **citation** to the host specification it was derived from.
+
+### `AdvertisedTerms` · `AdvertisedTermsUrl` · `ProtocolDiscriminant`
+
+### `ACP_SESSION_STATUS` · `VI_OPEN_MANDATE_VCT`
+
+Enumerations derived from the host specifications. Both are hand-kept — re-derive against the live schema
+when touching them.
+
+## Fetching
+
+### `makeCachingFetcher(config)`
+
+The HTTPS-only, SSRF-guarded, size-capped, LCP §2.6-cached terms fetcher. See [security](/security).
+
+### `nodeDnsLookup`
+
+`node:dns/promises` as a `HostLookup`. Imported **lazily**, so a build that never calls it never pulls
+`node:dns` in.
+
+### `TermsFetcher` · `FetchedTerms` · `HostLookup` · `ResolvedAddress` · `CachingFetcherConfig`
+
+## Fingerprints
+
+### `recomputeAndCompare(bytes, advertisedAtrHash)`
+
+The core comparison. Returns `{ status: "proved", atrHash }` or
+`{ status: "failed", haltClass, recomputed, advertised }`.
+
+### `FingerprintOutcome`
+
+## Recording
+
+### `InMemoryOrc4Log` · `Orc4Log` · `Orc4Entry`
+
+A real, complete in-memory sink and its one-method interface. Every entry carries `legalContextUrl`
+alongside `atrHash` — see [why](/ports#log).
+
+## Post-settlement
+
+### `verifySettled(ref, adapter, ports)`
+
+Turns a settled receipt into a transaction record. The chain reader is injected, which is what keeps the
+guard viem-free. [Details](/verify-before-sign#post-settlement-verification).
+
+### `MechanicalPorts`
+
+## AP2 flow control
+
+### `AP2_HALT_POINT` · `Ap2HaltPoint` · `Ap2Step`
+
+### `isAp2SigningStep(step)` · `assertBeforeAp2HaltPoint(step)`
+
+See [AP2](/protocols/ap2).
+
+## ACK-Pay receipts
+
+### `parseAckReceipt(credential)` · `ackReceiptContribution(facts)`
+
+### `ACK_DID_METHODS` · `AckReceiptFacts` · `AckReceiptContribution`

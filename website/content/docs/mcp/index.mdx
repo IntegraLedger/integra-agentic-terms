@@ -1,0 +1,106 @@
+---
+title: MCP server
+description: A read-only Model Context Protocol server that gives any agent host legal-context capability with no per-platform integration.
+---
+
+`@integraledger/lcp-mcp-server` is the LCP delivery surface for MCP. An agent host that already speaks the
+Model Context Protocol gains legal-context capability with **no per-platform integration** — and the same
+server works whichever commerce protocol the agent is transacting under, because where a reference belongs
+is the placement registry's decision, not this server's.
+
+```bash
+npm install @integraledger/lcp-mcp-server
+```
+
+> Every tool is **read-only** and works against **any** counterparty's documents — whether or not they use
+> Integra software. Nothing here calls home: no telemetry, no callback.
+
+## Run it over stdio
+
+Which is what every desktop agent host speaks:
+
+```jsonc
+// .mcp.json
+{
+  "mcpServers": {
+    "lcp": { "command": "npx", "args": ["-y", "@integraledger/lcp-mcp-server"] }
+  }
+}
+```
+
+## Or mount it yourself
+
+```ts
+import {
+  createLcpMcpServer,
+  nodePorts,
+  serveLcpStdio,
+} from "@integraledger/lcp-mcp-server";
+
+const ports = nodePorts(process.env);
+
+serveLcpStdio(ports); // stdio, ports wired for Node
+const server = createLcpMcpServer(ports); // or build one and connect any MCP transport
+```
+
+`createLcpMcpServer` is a **factory, not a singleton**, because that is what the transports want: they may
+build one instance per connection. Handing them a shared instance would make one client's state another's.
+
+## Ports
+
+`LcpMcpPorts` has no defaults, and both entries are the reason.
+
+### `fetcher`
+
+The buyer gate's own [`makeCachingFetcher`](/ports): HTTPS-only, `redirect: "error"`, every resolved
+address checked public unicast on *every* network fetch, body capped while streaming, LCP §2.6 cache
+discipline.
+
+The URLs this server fetches are chosen by a **counterparty**. Bare `fetch` here would turn
+`lcp_verify_before_pay` into an SSRF primitive an agent can be talked into aiming anywhere. That is not
+hardening — it is the minimum.
+
+### `deployment.reverseDomain`
+
+Optional, and absent by default. Only namespaced placements need it — Mastercard VI's custom Layer-2
+constraint type.
+
+LCP §8 canonizes no per-protocol integration profile, so a default would write *our* domain into someone
+else's signed document in every deployment that forgot to set it. Set `LCP_MCP_REVERSE_DOMAIN` and
+`nodePorts` passes it through; unset, that one placement throws and names what is missing, and every other
+tool is unaffected.
+
+## The LCP capability declaration
+
+The server declares an LCP extension capability in its constructor, carrying the specification version the
+stack implements.
+
+That is deliberately asserted rather than derived. `tools` is left to the registrations because the SDK
+derives it — restating it in the constructor would be a second statement of a fact something else owns. An
+extension has no such deriver: nothing about registering a tool implies this server speaks LCP, so the
+constructor is the only place the declaration can come from.
+
+Both values are **imported**, never spelled locally: the identifier is a wire identity a counterparty must
+recognize, and the specification version is the kernel's own answer to which revision this stack
+implements.
+
+## One protocol line in the tree
+
+This server declares the protocol line as a **caret at the minor's zero patch**, and `agentic-terms` peers
+it the same way. That is what puts **one** line of the protocol packages in `node_modules` when you install
+both: the two ranges overlap, so a package manager resolves a single copy satisfying each.
+
+An exact runtime pin would do the opposite — it cannot be satisfied by the sibling's range, so the
+resolver nests a second copy underneath, and the two halves of one install then read different protocol
+code.
+
+If a mixed install ever does put two lines in one tree, **the seam stays safe**. What this package takes
+from `agentic-terms` is the fetcher and nothing else: `makeCachingFetcher`, `nodeDnsLookup`, and the
+`TermsFetcher` type — whose entire vocabulary is `fetch(url: string)` in, `{ bytes, format, fetchedAt }`
+out, plus a `{ address, family }` DNS answer. Not one of those names a protocol type in either direction,
+so two lines never exchange a value.
+
+## Next
+
+- **[The six tools](/mcp/tools)** — inputs, outputs, and what each one refuses.
+- **[The boundary](/mcp/boundary)** — the five tools that are not here, and will not be.
