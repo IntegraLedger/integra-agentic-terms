@@ -29,16 +29,13 @@ export default function AppleIcon() {
         role="img"
         aria-label="Integra Agentic Terms"
       >
+        <rect x="3" y="3" width="42" height="42" rx="9" fill="#2563d9" />
         <path
-          d="M 24 3 L 42 9.5 V 23.7 C 42 34.7 34.7 42.7 24 46 C 13.3 42.7 6 34.7 6 23.7 V 9.5 Z"
-          fill="#2563d9"
-        />
-        <path
-          d="M 14.5 22.5 h 19 M 19.5 15.5 v 7 M 28.5 15.5 v 7 M 24 26.5 v 6"
+          d="M 3 24 h 10.5 v -5.5 h 10.5 v 11 h 10.5 v -5.5 H 45"
           fill="none"
           stroke="#ffffff"
-          strokeWidth="3.5"
-          strokeLinecap="round"
+          strokeWidth="4.5"
+          strokeLinejoin="round"
         />
       </svg>
     </div>,

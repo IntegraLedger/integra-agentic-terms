@@ -1,12 +1,19 @@
 /**
- * The site mark. The artwork is a shield with a gate across it — drawn for the
- * package's former name and NOT redrawn for this one. A shield says "guard",
- * which is the association the rename exists to leave behind, so this glyph is
- * inherited, not chosen. Replacing it is open work.
+ * The site mark: a document divided by a stepped cut.
+ *
+ * The indenture. A deed was written out twice on one sheet and cut apart along a
+ * toothed line; each party kept a half, and the teeth had to line up or the
+ * document in your hand was a forgery. That is what this package does — the
+ * fingerprint the seller advertised against the one recomputed over the bytes
+ * actually served — so the mark states the mechanism rather than a posture.
+ *
+ * The seam deliberately runs edge to edge, from x=6 to x=42, because a cut that
+ * stops short of the border is a decoration and a cut that crosses it is a cut.
  *
  * Inline SVG on `currentColor` rather than a pair of theme-swapped image files —
  * the mark has one colour, so a second asset would only be a second thing to
- * keep in sync with the palette.
+ * keep in sync with the palette. `icon.svg` and `apple-icon.tsx` carry the same
+ * geometry filled, because a stroked mark disappears at favicon size.
  */
 export function MarkIcon({
   size = 28,
@@ -25,23 +32,20 @@ export function MarkIcon({
       aria-label="Integra Agentic Terms"
       className={className}
     >
+      <rect
+        x="6"
+        y="6"
+        width="36"
+        height="36"
+        rx="7"
+        stroke="currentColor"
+        strokeWidth="3"
+      />
       <path
-        d="M 24 4.5 L 40.5 10.5 V 23.7 C 40.5 33.9 33.8 41.3 24 44.5 C 14.2 41.3 7.5 33.9 7.5 23.7 V 10.5 Z"
+        d="M 6 24 h 9 v -5 h 9 v 10 h 9 v -5 h 9"
         stroke="currentColor"
         strokeWidth="3"
         strokeLinejoin="round"
-      />
-      {/* The gate: the bar the transaction has to clear before a key is reachable. */}
-      <path
-        d="M 14.5 22.5 h 19"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <path
-        d="M 19.5 15.5 v 7 M 28.5 15.5 v 7 M 24 26.5 v 6"
-        stroke="currentColor"
-        strokeWidth="3"
         strokeLinecap="round"
       />
     </svg>
