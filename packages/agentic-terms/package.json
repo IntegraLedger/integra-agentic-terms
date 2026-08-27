@@ -59,7 +59,7 @@
     "vitest": "catalog:"
   },
   "license": "Apache-2.0",
-  "description": "Integra Agentic Terms — the buyer-side verify-before-sign guard for agentic purchases. Fetches the terms a seller advertised, recomputes the fingerprint, and halts before any signing key is invoked if they disagree. Works against any seller.",
+  "description": "Integra Agentic Terms — the buyer-side verify-before-sign gate for agentic purchases. Fetches the terms a seller advertised, recomputes the fingerprint, and halts before any signing key is invoked if they disagree. Works against any seller.",
   "keywords": [
     "lcp",
     "legal-context-protocol",

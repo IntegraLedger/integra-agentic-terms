@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 /**
- * Seal the protocol identities this guard reads off the wire, and refuse a peer range this repository has
+ * Seal the protocol identities this gate reads off the wire, and refuse a peer range this repository has
  * never tested against.
  *
  * WHY A GATE AND NOT A TEST. The identities here are not this package's to choose. `com.integraledger.
  * legal_context`, `/.well-known/legal-context.json`, and the field each commerce protocol carries a
  * reference in are the Legal Context Protocol's, and a seller's writer matches on exactly the same values
- * this guard's reader does. They arrive from `@integraledger/lcp-*` at whatever version is installed, so a
- * dependency bump can change what this guard looks for without changing a line of code in this repository.
+ * this gate's reader does. They arrive from `@integraledger/lcp-*` at whatever version is installed, so a
+ * dependency bump can change what this gate looks for without changing a line of code in this repository.
  *
  * A test suite cannot catch that, and the reason is structural rather than a gap in coverage: a fixture
  * asserting a constant is written against the same installed version the code reads it from, so both sides
@@ -16,7 +16,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
  * that does NOT move with the dependency is what makes the change visible.
  *
  * WHAT THE SEAL MEANS. Every value in `wire-identities.seal.json` is one a counterparty already has to know
- * to interoperate with this guard. A diff here is therefore a change to what a seller must write for this
+ * to interoperate with this gate. A diff here is therefore a change to what a seller must write for this
  * buyer to accept it — not a refactor, and not a version bump. Resealing with `pnpm seal:wire` is a
  * deliberate line in a diff a reviewer sees.
  *
@@ -273,7 +273,7 @@ if (line) {
       }
       fail.push(
         "the wire identities changed. Every value here is one a counterparty must already know to\n" +
-          "  interoperate with this guard, so this is a change to what a seller must write — not a refactor:\n" +
+          "  interoperate with this gate, so this is a change to what a seller must write — not a refactor:\n" +
           delta.slice(0, 40).join("\n") +
           "\n\n  If the change is intended, reseal with `pnpm seal:wire` and say so in the changeset.",
       );
@@ -285,13 +285,13 @@ if (line) {
   );
 }
 
-/* ---------- THREE: the range the DOCS state is the range the guard declares ---------- */
+/* ---------- THREE: the range the DOCS state is the range the gate declares ---------- */
 
 /**
  * ⛔⛔ **A PUBLISHED DOC STATING A PEER RANGE GOES STALE SILENTLY, AND TWO OF THEM HAD.** Measured the day
  * this rule landed: `website/content/docs/quickstart.mdx` and `docs/reference/agentic-terms.mdx` both told a
- * reader the guard peers `^0.13.0` while `package.json` declared `^0.14.0`. Nothing was red. These are the
- * PUBLIC install instructions — a reader following them pins a line the guard no longer peers, and
+ * reader the gate peers `^0.13.0` while `package.json` declared `^0.14.0`. Nothing was red. These are the
+ * PUBLIC install instructions — a reader following them pins a line the gate no longer peers, and
  * discovers it as an unmet-peer warning they did not cause.
  *
  * ⭐ **Derived from the manifest, never written here.** The expected range is read off `agentic-terms`'s own
@@ -352,7 +352,7 @@ if (line) {
           fail.push(
             `${page.slice(root.length)} states the protocol peer range as \`${m[1]}\`; agentic-terms declares ` +
               `\`${expected}\`.\n      These are install instructions: a reader following them pins a line the ` +
-              "guard does not peer.",
+              "gate does not peer.",
           );
     }
   }

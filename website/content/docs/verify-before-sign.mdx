@@ -47,7 +47,7 @@ resolves to a private address. Each arrives as a value you can act on — `gate/
 the fetcher's own message verbatim so you can tell *which* failure it was.
 
 It is classed `verification-failure`, not `policy-rejection`: no policy of yours rejected anything. The
-terms could not be obtained, so the fingerprint could not be recomputed, so the guard cannot say the
+terms could not be obtained, so the fingerprint could not be recomputed, so the gate cannot say the
 document is the one that was advertised — the same thing a mismatch says, arrived at one step earlier.
 
 </Step>
@@ -152,4 +152,4 @@ const report = await verifySettled(ref, adapter, ports);
 
 `verified` is raised **only** if the ATR bytes hash to the recovered on-chain hash and the class-required
 steps hold. A refused recovery leaves the settled hash absent, which makes the fingerprint indeterminate,
-which keeps `verified` false. The chain reader is injected, which is what keeps the guard viem-free.
+which keeps `verified` false. The chain reader is injected, which is what keeps the gate viem-free.

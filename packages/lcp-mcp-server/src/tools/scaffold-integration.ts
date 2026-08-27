@@ -119,7 +119,7 @@ Or call the \`lcp_verify_before_pay\` tool on this server, which does exactly th
 
 A hash check alone is not a policy. \`@integraledger/agentic-terms\` runs the whole ladder — required level,
 fingerprint, the buyer's stated policy over the TYPED envelope only, coverage gaps, seller assurance —
-and returns a decision that \`transact\` enforces against a guarded signer, so the key is unreachable on
+and returns a decision that \`transact\` enforces against a gated signer, so the key is unreachable on
 anything but Proceed:
 
 \`\`\`ts

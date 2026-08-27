@@ -45,13 +45,13 @@ all](/why).
 
 <Callout type="info">
 Two `atrHash` values are equal when their decoded 32-byte values are equal, so a conformant implementation
-compares the decoded bytes rather than the strings. The guard does; you get this for free unless you are
+compares the decoded bytes rather than the strings. The gate does; you get this for free unless you are
 writing your own comparison.
 </Callout>
 
 ## The guarantee
 
-The guard fetches the terms the seller advertised, recomputes that fingerprint over the bytes it was
+The gate fetches the terms the seller advertised, recomputes that fingerprint over the bytes it was
 actually served, and **halts before any signing key is invoked** if the two disagree.
 
 That last clause is the whole product. `transact` reaches your signer on exactly one path — a `proceed`
@@ -70,11 +70,11 @@ either package makes is fetching the terms the seller pointed you at, and it mak
 
 ## What it is not
 
-The guard decides whether terms are bound to a payment. It has no opinion on **how you pay**, and that
+The gate decides whether terms are bound to a payment. It has no opinion on **how you pay**, and that
 boundary is deliberate:
 
 - **It does not choose a payment requirement.** An x402 `accepts` array lists alternatives; which one to
-  pay is a matter of rails, balances and preference, and the guard does not pick for you. Narrow `accepts`
+  pay is a matter of rails, balances and preference, and the gate does not pick for you. Narrow `accepts`
   to the requirement you intend to pay before calling.
 - **It does not hold offer-expiry policy.** Whether a quote has gone stale is agent operations. Hold that
   in your own client and reach `transact` only when you still intend to pay.

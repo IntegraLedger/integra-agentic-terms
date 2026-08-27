@@ -50,7 +50,7 @@ const result = await transact(proposal, policy, { fetcher, now }, signer);
 // result.kind === "signed" only on Proceed.
 // On Decline or Escalate the signer is never called.`;
 
-const INSTALL = `npm install ${siteConfig.packages.guard.name}`;
+const INSTALL = `npm install ${siteConfig.packages.terms.name}`;
 
 const MCP_CONFIG = JSON.stringify(
   {
@@ -432,12 +432,12 @@ export default function HomePage() {
             <p className="mb-8 text-base text-fd-muted-foreground">
               On npm:{" "}
               <a
-                href={siteConfig.packages.guard.npm}
+                href={siteConfig.packages.terms.npm}
                 className="text-fd-primary hover:underline"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                {siteConfig.packages.guard.name}
+                {siteConfig.packages.terms.name}
               </a>{" "}
               &middot;{" "}
               <a

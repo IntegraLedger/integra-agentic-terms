@@ -6,7 +6,7 @@
   // still applies, because a fence a reader copies must compile under the same rules their code will.
   //
   // `types: ["node"]` matches what each package tsconfig declares. It narrows automatic @types inclusion
-  // rather than relaxing a check: a fence that imports the guarded fetcher reaches `node:dns/promises`
+  // rather than relaxing a check: a fence that imports the gateed fetcher reaches `node:dns/promises`
   // through `nodeDnsLookup`'s signature, and under `skipLibCheck: false` that resolution has to succeed.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {

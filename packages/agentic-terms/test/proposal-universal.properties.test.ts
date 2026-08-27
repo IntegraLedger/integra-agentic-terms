@@ -109,7 +109,7 @@ describe("proposal-universal — properties over arbitrary wire documents", () =
     fc.assert(
       fc.property(wires, (wire) => {
         // The claim under test is the absence of a throw, so this asserts on the CALL rather than on a
-        // returned value — a discriminant that threw would fail the whole guard open at its first read.
+        // returned value — a discriminant that threw would fail the whole gate open at its first read.
         expect(() => matchProtocols(wire)).not.toThrow();
         const matched = matchProtocols(wire);
         expect(Array.isArray(matched)).toBe(true);
@@ -172,7 +172,7 @@ describe("proposal-universal — properties over arbitrary wire documents", () =
         } catch {
           return; // refusing is always an acceptable answer; this asserts on what it RETURNS
         }
-        // The whole point of the guard is that this value is compared against a recomputed hash. A
+        // The whole point of the gate is that this value is compared against a recomputed hash. A
         // malformed one that reached the comparison would fail it — but a TRUNCATED or upper-cased one
         // could compare equal to something it should not, so the shape is part of the guarantee.
         if (read.advertisedAtrHash !== undefined)

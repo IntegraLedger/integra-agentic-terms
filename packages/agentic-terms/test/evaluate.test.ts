@@ -180,7 +180,7 @@ describe("a counterparty cannot make the gate throw", () => {
     if (decision.kind !== "decline") return;
     expect(decision.code).toBe("gate/terms-unfetchable");
     // NOT `policy-rejection`: no policy of the buyer's rejected anything. The terms could not be obtained,
-    // so the fingerprint could not be recomputed, so the guard cannot say the document is the advertised one.
+    // so the fingerprint could not be recomputed, so the gate cannot say the document is the advertised one.
     expect(decision.haltClass).toBe("verification-failure");
     // The fetcher's own message is carried through, because it names WHICH failure it was and that is the
     // only thing a buyer can report to the seller.
@@ -331,7 +331,7 @@ describe("evaluate — the ORC-4 entry each decision writes", () => {
 
 describe("evaluate — branches the decision tests did not reach", () => {
   it('requiredAssurance "any" waives the floor entirely', async () => {
-    // The `!== "any"` guard short-circuits before the comparison; without this the guard could be deleted
+    // The `!== "any"` guard short-circuits before the comparison; without this the gate could be deleted
     // and every "any" policy would start enforcing whatever the seller happened to state.
     const bytes = enc(validTermsJson);
     const decision = await evaluate(

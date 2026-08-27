@@ -18,7 +18,7 @@ CAR support from its index, which pulls the `multiformats` Node SHA-2 build, whi
 
 | Target | Works | How we know |
 |---|---|---|
-| Node | yes | **measured** — every release runs the guard's whole decision here |
+| Node | yes | **measured** — every release runs the gate's whole decision here |
 | Bun | yes | **measured** — same run, same assertions |
 | Deno | yes | **measured** — same run, same assertions |
 | Workers with `nodejs_compat` | yes — `node:crypto` is polyfilled | reasoned from the import graph, not measured |
@@ -31,7 +31,7 @@ The measured rows run against **the packed tarball**, installed the way you woul
 protocol line resolved from npmjs — not against the repository's own tree.
 
 **Both halves of the guarantee are asserted on each runtime**, and that pairing is the point: a runtime
-where the guard refused everything would pass a check that only looked for the halt. So each run asserts
+where the gate refused everything would pass a check that only looked for the halt. So each run asserts
 that tampered terms **halt with the signer never reached**, and that matching terms **sign with the signer
 reached exactly once**.
 
@@ -41,7 +41,7 @@ installs from npmjs, which does not belong in an inner loop. `pnpm check:runtime
 locally; Bun and Deno run only in CI. A green local `verify` does not cover them.
 </Callout>
 
-## What the guard actually needs
+## What the gate actually needs
 
 `fetch` and Web Crypto. Nothing else of its own.
 

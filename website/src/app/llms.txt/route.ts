@@ -15,11 +15,11 @@ export function GET() {
     "",
     `> ${siteConfig.description}`,
     "",
-    `Two Apache-2.0 packages — \`${siteConfig.packages.guard.name}\` and \`${siteConfig.packages.mcp.name}\` — implementing the buyer side of the ${siteConfig.standard.name} (${siteConfig.standard.short}): ${siteConfig.standard.specUrl}`,
+    `Two Apache-2.0 packages — \`${siteConfig.packages.terms.name}\` and \`${siteConfig.packages.mcp.name}\` — implementing the buyer side of the ${siteConfig.standard.name} (${siteConfig.standard.short}): ${siteConfig.standard.specUrl}`,
     "",
     `- Full documentation as one Markdown file: ${siteConfig.url}/llms-full.txt`,
     `- Source: ${siteConfig.githubUrl}`,
-    `- npm: ${siteConfig.packages.guard.npm} · ${siteConfig.packages.mcp.npm}`,
+    `- npm: ${siteConfig.packages.terms.npm} · ${siteConfig.packages.mcp.npm}`,
   ];
 
   let section: string | undefined;

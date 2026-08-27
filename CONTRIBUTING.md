@@ -1,6 +1,6 @@
 # Contributing
 
-This repository is the **buyer side** of the Legal Context Protocol: a guard that fetches the terms a
+This repository is the **buyer side** of the Legal Context Protocol: a gate that fetches the terms a
 counterparty advertised, recomputes their fingerprint, and halts before a signing key if they do not match —
 plus an MCP server that puts the same read-only tools into any agent host.
 
@@ -63,7 +63,7 @@ check:versions → check:commit-messages → check:wire → check:public-boundar
 ```
 
 ⚠️ **One gate is deliberately outside that chain.** `pnpm check:runtime` packs the tarball, installs it
-with npm as a consumer would, and drives the guard's whole decision against it — which needs the network
+with npm as a consumer would, and drives the gate's whole decision against it — which needs the network
 and does not belong in the inner loop. CI runs it as a matrix over **Node, Bun and Deno**, so it is a gate
 a green `verify` does not cover: `pnpm check:runtime` exercises the Node leg locally, and the other two run
 only in `ci.yml`. It exists because the runtime table in `packages/agentic-terms/README.md` is an enforced
@@ -71,7 +71,7 @@ claim and used to be an argument from the import graph instead of a measurement.
 
 Five of those are less obvious than the rest:
 
-- **`check:wire`** seals the protocol identities this guard reads — the discovery capability, the well-known
+- **`check:wire`** seals the protocol identities this gate reads — the discovery capability, the well-known
   path, and every placement's field, encoding and tier. A dependency bump that changes one fails here with a
   diff instead of shipping. If the change is intended, reseal with `pnpm seal:wire` and say so in the
   changeset. **The seal holds no version**, so a bump that moves no identity needs no reseal — that is what
@@ -92,7 +92,7 @@ Five of those are less obvious than the rest:
   someone force-pushes a public repository is a decision no gate should force.
 - **`check:runtime`** (CI-only, above) proves both halves of the guarantee on each runtime — tampered terms
   halt with the signer never reached, and matching terms sign with the signer reached exactly once. A
-  runtime where the guard refused everything would pass a check that only looked for the halt. It uses no
+  runtime where the gate refused everything would pass a check that only looked for the halt. It uses no
   test framework on purpose: running Vitest under Bun would measure Vitest's Bun support as much as ours.
 - **`check:vocab`** refuses an identifier a stranger cannot look up. Anything the published
   `@integraledger/lcp-*` packages already use resolves automatically — the allowed set is measured from the
@@ -126,7 +126,7 @@ construction. What tests the rest of the range is the scheduled **`protocol-late
 the line at `latest`, runs the full chain, and opens an issue on red. Dependabot proposes the bump itself,
 so the pin stays near `latest` and the untested part of the range stays narrow.
 
-Bumping the line is a decision about what this guard claims to interoperate with, taken with the seal in
+Bumping the line is a decision about what this gate claims to interoperate with, taken with the seal in
 hand.
 
 ## Security

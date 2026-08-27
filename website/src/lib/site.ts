@@ -17,7 +17,7 @@ export const siteConfig = {
   titleTemplate: "%s | Integra Agentic Terms",
   /** ≤155 chars so search results show the whole claim; leads with the value proposition. */
   description:
-    "Open-source buyer-side guard for agentic commerce: recomputes the seller's advertised LCP fingerprint over the terms as served and halts before your key.",
+    "Open-source buyer-side gate for agentic commerce: recomputes the seller's advertised LCP fingerprint over the terms as served and halts before your key.",
   keywords: [
     "Integra Agentic Terms",
     "agentic-terms",
@@ -43,7 +43,7 @@ export const siteConfig = {
   githubUrl: "https://github.com/IntegraLedger/integra-agentic-terms",
   /** The two published package names, in the order the docs introduce them. */
   packages: {
-    guard: {
+    terms: {
       name: "@integraledger/agentic-terms",
       npm: "https://www.npmjs.com/package/@integraledger/agentic-terms",
     },
@@ -56,7 +56,7 @@ export const siteConfig = {
    * The standard these packages implement the buyer side of.
    *
    * `LCP` is an acronym almost no reader arrives knowing, and this site leans on it constantly — for
-   * section references, trust levels, and the `atrHash` the whole guard is built around. So the expansion
+   * section references, trust levels, and the `atrHash` the whole gate is built around. So the expansion
    * and the link live here and are rendered in the persistent chrome (sidebar banner, nav, footer) rather
    * than being spelled out once in prose and assumed thereafter.
    */
@@ -128,7 +128,7 @@ export function webSiteJsonLd() {
  * because "what do I install" is the question this site exists to answer.
  */
 export function softwareJsonLd(version: string) {
-  return [siteConfig.packages.guard, siteConfig.packages.mcp].map((pkg) => ({
+  return [siteConfig.packages.terms, siteConfig.packages.mcp].map((pkg) => ({
     "@context": "https://schema.org",
     "@type": "SoftwareSourceCode",
     "@id": `${siteConfig.url}/#${pkg.name}`,

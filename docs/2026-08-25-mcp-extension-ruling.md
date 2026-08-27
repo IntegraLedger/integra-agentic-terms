@@ -158,7 +158,7 @@ with the distinction written down.
 ## 6. What this does NOT do — the fence holds
 
 Declaring an extension adds no tool, no parser, no protocol row, and no public surface; it is one field in
-a constructor. It does not touch `PROPOSAL_PARSERS` and does not grow the guard. Graceful degradation is
+a constructor. It does not touch `PROPOSAL_PARSERS` and does not grow the gate. Graceful degradation is
 automatic: our tools behave identically whether or not a client understands the extension, which is the
 "revert to core protocol behavior" branch the spec requires. **The blocker is a document, not a feature.**
 

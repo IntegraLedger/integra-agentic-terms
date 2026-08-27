@@ -1,5 +1,5 @@
 /**
- * Drive the guard's whole decision on whatever runtime is executing this file.
+ * Drive the gate's whole decision on whatever runtime is executing this file.
  *
  * WHY THIS IS NOT A TEST. The suite runs under Vitest on Node, which is exactly one of the four rows in
  * `packages/agentic-terms/README.md`'s runtime table — and `AGENTS.md` says the claims in that table are
@@ -12,7 +12,7 @@
  * `globalThis.crypto`, one process, exit code 0 or 1. Anything that can execute an ES module can run it.
  *
  * WHAT IT ASSERTS is both halves of the guarantee, because only asserting the halt would pass on a runtime
- * where the guard is broken in the direction of refusing everything:
+ * where the gate is broken in the direction of refusing everything:
  *
  *   tampered terms -> halted, and the signer is NEVER reached
  *   matching terms -> signed, and the signer is reached EXACTLY once

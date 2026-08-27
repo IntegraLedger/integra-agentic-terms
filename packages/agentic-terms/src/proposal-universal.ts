@@ -46,7 +46,7 @@ function stringAtIsOneOf(
   permitted: readonly string[],
 ): boolean {
   const value = readAtPath(doc, path);
-  // `some` rather than a `typeof` guard plus `includes`: the guard would be a branch no input can take, since
+  // `some` rather than a `typeof` guard plus `includes`: the gate would be a branch no input can take, since
   // a list of strings never contains a non-string, and a branch nothing reaches is one no test can constrain.
   return permitted.some((token) => token === value);
 }

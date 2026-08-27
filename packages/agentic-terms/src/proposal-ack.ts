@@ -191,7 +191,7 @@ export interface AckReceiptContribution {
   readonly payerDidMethod: string;
   /** The receipt service that signed. Recorded on the record; never the payer. */
   readonly issuerDid: string;
-  /** ACK's join key — the guard against reading a receipt against a payment request it never attested. */
+  /** ACK's join key — the gate against reading a receipt against a payment request it never attested. */
   readonly paymentRequestToken: string;
 }
 

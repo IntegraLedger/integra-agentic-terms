@@ -158,5 +158,5 @@ with a test asserting a real client sees it and a control showing nothing when t
 ## 8. What this deliberately does not do
 
 It adds no tool, no parser, no protocol row and no public API. It does not widen `PROPOSAL_PARSERS`, and
-"universal" continues to mean **reach, not parsers**. The guard does not grow: this is a declaration that
+"universal" continues to mean **reach, not parsers**. The gate does not grow: this is a declaration that
 an existing capability exists, which is the whole of it.

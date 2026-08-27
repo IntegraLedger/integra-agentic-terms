@@ -64,7 +64,7 @@ Node SHA-2 build, which statically imports `node:crypto`. So:
 
 | Target | Works | How we know |
 |---|---|---|
-| Node | yes | **measured** — every release runs the guard's whole decision here |
+| Node | yes | **measured** — every release runs the gate's whole decision here |
 | Bun | yes | **measured** — same run, same assertions |
 | Deno | yes | **measured** — same run, same assertions |
 | Workers with `nodejs_compat` | yes — `node:crypto` is polyfilled | reasoned from the import graph, not measured |
@@ -73,19 +73,19 @@ Node SHA-2 build, which statically imports `node:crypto`. So:
 
 The measured rows run against **the packed tarball**, installed the way you would install it, with the
 protocol line resolved from npmjs — not against this repository's own tree. Both halves of the guarantee are
-asserted on each runtime, because a runtime where the guard refused everything would pass a check that only
+asserted on each runtime, because a runtime where the gate refused everything would pass a check that only
 looked for the halt: tampered terms must halt with the signer never reached, and matching terms must sign
 with the signer reached exactly once.
 
-The guard needs `fetch` and Web Crypto and nothing else of its own. Removing the last hop is an upstream
+The gate needs `fetch` and Web Crypto and nothing else of its own. Removing the last hop is an upstream
 change — a subpath export on `lcp-evidence` so importing one predicate does not drag CAR and `multiformats`
 into every consumer's bundle — and until it lands, the table above is the claim.
 
-### The guard is exactly as trustworthy as the ports you give it
+### The gate is exactly as trustworthy as the ports you give it
 
 `GatePorts` is a trust boundary, not just a seam for testing. `fetcher` decides which bytes the fingerprint
 is recomputed over, so a fetcher that returns the wrong body defeats verification completely; `now` dates
-every entry in the record. This is not a weakness to fix — injection is what keeps the guard viem-free and
+every entry in the record. This is not a weakness to fix — injection is what keeps the gate viem-free and
 runnable off Node — but it is a property worth stating rather than discovering. Use the `makeCachingFetcher`
 shipped here unless you have a specific reason not to, and hold your ports to the standard you hold the key
 they protect.

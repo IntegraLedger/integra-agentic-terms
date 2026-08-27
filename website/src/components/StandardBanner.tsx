@@ -3,7 +3,7 @@ import { siteConfig } from "@/lib/site";
 /**
  * What LCP is, on every documentation page.
  *
- * These docs use "LCP" constantly — section references, trust levels, the `atrHash` the guard is built
+ * These docs use "LCP" constantly — section references, trust levels, the `atrHash` the gate is built
  * around — and a reader who arrives on a deep page from a search has no reason to know the acronym.
  * Expanding it once in the introduction is not enough when most entrances are not the introduction.
  */

@@ -5,7 +5,7 @@ no account, no key, no token, nothing to sign up for.**
 
 | Package | What it is |
 |---|---|
-| [`@integraledger/agentic-terms`](packages/agentic-terms) | Verify before sign, as a type and as a runtime guarantee. The guard fetches the terms the seller advertised, recomputes the LCP `atrHash` over the bytes actually served, and halts before any signing key is invoked if they disagree. |
+| [`@integraledger/agentic-terms`](packages/agentic-terms) | Verify before sign, as a type and as a runtime guarantee. The gate fetches the terms the seller advertised, recomputes the LCP `atrHash` over the bytes actually served, and halts before any signing key is invoked if they disagree. |
 | [`@integraledger/lcp-mcp-server`](packages/lcp-mcp-server) | Read-only Model Context Protocol server exposing LCP tools to an AI agent — verify before pay, compute an atrHash, extract and place references across the nine commerce protocols that have one. |
 
 ```bash

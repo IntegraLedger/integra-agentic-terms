@@ -1,7 +1,7 @@
 # integra-agentic-terms — agent instructions
 
 Two packages, both **public, Apache-2.0, free forever and never monetized**: `agentic-terms`, the buyer-side
-verify-before-sign guard, and `lcp-mcp-server`, its Model Context Protocol packaging. Anything that makes
+verify-before-sign gate, and `lcp-mcp-server`, its Model Context Protocol packaging. Anything that makes
 either harder to install is a defect, not a hardening measure. Both work against any seller.
 
 Consumes the Legal Context Protocol's public `@integraledger/lcp-*` packages from npmjs, exact-pinned. The
@@ -18,7 +18,7 @@ pnpm 11 workspace, Node ≥ 24, TypeScript with `isolatedDeclarations`.
 pnpm verify  =  check:versions → check:commit-messages → check:wire → check:public-boundary → check:vocab
                 → audit → build → lint → typecheck → check:docs → test
 pnpm mutation <pkg>            (STRYKER_PKG required; ratchets in stryker.config.mjs — raise, never lower)
-pnpm check:runtime             (packs, installs as a consumer, runs the guard — the Node leg of the matrix)
+pnpm check:runtime             (packs, installs as a consumer, runs the gate — the Node leg of the matrix)
 ```
 
 ⚠️ **`check:runtime` is NOT in `verify`, and the matrix is CI-only.** It packs a tarball and installs from
@@ -74,5 +74,5 @@ report a successful release as absent.
 
 ## Layout
 
-`agentic-terms` — the guard: typed proposal, policy evaluation, mechanical verification, universal parsing ·
+`agentic-terms` — the gate: typed proposal, policy evaluation, mechanical verification, universal parsing ·
 `lcp-mcp-server` — six read-only MCP tools over the same kernel, plus stdio wiring for desktop agent hosts.

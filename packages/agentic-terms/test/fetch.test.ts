@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeCachingFetcher, nodeDnsLookup } from "../src/fetch.js";
 
-/** These suites exercise cache/scheme/cap discipline, not the host guard — resolve public every time. */
+/** These suites exercise cache/scheme/cap discipline, not the host gate — resolve public every time. */
 const publicHost = async () => [{ address: "93.184.216.34", family: 4 }];
 
 describe("makeCachingFetcher — LCP §2.6 cache discipline + HTTPS-only", () => {

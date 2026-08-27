@@ -19,7 +19,7 @@ export interface GatePorts {
 
 /** The gate orchestration: fetch+retain (LCP §5.4) → level floor (LCP §4.2) → fingerprint HALT (LCP §5.3) → policy on the
  *  TYPED envelope only (LCP §12.7) → coverage-gap disposition → assurance → Proceed. The signing key is NEVER
- *  touched here — this returns a decision that `transact` enforces against the guarded signer. */
+ *  touched here — this returns a decision that `transact` enforces against the gated signer. */
 export async function evaluate(
   proposal: GateProposal,
   policy: BuyerPolicy,
@@ -58,7 +58,7 @@ export async function evaluate(
   // as a defect rather than as acceptable behaviour.
   //
   // `verification-failure`, not `policy-rejection`: no policy of the buyer's rejected anything. The terms
-  // could not be obtained, so the fingerprint could not be recomputed, so the guard cannot say the document
+  // could not be obtained, so the fingerprint could not be recomputed, so the gate cannot say the document
   // is the one that was advertised — which is the same thing a mismatch says, arrived at one step earlier.
   let fetched: Awaited<ReturnType<typeof ports.fetcher.fetch>>;
   try {

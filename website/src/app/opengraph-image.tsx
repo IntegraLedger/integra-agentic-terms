@@ -76,7 +76,7 @@ export default function OpenGraphImage() {
             color: "#2bc297",
           }}
         >
-          npm install {siteConfig.packages.guard.name}
+          npm install {siteConfig.packages.terms.name}
         </div>
       </div>
 

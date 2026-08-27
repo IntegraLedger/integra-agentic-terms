@@ -105,7 +105,7 @@ describe("parseProposalFromAcpCheckout", () => {
   });
 
   it("ACCEPTS a zero total — the boundary is negative, not falsy", () => {
-    // A fully-discounted order totals 0, and it is a real transaction to gate. Pinned so the guard cannot
+    // A fully-discounted order totals 0, and it is a real transaction to gate. Pinned so the gate cannot
     // quietly become `<= 0`, which would reject it while still passing every other test here.
     const free = structuredClone(session);
     const total = free.totals.find((t) => t.type === "total");

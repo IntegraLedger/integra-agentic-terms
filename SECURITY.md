@@ -34,7 +34,7 @@ to publish. Reporters who ask to be credited are credited in the advisory.
 ## The failure that matters most
 
 This software exists to **halt before a signing key** when the terms a payment would settle under are not
-the terms that were advertised. So the sharpest class of finding is anything that makes the guard
+the terms that were advertised. So the sharpest class of finding is anything that makes the gate
 **proceed** when it should have declined:
 
 - A fingerprint mismatch that is not detected, or a comparison that can be made to pass on bytes that are
@@ -62,7 +62,7 @@ vulnerability in this package even though the request is "only" a fetch.
 `Object.hasOwn` guards the commitment lookup rather than a bare index read. A path we missed is in scope.
 
 **The MCP server's read-only claim.** Its tools declare `readOnlyHint`. A tool that mutates anything, or
-that can be induced to reach the network outside the guarded fetcher, contradicts a published guarantee.
+that can be induced to reach the network outside the gateed fetcher, contradicts a published guarantee.
 
 **Published guarantees generally.** The READMEs state that nothing calls home — no telemetry, no callback,
 no request beyond fetching the terms the seller pointed at. Any traffic contradicting that is a defect
@@ -95,7 +95,7 @@ applied to a version you depend on, we will say so rather than imply coverage we
 
 Every push runs `pnpm verify` — build, lint, typecheck, `pnpm audit`, the full suite, and the gates that
 check what ships: that every documentation snippet compiles, that the protocol line is one line, and that
-the wire identities this guard reads match a sealed record of them. CodeQL runs `security-extended` on every
+the wire identities this gate reads match a sealed record of them. CodeQL runs `security-extended` on every
 push and weekly, and an error-severity finding fails the run rather than only filing an alert. Mutation
 scores are ratcheted per package in CI.
 
