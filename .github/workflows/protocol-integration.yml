@@ -55,7 +55,7 @@ jobs:
           # the gate needs no secret.
           path: protocol
 
-      - uses: pnpm/action-setup@0977fd99799e389f39b25b7fdf39e07dcdc2e761 # v6.0.10
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         # The root has no package.json (see the checkout note above), so the action cannot find
         # `packageManager` on its own.
         with: { package_json_file: consumer/package.json }
