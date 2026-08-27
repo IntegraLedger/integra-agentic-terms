@@ -1,0 +1,55 @@
+#!/bin/sh
+# Refuse a push carrying a commit message this repository bans, BEFORE it becomes public history.
+#
+# ⛔⛔ WHY A HOOK AND NOT ONLY CI. `ci.yml`'s verify stage is the enforcement and stays it — but it
+# runs AFTER the push, and by then the remedy is rewriting published history. This repository's ruleset
+# blocks that for everyone (`non_fast_forward`, `bypass_actors: NONE`), so a banned trailer that reaches
+# `main` is permanent. Measured 2026-08-27: it happened again. This gate's own docblock records
+# five that reached the public remote before anything looked. CI tells you after; this refuses before.
+#
+# NOTE this is a convenience, not the enforcement, exactly as the sibling repo's hooks are: they live in the
+# clone and never in the pushed tree, so a fresh clone has none until `pnpm install` runs `setup-hooks`.
+#
+# stdin is one line per ref being pushed: <local ref> <local sha> <remote ref> <remote sha>
+ZERO=0000000000000000000000000000000000000000
+
+# ⛔ The gate imports only `node:child_process`, so it needs no install — but it does need node, and a hook
+# that skips because its tool is missing reports clean over an unchecked push. Fail loud instead.
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-push: node is not on PATH, so commit messages were NOT checked." >&2
+  echo "  export PATH=\"\$HOME/.nvm/versions/node/v24.18.0/bin:\$PATH\"  (or --no-verify, deliberately)" >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel)
+status=0
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # A deletion pushes no commits and has no messages to read.
+  [ "$local_sha" = "$ZERO" ] && continue
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New branch on the remote: there is no "before". Everything not already on a remote is what lands.
+    range=$(git rev-list "$local_sha" --not --remotes | tail -1)
+    [ -z "$range" ] && continue
+    before="$range^"
+    git rev-parse --verify --quiet "$before" >/dev/null 2>&1 || before=$(git hash-object -t tree /dev/null)
+  else
+    before="$remote_sha"
+  fi
+
+  # ⛔ An EMPTY range is a failure inside the gate, and correctly so — but here it means "nothing to push
+  # on this ref", which is not a violation. Skip it rather than hand the gate a subject it must refuse.
+  [ -z "$(git rev-list "$before..$local_sha" 2>/dev/null)" ] && continue
+
+  node "$root/scripts/check-commit-messages.mjs" --range "$before..$local_sha" || status=1
+done
+
+if [ "$status" -ne 0 ]; then
+  echo "" >&2
+  echo "pre-push: refused. Fix the message before it is public — while you still can:" >&2
+  echo "  git commit --amend        (the tip)" >&2
+  echo "  git rebase -i <before>    (further back)" >&2
+fi
+
+exit "$status"

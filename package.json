@@ -9,6 +9,7 @@
   "packageManager": "pnpm@11.24.0",
   "scripts": {
     "audit": "pnpm audit --audit-level moderate",
+    "prepare": "node scripts/setup-hooks.mjs",
     "build": "pnpm -r build",
     "check:commit-messages": "node scripts/check-commit-messages.mjs",
     "check:dist": "node scripts/check-dist-orphans.mjs",
