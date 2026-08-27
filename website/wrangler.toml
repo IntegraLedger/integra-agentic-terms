@@ -6,4 +6,4 @@ pages_build_output_dir = "out"
 # host with a 301. Leave "false" until agenticterms.integraledger.com is attached to this project
 # and answering — with no apex, the alias is the only host that serves.
 [vars]
-CANONICAL_HOST_ATTACHED = "false"
+CANONICAL_HOST_ATTACHED = "true"
