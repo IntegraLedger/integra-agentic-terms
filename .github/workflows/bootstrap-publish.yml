@@ -1,0 +1,174 @@
+# ONE-TIME BOOTSTRAP PUBLISH. Delete this workflow once it has succeeded.
+#
+# WHY IT EXISTS. Trusted publishing is the steady state and it CANNOT do release 1. npm can neither
+# configure trusted publishing for a package that does not exist (npm/cli#8544) nor stage a brand-new name
+# — the docs are explicit that "you cannot stage a brand-new package". So the first publish of these two
+# names runs here, once, under a short-lived token held in the `npm-publish` environment, and then the
+# steady-state release workflow takes over permanently with no token at all.
+#
+# WHY IT RUNS IN ACTIONS RATHER THAN ON A LAPTOP, which is the whole point. `npm publish --provenance`
+# requires a public source repository AND a supported CI's OIDC identity. Registry AUTH here is the token;
+# the ATTESTATION is the workflow's `id-token`, and the two are independent. Publishing these versions from
+# a laptop would authenticate fine and produce no attestation — and provenance is minted at publish time
+# while an npm version can never be reused, so the published version would be unattested permanently. There is exactly
+# one chance to attest a version, and it is this run.
+#
+# IDEMPOTENT ON PURPOSE. A publish of a multi-package set can fail halfway, and because a version number
+# burns permanently the partial cannot be re-run over itself blindly. So every package is checked against
+# the registry first and skipped if that exact version is already there. Re-running this workflow after a
+# partial failure is safe and is the intended recovery.
+name: bootstrap-publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "publish" to confirm this is the one-time bootstrap'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  # The attestation identity. This — not the token — is what makes the packages provenanced.
+  id-token: write
+
+concurrency:
+  group: bootstrap-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # THE HUMAN GATE, and it is now actually one. The token lives on this environment rather than on the
+    # repository, so nothing else here can reach it — including a workflow added by a future pull request.
+    # The environment also carries a required reviewer, allows deployment only from `main`, and does not
+    # let admins bypass. That protection was configured BEFORE the token was set, because the window in
+    # which it is free to add closes the moment a secret exists. Self-review is deliberately permitted —
+    # see the paragraph below, which is the ruling rather than an exception to this one.
+    #
+    # WHAT THE REVIEWER RULE BUYS, stated precisely so nobody mistakes it for more or less than it is.
+    # Self-review is ALLOWED, deliberately: this repository has one release owner and a rule requiring a
+    # second person would either block them or invite a rubber stamp, and a gate that has to be worked
+    # around is not a gate. So the reviewer can approve their own dispatch.
+    #
+    # It still does two things a `confirm` string cannot. The run HALTS before the environment's secret is
+    # exposed and waits for an explicit approval in a different surface, so no dispatch — accidental,
+    # scripted, or from a compromised token — reaches the credential without a deliberate second action.
+    # And for everyone who is NOT the reviewer, including the repository's other admin, it is a true
+    # second-person control: they can start a run, and only the reviewer can let it touch the token.
+    environment: npm-publish
+    steps:
+      # The input reaches the shell through `env`, never through `${{ }}` interpolation into `run:` —
+      # a dispatch input is attacker-controlled by anyone with write access, and interpolation would
+      # execute it rather than compare it.
+      - name: Refuse unless explicitly confirmed
+        if: inputs.confirm != 'publish'
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          echo "::error::confirm input was '$CONFIRM', expected 'publish'"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: pnpm install --frozen-lockfile
+
+      # The full gate before anything leaves the machine. A publish is irreversible; a red verify here
+      # costs nothing.
+      - run: pnpm verify
+
+      # The seam canary `ci.yml` runs and this workflow did not. It proves the `@integraledger/lcp-*` line
+      # installs AND RUNS from npmjs in this environment — a broken protocol publish is otherwise invisible
+      # here until a stranger hits it, and this is the last moment before these names become permanent.
+      - run: pnpm exec lcp-conformance
+
+      # Publishability of the artifact itself, which `pnpm verify` does not assess: `publint` reads the
+      # manifest the way the registry and a consumer's resolver will, and `attw` proves the type entrypoints
+      # resolve under every module resolution a consumer might use. `ci.yml` runs both on every push; the
+      # workflow that makes a version permanent ran neither.
+      - run: pnpm -r exec publint
+      - run: pnpm -r exec attw --pack . --profile esm-only   # packages are ESM-only
+
+      # `pnpm pack`, never `npm pack`: pnpm rewrites `workspace:*` to the concrete version and npm does
+      # not, so an npm-packed tarball installs with EUNSUPPORTEDPROTOCOL and is useless.
+      - name: Pack the publishable set
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/dist-tarballs"
+          # Derived from `private`, never a name pattern — a name filter silently stops being correct the
+          # moment a package is renamed or a private package is added.
+          for dir in $(node scripts/publish-order.mjs); do
+            node -e "process.exit(require('./${dir}package.json').private ? 1 : 0)" || continue
+            ( cd "$dir" && pnpm pack --pack-destination "$GITHUB_WORKSPACE/dist-tarballs" )
+          done
+          ls -1 "$GITHUB_WORKSPACE/dist-tarballs" | tee /tmp/tarballs.txt
+          echo "packed $(wc -l < /tmp/tarballs.txt) tarball(s)"
+
+      # DEPENDENCY ORDER, DERIVED — not the glob's alphabetical order it used to be. `lcp-mcp-server`
+      # depends on `agentic-terms` at an exact version, so publishing it first puts a package on the
+      # registry that cannot be installed until its dependency follows. npm accepts that publish without
+      # complaint; the first stranger to `npm install` is what finds it.
+      #
+      # THE RENAME THIS PARAGRAPH WARNED ABOUT HAS NOW HAPPENED. It used to read "alphabetically
+      # `agent-guard` happens to come first, so the old loop was correct by coincidence — and a rename would
+      # have inverted it silently." `agent-guard` became `agentic-terms` on 2026-08-26. The coincidence
+      # survived (`agentic-terms` still sorts before `lcp-mcp-server`), which is exactly why nobody would
+      # have noticed had it not. `scripts/publish-order.mjs` topologically sorts the publishable set from
+      # the manifests themselves and refuses a cycle, so the order is derived rather than lucky.
+      - name: Publish, skipping anything already live
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          published=0; skipped=0; failed=0
+          for dir in $(node scripts/publish-order.mjs); do
+            node -e "process.exit(require('./${dir}package.json').private ? 1 : 0)" || continue
+            name=$(node -p "require('./${dir}package.json').name")
+            version=$(node -p "require('./${dir}package.json').version")
+            tarball=$(ls "$GITHUB_WORKSPACE"/dist-tarballs/$(echo "$name" | sed 's|@||; s|/|-|')-"$version".tgz 2>/dev/null || true)
+            if [ -z "$tarball" ]; then
+              echo "::error::no tarball found for $name@$version"; failed=$((failed+1)); continue
+            fi
+            # The VERSION-SPECIFIC endpoint, never `npm view`. `npm view` reads the packument, and a
+            # packument is a cached document that can still omit a version minutes after it went live. On a
+            # re-run that matters more here than in the verify step below: a lagging answer sends this loop
+            # into a DUPLICATE PUBLISH of a version that is already live, rather than the skip that makes
+            # re-running this workflow safe.
+            if curl -sf -o /dev/null "https://registry.npmjs.org/$name/$version"; then
+              echo "skip   $name@$version — already on the registry"; skipped=$((skipped+1)); continue
+            fi
+            echo "publish $name@$version"
+            if npm publish "$tarball" --access public --provenance; then
+              published=$((published+1))
+            else
+              echo "::error::publish failed for $name@$version"; failed=$((failed+1))
+            fi
+          done
+          echo "published=$published skipped=$skipped failed=$failed"
+          [ "$failed" -eq 0 ] || exit 1
+
+      # Evidence, not assertion: re-read every package from the registry and confirm the version is there.
+      # The VERSION-SPECIFIC endpoint is authoritative; `npm view` and the full packument both read cached
+      # documents that can lag a fresh publish and report a successful release as absent. This step used to
+      # call `npm view` — the exact thing this comment forbids — which turns a successful bootstrap into a
+      # red run that has to be reconciled by hand.
+      - name: Verify the registry agrees
+        run: |
+          missing=0
+          for dir in $(node scripts/publish-order.mjs); do
+            node -e "process.exit(require('./${dir}package.json').private ? 1 : 0)" || continue
+            name=$(node -p "require('./${dir}package.json').name")
+            version=$(node -p "require('./${dir}package.json').version")
+            if curl -sf -o /dev/null "https://registry.npmjs.org/$name/$version"; then
+              echo "ok     $name@$version"
+            else
+              echo "::error::$name@$version is NOT on the registry"; missing=$((missing+1))
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "all publishable packages are live at their manifest version"
