@@ -125,13 +125,27 @@ const ALLOW = new Map([
   ["S3", "AWS S3, named as an example object store"],
 ]);
 
+/**
+ * ⛔⛔ **A DOT-PREFIXED FILE IS STILL WORLD-READABLE, AND THIS WALK USED TO SKIP EVERY ONE.** The rule was
+ * `startsWith(".")` → skip, with `.github` and `.changeset` carved back in. That is right for
+ * DIRECTORIES — `.git`, `node_modules` caches, build output — and wrong for a root dotFILE: on 2026-08-27
+ * `.dependency-cruiser.cjs` landed in this repository naming the private seller-side repository outright,
+ * `forbidden-literals.mjs` already banned that exact string, and `check:vocab` reported the tree clean
+ * because the file was never in the walk. A config is prose a stranger reads like any other.
+ *
+ * ⇒ Dot-prefixed DIRECTORIES are still skipped unless allow-listed; dot-prefixed FILES are scanned
+ *   whenever their extension is one this gate reads. `.npmrc`/`.nvmrc` have no scanned extension and are
+ *   unaffected; `.dependency-cruiser.cjs` does, and is now covered.
+ */
+const ALLOWED_DOT_DIRS = new Set([".github", ".changeset"]);
+
 function* walk(dir) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(e.name)) continue;
     if (
+      e.isDirectory() &&
       e.name.startsWith(".") &&
-      e.name !== ".github" &&
-      e.name !== ".changeset"
+      !ALLOWED_DOT_DIRS.has(e.name)
     )
       continue;
     const p = join(dir, e.name);

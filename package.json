@@ -10,13 +10,16 @@
   "scripts": {
     "audit": "pnpm audit --audit-level moderate",
     "build": "pnpm -r build",
-    "check:docs": "node scripts/check-doc-snippets.mjs",
     "check:commit-messages": "node scripts/check-commit-messages.mjs",
+    "check:dist": "node scripts/check-dist-orphans.mjs",
+    "check:docs": "node scripts/check-doc-snippets.mjs",
     "check:public-boundary": "node scripts/check-public-boundary.mjs",
     "check:runtime": "node scripts/runtime-consumer.mjs && node .runtime-consumer/runtime-smoke.mjs",
-    "check:vocab": "node scripts/check-vocab.mjs",
     "check:versions": "node scripts/check-versions.mjs",
+    "check:vocab": "node scripts/check-vocab.mjs",
     "check:wire": "node scripts/check-wire-identities.mjs",
+    "clean": "node scripts/check-dist-orphans.mjs --clean",
+    "depcruise": "node scripts/depcruise-gate.mjs",
     "docs:build": "npm --prefix website run build",
     "docs:dev": "npm --prefix website run dev",
     "lint": "biome check .",
@@ -26,7 +29,7 @@
     "seal:wire": "node scripts/check-wire-identities.mjs --write",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "verify": "pnpm check:versions && pnpm check:commit-messages && pnpm check:wire && pnpm check:public-boundary && pnpm check:vocab && pnpm audit --audit-level moderate && pnpm -r build && pnpm lint && pnpm -r typecheck && pnpm check:docs && pnpm -r test"
+    "verify": "pnpm check:versions && pnpm check:commit-messages && pnpm check:wire && pnpm check:public-boundary && pnpm check:vocab && pnpm audit --audit-level moderate && pnpm -r build && pnpm check:dist && pnpm lint && pnpm depcruise && pnpm -r typecheck && pnpm check:docs && pnpm -r test"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
@@ -37,7 +40,9 @@
     "@integraledger/lcp-mcp-server": "workspace:*",
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0",
+    "@swc/core": "1.16.1",
     "@types/node": "catalog:",
+    "dependency-cruiser": "18.2.0",
     "publint": "0.3.24",
     "typescript": "7.0.2",
     "vitest": "catalog:"

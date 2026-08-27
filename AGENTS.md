@@ -16,10 +16,39 @@ pnpm 11 workspace, Node ≥ 24, TypeScript with `isolatedDeclarations`.
 
 ```
 pnpm verify  =  check:versions → check:commit-messages → check:wire → check:public-boundary → check:vocab
-                → audit → build → lint → typecheck → check:docs → test
+                → audit → build → check:dist → lint → depcruise → typecheck → check:docs → test
 pnpm mutation <pkg>            (STRYKER_PKG required; ratchets in stryker.config.mjs — raise, never lower)
 pnpm check:runtime             (packs, installs as a consumer, runs the gate — the Node leg of the matrix)
 ```
+
+`check:dist` and `depcruise` were added 2026-08-27, both ported from `integra-protocol` after the
+2026-08-26 three-repo audit found them present there and absent here. Neither is decoration:
+
+- **`check:dist`** refuses a `dist/` file whose `src/` original no longer exists. `tsc` never removes output
+  for a deleted or renamed source and `dist/` is gitignored, so an orphan is invisible to review — but both
+  packages here declare `files: ["dist", "src", …]`, so it travels in the tarball with a source map pointing
+  at a path the tarball does not contain. Two public packages is a smaller surface than thirty-one, not a
+  safer one.
+- **`depcruise`** carries `buyer-gate-is-chain-free`. ⛔⛔ **That rule existed before the severance and was
+  LOST in it.** While the buyer gate lived in the commerce repository an `agent-guard-viem-free` rule
+  forbade any file under it — tests included — from importing viem or an `lcp-binding-<chain>-*` package;
+  the package moved here and the rule did not follow, so for two weeks the property held only because
+  nobody happened to break it. `agentic-terms` halts before a signing key is invoked, so a chain SDK inside
+  it is a settlement capability in the one surface defined by never settling — and it would ship.
+  `lcp-binding-core` is deliberately still allowed: it is the carrier vocabulary, not a rail.
+  Re-planted 2026-08-27 — a `viem` import and an `lcp-binding-evm-x402` import each go red, `lcp-binding-core`
+  stays green.
+
+⛔⛔ **`pnpm depcruise` runs `scripts/depcruise-gate.mjs`, never the raw command, and the difference is a
+module FLOOR.** A cruise that sees nothing has nothing to violate, so `✔ no dependency violations found
+(0 modules, 0 dependencies cruised)` and a real pass are the same colour and the same exit code. Measured.
+The wrapper refuses below 40 modules (59 today) and on any error-severity violation.
+
+⚠️ **`parser: "swc"` requires `@swc/core`, and a MISSING ENGINE is what cruises zero** — that is the trap
+measured here on 2026-08-27, when `parser: "swc"` was declared before the dependency was added. It is NOT
+true that the tsc parser cruises zero under TypeScript 7: depcruise falls back to acorn, whose loose
+recovery finds the imports, and tsc / acorn / swc were re-measured at an identical module count on this
+workspace. swc is a preference — one extra resolved edge, no error-recovery guesswork — not a rescue.
 
 ⚠️ **`check:runtime` is NOT in `verify`, and the matrix is CI-only.** It packs a tarball and installs from
 npmjs, which does not belong in the inner loop — but that makes it a gate a green `verify` does not cover.

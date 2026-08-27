@@ -1,0 +1,170 @@
+name: protocol-integration
+# The unpublished-protocol seam gate, run from the CONSUMER side — proving this repository still compiles
+# and passes against protocol code that has NOT been published yet.
+#
+# ⛔⛔ WHY IT MATTERS MORE HERE THAN IN THE SELLER REPOSITORY. `protocol-latest.yml` beside this file
+# proves the caret against what is ALREADY PUBLISHED; it cannot see a break until after the protocol
+# releases, and **an npm version number, once used, cannot be taken back**. These two packages are PUBLIC.
+# A source-breaking protocol change discovered post-publish is discovered by a stranger running
+# `npm install`, after the version is burned — the exact failure mode `check:public-boundary` exists to
+# prevent by a different route. An audit on 2026-08-26 found this gate present in the separately licensed
+# seller-side repository and absent here, and noted the two workflows are complementary rather than
+# redundant: `protocol-latest` asks "does the caret still hold against the registry?", this one asks
+# "would the NEXT protocol release break us?"
+#
+# NOT a violation of the no-link canon. `pnpm pack` produces the exact tarball a release stages, and this
+# repository installs THAT. A workspace link would prove nothing about the published artifact.
+#
+# ⭐ NO CREDENTIAL OF ANY KIND. Both repositories are public, so the protocol checkout needs no token and
+# this repository's own dependencies resolve from npmjs unauthenticated. `contents: read` is the whole
+# permission set.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Daily 06:45 UTC. ⛔ The trigger that matters is the PROTOCOL moving, which no event in this
+    # repository observes — a push here only ever catches our half.
+    # ⚠️ The minute is chosen to sit clear of BOTH neighbours that read the same protocol HEAD: the
+    # seller-side repository's equivalent at 06:00, and `protocol-latest.yml` at 06:17 weekdays. This one
+    # clones and builds the protocol; overlapping them buys nothing and makes a failure ambiguous about
+    # which run saw which HEAD.
+    - cron: "45 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protocol-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protocol-integration:
+    runs-on: ubuntu-latest
+    steps:
+      # Both repositories go in subdirectories, leaving the workspace ROOT without a package.json. That is
+      # deliberate: each has its own pnpm-workspace.yaml, and nesting one inside the other's tree invites
+      # pnpm to resolve the wrong workspace root.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { path: consumer }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: IntegraLedger/integra-protocol
+          # No `ssh-key` and no `token`: the protocol repository is public. This line is the entire reason
+          # the gate needs no secret.
+          path: protocol
+
+      - uses: pnpm/action-setup@0977fd99799e389f39b25b7fdf39e07dcdc2e761 # v6.0.10
+        # The root has no package.json (see the checkout note above), so the action cannot find
+        # `packageManager` on its own.
+        with: { package_json_file: consumer/package.json }
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: consumer/.nvmrc
+          cache: "pnpm"
+          cache-dependency-path: consumer/pnpm-lock.yaml
+
+      - name: Build the protocol at HEAD
+        working-directory: protocol
+        run: |
+          echo "protocol @ $(git rev-parse --short HEAD)"
+          pnpm install --frozen-lockfile
+          pnpm -r build
+
+      - name: Pack every publishable protocol package
+        working-directory: protocol
+        # The set is derived from `private` in each manifest, never a name pattern — a name filter stops
+        # being correct the moment a package is renamed or a second private package appears.
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tarballs"
+          for dir in packages/*/; do
+            node -e "process.exit(require('./${dir}package.json').private ? 1 : 0)" || continue
+            ( cd "$dir" && pnpm pack --pack-destination "$GITHUB_WORKSPACE/tarballs" )
+          done
+          ls -1 "$GITHUB_WORKSPACE/tarballs"
+
+      - name: Point this repo at the packed tarballs
+        working-directory: consumer
+        # Overrides redirect every @integraledger/* specifier — transitive ones included — to the tarball
+        # packed above. Applied only in this runner; nothing is committed.
+        #
+        # ⛔⛔ THEY GO IN pnpm-workspace.yaml, NOT package.json. pnpm 11 moved `overrides` out of the `pnpm`
+        # field and now IGNORES it there, with only a warning:
+        #   [WARN] The "pnpm" field in package.json is no longer read by pnpm ... ignored: "pnpm.overrides"
+        # A warning, not an error, so the install proceeds, resolves @integraledger/* from the registry as
+        # if this step had never run, and the job "verifies" nothing.
+        #
+        # ⭐ Overrides also settle the PEER question this repository is careful about. `agentic-terms` peers
+        # the protocol line at `^0.x` and dev-pins it exactly; an override replaces BOTH with one tarball,
+        # so the run proves the peer range and the dev pin against the same unreleased bytes rather than
+        # letting the two resolve to different copies.
+        #
+        # Inserted directly beneath the existing `overrides:` key rather than appended, so any override
+        # this repository already carries survives.
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const dir = path.join(process.env.GITHUB_WORKSPACE, "tarballs");
+            const entries = [];
+            for (const f of fs.readdirSync(dir).sort()) {
+              if (!f.endsWith(".tgz")) continue;
+              // integraledger-lcp-verify-0.14.0.tgz -> @integraledger/lcp-verify
+              const name = f.replace(/-\d+\.\d+\.\d+.*\.tgz$/, "").replace(/^integraledger-/, "");
+              entries.push(["@integraledger/" + name, "file:" + path.join(dir, f)]);
+            }
+            if (entries.length === 0) throw new Error("no tarballs packed — nothing to override");
+            const p = "pnpm-workspace.yaml";
+            const lines = fs.readFileSync(p, "utf8").split("\n");
+            const block = entries.map(([k, v]) => `  "${k}": "${v}"`);
+            const at = lines.findIndex((l) => /^overrides:\s*$/.test(l));
+            if (at === -1) lines.push("overrides:", ...block, "");
+            else lines.splice(at + 1, 0, ...block);
+            fs.writeFileSync(p, lines.join("\n"));
+            console.log("overrides applied to pnpm-workspace.yaml:");
+            for (const [k] of entries) console.log("  " + k);
+          '
+          # Prove the redirection is live rather than trusting the write: if pnpm ignores it again, this
+          # prints nothing and the step fails here instead of silently verifying against the registry.
+          grep -q "@integraledger/lcp-kernel\": \"file:" pnpm-workspace.yaml
+
+      - name: Verify this repo against unreleased protocol
+        working-directory: consumer
+        # --no-frozen-lockfile is REQUIRED here and only here: the overrides deliberately diverge from the
+        # committed lockfile. That divergence is the whole experiment.
+        #
+        # ⛔ TWO STAGES OF `verify` ARE OMITTED, EACH FOR A STATED REASON, AND NOTHING ELSE IS. Listing the
+        # stages rather than calling `pnpm verify` is what makes the omissions visible instead of buried.
+        #
+        #   check:versions   FALSE BY CONSTRUCTION here. It compares each declared protocol spec against the
+        #                    INSTALLED version (`isExact(spec) ? actual === spec : satisfies(spec, actual)`),
+        #                    and the overrides above install unreleased tarballs whose version will not match
+        #                    the committed dev-pin the moment protocol HEAD moves past the last release.
+        #                    Failing on that would make this gate red exactly when it is doing its job.
+        #   audit            NON-HERMETIC. It fails on any newly published advisory against an unchanged
+        #                    tree, so including it would make this gate's red carry no information about the
+        #                    protocol seam — the "a gate whose failure is routine is not a gate" lesson the
+        #                    seller repository's copy of this workflow records about its own Postgres outage.
+        #                    `ci.yml` runs `audit` on every push, so it is covered, just not here.
+        #
+        # `check:commit-messages` is likewise omitted: its subject is a push range, it has nothing to do
+        # with the protocol seam, and `ci.yml` already runs it.
+        run: |
+          pnpm install --no-frozen-lockfile
+          # ⭐ BESIDE the stages, not inside them. This workspace pins a published `lcp-conformance` and
+          # only reads a few vectors from it, so a corpus that GREW in the protocol is never executed
+          # against this code until after a release. The overrides above redirect it to the freshly packed
+          # tarball, which is what makes this a gate over the whole corpus rather than over the compile.
+          pnpm exec lcp-conformance
+          pnpm check:wire
+          pnpm check:public-boundary
+          pnpm check:vocab
+          pnpm -r build
+          pnpm check:dist
+          pnpm lint
+          pnpm depcruise
+          pnpm -r typecheck
+          pnpm check:docs
+          pnpm -r test

@@ -1,24 +1,43 @@
 packages:
   - "packages/*"
+# @swc/core's build script is deliberately NOT run (decision: false): its native parser binding is the
+# prebuilt @swc/core-<platform> optional dependency, and dependency-cruiser's swc parser needs only that
+# binding. Keeping arbitrary postinstall execution off is the supply-chain posture for a repository that
+# publishes two public packages; the ignoredBuiltDependencies list documents the deliberate skip.
+#
+# ⛔ TWO KEYS, AND THEY ARE NOT REDUNDANT — do not consolidate them. `integra-protocol` removed `allowBuilds`
+# on 2026-08-12 reasoning it duplicated the list below; CI failed on the next push with
+# ERR_PNPM_IGNORED_BUILDS. They do different jobs:
+#
+#   allowBuilds              the DECISION. pnpm 11 refuses an install that silently skips a build script
+#                            unless the choice is recorded. Without it `pnpm install --frozen-lockfile` EXITS 1.
+#   ignoredBuiltDependencies the RECORD, for a reader — which packages are skipped, legibly.
+#
+# ⚠️ A warm `node_modules` does not re-run the decision, so `pnpm verify` stays green locally while a cold
+# install fails. Test a change here with a fresh clone, never with an existing tree.
+allowBuilds:
+  '@swc/core': false
+ignoredBuiltDependencies:
+  - "@swc/core"
 
 catalog:
-  zod: "4.4.3"                      # trust boundaries only — never inside verification logic
+  zod: "4.4.3" # trust boundaries only — never inside verification logic
   vitest: "4.1.11"
-  "@types/node": "24.13.3"          # FLOOR-pinned to engines (>=24.0.0): types never exceed the oldest supported runtime
+  "@types/node": "24.13.3" # FLOOR-pinned to engines (>=24.0.0): types never exceed the oldest supported runtime
   # The MCP v2 SDK, split from v1's monolithic @modelcontextprotocol/sdk. 2.0.0 is the STABLE line
   # implementing the 2026-07-28 MCP revision.
-  "@modelcontextprotocol/server": "2.0.0"   # lcp-mcp-server's tool surface
-  "@modelcontextprotocol/client": "2.0.0"   # its tests' real client, over the SDK's in-memory transport
+  "@modelcontextprotocol/server": "2.0.0" # lcp-mcp-server's tool surface
+  "@modelcontextprotocol/client": "2.0.0" # its tests' real client, over the SDK's in-memory transport
 
-minimumReleaseAge: 1440    # supply-chain default: 24h quarantine on new third-party releases
+minimumReleaseAge: 1440 # supply-chain default: 24h quarantine on new third-party releases
 minimumReleaseAgeExclude:
-  - "@integraledger/*"     # first-party packages are trusted; quarantining them makes a fresh publish unconsumable for 24h
+  - "@integraledger/*" # first-party packages are trusted; quarantining them makes a fresh publish unconsumable for 24h
 
 # Transitive-CVE overrides. Each has a resolution path in THIS
 # graph (dev tooling: stryker, vitest/vite). Reviewed on every audit run; `pnpm audit` in verify is the
 # gate that decides whether an entry is still needed or a new one is.
 overrides:
-  qs: ">=6.15.2"      # stringify DoS on null entries in comma-format arrays; dev-only, via @stryker-mutator/core
+  qs: ">=6.15.2" # stringify DoS on null entries in comma-format arrays; dev-only, via @stryker-mutator/core
   # GHSA-rgw5-rvv9-x895 (high): unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation.
   # Dev-only, via @stryker-mutator/core > minimatch — no consumer path.
   brace-expansion: ">=5.0.9"

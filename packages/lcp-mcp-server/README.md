@@ -139,4 +139,36 @@ fingerprint (§3, §4.2), and the discovery document carries no seller signature
 `lcp_verify_before_pay` also inherits DSC-2's machine-readable-format rule, so a `pdf` listing is reported
 `unverifiable` rather than passed through.
 
+## Requirement ids
+
+This package's source cites short requirement ids — `DSC-2`. **They are not LCP clause numbers**, and
+looking for them in the specification will not find them: LCP is cited by section (`§8.3.1`, `§C.2`), and
+anything of the form `XXX-n` is from a different document.
+
+They come from Integra's own functional specification of what a complete agent transaction requires — an
+analysis that predates and motivates this implementation, organised into fourteen families:
+
+| | | | |
+|---|---|---|---|
+| `IDN` identity | `ASP` authority to spend | `ATA` authority to accept terms | `TRM` the terms record |
+| `RCS` recourse | `PAY` payment and settlement | `WLD` the transactional weld | `OFR` offer integrity |
+| `FRC` fraud, risk, and compliance | `OPS` commercial operations | `DSC` discovery and reputation | `ORC` orchestration |
+| `CMP` composition | `PRS` persistence and verification infrastructure | | |
+
+⛔ This package **packs its `src/`**, so those citations reach anyone who installs it. They are glossed
+here — rather than silently dropped or left unexplained — because a citation a reader cannot resolve is
+worse than prose. The same table is in `integra-protocol`'s root README and in all twenty-one of its
+package READMEs; this is the same register, said once more where this tarball's reader can see it.
+
+Nothing in this package's behaviour depends on them. Where an id and an LCP section say different things,
+the section governs, and where only an id is cited the claim is Integra's own.
+
+⭐ `TC-0`…`TC-4` are different, and resolvable: they are the transaction-completeness classes exported as
+`TransactionClass` by `@integraledger/lcp-verify`, so a reader holding the packages can read the ladder and
+what each rung requires. ⛔ They are **not** in the LCP specification either — like the ids above they are
+Integra's own, and the ladder is in fact built out of those same requirement families. The difference that
+matters is where each one resolves: a `TransactionClass` resolves to a published type a consumer programs
+against; a requirement id resolves to a register no consumer holds, which is why it needs this table.
+
+
 Part of [Integra Agentic Terms](https://github.com/IntegraLedger/integra-agentic-terms).
