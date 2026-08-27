@@ -1,0 +1,49 @@
+---
+title: Renamed from Agent Guard
+description: This package was published as @integraledger/agent-guard until August 2026. That name is deprecated; here is what changed and what to do about it.
+---
+
+Until 26 August 2026 this package was published as **`@integraledger/agent-guard`**. It is now
+**`@integraledger/agentic-terms`**. The old name is deprecated and will receive no further releases.
+
+## Why
+
+"Agent Guard" collided with at least ten concurrent products in AI-agent security — among them AppOmni's
+AgentGuard, announced 19 November 2025, and Jozu's Agent Guard, announced 12 March 2026, both through wire
+services. Every one of them predates this package's first publish on 13 August 2026. A name that ten
+vendors share identifies nobody, so it was replaced rather than defended.
+
+## Migrating
+
+```bash
+npm uninstall @integraledger/agent-guard
+npm install @integraledger/agentic-terms
+```
+
+There is **one** breaking change. The exported type `GuardedSigner` is now `GatedSigner`:
+
+```ts
+import type { GatedSigner } from "@integraledger/agentic-terms";
+```
+
+No alias is provided, so a stale import fails at compile time rather than resolving to something
+unexpected. Every other export is unchanged in name and in signature — `transact`, `GatePorts`,
+`GateProposal`, `BuyerPolicy`, `makeCachingFetcher`, `nodeDnsLookup`, `parseProposalFromChallenge`,
+`parseProposalUniversal`, `readAdvertisedTerms` and `detectProtocol` all behave exactly as before.
+
+## What did not change
+
+`@integraledger/lcp-mcp-server` keeps its name. So does its MCP server identity, `lcp-mcp`, and all six of
+its tool names — `lcp_verify_before_pay`, `lcp_compute_atrhash`, `lcp_extract_reference`,
+`lcp_place_reference`, `lcp_generate_legal_context` and `lcp_scaffold_integration`. An agent host already
+configured against that server needs no change. The package versions in lockstep with this one only because
+the two are a fixed release group.
+
+Nothing about the protocol moved. The Legal Context Protocol, the `atrHash`, and the wire formats this
+package reads are untouched.
+
+## Versions
+
+Versioning continued rather than restarting, so `0.13.0` on the new name follows `0.12.1` on the old one and
+the changelog reads straight through. Versions `0.9.0` through `0.12.1` of `@integraledger/agent-guard`
+remain installable but are deprecated; they will not receive fixes.
