@@ -1,5 +1,12 @@
 # @integraledger/lcp-mcp-server
 
+## 0.13.0
+
+### Patch Changes
+
+- Updated dependencies [62cd520]
+  - @integraledger/agentic-terms@0.13.0
+
 ## 0.12.1
 
 ### Patch Changes
