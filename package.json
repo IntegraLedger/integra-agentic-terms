@@ -29,8 +29,9 @@
     "release:approve": "node scripts/approve-staged.mjs",
     "seal:wire": "node scripts/check-wire-identities.mjs --write",
     "test": "pnpm -r test",
+    "test:scripts": "node scripts/test-scripts.mjs",
     "typecheck": "pnpm -r typecheck",
-    "verify": "pnpm check:versions && pnpm check:commit-messages && pnpm check:wire && pnpm check:public-boundary && pnpm check:vocab && pnpm audit --audit-level moderate && pnpm -r build && pnpm check:dist && pnpm lint && pnpm depcruise && pnpm -r typecheck && pnpm check:docs && pnpm -r test"
+    "verify": "pnpm check:versions && pnpm check:commit-messages && pnpm check:wire && pnpm check:public-boundary && pnpm check:vocab && pnpm audit --audit-level moderate && pnpm -r build && pnpm check:dist && pnpm lint && pnpm depcruise && pnpm -r typecheck && pnpm check:docs && pnpm test:scripts && pnpm -r test"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",

@@ -16,10 +16,25 @@ pnpm 11 workspace, Node ≥ 24, TypeScript with `isolatedDeclarations`.
 
 ```
 pnpm verify  =  check:versions → check:commit-messages → check:wire → check:public-boundary → check:vocab
-                → audit → build → check:dist → lint → depcruise → typecheck → check:docs → test
+                → audit → build → check:dist → lint → depcruise → typecheck → check:docs
+                → test:scripts → test
 pnpm mutation <pkg>            (STRYKER_PKG required; ratchets in stryker.config.mjs — raise, never lower)
 pnpm check:runtime             (packs, installs as a consumer, runs the gate — the Node leg of the matrix)
 ```
+
+`test:scripts` was added 2026-08-30, and is the first drive any script in `scripts/` has had. `pnpm -r
+test` walks workspace packages only, so every gate in `scripts/` was previously proven by nothing but its
+own next run — which is how `reconcile-tags.mjs` spent three days reporting six permanently untagged
+versions and exiting 1. ⛔ **A gate that is always red carries no information**: a real untagged release
+would have arrived in the same colour as the six that can never be tagged here, and nobody would have
+looked twice.
+
+⛔⛔ **It runs `scripts/test-scripts.mjs`, never `node --test scripts/*.test.mjs` directly, and the
+difference is a drive FLOOR** — the same shape as `depcruise`'s module floor. `node --test` over a glob
+that matches nothing prints `tests 0` and **exits 0**; measured three ways, including a one-character
+rename of the only drive. `sh` passes an unmatched glob through literally and Node's own expansion then
+finds nothing, so neither layer errors. The wrapper counts the drives before running them and refuses
+below `FLOOR` (1 today). Raise it as drives are added; never lower it to make a deletion pass.
 
 `check:dist` and `depcruise` were added 2026-08-27, both ported from `integra-protocol` after the
 2026-08-26 three-repo audit found them present there and absent here. Neither is decoration:
