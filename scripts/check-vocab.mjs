@@ -31,7 +31,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
-import { FORBIDDEN_LITERALS } from "./forbidden-literals.mjs";
+import { BENIGN_SAMPLE, FORBIDDEN_LITERALS } from "./forbidden-literals.mjs";
 import {
   declaredProtocolNames,
   installedProtocolPackages,
@@ -262,6 +262,21 @@ for (const [token, shouldFlag, what] of CANARIES) {
     );
 }
 
+// ⛔ EVERY forbidden literal, not `.some()` of them. The identifier canaries above prove the classifier
+// discriminates; nothing proved the literal patterns still match, so a pattern that silently stopped
+// matching would have reported a clean tree. Each is driven against its own sample, and one benign line
+// must match none of them.
+for (const [re, what, sample] of FORBIDDEN_LITERALS) {
+  if (!re.test(sample))
+    throw new Error(
+      `check:vocab canary FAILED: the pattern for ${what} no longer matches its own sample. A clean result would mean nothing.`,
+    );
+  if (re.test(BENIGN_SAMPLE))
+    throw new Error(
+      `check:vocab canary FAILED: the pattern for ${what} flags an ordinary line. The gate is not discriminating.`,
+    );
+}
+
 // ---- the scan ----
 const findings = [];
 let scanned = 0;
@@ -306,5 +321,5 @@ if (findings.length > 0) {
 }
 
 console.log(
-  `check:vocab — ${scanned} files, every identifier resolvable (${PROTOCOL_VOCAB.size} tokens read from ${VOCAB_FILES} files across ${VOCAB_PACKAGES} published protocol packages, none of them ours), 4/4 canaries.`,
+  `check:vocab — ${scanned} files, every identifier resolvable (${PROTOCOL_VOCAB.size} tokens read from ${VOCAB_FILES} files across ${VOCAB_PACKAGES} published protocol packages, none of them ours), ${CANARIES.length}/${CANARIES.length} identifier + ${FORBIDDEN_LITERALS.length}/${FORBIDDEN_LITERALS.length} literal canaries.`,
 );

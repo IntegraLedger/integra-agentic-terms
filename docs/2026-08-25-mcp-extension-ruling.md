@@ -173,7 +173,7 @@ decision to make, not this ruling's.
 ## 8. Re-measuring this — verbatim
 
 ```bash
-cd integra-july-2026/integra-agentic-terms
+cd integra-agentic-terms   # your clone of this repository
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 CORE="$PWD/node_modules/.pnpm/@modelcontextprotocol+core@2.0.0/node_modules/@modelcontextprotocol/core"
 
