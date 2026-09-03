@@ -11,7 +11,7 @@ import type { GatePorts } from "@integraledger/agentic-terms";
 declare const ports: GatePorts;
 // ports.fetcher — decides which bytes the fingerprint is recomputed over
 // ports.now     — dates every entry in the record
-// ports.log     — optional ORC-4 sink; the gate appends every decision it reaches
+// ports.log     — optional decision sink; the gate appends every decision it reaches
 ```
 
 Injection is what keeps the gate viem-free and runnable off Node. It is also the reason the gate is
@@ -98,6 +98,14 @@ const log: Orc4Log = {
   },
 };
 ```
+
+<Callout type="info">
+**`Orc4` in those names is a requirement id, and it is not an LCP clause number.** Looking for `ORC-4` in
+the specification will not find it: LCP is cited by section — `§2.6`, `§12.7` — and anything shaped
+`XXX-n` comes from Integra's own functional specification of what a complete agent transaction requires,
+where the `ORC` family is orchestration. The same register is glossed in full in each package's README,
+which is where an installed tarball's reader meets it. Nothing about the log's behaviour depends on it.
+</Callout>
 
 Every entry the gate writes carries `legalContextUrl` alongside `atrHash`, and the reason is worth
 knowing: on the decision that matters most — a fingerprint mismatch — the advertised hash is *by
