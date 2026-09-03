@@ -38,7 +38,7 @@
     "@biomejs/biome": "2.5.10",
     "@changesets/cli": "3.0.1",
     "@integraledger/agentic-terms": "workspace:*",
-    "@integraledger/lcp-conformance": "0.14.0",
+    "@integraledger/lcp-conformance": "0.15.0",
     "@integraledger/lcp-mcp-server": "workspace:*",
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0",
