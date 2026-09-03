@@ -187,6 +187,21 @@ See [AP2](/protocols/ap2).
 
 ## ACK-Pay receipts
 
-### `parseAckReceipt(credential)` · `ackReceiptContribution(facts)`
+### `parseAckReceipt(credential)`
+
+Reads an issued `PaymentReceiptCredential` into `AckReceiptFacts` — the recovered `atrHash`, the payer DID
+and its method, the issuing receipt service, and the `paymentRequestToken` that joins the receipt to the
+request it settled.
+
+### `ackReceiptContribution(credential, receiptBytes)`
+
+Two arguments, and the second is not optional. `receiptBytes` are the retained credential **exactly as it
+was received**, because what an evidence package must hold is what the issuer signed — not a
+re-serialization of the parse.
+
+It splits the receipt into its two rungs, which is the point: an ACK receipt is *both* an evidence
+artifact and an identity input. The artifact is filed under the `settlement` role — an ACK receipt is
+ACK's settlement artifact — and the payer DID's **method** is reported without being mapped to an
+assurance level, because that mapping is seller-authored and lives once, on the seller side.
 
 ### `ACK_DID_METHODS` · `AckReceiptFacts` · `AckReceiptContribution`

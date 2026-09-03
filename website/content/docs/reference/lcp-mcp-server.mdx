@@ -11,9 +11,11 @@ Node ≥ 24. ESM only. Built on the MCP v2 SDK.
 
 ## Serving
 
-### `serveLcpStdio(ports)`
+### `serveLcpStdio(ports, options?)`
 
-Serve over stdio — what every desktop agent host speaks.
+Serve over stdio — what every desktop agent host speaks. Returns the SDK's `StdioServerHandle`; `options`
+is the SDK's `ServeStdioOptions`, passed straight through, which is the door a linked in-memory transport
+or a socket-bound deployment goes through. Both types come from `@modelcontextprotocol/server/stdio`.
 
 ### `createLcpMcpServer(ports)`
 
@@ -60,11 +62,24 @@ differ. See [annotations](/mcp/tools#annotations).
 
 ## Dispatch helpers
 
-### `resolveAdapter(protocol, deployment?)`
+### `resolveAdapter(protocol, ports)`
+
+Turns a wire token into a placement adapter, through `@integraledger/lcp-placements` and nothing else.
+Takes the whole `LcpMcpPorts` — the namespaced placements read `deployment` off it — and it is required.
+
+Two failures, kept distinct: a token that is not an LCP protocol id throws naming the closed set, while a
+real protocol id with no registered placement throws naming what this build *can* place into.
 
 ### `manifestSummary(manifest)`
 
-### `refusalResult(message)`
+The manifest facts a caller needs to see where a reference went, without shipping the manifest's own prose
+and alias table. `container` reports the kind only; the human-readable locator is `field`.
+
+### `refusalResult(refusal)`
+
+A placement `Refusal` — the value type from `@integraledger/lcp-binding-core`, never a string — as MCP
+sees it. The halt class and the stable code travel in `structuredContent` where a caller can branch on
+them, and `isError: true` is what makes MCP hand the whole thing to the model.
 
 ## Discovery
 
