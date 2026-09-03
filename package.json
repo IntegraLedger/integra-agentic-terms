@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@biomejs/biome": "2.5.10",
+    "@biomejs/biome": "2.5.11",
     "@changesets/cli": "3.0.1",
     "@integraledger/agentic-terms": "workspace:*",
     "@integraledger/lcp-conformance": "0.15.0",
