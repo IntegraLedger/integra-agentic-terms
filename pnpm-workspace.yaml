@@ -37,7 +37,11 @@ minimumReleaseAgeExclude:
 # graph (dev tooling: stryker, vitest/vite). Reviewed on every audit run; `pnpm audit` in verify is the
 # gate that decides whether an entry is still needed or a new one is.
 overrides:
-  qs: ">=6.15.2" # stringify DoS on null entries in comma-format arrays; dev-only, via @stryker-mutator/core
+  # GHSA-x5fp-wj9c-mxmx (moderate) array-limit bypass via bracket-key comma parsing, GHSA-4mjr-xmp4-gh2g
+  # (moderate) DoS via attacker-controlled isBuffer — both 2026-09-02, both fixed in 6.16.0 (published
+  # 08-29, clear of the quarantine). Supersedes the 6.15.2 floor for the comma-format stringify DoS.
+  # Dev-only, via @stryker-mutator/core > typed-rest-client — no consumer path.
+  qs: ">=6.16.0"
   # GHSA-rgw5-rvv9-x895 (high): unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation.
   # Dev-only, via @stryker-mutator/core > minimatch — no consumer path.
   brace-expansion: ">=5.0.9"
@@ -46,7 +50,10 @@ overrides:
   postcss: ">=8.5.23"
   # GHSA-7p8r-x3mc-p8w7 (high): host confusion via a backslash authority introducer. Dev-only,
   # via @stryker-mutator/core > ajv — no consumer path.
-  fast-uri: ">=3.1.5"
+  # FOUR more on 2026-09-02 — GHSA-5jgf-p345-68v8, GHSA-jqff-g426-hqxp (host confusion via skipped IDN /
+  # percent-encoded scheme), GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf (SSRF) — all fixed in 4.1.3
+  # (published 08-23, clear of the quarantine). Supersedes the 3.1.5 floor. Still dev-only via ajv.
+  fast-uri: ">=4.1.3"
   # nanoid <3.3.18 — TWO advisories, one entry. GHSA-2v37-7h3g-55p8 (high): a custom generator loops
   # indefinitely when size is zero, fixed in 3.3.18; it supersedes the predictable-output advisory that
   # first added this entry, fixed in 3.3.17. Dev-only, via vitest > vite > postcss. The floor states 3.3.18
