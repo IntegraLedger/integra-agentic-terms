@@ -1,5 +1,84 @@
 # @integraledger/agentic-terms
 
+## 0.14.0
+
+### Minor Changes
+
+- fd79ce1: Peer the protocol at `^0.15.0` — and the two public pages that told a reader otherwise.
+  
+  Protocol `0.15.0` is live. On a `0.x` line a caret pins the MINOR, so `^0.14.0` means `>=0.14.0 <0.15.0`
+  and **excludes the line it names**. The gap is invisible to `check:wire` by construction: that gate reads
+  the declarations for coherence, and a caret anchored at the dev pin satisfies every rule it has.
+  
+  **Measured against the live registry, not derived** — fresh directory, no lockfile, full nested
+  enumeration (`find node_modules -path '*lcp-kernel/package.json'`), npm 11.6.2 / node v25.2.1:
+  
+  ```
+  npm i agentic-terms lcp-kernel          exit 0, ZERO warnings  one line at 0.14.0
+  npm i lcp-kernel agentic-terms          exit 0, ONE warning    0.15.0 top-level, and 0.14.0 nested
+                                                                 five times under authority,
+                                                                 binding-core, discovery, evidence, verify
+  npm i lcp-kernel@0.15.0 agentic-terms   exit 1, ERESOLVE       nothing installed
+  ```
+  
+  Six `lcp-kernel` identities at two versions, decided by which name the caller types first — the tree
+  `check:wire` exists to refuse, arriving with exit 0 and one warning that scrolls past. ⭐ Note the
+  inversion: a consumer who PINS gets an honest hard failure; one who does not gets the split.
+  
+  29 pins move together, across all four manifest surfaces — the root's `lcp-conformance` (the root is not
+  a package, and a `packages/*` sweep does not reach it), ten dev pins and nine peers in `agentic-terms`,
+  and nine **runtime `dependencies`** in `lcp-mcp-server`, the field that was reported as needing no edit
+  during the last repin and was wrong then. Plus the fifth surface a manifest sweep never reaches: the two
+  public install pages that state the range, `quickstart.mdx` and `reference/agentic-terms.mdx`. The dated
+  records that state the old range are left alone — rewriting a record to match the present falsifies it.
+  
+  **No source change, and that was checked rather than assumed.** `0.15.0` renames `Envelope` → `Atr`,
+  `AtrFile`/`atrFile` → `AtrBytes`/`atrBytes`, `Component` → `Slot`, and `assemble/component-shape` →
+  `assemble/slot-shape`. None of it lands here: every `Envelope` in this tree is the AP2 transport envelope,
+  which that release deliberately keeps, and the one `assemble()` caller destructures `atrHash` alone. The
+  ACP round-trip assembles a real ATR rather than pinning a digest, so the ATR's moved first member
+  (`atrVersion`) is absorbed by the round-trip instead of stranding a fixture.
+
+### Patch Changes
+
+- e1b5b8e: Gloss the requirement ids these packages ship, and add the two gates a public npm surface was missing.
+  
+  **Both packages pack `src/`, and that `src/` cited identifiers a stranger could not resolve.** `files`
+  includes `src`, so eleven citations across six families — `IDN-1`, `IDN-3`, `ATA-2`, `ORC-4`, `RCS-4`,
+  `DSC-2` — reach anyone who installs, and neither README explained them. They are not LCP clause numbers;
+  they come from Integra's own functional specification. `integra-protocol` settled this in August by
+  glossing the fourteen families in its root README and in all twenty-one of its package READMEs, and the
+  same table now appears here, where this tarball's reader can actually see it. The ids themselves are
+  unchanged — they are load-bearing in review, and a citation a reader cannot resolve is worse than prose.
+  
+  **`check:dist`** refuses a build output whose source no longer exists. `tsc` never removes output for a
+  deleted or renamed source and `dist/` is gitignored, so an orphan is invisible to review — but it travels
+  in the tarball with a source map pointing at a path the tarball does not contain. Two public packages is a
+  smaller surface than thirty-one, not a safer one.
+  
+  **`depcruise`, run through `scripts/depcruise-gate.mjs` and carrying `buyer-gate-is-chain-free`. ⛔⛔ That
+  rule existed before the severance and was lost in it.** While the buyer gate lived in the seller-side repository, a dep-cruiser rule forbade any file under
+  it — tests included — from importing viem or a rail binding. The package moved here; the rule did not
+  follow, so for two weeks the property held only because nobody happened to break it. This package halts
+  before a signing key is invoked, so a chain SDK inside it is a settlement capability in the one surface
+  defined by never settling — and being public, it would ship. `lcp-binding-core` stays allowed: it is the
+  carrier vocabulary, not a rail. ⛔ The rule matches `lcp-binding-(?!core)`, NOT `lcp-binding-<chain>-*`:
+  eight of the fifteen bindings the protocol publishes are single-segment (`-solana`, `-stellar`, `-xrpl`,
+  `-hedera`, `-cardano`, `-canton`, `-aptos`, `-sui`) and a trailing-hyphen pattern let every one of them
+  through. Re-planted on landing, import by import — all fifteen bindings plus `viem`, `ethers`, `xrpl` and
+  `@hashgraph/sdk` go red; `lcp-binding-core` stays green.
+  
+  ⛔ **`pnpm depcruise` runs a wrapper that asserts a module FLOOR**, because a cruise that sees nothing has
+  nothing to violate and reports the same colour as a real pass. Measured: `parser: "swc"` declared before
+  `@swc/core` was installed cruises 0 modules and exits 0. (The engine being missing is the trap — the tsc
+  parser does *not* cruise zero under TypeScript 7; it falls back to acorn, and all three parsers were
+  re-measured at an identical count.)
+  
+  **A pre-publish protocol seam gate** now runs the workspace against protocol code that has not been
+  published yet. `protocol-latest.yml` proves the caret against what is already published and cannot see a
+  break until after the protocol releases — and an npm version, once used, cannot be taken back. For two
+  public packages that discovery belongs before the irreversible act, not after it.
+
 ## 0.13.0
 
 ### Minor Changes
