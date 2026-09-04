@@ -189,9 +189,16 @@ See [AP2](/protocols/ap2).
 
 ### `parseAckReceipt(credential)`
 
-Reads an issued `PaymentReceiptCredential` into `AckReceiptFacts` — the recovered `atrHash`, the payer DID
-and its method, the issuing receipt service, and the `paymentRequestToken` that joins the receipt to the
-request it settled.
+Reads an issued receipt credential into `AckReceiptFacts`, which carries seven members: the recovered
+`atrHash`; `paymentRequestToken`, ACK's join key — the signed request this receipt attests and no other;
+`paymentOptionId`, which of that request's options was taken; `payerDid` and `payerDidMethod`, narrowed to
+`ACK_DID_METHODS`; `issuerDid`, the receipt service that signed, recorded and never mistaken for the
+payer; and `siblingRefKeys`.
+
+That last one is reported rather than dropped because it is the honest form of *we are a guest in this
+map*: ACK's own audit trail puts `policyRef`, `mandateRef`, `executionRef`, `settlementNetwork` and
+whatever else a deployment added into the same place, and this reads exactly one key and owns none of the
+rest. A record composer wants to know what else the receipt cross-references.
 
 ### `ackReceiptContribution(credential, receiptBytes)`
 
