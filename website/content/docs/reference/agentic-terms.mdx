@@ -166,7 +166,8 @@ The core comparison. Returns `{ status: "proved", atrHash }` or
 ### `InMemoryOrc4Log` · `Orc4Log` · `Orc4Entry`
 
 A real, complete in-memory sink and its one-method interface. Every entry carries `legalContextUrl`
-alongside `atrHash` — see [why](/ports#log).
+alongside `atrHash`, and `Orc4` in these names is a requirement id rather than an LCP clause number —
+[ports](/ports#log) has both, the reason for the field and the gloss for the name.
 
 ## Post-settlement
 
@@ -196,9 +197,10 @@ Reads an issued receipt credential into `AckReceiptFacts`, which carries seven m
 payer; and `siblingRefKeys`.
 
 That last one is reported rather than dropped because it is the honest form of *we are a guest in this
-map*: ACK's own audit trail puts `policyRef`, `mandateRef`, `executionRef`, `settlementNetwork` and
-whatever else a deployment added into the same place, and this reads exactly one key and owns none of the
-rest. A record composer wants to know what else the receipt cross-references.
+map*: ACK's own audit trail puts `policyRef`, `mandateRef`, `executionRef`, `executionReceiptHash`,
+`settlementNetwork` and `settlementReference` in the same place — all six are ACK's, not a deployment's —
+plus whatever else a deployment added, and this reads exactly one key and owns none of the rest. A record
+composer wants to know what else the receipt cross-references.
 
 ### `ackReceiptContribution(credential, receiptBytes)`
 

@@ -65,10 +65,21 @@ differ. See [annotations](/mcp/tools#annotations).
 ### `resolveAdapter(protocol, ports)`
 
 Turns a wire token into a placement adapter, through `@integraledger/lcp-placements` and nothing else.
-Takes the whole `LcpMcpPorts` — the namespaced placements read `deployment` off it — and it is required.
+Takes the whole `LcpMcpPorts`, and takes it required: this reads `deployment` off the ports and hands it
+to the registry, which the one namespaced placement needs.
 
-Two failures, kept distinct: a token that is not an LCP protocol id throws naming the closed set, while a
-real protocol id with no registered placement throws naming what this build *can* place into.
+Three throws reach a caller, kept distinct because they ask for three different fixes:
+
+| Throws when | It names |
+|---|---|
+| the token is not an LCP protocol id | the closed set of ids |
+| the protocol is namespaced and `deployment` is absent | that a reverse domain has no default and must be supplied |
+| a real protocol id has no registered placement | what this build *can* place into |
+
+The middle one comes from the registry rather than from here, and it is a caller defect rather than an
+absence: the placement exists and cannot be built without a namespace. The third is the opposite — `mcp`
+is a real protocol id with no field placement at all and none coming, because MCP is a delivery mechanism
+rather than a document with a field to ride in.
 
 ### `manifestSummary(manifest)`
 
