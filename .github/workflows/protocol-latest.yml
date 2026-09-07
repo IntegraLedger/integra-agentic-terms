@@ -55,8 +55,20 @@ jobs:
         # into `^0.12.2`, RAISING the floor and stranding consumers on earlier patches of the same line,
         # which `check:wire` refuses outright. The exercised version lives in `devDependencies` and that is
         # the only thing this job may move; the ranges under test must reach `verify` exactly as published.
+        #
+        # ⛔ AND `!@integraledger/lcp-mcp-server` IS LOAD-BEARING FOR A SECOND REASON. The glob is written to
+        # match the PUBLISHED protocol line, and it also matches one of THIS repository's own workspace
+        # packages by name. Driven 2026-09-07: without the exclusion, the root manifest's
+        # `"@integraledger/lcp-mcp-server": "workspace:*"` is rewritten to `^0.14.0` — the last PUBLISHED
+        # release of our own package — so the job stops exercising this tree and starts exercising an old
+        # tarball of itself. `check:wire` catches it at stage 3 and says why: "A sibling declared by
+        # published range makes `changeset version` rewrite it to the version the release is creating, which
+        # cannot install." That refusal is correct, and it fired on every scheduled run from 2026-08-27,
+        # filing issue #2 against a defect in this file rather than in the protocol line it exists to watch.
+        # ⚠️ `@integraledger/lcp-conformance` is a real registry dependency in the root and MUST still move,
+        # so the exclusion names the one package rather than skipping the root.
         run: |
-          pnpm up --dev "@integraledger/lcp-*@latest" -r
+          pnpm up --dev "@integraledger/lcp-*@latest" "!@integraledger/lcp-mcp-server" -r
           echo "### Exercised line after update" >> "$GITHUB_STEP_SUMMARY"
           node -p "'  '+require('./packages/agentic-terms/package.json').devDependencies['@integraledger/lcp-kernel']" >> "$GITHUB_STEP_SUMMARY"
 
@@ -73,6 +85,23 @@ jobs:
         # published advisory can redden this job for reasons unrelated to the protocol — the issue body
         # carries the tail of the log so that is a two-second triage rather than a false signal.
         run: pnpm verify 2>&1 | tee /tmp/verify.log
+
+      # ⛔ THE RUN CLOSES WHAT THE RUN OPENED. Without this the issue is a one-way door: the job files it on
+      # failure and nothing ever retracts it, so a fixed line leaves a stale open issue asserting that the
+      # caret range does not hold — and the next reader has to establish by hand whether it still does. An
+      # issue that only ever opens is a claim nobody is accountable for withdrawing.
+      - name: Close the issue when the line holds again
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "protocol-latest: the caret range does not hold against latest"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          [ -z "$EXISTING" ] && exit 0
+          LINE=$(node -p "require('./packages/agentic-terms/package.json').devDependencies['@integraledger/lcp-kernel']" 2>/dev/null || echo "unknown")
+          gh issue close "$EXISTING" --comment "$(printf 'Closed by the run that verified it: `pnpm verify` passed with the protocol line installed at **%s** (latest).\n\n[Run log](%s)\n' "$LINE" "$RUN_URL")"
 
       - name: Open or update the issue
         # ANY failure, not just `verify`'s. If the install or the update step is what broke, that is still
