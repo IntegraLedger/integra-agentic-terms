@@ -1,5 +1,38 @@
 # @integraledger/lcp-mcp-server
 
+## 0.16.0
+
+### Minor Changes
+
+- Repin to the 0.17.0 protocol line.
+  
+  Minor rather than patch: it changes what a consumer's tree must contain. `@integraledger/agentic-terms`
+  peers the protocol at `^0.17.0` and `@integraledger/lcp-mcp-server` ships it at `^0.17.0`, so a consumer on
+  the 0.16 line must move with it.
+  
+  ⛔ The previous line was not merely old, it was UNCOMBINABLE. On a `0.x` version a caret is minor-locked, so
+  `^0.16.0` excludes `0.17.0` outright. A consumer holding both this package and the 0.17.0 protocol did not
+  get an error — pnpm resolved a SECOND protocol line beside the first, thirteen packages deep. Two copies of
+  `lcp-binding-core` in one tree break `instanceof CarrierError`, and nothing in that consumer's build says
+  so. It surfaced only when a downstream repository's own wire gate refused the install.
+  
+  ⚠️ The stale pin was in three places and only two of them were in a package: `packages/agentic-terms`
+  (devDependencies and peerDependencies), `packages/lcp-mcp-server` (dependencies), and the ROOT manifest's
+  `@integraledger/lcp-conformance`, which sat outside both packages and pulled the entire 0.16.0 cluster back
+  in by itself after the other two had moved.
+  
+  The install instructions in `website/content/docs/quickstart.mdx` and
+  `website/content/docs/reference/agentic-terms.mdx` move with it; `check:wire` holds them equal to the
+  declared peer range and refused until they did.
+  
+  `pnpm verify` exits 0 — 14 stages, one exercised protocol line (0.17.0), every peer range satisfied, wire
+  identities matching the seal, both public packages carrying their metadata.
+
+### Patch Changes
+
+- Updated dependencies
+  - @integraledger/agentic-terms@0.16.0
+
 ## 0.15.0
 
 ### Minor Changes

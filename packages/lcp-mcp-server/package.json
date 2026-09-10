@@ -1,6 +1,6 @@
 {
   "name": "@integraledger/lcp-mcp-server",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "type": "module",
   "exports": {
     ".": {
@@ -34,15 +34,15 @@
   },
   "dependencies": {
     "@integraledger/agentic-terms": "workspace:*",
-    "@integraledger/lcp-authority": "^0.16.0",
-    "@integraledger/lcp-binding-core": "^0.16.0",
-    "@integraledger/lcp-discovery": "^0.16.0",
-    "@integraledger/lcp-evidence": "^0.16.0",
-    "@integraledger/lcp-kernel": "^0.16.0",
-    "@integraledger/lcp-placement-ack": "^0.16.0",
-    "@integraledger/lcp-placement-ap2": "^0.16.0",
-    "@integraledger/lcp-placements": "^0.16.0",
-    "@integraledger/lcp-verify": "^0.16.0",
+    "@integraledger/lcp-authority": "^0.17.0",
+    "@integraledger/lcp-binding-core": "^0.17.0",
+    "@integraledger/lcp-discovery": "^0.17.0",
+    "@integraledger/lcp-evidence": "^0.17.0",
+    "@integraledger/lcp-kernel": "^0.17.0",
+    "@integraledger/lcp-placement-ack": "^0.17.0",
+    "@integraledger/lcp-placement-ap2": "^0.17.0",
+    "@integraledger/lcp-placements": "^0.17.0",
+    "@integraledger/lcp-verify": "^0.17.0",
     "@modelcontextprotocol/server": "catalog:",
     "zod": "catalog:"
   },
@@ -52,7 +52,7 @@
     "vitest": "catalog:"
   },
   "license": "Apache-2.0",
-  "description": "Read-only Model Context Protocol server exposing Legal Context Protocol tools to an AI agent — verify before pay, compute an atrHash, extract and place references across the nine commerce protocols that have one. Works against any seller.",
+  "description": "Read-only Model Context Protocol server exposing Legal Context Protocol tools to an AI agent \u2014 verify before pay, compute an atrHash, extract and place references across the nine commerce protocols that have one. Works against any seller.",
   "keywords": [
     "lcp",
     "legal-context-protocol",

@@ -1,6 +1,6 @@
 {
   "name": "@integraledger/agentic-terms",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "type": "module",
   "exports": {
     ".": {
@@ -33,33 +33,33 @@
     "zod": "catalog:"
   },
   "peerDependencies": {
-    "@integraledger/lcp-authority": "^0.16.0",
-    "@integraledger/lcp-binding-core": "^0.16.0",
-    "@integraledger/lcp-discovery": "^0.16.0",
-    "@integraledger/lcp-evidence": "^0.16.0",
-    "@integraledger/lcp-kernel": "^0.16.0",
-    "@integraledger/lcp-placement-ack": "^0.16.0",
-    "@integraledger/lcp-placement-ap2": "^0.16.0",
-    "@integraledger/lcp-placements": "^0.16.0",
-    "@integraledger/lcp-verify": "^0.16.0"
+    "@integraledger/lcp-authority": "^0.17.0",
+    "@integraledger/lcp-binding-core": "^0.17.0",
+    "@integraledger/lcp-discovery": "^0.17.0",
+    "@integraledger/lcp-evidence": "^0.17.0",
+    "@integraledger/lcp-kernel": "^0.17.0",
+    "@integraledger/lcp-placement-ack": "^0.17.0",
+    "@integraledger/lcp-placement-ap2": "^0.17.0",
+    "@integraledger/lcp-placements": "^0.17.0",
+    "@integraledger/lcp-verify": "^0.17.0"
   },
   "devDependencies": {
-    "@integraledger/lcp-authority": "0.16.0",
-    "@integraledger/lcp-binding-core": "0.16.0",
-    "@integraledger/lcp-discovery": "0.16.0",
-    "@integraledger/lcp-evidence": "0.16.0",
-    "@integraledger/lcp-kernel": "0.16.0",
-    "@integraledger/lcp-placement-ack": "0.16.0",
-    "@integraledger/lcp-placement-acp": "0.16.0",
-    "@integraledger/lcp-placement-ap2": "0.16.0",
-    "@integraledger/lcp-placements": "0.16.0",
-    "@integraledger/lcp-verify": "0.16.0",
+    "@integraledger/lcp-authority": "0.17.0",
+    "@integraledger/lcp-binding-core": "0.17.0",
+    "@integraledger/lcp-discovery": "0.17.0",
+    "@integraledger/lcp-evidence": "0.17.0",
+    "@integraledger/lcp-kernel": "0.17.0",
+    "@integraledger/lcp-placement-ack": "0.17.0",
+    "@integraledger/lcp-placement-acp": "0.17.0",
+    "@integraledger/lcp-placement-ap2": "0.17.0",
+    "@integraledger/lcp-placements": "0.17.0",
+    "@integraledger/lcp-verify": "0.17.0",
     "@types/node": "catalog:",
     "fast-check": "4.9.0",
     "vitest": "catalog:"
   },
   "license": "Apache-2.0",
-  "description": "Integra Agentic Terms — the buyer-side verify-before-sign gate for agentic purchases. Fetches the terms a seller advertised, recomputes the fingerprint, and halts before any signing key is invoked if they disagree. Works against any seller.",
+  "description": "Integra Agentic Terms \u2014 the buyer-side verify-before-sign gate for agentic purchases. Fetches the terms a seller advertised, recomputes the fingerprint, and halts before any signing key is invoked if they disagree. Works against any seller.",
   "keywords": [
     "lcp",
     "legal-context-protocol",
