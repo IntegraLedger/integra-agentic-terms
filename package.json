@@ -12,6 +12,7 @@
     "prepare": "node scripts/setup-hooks.mjs",
     "build": "pnpm -r build",
     "check:commit-messages": "node scripts/check-commit-messages.mjs",
+    "check:currency": "node scripts/check-protocol-currency.mjs",
     "check:dist": "node scripts/check-dist-orphans.mjs",
     "check:docs": "node scripts/check-doc-snippets.mjs",
     "check:public-boundary": "node scripts/check-public-boundary.mjs",

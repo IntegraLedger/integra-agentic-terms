@@ -20,6 +20,7 @@ pnpm verify  =  check:versions → check:commit-messages → check:wire → chec
                 → test:scripts → test
 pnpm mutation <pkg>            (STRYKER_PKG required; ratchets in stryker.config.mjs — raise, never lower)
 pnpm check:runtime             (packs, installs as a consumer, runs the gate — the Node leg of the matrix)
+pnpm check:currency            (the declared protocol line vs what npmjs serves — scheduled, never in verify)
 ```
 
 `test:scripts` was added 2026-08-30, and is the first drive any script in `scripts/` has had. `pnpm -r
@@ -69,6 +70,17 @@ workspace. swc is a preference — one extra resolved edge, no error-recovery gu
 npmjs, which does not belong in the inner loop — but that makes it a gate a green `verify` does not cover.
 `pnpm check:runtime` runs the Node leg locally; Bun and Deno run only in `ci.yml`. Check the run before
 assuming a green `verify` means a green CI.
+
+⚠️ **`check:currency` is NOT in `verify` either, and for the opposite reason to `check:runtime`.** It is
+the only gate here whose subject is not in this tree at all: it compares the protocol line the manifests
+DECLARE against the line npmjs serves under `latest`. `check:wire` cannot ask that — it is a coherence
+gate, and the repository was internally consistent on every day the stale-peer defect shipped. Putting a
+registry read inside `verify` would turn a protocol release, an event on another repository's schedule,
+into a red build for whoever was editing a README, so it runs six-hourly in
+`.github/workflows/protocol-currency.yml` and opens an issue rather than failing a branch. ⛔ **A network
+failure is a refusal with its own message, never "up to date"** — unreachable, 404, malformed and actually
+behind are four different sentences and none of them exits 0. Its drive IS in `verify`, through
+`test:scripts`, because the registry is injected as a port.
 
 `pnpm verify` is not hermetic — the audit stage fails on any newly published advisory against an unchanged
 tree. If only that stage fails: record the advisory, run the rest explicitly, proceed, triage separately.

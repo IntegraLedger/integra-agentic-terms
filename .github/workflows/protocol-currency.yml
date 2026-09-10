@@ -1,0 +1,129 @@
+name: protocol-currency
+# THE DECLARED PROTOCOL LINE AGAINST THE PUBLISHED ONE — the one question no file in this tree can answer.
+#
+# ⛔⛔ THE DEFECT, WHICH HAS SHIPPED THREE TIMES. `agentic-terms` peers `@integraledger/lcp-*` at `^X.Y.0`,
+# and on a `0.x` version a caret is MINOR-LOCKED, so `^0.16.0` excludes `0.17.0` outright. A consumer
+# holding this package and the newer protocol together gets **no error**: pnpm resolves a SECOND protocol
+# line beside the first, thirteen packages deep, and two copies of `lcp-binding-core` break
+# `instanceof CarrierError`. It happened at 0.14.0 → 0.15.0, at 0.15.0 → 0.16.0 and again at
+# 0.16.0 → 0.17.0, and every time it surfaced only when a downstream repository's wire gate refused an
+# install — after the version was published and consumers were already resolving it.
+#
+# ⭐ WHY THIS IS NOT `protocol-latest.yml` AGAIN. That job moves the dev pins to `latest` and runs the
+# whole of `verify`, so `check:wire` DOES eventually go red on the same drift. Three things separate them:
+#
+#   LATENCY.      `protocol-latest` samples once per WEEKDAY at 06:17 UTC. `@integraledger/lcp-kernel`
+#                 0.17.0 was published 2026-09-10T16:01Z; that day's run had already gone green at 06:40Z,
+#                 so the earliest it could have spoken was ~14 hours later — ~62 for a Friday-evening
+#                 publish. This job samples every six hours, every day, and costs eleven HTTP GETs.
+#   ATTRIBUTION.  Its red is `pnpm verify` failing over a job that also runs `audit` — non-hermetic by its
+#                 own docblock — plus build, lint, typecheck and every test. This one makes a single
+#                 comparison and names both lines and every declaration site.
+#   SILENCE.      Its whole signal depends on `pnpm up --dev` having moved something, and `pnpm up` exits 0
+#                 when it moves nothing. Here an unreachable registry, a 404, a malformed response and
+#                 real drift are four different messages and none of them exits 0.
+#
+# ⛔ AND IT IS DELIBERATELY NOT IN `pnpm verify`. `verify` is this repository's OFFLINE definition of "does
+# this tree pass". A network read inside it would turn every protocol release — an event in another
+# repository, on someone else's schedule — into a red build for whoever happened to be editing a README.
+# The hermetic drive for the check IS in `verify`, through `test:scripts`.
+#
+# ⚠️ A RED HERE IS NOT A RED COMMIT. Nothing in this repository changed; the world did. So it opens an
+# issue instead of failing a branch, and `main` stays green while someone reads it.
+#
+# ⭐ NO INSTALL, AND THAT IS A PROPERTY WORTH KEEPING. The check reads the manifests and the registry, and
+# resolves nothing out of `node_modules`. A job that does not install cannot be reddened by an install, and
+# cannot report a registry problem as a dependency problem. Do not add `pnpm install` to make something
+# else convenient here.
+on:
+  schedule:
+    # ⛔ EVERY SIX HOURS, EVERY DAY — not weekdays. The event this watches is a publish in ANOTHER
+    # repository, which does not respect this one's working week: `lcp-kernel` 0.16.1 and 0.17.0 both
+    # shipped on a Thursday, one at 07:24Z and one at 16:01Z, and a weekday-morning sample would have seen
+    # neither for most of a day. The minute is offset off the hour because scheduled workflows queue behind
+    # everything GitHub runs at :00.
+    #
+    # ⚠️ It is NOT offset to avoid the neighbours, and that difference is worth stating. `protocol-latest`
+    # (06:17) and `protocol-integration` (06:45) space themselves because they read the same protocol git
+    # HEAD, and overlapping runs make a failure ambiguous about which HEAD each saw. This job reads the
+    # registry — a published version is immutable — so an overlap here is harmless and no future scheduling
+    # change needs to preserve a gap.
+    - cron: "53 */6 * * *"
+  workflow_dispatch:
+
+# ⚠️ LEAST PRIVILEGE IS PER-JOB, NOT PER-WORKFLOW. A top-level `permissions:` block grants its scopes to
+# every job, including ones added later that have no business holding them; job-level blocks REPLACE the
+# top-level one rather than merging with it, so the block below states every scope its job needs. OpenSSF
+# Scorecard flags a top-level write, and it has flagged this repository before.
+permissions:
+  contents: read
+
+concurrency:
+  group: protocol-currency
+  cancel-in-progress: true
+
+jobs:
+  currency:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # the whole point of the job is to be able to say something happened
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          # No `cache: pnpm`: nothing is installed here, so there is nothing to cache and no pnpm to
+          # configure. See the note above about not adding an install.
+
+      - name: Compare the declared protocol line against npmjs
+        id: currency
+        # ⛔ `shell: bash` IS WHAT MAKES THIS STEP ABLE TO FAIL. The default shell for `run:` on Linux is
+        # `bash -e {0}`, WITHOUT pipefail, so `node … | tee` would exit with `tee`'s status and this job
+        # would report green through every refusal it exists to raise. Naming the shell gets `-eo pipefail`.
+        # This repository has been bitten by the piped-exit-status trap before; a gate that cannot go red is
+        # worse than no gate.
+        shell: bash
+        run: node scripts/check-protocol-currency.mjs 2>&1 | tee /tmp/currency.log
+
+      # ⛔ THE RUN CLOSES WHAT THE RUN OPENED. Without this the issue is a one-way door: filed on failure
+      # and never retracted, so a repinned tree leaves a stale open issue asserting drift that no longer
+      # exists, and the next reader has to establish by hand whether it does. An issue that only ever opens
+      # is a claim nobody is accountable for withdrawing.
+      - name: Close the issue when the line is current again
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "protocol-currency: the declared protocol line is not the published one"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          [ -z "$EXISTING" ] && exit 0
+          gh issue close "$EXISTING" --comment "$(printf 'Closed by the run that measured it: every declared `@integraledger/lcp-*` package is on a line npmjs still serves under `latest`.\n\n[Run log](%s)\n' "$RUN_URL")"
+
+      - name: Open or update the issue
+        # ANY failure, not just the check's. If the checkout or the Node setup is what broke, that is still
+        # something a person needs to be told — scoping this to `steps.currency.outcome` would leave the job
+        # red and silent in exactly the cases nobody is watching for.
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "protocol-currency: the declared protocol line is not the published one"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # `gh`, not a marketplace action: this repository pins every action by SHA and declares per-workflow
+        # permissions, and widening the supply-chain surface to file an issue would be a poor trade. `gh` is
+        # preinstalled on the runner and uses the built-in token.
+        run: |
+          # The log may not exist: an earlier step can fail before the check ever runs. Say which happened
+          # rather than pasting an empty block.
+          BODY_LOG=$(cat /tmp/currency.log 2>/dev/null || echo "(the check did not run — an earlier step failed; see the run log)")
+          BODY=$(printf 'The protocol line this repository DECLARES is not the line npmjs serves, or the registry could not be read. The refusal below says which — the four conditions are four different messages, and none of them means "up to date".\n\nNothing in this repository changed; the world did. `main` is not broken by this, and a repin is a release: raise a changeset, move the peer range, the exercised pin, the shipped `dependencies` and the install docs together, and let `check:wire` refuse every wrong shape on the way through.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$RUN_URL" "$BODY_LOG")
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
