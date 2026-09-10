@@ -42,7 +42,7 @@
     "@integraledger/lcp-mcp-server": "workspace:*",
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0",
-    "@swc/core": "1.16.1",
+    "@swc/core": "1.16.2",
     "@types/node": "catalog:",
     "dependency-cruiser": "18.2.0",
     "publint": "0.3.24",
