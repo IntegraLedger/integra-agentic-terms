@@ -21,6 +21,15 @@ ignoredBuiltDependencies:
   - "@swc/core"
 
 catalog:
+  # ⛔ MUST equal the protocol repo's catalog pin, and this is the one entry here that carries a
+  # cross-repo obligation. `@integraledger/lcp-discovery` declares `zod` in its own `dependencies`, and
+  # THIS package is published too — so a divergence does not stay here, it ships, and lands as two copies
+  # in every tree that installs both, and at least one downstream consumer does.
+  #
+  # ⚠️ Nothing in the compiler will catch it: `zod` does not appear in this package's public `.d.ts`
+  # surface. What breaks is runtime identity — a schema built by one copy fails `instanceof` against the
+  # other, so every "is this one of mine" branch quietly answers no. `check:shared-pins` is the only thing
+  # that sees it, which is why the pin and this sentence move together.
   zod: "4.4.3" # trust boundaries only — never inside verification logic
   vitest: "4.1.11"
   "@types/node": "24.13.3" # FLOOR-pinned to engines (>=24.0.0): types never exceed the oldest supported runtime
