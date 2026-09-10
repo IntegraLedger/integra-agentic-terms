@@ -4,14 +4,14 @@
 
 ### Minor Changes
 
-- Repin to the 0.17.0 protocol line.
+- Repin to the 0.18.0 protocol line.
   
   Minor rather than patch: it changes what a consumer's tree must contain. `@integraledger/agentic-terms`
-  peers the protocol at `^0.17.0` and `@integraledger/lcp-mcp-server` ships it at `^0.17.0`, so a consumer on
+  peers the protocol at `^0.18.0` and `@integraledger/lcp-mcp-server` ships it at `^0.18.0`, so a consumer on
   the 0.16 line must move with it.
   
   ⛔ The previous line was not merely old, it was UNCOMBINABLE. On a `0.x` version a caret is minor-locked, so
-  `^0.16.0` excludes `0.17.0` outright. A consumer holding both this package and the 0.17.0 protocol did not
+  `^0.16.0` excludes every later minor outright. A consumer holding both this package and a newer protocol line did not
   get an error — pnpm resolved a SECOND protocol line beside the first, thirteen packages deep. Two copies of
   `lcp-binding-core` in one tree break `instanceof CarrierError`, and nothing in that consumer's build says
   so. It surfaced only when a downstream repository's own wire gate refused the install.
@@ -25,8 +25,12 @@
   `website/content/docs/reference/agentic-terms.mdx` move with it; `check:wire` holds them equal to the
   declared peer range and refused until they did.
   
-  `pnpm verify` exits 0 — 14 stages, one exercised protocol line (0.17.0), every peer range satisfied, wire
+  `pnpm verify` exits 0 — 14 stages, one exercised protocol line (0.18.0), every peer range satisfied, wire
   identities matching the seal, both public packages carrying their metadata.
+
+⚠️ **This entry was written for a repin to the 0.17.0 line and corrected before publishing.**
+0.16.0 was versioned but never released; the protocol moved to **0.18.0** first, so the peer range
+this version actually ships is `^0.18.0`. The reasoning below is unchanged — only the target line is.
 
 ## 0.15.0
 
