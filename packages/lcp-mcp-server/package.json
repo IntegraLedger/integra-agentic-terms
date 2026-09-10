@@ -1,6 +1,6 @@
 {
   "name": "@integraledger/lcp-mcp-server",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "type": "module",
   "exports": {
     ".": {
@@ -34,15 +34,15 @@
   },
   "dependencies": {
     "@integraledger/agentic-terms": "workspace:*",
-    "@integraledger/lcp-authority": "^0.18.0",
-    "@integraledger/lcp-binding-core": "^0.18.0",
-    "@integraledger/lcp-discovery": "^0.18.0",
-    "@integraledger/lcp-evidence": "^0.18.0",
-    "@integraledger/lcp-kernel": "^0.18.0",
-    "@integraledger/lcp-placement-ack": "^0.18.0",
-    "@integraledger/lcp-placement-ap2": "^0.18.0",
-    "@integraledger/lcp-placements": "^0.18.0",
-    "@integraledger/lcp-verify": "^0.18.0",
+    "@integraledger/lcp-authority": "^0.18.1",
+    "@integraledger/lcp-binding-core": "^0.18.1",
+    "@integraledger/lcp-discovery": "^0.18.1",
+    "@integraledger/lcp-evidence": "^0.18.1",
+    "@integraledger/lcp-kernel": "^0.18.1",
+    "@integraledger/lcp-placement-ack": "^0.18.1",
+    "@integraledger/lcp-placement-ap2": "^0.18.1",
+    "@integraledger/lcp-placements": "^0.18.1",
+    "@integraledger/lcp-verify": "^0.18.1",
     "@modelcontextprotocol/server": "catalog:",
     "zod": "catalog:"
   },

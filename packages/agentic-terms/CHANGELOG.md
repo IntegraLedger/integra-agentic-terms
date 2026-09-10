@@ -1,5 +1,45 @@
 # @integraledger/agentic-terms
 
+## 0.17.0
+
+### Minor Changes
+
+- The peer floor moves to 0.18.1 — the protocol line that converged `zod`, and the first floor that had to be a patch
+  
+  Protocol 0.18.1 exists to make one `zod` out of two. `lcp-discovery@0.18.0` declares `zod: 4.4.3`;
+  `0.18.1` declares `4.5.4`. This package declares `zod` itself, so it has to name which of those it agrees
+  with — and the version it agrees with is a PATCH, not a minor.
+  
+    catalog `zod`              4.4.3   -> 4.5.4
+    protocol devDependencies   0.18.0  -> 0.18.1   (11 pins, the exercised line)
+    protocol peers + shipped   ^0.18.0 -> ^0.18.1  (18 ranges)
+    the two published install pages that state the range
+  
+  ⛔ **AND THE FLOOR RULE HAD TO CHANGE TO ALLOW IT, WHICH IS THE REAL CONTENT OF THIS RELEASE.**
+  `check:wire` required every protocol range to be `^X.Y.0`, on the reasoning that raising a floor *"strands
+  consumers on earlier patches of the same line, and semver already guarantees those are compatible"*. Its
+  own comment said a genuine need for a patch floor was an argument to have in the rule rather than a range
+  to slip through. This is that argument: **the guarantee is false here.** 0.18.0 and 0.18.1 are the same
+  minor and declare different `zod` versions, so `^0.18.0` ADMITS the copy this release exists to remove —
+  and a consumer resolving there gets two `zod`s in one tree, which is the `instanceof` break across the
+  package boundary that peering was chosen to prevent. A patch that changes what a package DECLARES is not
+  interchangeable with its predecessor.
+  
+  ⭐ The replacement is STRICTER than what it replaced, not laxer. The floor must now EQUAL the exercised
+  dev pin, so neither side can drift alone: a bot raising the peer goes red against the pin, and a bot
+  raising every pin goes red against the peers. The old rule checked the peer's SHAPE and never compared it
+  to what CI actually installed.
+  
+  ⚠️ It refuses a consumer sitting on protocol 0.18.0. That is deliberate: every consumer of this line is
+  ours, so stranding is a backward-compatibility cost this repository does not pay — and the alternative is
+  shipping a range that admits a known-divergent tree.
+  
+  Planted, `package.json` restored from a byte copy and diffed identical after each:
+  
+    peer ^0.18.1 -> ^0.18.0   exit 1   the OLD rule's own shape, now refused by name
+    peer ^0.18.1 -> ^0.18.2   exit 1   the bot drift the old rule feared
+    devDep 0.18.1 -> 0.18.2   exit 1   the drift the old rule could NOT see
+
 ## 0.16.0
 
 ### Minor Changes

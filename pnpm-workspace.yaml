@@ -30,7 +30,7 @@ catalog:
   # surface. What breaks is runtime identity — a schema built by one copy fails `instanceof` against the
   # other, so every "is this one of mine" branch quietly answers no. `check:shared-pins` is the only thing
   # that sees it, which is why the pin and this sentence move together.
-  zod: "4.4.3" # trust boundaries only — never inside verification logic
+  zod: "4.5.4" # trust boundaries only — never inside verification logic
   vitest: "4.1.11"
   "@types/node": "24.13.3" # FLOOR-pinned to engines (>=24.0.0): types never exceed the oldest supported runtime
   # The MCP v2 SDK, split from v1's monolithic @modelcontextprotocol/sdk. 2.0.0 is the STABLE line

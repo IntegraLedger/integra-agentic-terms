@@ -1,6 +1,6 @@
 {
   "name": "@integraledger/agentic-terms",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "type": "module",
   "exports": {
     ".": {
@@ -33,27 +33,27 @@
     "zod": "catalog:"
   },
   "peerDependencies": {
-    "@integraledger/lcp-authority": "^0.18.0",
-    "@integraledger/lcp-binding-core": "^0.18.0",
-    "@integraledger/lcp-discovery": "^0.18.0",
-    "@integraledger/lcp-evidence": "^0.18.0",
-    "@integraledger/lcp-kernel": "^0.18.0",
-    "@integraledger/lcp-placement-ack": "^0.18.0",
-    "@integraledger/lcp-placement-ap2": "^0.18.0",
-    "@integraledger/lcp-placements": "^0.18.0",
-    "@integraledger/lcp-verify": "^0.18.0"
+    "@integraledger/lcp-authority": "^0.18.1",
+    "@integraledger/lcp-binding-core": "^0.18.1",
+    "@integraledger/lcp-discovery": "^0.18.1",
+    "@integraledger/lcp-evidence": "^0.18.1",
+    "@integraledger/lcp-kernel": "^0.18.1",
+    "@integraledger/lcp-placement-ack": "^0.18.1",
+    "@integraledger/lcp-placement-ap2": "^0.18.1",
+    "@integraledger/lcp-placements": "^0.18.1",
+    "@integraledger/lcp-verify": "^0.18.1"
   },
   "devDependencies": {
-    "@integraledger/lcp-authority": "0.18.0",
-    "@integraledger/lcp-binding-core": "0.18.0",
-    "@integraledger/lcp-discovery": "0.18.0",
-    "@integraledger/lcp-evidence": "0.18.0",
-    "@integraledger/lcp-kernel": "0.18.0",
-    "@integraledger/lcp-placement-ack": "0.18.0",
-    "@integraledger/lcp-placement-acp": "0.18.0",
-    "@integraledger/lcp-placement-ap2": "0.18.0",
-    "@integraledger/lcp-placements": "0.18.0",
-    "@integraledger/lcp-verify": "0.18.0",
+    "@integraledger/lcp-authority": "0.18.1",
+    "@integraledger/lcp-binding-core": "0.18.1",
+    "@integraledger/lcp-discovery": "0.18.1",
+    "@integraledger/lcp-evidence": "0.18.1",
+    "@integraledger/lcp-kernel": "0.18.1",
+    "@integraledger/lcp-placement-ack": "0.18.1",
+    "@integraledger/lcp-placement-acp": "0.18.1",
+    "@integraledger/lcp-placement-ap2": "0.18.1",
+    "@integraledger/lcp-placements": "0.18.1",
+    "@integraledger/lcp-verify": "0.18.1",
     "@types/node": "catalog:",
     "fast-check": "4.9.0",
     "vitest": "catalog:"

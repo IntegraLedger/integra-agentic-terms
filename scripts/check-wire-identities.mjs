@@ -75,6 +75,7 @@ const isProtocolDep = (dep) => isProtocolDepIn(dep, WORKSPACE);
 
 const devLines = new Map(); // version -> [where]
 const runtimeDeps = []; // { name, dep, spec } — shipped `dependencies`, checked once `line` is known
+const peerRanges = []; // { name, dep, range } — protocol peers, floor checked once `line` is known
 for (const [name, path] of manifests) {
   const pkg = JSON.parse(readFileSync(path, "utf8"));
   const peers = Object.entries(pkg.peerDependencies ?? {}).filter(([d]) =>
@@ -110,19 +111,8 @@ for (const [name, path] of manifests) {
         `${name} → ${dep}: devDependency ${exact} is outside the peer range "${range}". CI exercises a version a consumer cannot install.`,
       );
     }
-    // ⛔ THE FLOOR IS THE MINOR LINE'S ZERO PATCH, AND RAISING IT IS A BREAKING CHANGE IN DISGUISE.
-    // On a `0.x` version a caret pins the minor, so the patch is the only part of a peer range that moves
-    // — and moving it UP stops a consumer sitting on an earlier patch of the SAME line from installing
-    // this package at all. Semver already guarantees patch compatibility, so a raised floor buys nothing
-    // and costs exactly those consumers. This matters because a bot proposes it: Dependabot updates
-    // `peerDependencies` like any other field, so a routine-looking `^0.12.0 → ^0.12.2` arrives with no
-    // author. There is deliberately no escape hatch — a genuine need for a patch floor is an argument to
-    // have here, in this rule, not a range to slip through.
-    if (!/^\^\d+\.\d+\.0$/.test(range)) {
-      fail.push(
-        `${name} → ${dep} is a peer at "${range}". A protocol peer range must be \`^X.Y.0\` — a raised floor strands consumers on earlier patches of the same line, and semver already guarantees those are compatible.`,
-      );
-    }
+    // The floor is checked below, once the exercised line is known — see the rule beneath `const line`.
+    peerRanges.push({ name, dep, range });
   }
 
   // A protocol package imported by shipped source must be a peer, or a consumer's install is incomplete.
@@ -184,18 +174,37 @@ const line = devLines.size === 1 ? [...devLines.keys()][0] : null;
 //
 // This also closes the escape hatch below, where declaring an exact runtime dep satisfied the
 // "imported from src must be a peer" rule — after this, that declaration is refused on its own terms.
+// ⛔⛔ THE FLOOR IS THE EXERCISED LINE, NOT THE MINOR'S ZERO PATCH — AND THIS RULE REPLACED ONE THAT SAID
+// THE OPPOSITE. The old rule required `^X.Y.0` on the reasoning that raising a floor "strands consumers on
+// earlier patches of the same line, and semver already guarantees those are compatible". Its own comment
+// invited this argument rather than an escape hatch, so here it is: **the guarantee is false on this line.**
+//
+// Measured 2026-09-10. Protocol 0.18.0 and 0.18.1 are the same minor and declare DIFFERENT versions of a
+// shared runtime dependency — `zod` 4.4.3 and 4.5.4 — because 0.18.1 exists precisely to converge it. So a
+// peer of `^0.18.0` ADMITS 0.18.0, and a consumer resolving it there while this package declares 4.5.4 gets
+// two copies of `zod` in one tree. That is the exact `instanceof` break across the boundary that the peer
+// design exists to prevent, restored by the rule that was meant to be the safe one. A patch that changes
+// what a package DECLARES is not interchangeable with its predecessor, and semver does not say it is.
+//
+// ⭐ AND THIS IS STRICTER AGAINST THE BOT THE OLD RULE FEARED, NOT WEAKER. The worry was Dependabot
+// rewriting `^0.12.0 → ^0.12.2` unprompted, with no author. Under `^X.Y.0` that rewrite was the only thing
+// checked. Under this rule the floor must EQUAL the exercised dev pin, so a bot moving the peer alone goes
+// red against the pin, and one moving the pin alone goes red against the peer. Neither side can drift on
+// its own — which is the property the old rule wanted and could not express.
+//
+// ⚠️ The cost the old rule was avoiding is a cost this repository does not pay: every consumer of this line
+// is ours. Stranding is a backward-compatibility concern, and there is no external consumer to strand.
 if (line) {
-  // The SAME floor rule the peers get, and for the same reason: on a `0.x` line the patch is the only part
-  // of a caret that moves, and raising it strands consumers on earlier patches. `pnpm up` demonstrated this
-  // the first time it ran against these ranges — it rewrote `^0.12.0` to `^0.12.2` unprompted, which is
-  // exactly what a Dependabot bump does. A rule that compared against the exercised version rather than its
-  // minor's zero patch would have waved that straight through.
-  const [major, minor] = line.split(".");
-  const wanted = `^${major}.${minor}.0`;
+  const wanted = `^${line}`;
+  for (const { name, dep, range } of peerRanges)
+    if (range !== wanted)
+      fail.push(
+        `${name} → ${dep} is a peer at "${range}". A protocol peer range must be \`${wanted}\` — the exercised line, and the only version CI proves. A lower floor admits a patch declaring different shared dependencies, which puts two copies of one library in a consumer's tree.`,
+      );
   for (const { name, dep, spec } of runtimeDeps)
     if (spec !== wanted)
       fail.push(
-        `${name} → ${dep} is "${spec}" in dependencies. A shipped protocol dependency must be \`${wanted}\` — exact forces a second copy of the protocol beside a caret-peered sibling, a raised floor strands consumers on earlier patches of the same line, and a wider range is untested.`,
+        `${name} → ${dep} is "${spec}" in dependencies. A shipped protocol dependency must be \`${wanted}\` — exact forces a second copy of the protocol beside a caret-peered sibling, a lower floor admits a patch declaring different shared dependencies, and a wider range is untested.`,
       );
 }
 
