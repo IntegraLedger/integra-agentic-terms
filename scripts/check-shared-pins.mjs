@@ -9,10 +9,13 @@
  * beside the protocol's own copy, and until this gate existed nothing here compared the two.
  *
  * Measured 2026-09-10, and it is why this file exists. The protocol catalogue moved `zod` 4.4.3 -> 4.5.4
- * and published; `@integraledger/agentic-terms@0.16.0` was already on the registry declaring `zod: 4.4.3`,
- * immutably. Commerce then had the line at two versions of `zod` at once:
+ * and NOTHING WAS RELEASED FROM IT — which is the part worth keeping, because it means a publish is not
+ * required to create the split. The downstream consumer runs a job that packs the protocol at HEAD and
+ * installs those tarballs, so it saw the unreleased pin immediately; meanwhile
+ * `@integraledger/agentic-terms@0.16.0` sat on the registry declaring `zod: 4.4.3`, immutably. That
+ * consumer then had the line at two versions of `zod` at once:
  *
- *   4.5.4  @integraledger/lcp-discovery
+ *   4.5.4  @integraledger/lcp-discovery   (packed from the protocol's HEAD, unreleased)
  *   4.4.3  @integraledger/agentic-terms@0.16.0     <- published from here
  *
  * ⇒ That consumer's cross-repository job went red **with no commit landing in it to explain the failure**,
