@@ -388,12 +388,21 @@ async function main() {
     } catch (cause) {
       // Reported, not thrown: the versions are already published, so the list of what is untagged is worth
       // more to an operator than a stack trace.
+      // ⛔⛔ EVERY LINE OF git's STDERR, NOT THE FIRST. `.split("\n")[0]` kept only `To <remote>` — git
+      // prints the remote first and the REASON (`! [remote rejected] …`, `remote: … denied`) on the lines
+      // AFTER it, so the single line this reported was the one line that never says why. ⛔ MEASURED
+      // 2026-09-11 on `integra-agentic-terms`: a run wrote 2 of 4 tags and reported `push failed for 4
+      // tag(s): To https://github.com/…`, and why the other two were refused was UNRECOVERABLE from the
+      // log — the failure had to be re-run by hand to learn anything. ⭐ A PARTIAL push is exactly when
+      // the reason matters, because the refs that were refused differ from the refs that were not, and
+      // the differentiator is only ever stated in the lines this used to drop.
       unresolvable.push(
-        `push failed for ${wrote.length} tag(s): ${
+        `push failed for ${wrote.length} tag(s):\n` +
           String(cause.stderr ?? cause.message)
             .trim()
-            .split("\n")[0]
-        }`,
+            .split("\n")
+            .map((line) => `      ${line}`)
+            .join("\n"),
       );
     }
   }
