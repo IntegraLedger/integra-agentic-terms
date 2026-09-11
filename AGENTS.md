@@ -1,14 +1,35 @@
 # integra-agentic-terms — agent instructions
 
-Two packages, both **public, Apache-2.0, free forever and never monetized**: `agentic-terms`, the buyer-side
-verify-before-sign gate, and `lcp-mcp-server`, its Model Context Protocol packaging. Anything that makes
-either harder to install is a defect, not a hardening measure. Both work against any seller.
+Three packages, all **public, Apache-2.0, free forever and never monetized**: `agentic-terms`, the
+buyer-side verify-before-sign gate; `lcp-mcp-server`, its Model Context Protocol packaging; and
+`seller-mcp`, the MCP transport for a paid tool. Anything that makes any of them harder to install is a
+defect, not a hardening measure. The first two work against any seller.
 
 Consumes the Legal Context Protocol's public `@integraledger/lcp-*` packages from npmjs, exact-pinned. The
 separately licensed seller-side application is **not** part of this repository and nothing here may depend
 on it — `check:public-boundary` refuses any `@integraledger/*` dependency that is neither a workspace
 sibling nor on the `lcp-*` line, because such a dependency resolves in a private workspace and breaks only
 for the first stranger to `npm install`, after the version is burned.
+
+⛔⛔ **AND THAT GATE IS WHY `seller-mcp` TAKES NO DEPENDENCIES AT ALL, WHICH IS THE ONE THING TO UNDERSTAND
+BEFORE EDITING IT.** It arrived here on 2026-09-10 from the seller-side repository, where it imported a
+middleware type and one function from a private, UNLICENSED package. `check:public-boundary` forbids that
+import by name shape, and correctly: a public package that depends on a non-public one passes every other
+gate and then fails for the first stranger who installs it, after the version is burned. So the move was
+not a copy. Both of its edges are now **structurally typed** — the MCP shapes it reads (`McpToolResult`,
+`McpToolExtraLike`) and the middleware shapes it drives (`SellerMiddlewareLike`, `WeldFacts`) — which is the
+posture the package already took toward the MCP SDK, applied to the second edge.
+
+⚠️ **`WeldFacts` is a LOWER BOUND and `paidTool` is generic in the weld, deliberately.** Flattening a
+seller's welded settlement to the two fields this adapter reads would make publishing it cost every real
+mount its own type. `TWeld` flows through to `Fulfil` and `WeldSink` so nothing is lost; `test/mcp.test.ts`
+drives a richer weld through `fulfil` and refuses a narrowing.
+
+⛔ **`deliverWeld` is declared here, once, and its rule is the reason.** A weld sink that throws must never
+reach the buyer: by then the proposal is burned, and a propagated failure would answer a buyer who has PAID
+with an error for a sale that completed — and, because the sink runs before `fulfil`, would also stop them
+ever receiving what they bought. The shape used to be written out at each mount point, which is how the
+rule could hold at some of them and not others. If a second surface here ever needs it, it imports this one.
 
 pnpm 11 workspace, Node ≥ 24, TypeScript with `isolatedDeclarations`.
 
@@ -130,5 +151,19 @@ report a successful release as absent.
 
 ## Layout
 
-`agentic-terms` — the gate: typed proposal, policy evaluation, mechanical verification, universal parsing ·
-`lcp-mcp-server` — six read-only MCP tools over the same kernel, plus stdio wiring for desktop agent hosts.
+`agentic-terms` — the gate: typed proposal, policy evaluation, mechanical verification, universal parsing,
+and the `PAYMENT-SIGNATURE` envelope a buyer answers a 402 with ·
+`lcp-mcp-server` — six read-only MCP tools over the same kernel, plus stdio wiring for desktop agent hosts ·
+`seller-mcp` — the MCP transport for a paid tool, structurally typed at both edges and depending on nothing.
+
+⚠️ **`seller-mcp` is NOT in the `fixed` changeset group**, and that is deliberate rather than an omission.
+The group exists because `lcp-mcp-server` depends on `agentic-terms` through `workspace:*` and the two must
+version in lockstep. `seller-mcp` depends on neither — it depends on nothing — so it versions on its own
+schedule, and adding it to the group would drag it a minor every time the buyer line moves for a reason
+that does not touch it. It also carries its version across from before the move rather than restarting at
+0.1.0: it is the same package, and `publish-order.mjs` derives the release order from the graph, so nothing
+here is ordered by a name or a number anybody has to remember.
+
+⚠️ **Its first publish cannot use trusted publishing** — see Publishing above. `@integraledger/seller-mcp`
+is a name npmjs has never seen, and npm can neither configure trusted publishing for a name that does not
+exist nor stage a brand-new one. It needs the one-time token-gated workflow, run from GitHub Actions.

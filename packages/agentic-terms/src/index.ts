@@ -66,3 +66,10 @@ export {
   type TransactResult,
   transact,
 } from "./transact.js";
+export {
+  decodeX402Challenge,
+  type X402Authorization,
+  type X402PaymentInput,
+  x402AcceptedEntry,
+  x402PaymentHeader,
+} from "./x402-envelope.js";

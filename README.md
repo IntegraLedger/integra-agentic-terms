@@ -1,24 +1,30 @@
 # Integra Agentic Terms
 
-The buyer/developer side of Legal Context Protocol commerce. Two packages, **Apache-2.0, free forever —
+The buyer/developer side of Legal Context Protocol commerce. Three packages, **Apache-2.0, free forever —
 no account, no key, no token, nothing to sign up for.**
 
 | Package | What it is |
 |---|---|
 | [`@integraledger/agentic-terms`](packages/agentic-terms) | Verify before sign, as a type and as a runtime guarantee. The gate fetches the terms the seller advertised, recomputes the LCP `atrHash` over the bytes actually served, and halts before any signing key is invoked if they disagree. |
 | [`@integraledger/lcp-mcp-server`](packages/lcp-mcp-server) | Read-only Model Context Protocol server exposing LCP tools to an AI agent — verify before pay, compute an atrHash, extract and place references across the nine commerce protocols that have one. |
+| [`@integraledger/seller-mcp`](packages/seller-mcp) | The MCP transport for a paid tool: wrap a tool handler so its call is gated by a settled x402 payment, with the payment and the receipt riding MCP's own `_meta`. A library mount in the seller's own process — no dependencies, no settlement logic, no credential. |
 
 ```bash
 npm install @integraledger/agentic-terms
 npm install @integraledger/lcp-mcp-server
+npm install @integraledger/seller-mcp
 ```
 
 📘 **Full documentation: [agenticterms.integraledger.com](https://agenticterms.integraledger.com)** — quickstart,
 the buyer policy field by field, per-protocol pages, the six MCP tools, and the API reference.
 
-Both work against **any** seller — the checks run over what a seller publicly advertises, so they are
-useful whether or not that seller has ever heard of Integra. Nothing here calls home: no telemetry, no
+The first two work against **any** seller — the checks run over what a seller publicly advertises, so they
+are useful whether or not that seller has ever heard of Integra. Nothing here calls home: no telemetry, no
 callback, no network request other than fetching the terms the seller pointed you at.
+
+`seller-mcp` is the one surface here a SELLER mounts rather than a buyer, and it is here because it is
+transport rather than settlement: it holds no key and contains no settlement logic, so it belongs on the
+side of the boundary that anyone can read and install.
 
 ## For agents
 

@@ -51,6 +51,9 @@ importers:
       '@integraledger/lcp-mcp-server':
         specifier: workspace:*
         version: link:packages/lcp-mcp-server
+      '@integraledger/seller-mcp':
+        specifier: workspace:*
+        version: link:packages/seller-mcp
       '@stryker-mutator/core':
         specifier: 10.0.0
         version: 10.0.0(@types/node@24.13.3)
@@ -164,6 +167,15 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 'catalog:'
         version: 2.0.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(yaml@2.9.0))
+
+  packages/seller-mcp:
+    devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3

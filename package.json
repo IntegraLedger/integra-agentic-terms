@@ -42,6 +42,7 @@
     "@integraledger/agentic-terms": "workspace:*",
     "@integraledger/lcp-conformance": "0.18.1",
     "@integraledger/lcp-mcp-server": "workspace:*",
+    "@integraledger/seller-mcp": "workspace:*",
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0",
     "@swc/core": "1.16.2",

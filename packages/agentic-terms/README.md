@@ -90,6 +90,55 @@ runnable off Node — but it is a property worth stating rather than discovering
 shipped here unless you have a specific reason not to, and hold your ports to the standard you hold the key
 they protect.
 
+## Paying, on x402
+
+Verifying is one half of a buyer. The other is answering the 402 — and until this helper shipped, that half
+was the piece every integrator wrote by hand.
+
+The payment primitive is already public: `@integraledger/lcp-binding-evm-x402` builds the EIP-3009
+authorization whose **nonce is the `atrHash`**, which is what welds a payment to a terms document. What was
+missing was the ENVELOPE — the `PAYMENT-SIGNATURE` value that carries that authorization back in the shape
+x402 defines. With it, a **stock x402 client plus this one package** completes 402 → pay → 200 against a
+seller serving Legal Context Protocol terms. That is one `npm install` of distance, not a protocol
+difference; zero-install interoperability would be an x402 specification change and is not what this buys.
+
+```ts
+import {
+  decodeX402Challenge,
+  type X402Authorization,
+  x402PaymentHeader,
+} from "@integraledger/agentic-terms";
+
+declare const response: Response; // the seller's 402
+declare const authorization: X402Authorization; // nonce = the atrHash you just verified
+declare const signature: string; // your EIP-712 signature over it
+
+const challenge = decodeX402Challenge(response);
+// …verify the terms FIRST — `transact` above is the gate, and only a Proceed reaches a signing key.
+const header = x402PaymentHeader({
+  challenge,
+  authorization,
+  signature,
+  paymentIdentifier: "pay_01HZ",
+  assetTransferMethod: "eip3009",
+});
+
+await fetch("https://seller.example/resource", {
+  method: "POST",
+  headers: { "PAYMENT-SIGNATURE": header },
+});
+```
+
+**The challenge is a required argument, and that is the design rather than an inconvenience.** x402 §6.1
+says a payment answers ONE offer, and the entry a payer presents is the entry it was served. So the
+`accepted` entry is copied off the 402 rather than assembled from a local template: a field the seller adds
+is echoed from the moment it is added, and a payment cannot be constructed from nothing. A hand-built
+envelope agrees with the seller on the day it is written and drifts silently after — which is how buyers
+came to present payments answering an offer that was never made.
+
+The only field the presentation adds is `extra.assetTransferMethod`, because the seller does not advertise
+one: it is a property of how this buyer chose to pay.
+
 ## Reading any protocol's document
 
 A buyer that does not know which protocol it is on has two universal entry points, both dispatching through

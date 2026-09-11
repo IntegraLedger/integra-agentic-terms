@@ -1,0 +1,55 @@
+{
+  "name": "@integraledger/seller-mcp",
+  "version": "0.10.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IntegraLedger/integra-agentic-terms.git",
+    "directory": "packages/seller-mcp"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "description": "The Model Context Protocol seller face for x402 — wrap an MCP tool handler so its call is gated by a settled payment, with the payment and the receipt riding MCP's own _meta extension point. A library mount in the seller's own process; no SDK dependency, no settlement logic, no credential.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "x402",
+    "agentic-commerce",
+    "ai-agent",
+    "paid-tools",
+    "lcp",
+    "legal-context-protocol"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "bugs": {
+    "url": "https://github.com/IntegraLedger/integra-agentic-terms/issues"
+  },
+  "homepage": "https://github.com/IntegraLedger/integra-agentic-terms/tree/main/packages/seller-mcp#readme"
+}
