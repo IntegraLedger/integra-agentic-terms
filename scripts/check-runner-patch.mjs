@@ -51,7 +51,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
@@ -72,27 +72,80 @@ const CANARIES = [
   [UNPATCHED, "return nameParts.join(' > ').trim();", false],
 ];
 
-const refusals = [];
-for (const [needle, sample, shouldMatch] of CANARIES) {
-  if (sample.includes(needle) !== shouldMatch)
-    refusals.push(
-      `canary: \`${needle}\` ${shouldMatch ? "no longer matches" : "now matches"} \`${sample}\` — the predicate moved, and a predicate that stops discriminating passes everything`,
-    );
+/**
+ * ⭐ THE CANARIES, AS A FUNCTION, because a predicate that stops matching reports every file clean and
+ * looks exactly like success. Exported so the drive can assert they discriminate rather than trusting that
+ * they do.
+ *
+ * @returns {string[]} refusals; empty when every spelling still matches what it must and nothing else.
+ */
+export function canaryRefusals() {
+  const refusals = [];
+  for (const [needle, sample, shouldMatch] of CANARIES) {
+    if (sample.includes(needle) !== shouldMatch)
+      refusals.push(
+        `canary: \`${needle}\` ${shouldMatch ? "no longer matches" : "now matches"} \`${sample}\` — the predicate moved, and a predicate that stops discriminating passes everything`,
+      );
+  }
+  return refusals;
 }
-if (refusals.length > 0) {
-  console.error(`⛔ check:runner-patch — ${refusals.join("; ")}`);
-  process.exit(1);
+
+const major = (v) => Number.parseInt(v.split(".")[0], 10);
+
+/**
+ * ⭐⭐ THE WHOLE DECISION, AS A PURE FUNCTION OF THREE FACTS. Separated from the IO so the defect can be
+ * PLANTED rather than described — `check:gate-drives` requires that, and it is right to: a gate is
+ * finished when the thing it names has been re-planted and it went red.
+ *
+ * @param {object} facts
+ * @param {string} facts.catalogVersion   what `pnpm-workspace.yaml` asks for
+ * @param {string} facts.installedVitest  what `node_modules` actually holds
+ * @param {Record<string,string>} facts.sites  each runner `dist/src` file's contents, keyed by filename
+ * @returns {{refusals: string[], want: string, seen: string[]}}
+ */
+export function assess({ catalogVersion, installedVitest, sites }) {
+  const refusals = [];
+  // (1) vs (2) — the stale-install case, which a runner/vitest comparison alone would pass.
+  if (major(installedVitest) !== major(catalogVersion))
+    refusals.push(
+      `the catalog asks for vitest ${catalogVersion} but ${installedVitest} is INSTALLED — a stale or overridden install, and every reading taken in this tree is about a version it does not declare. Run \`pnpm install\`.`,
+    );
+  // (3) — what the filter will actually emit.
+  const wantPatched = major(catalogVersion) >= 5;
+  const want = wantPatched ? PATCHED : UNPATCHED;
+  const unwanted = wantPatched ? UNPATCHED : PATCHED;
+  const seen = [];
+  for (const site of SITES) {
+    const src = sites[site];
+    if (src === undefined) {
+      refusals.push(
+        `${site} is not in the installed runner — the package's layout moved and this gate is reading nothing`,
+      );
+      continue;
+    }
+    const has = src.includes(want);
+    const hasOther = src.includes(unwanted);
+    seen.push(`${site}=${has ? want : hasOther ? unwanted : "NEITHER"}`);
+    if (!has)
+      refusals.push(
+        `${site} does not spell \`${want}\`${hasOther ? ` — it spells \`${unwanted}\`` : " and spells neither form"}`,
+      );
+  }
+  return { refusals, want, seen };
 }
 
 /**
- * The catalog's vitest pin, read without a YAML dependency (two of the three repositories have none).
+ * The catalog's vitest pin, read without a YAML dependency (not every repository in this line has one).
  *
  * ⚠️ ACCEPTS BOTH SPELLINGS — `vitest: "5.0.0"` and bare `vitest: 5.0.0`. A key regex that assumes quoting
  * is a recorded failure in this corpus: one over the ratchet floors returned 48 against a true 56 because
  * eight entries were written bare. ⛔ And it requires EXACTLY ONE match: zero means the catalog moved and
  * this gate is reading nothing, which is the empty-subject-set defect and must refuse rather than pass.
+ *
+ * @param {string} root workspace root
+ * @returns {{version?: string, error?: string}}
  */
-function catalogVitest() {
+export function catalogVitest(root) {
   const file = join(root, "pnpm-workspace.yaml");
   if (!existsSync(file)) return { error: "pnpm-workspace.yaml is not there" };
   const matches = [
@@ -107,18 +160,8 @@ function catalogVitest() {
   return { version: matches[0][1] };
 }
 
-const major = (v) => Number.parseInt(v.split(".")[0], 10);
-
-const catalog = catalogVitest();
-if (catalog.error !== undefined) {
-  console.error(`⛔ check:runner-patch — ${catalog.error}`);
-  process.exit(1);
-}
-
-const require_ = createRequire(join(root, "noop.js"));
-
 /** ⛔ Fails CLOSED. A tool this gate cannot find is not a tool this gate may pass over. */
-function resolvePkg(name) {
+function resolvePkg(require_, name) {
   try {
     return dirname(require_.resolve(`${name}/package.json`));
   } catch {
@@ -126,63 +169,70 @@ function resolvePkg(name) {
   }
 }
 
-const vitestDir = resolvePkg("vitest");
-const runnerDir = resolvePkg("@stryker-mutator/vitest-runner");
-if (vitestDir === null || runnerDir === null) {
-  console.error(
-    `⛔ check:runner-patch — cannot resolve ${vitestDir === null ? "vitest" : "@stryker-mutator/vitest-runner"} from ${root}.\n` +
-      "   Run `pnpm install`. An unresolvable tool is refused rather than skipped: the whole point of this\n" +
-      "   gate is that the INSTALL is its subject, and an absent install answers nothing.",
-  );
-  process.exit(1);
-}
-
-const installedVitest = JSON.parse(
-  readFileSync(join(vitestDir, "package.json"), "utf8"),
-).version;
-
-// (1) vs (2) — the stale-install case, which a runner/vitest comparison alone would pass.
-if (major(installedVitest) !== major(catalog.version))
-  refusals.push(
-    `the catalog asks for vitest ${catalog.version} but ${installedVitest} is INSTALLED — a stale or overridden install, and every reading taken in this tree is about a version it does not declare. Run \`pnpm install\`.`,
-  );
-
-// (3) — what the filter will actually emit, read off the copy the tree links rather than a glob.
-const wantPatched = major(catalog.version) >= 5;
-const want = wantPatched ? PATCHED : UNPATCHED;
-const unwanted = wantPatched ? UNPATCHED : PATCHED;
-const seen = [];
-for (const site of SITES) {
-  const file = join(runnerDir, "dist", "src", site);
-  if (!existsSync(file)) {
-    refusals.push(
-      `${site} is not in the installed runner at ${runnerDir} — the package's layout moved and this gate is reading nothing`,
-    );
-    continue;
+function main() {
+  const canaries = canaryRefusals();
+  if (canaries.length > 0) {
+    console.error(`⛔ check:runner-patch — ${canaries.join("; ")}`);
+    process.exit(1);
   }
-  const src = readFileSync(file, "utf8");
-  const has = src.includes(want);
-  const hasOther = src.includes(unwanted);
-  seen.push(`${site}=${has ? want : hasOther ? unwanted : "NEITHER"}`);
-  if (!has)
-    refusals.push(
-      `${site} does not spell \`${want}\`${hasOther ? ` — it spells \`${unwanted}\`` : " and spells neither form"}`,
+
+  const catalog = catalogVitest(root);
+  if (catalog.error !== undefined) {
+    console.error(`⛔ check:runner-patch — ${catalog.error}`);
+    process.exit(1);
+  }
+
+  const require_ = createRequire(join(root, "noop.js"));
+  const vitestDir = resolvePkg(require_, "vitest");
+  const runnerDir = resolvePkg(require_, "@stryker-mutator/vitest-runner");
+  if (vitestDir === null || runnerDir === null) {
+    console.error(
+      `⛔ check:runner-patch — cannot resolve ${vitestDir === null ? "vitest" : "@stryker-mutator/vitest-runner"} from ${root}.\n` +
+        "   Run `pnpm install`. An unresolvable tool is refused rather than skipped: the whole point of this\n" +
+        "   gate is that the INSTALL is its subject, and an absent install answers nothing.",
     );
-}
+    process.exit(1);
+  }
 
-if (refusals.length > 0) {
-  console.error(
-    `\n⛔ check:runner-patch — the installed Stryker runner does not match the catalog's vitest major.\n\n` +
-      refusals.map((r) => `   • ${r}`).join("\n") +
-      `\n\n   catalog vitest ${catalog.version} · installed vitest ${installedVitest} · runner at ${runnerDir}\n\n` +
-      "   ⛔⛔ THIS DOES NOT FAIL LOUDLY ON ITS OWN. vitest skips every test whose name the pattern does not\n" +
-      "   match and exits 0, so Stryker records those mutants as SURVIVED and the mutation score collapses\n" +
-      "   toward the static-mutants-only floor — or, where a ratchet sits below that, stays GREEN over a\n" +
-      "   suite that ran nothing. Fix the install before trusting any mutation number from this tree.\n",
+  const installedVitest = JSON.parse(
+    readFileSync(join(vitestDir, "package.json"), "utf8"),
+  ).version;
+
+  /** @type {Record<string,string>} */
+  const sites = {};
+  for (const site of SITES) {
+    const file = join(runnerDir, "dist", "src", site);
+    if (existsSync(file)) sites[site] = readFileSync(file, "utf8");
+  }
+
+  const { refusals, want, seen } = assess({
+    catalogVersion: catalog.version,
+    installedVitest,
+    sites,
+  });
+
+  if (refusals.length > 0) {
+    console.error(
+      `\n⛔ check:runner-patch — the installed Stryker runner does not match the catalog's vitest major.\n\n` +
+        refusals.map((r) => `   • ${r}`).join("\n") +
+        `\n\n   catalog vitest ${catalog.version} · installed vitest ${installedVitest} · runner at ${runnerDir}\n\n` +
+        "   ⛔⛔ THIS DOES NOT FAIL LOUDLY ON ITS OWN. vitest skips every test whose name the pattern does not\n" +
+        "   match and exits 0, so Stryker records those mutants as SURVIVED and the mutation score collapses\n" +
+        "   toward the static-mutants-only floor — or, where a ratchet sits below that, stays GREEN over a\n" +
+        "   suite that ran nothing. Fix the install before trusting any mutation number from this tree.\n",
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `check:runner-patch — catalog vitest ${catalog.version}, installed ${installedVitest}, runner spells \`${want}\` in both sites (${seen.join(", ")}), ${String(CANARIES.length)}/${String(CANARIES.length)} canaries.`,
   );
-  process.exit(1);
 }
 
-console.log(
-  `check:runner-patch — catalog vitest ${catalog.version}, installed ${installedVitest}, runner spells \`${want}\` in both sites (${seen.join(", ")}), 4/4 canaries.`,
-);
+// ⭐ Importable without running: the drive loads this module to plant defects into `assess`, and a gate
+// that executed on import could not be driven that way.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+)
+  main();
