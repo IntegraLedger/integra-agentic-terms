@@ -150,10 +150,55 @@
  * contract with the MODEL, not documentation prose, which is why it is pinned where the descriptions
  * around it are deliberately not.
  */
+/**
+ * ⛔ RE-DERIVED 2026-09-13 on the development host at STRYKER_CONCURRENCY=4, one instrument across all three
+ * repositories. Each floor is `trunc(score) - 1 if the package timed out any mutant, else trunc(score)`.
+ * The margin exists because a TIMEOUT IS RECORDED AS A KILL: a surviving mutant that merely runs slowly
+ * exceeds its budget under load and is scored as though the tests caught it. A package with timeouts is
+ * therefore reporting a number that contention can move, and it gets a point of slack; a package with
+ * none is reporting a number that does not move, and gets no slack.
+ *
+ * ⚠️ `agentic-terms` READS LOWER THAN IT DID — 96 -> 95 — and nothing regressed. The measured score is
+ * 96.59, ABOVE the old 96 floor. The old floor simply had no timeout margin under a package that times
+ * out 3 mutants, so it was pinned to a number the instrument can move on its own. This is the rule being
+ * applied, not a score falling.
+ *
+ * `M` 2026-09-13, @stryker-mutator/core 10.0.0, cold run, one package at a time:
+ *   agentic-terms    96.59   933 killed +   3 timeout /  28 survived /  5 no-cov   -> 96 - 1 = 95
+ *   lcp-mcp-server   89.65   355 killed +   0 timeout /  38 survived /  3 no-cov   -> 89 - 0 = 89
+ *   seller-mcp       93.98    78 killed +   0 timeout /   5 survived /  0 no-cov   -> 93 - 0 = 93
+ *
+ * ⛔⛔ `seller-mcp` HAD NO FLOOR AND WAS ENFORCED AGAINST NOTHING. Its measurement above ran under
+ * `break threshold 0` — printed in the run log in those words — which is the `?? 0` defect this file
+ * warns about, live: not "no opinion" but a threshold under which every score passes. `requireFloor`
+ * below now makes that state unreachable rather than merely discouraged.
+ */
 const RATCHET = {
-  "agentic-terms": 96,
+  "agentic-terms": 95,
   "lcp-mcp-server": 89,
+  "seller-mcp": 93,
 };
+
+/**
+ * ⛔⛔ A MISSING FLOOR THROWS. It used to read `?? 0`, and zero is not "no opinion" — it is a break
+ * threshold under which EVERY score passes. `integra-protocol` and the private seller-side repository both replaced
+ * that with a throw; this repository had not, and `M` 2026-09-13 it had **three measurable packages and two
+ * floors**: `seller-mcp` was enforced against nothing, and the run would have gone green and rendered a
+ * report over it.
+ *
+ * ⚠️ `code` is load-bearing rather than decoration: a reader that loads this config to enumerate floors must
+ * be able to tell "this package has no floor" from "this config does not parse". A bare catch would turn a
+ * syntax error here into "no floors found", which is the empty-subject-set defect again.
+ */
+function requireFloor(name) {
+  if (Object.hasOwn(RATCHET, name)) return RATCHET[name];
+  const error = new Error(
+    `${name} has no ratchet floor in stryker.config.mjs. Either it is not a measurable package, or it is ` +
+      `and needs a floor derived from a cold uncontended run. Known floors: ${Object.keys(RATCHET).join(", ")}.`,
+  );
+  error.code = "NO_RATCHET_FLOOR";
+  throw error;
+}
 
 const pkg = process.env.STRYKER_PKG;
 if (!pkg) {
@@ -173,7 +218,7 @@ export default {
   vitest: { dir: `packages/${pkg}` },
   htmlReporter: { fileName: `reports/mutation/${pkg}/index.html` },
   jsonReporter: { fileName: `reports/mutation/${pkg}/mutation.json` },
-  thresholds: { high: 95, low: 90, break: RATCHET[pkg] ?? 0 },
+  thresholds: { high: 95, low: 90, break: requireFloor(pkg) },
   tempDirName: ".stryker-tmp",
   cleanTempDir: true,
   concurrency: 4,
