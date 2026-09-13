@@ -71,8 +71,8 @@ const X402ChallengeSchema = z.object({
 /**
  * Reconcile ONE field across x402's two Tier A carriers.
  *
- * Field-by-field, not carrier-by-carrier, because the two carriers are not required to be symmetric. LCP
- * v1.38 §C.4's own illustration puts `atrHash` + `legalContextUrl` in `accepts[].extra` while
+ * Field-by-field, not carrier-by-carrier, because the two carriers are not required to be symmetric.
+ * LCP §C.4's own illustration puts `atrHash` + `legalContextUrl` in `accepts[].extra` while
  * `extensions.legalContext.info` carries only `type` + `value` — so treating each carrier as an atomic
  * {hash, url} pair rejects the spec's canonical example.
  *

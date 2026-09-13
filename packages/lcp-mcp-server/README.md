@@ -51,7 +51,7 @@ const server = createLcpMcpServer(ports); // or build one and connect any MCP tr
 | `lcp_place_reference` | Puts a reference into any registered commerce protocol's own document |
 | `lcp_extract_reference` | Reads one back out |
 
-**These `lcp_*` names are stable.** LCP v1.38 §C.9 illustrates a different vocabulary
+**These `lcp_*` names are stable.** LCP §C.9 illustrates a different vocabulary
 (`get_legal_context`, `verify_terms`, …) and says in the same breath that the standard canonizes no tool
 registry. Names a deployed server already answers to are the stronger interoperability fact, so renaming
 them to match an appendix's example would break working integrations and make nothing canonical.

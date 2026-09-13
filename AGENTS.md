@@ -36,9 +36,9 @@ pnpm 11 workspace, Node ≥ 24, TypeScript with `isolatedDeclarations`.
 ## Gates
 
 ```
-pnpm verify  =  check:versions → check:commit-messages → check:wire → check:public-boundary → check:vocab
-                → audit → build → check:dist → lint → depcruise → typecheck → check:docs
-                → test:scripts → test
+pnpm verify  =  check:versions → check:commit-messages → check:wire → check:shared-pins
+                → check:public-boundary → check:vocab → check:spec-citations → audit → build
+                → check:dist → lint → depcruise → typecheck → check:docs → test:scripts → test
 pnpm mutation <pkg>            (STRYKER_PKG required; ratchets in stryker.config.mjs — raise, never lower)
 pnpm check:runtime             (packs, installs as a consumer, runs the gate — the Node leg of the matrix)
 pnpm check:currency            (the declared protocol line vs what npmjs serves — scheduled, never in verify)

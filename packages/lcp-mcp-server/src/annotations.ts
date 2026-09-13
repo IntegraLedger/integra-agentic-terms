@@ -20,7 +20,7 @@ export type ToolReach = "network" | "closed";
  * below is the honest one for a surface that computes, fetches and reads, so stating them is not decoration:
  * omission would actively misdescribe the tools.
  *
- * THIS IS ALSO WHERE LCP's APPENDIX C IS AN ILLUSTRATION AND THE HOST PROTOCOL BINDS. LCP v1.38 §C.9
+ * THIS IS ALSO WHERE LCP's APPENDIX C IS AN ILLUSTRATION AND THE HOST PROTOCOL BINDS. LCP §C.9
  * says tool annotations "such as `destructiveHint` and `openWorldHint` signal that LCP-aware tools perform
  * legally significant actions". MCP's own definition says something narrower and different:
  * `destructiveHint` means "the tool may perform destructive updates to **its environment**", and it is
