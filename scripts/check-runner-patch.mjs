@@ -48,7 +48,7 @@
  * glob answered `1` for the orphan and `0` for the live copy in one tree. A gate reading the glob would
  * report whichever it happened to see first. ⇒ Resolve what the tree actually links, and read that.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -231,8 +231,29 @@ function main() {
 
 // ⭐ Importable without running: the drive loads this module to plant defects into `assess`, and a gate
 // that executed on import could not be driven that way.
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-)
-  main();
+//
+// ⛔⛔ REALPATH ON BOTH SIDES, AND THE NAIVE FORM FAILS SILENTLY — WHICH IS THE WORST WAY FOR A GATE TO
+// FAIL. Node's ESM loader resolves symlinks, so `import.meta.url` is the REAL path while `process.argv[1]`
+// is whatever spelling invoked it. Driven:
+//
+//     node /tmp/link/m.mjs   ->   argv1 = /tmp/link/m.mjs
+//                                 meta  = file:///tmp/real/m.mjs
+//
+// ⇒ Under a symlinked checkout the two differ, `main()` never runs, and the gate prints nothing and exits
+// 0 — a green that examined nothing, which is `agent-commerce-plan#102` in the one place this file is
+// supposed to be the answer to it. ⚠️ Not hypothetical here: this corpus already records a macOS path
+// class where `/tmp` is a symlink to `/private/tmp`.
+//
+// ⭐ `realpathSync` on the invoked path makes the comparison independent of the spelling. The drive spawns
+// this file BOTH directly and through a symlink, so a regression is caught rather than reasoned about.
+const invokedDirectly = (() => {
+  if (process.argv[1] === undefined) return false;
+  try {
+    return (
+      pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url
+    );
+  } catch {
+    return false; // argv[1] is not a path we can resolve — not our entry point
+  }
+})();
+if (invokedDirectly) main();

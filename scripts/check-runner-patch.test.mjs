@@ -16,6 +16,9 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -151,6 +154,22 @@ test("⭐ and over THIS workspace it finds exactly one, which is the positive co
 });
 
 // ─── the gate as CI runs it ────────────────────────────────────────────────────────────────────────────
+
+test("⛔⛔ PLANT: spawned through a SYMLINK it must still run — the naive entry guard exits 0 silently", () => {
+  // Node's ESM loader resolves symlinks, so `import.meta.url` is the real path while `process.argv[1]` is
+  // the spelling that invoked it. A guard comparing them directly does not run `main()` here, prints
+  // nothing, and exits 0 — a gate that examined nothing while looking exactly like a pass. This corpus
+  // already records a macOS path class where `/tmp` is a symlink to `/private/tmp`.
+  const dir = mkdtempSync(join(tmpdir(), "runner-patch-symlink-"));
+  try {
+    const link = join(dir, "gate.mjs");
+    symlinkSync(GATE, link);
+    const out = execFileSync(process.execPath, [link], { encoding: "utf8" });
+    assert.match(out, /check:runner-patch — catalog vitest/, out);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("⭐ spawned over this tree as `pnpm verify` spawns it, the gate exits 0 and names both sites", () => {
   // ⚠️ The plants above drive the DECISION; this drives the WIRING — that the script reads a real
