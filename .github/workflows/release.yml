@@ -24,8 +24,9 @@ name: release
 #      transparency log before failing. A red run is not the same as a run with no side effects.
 #
 # So a release is a deliberate act: dispatch it, and type the confirmation. The first release of these
-# names does not come through here at all — it comes through `bootstrap-publish.yml`, because a brand-new
-# name cannot use trusted publishing. Delete that workflow once it has run, and this one takes over.
+# names did not come through here at all — it came through a one-off `bootstrap-publish.yml`, because a
+# brand-new name cannot use trusted publishing. That workflow has run and is deleted; see the BOOTSTRAP
+# note below for when it is restored and why it does not live here between times.
 on:
   # Re-runnable without a commit, which a failed publish needs: the staging step decides what to stage by
   # asking the registry rather than by trusting the trigger, so a re-run resumes instead of duplicating.
