@@ -24,6 +24,15 @@
  * defect this gate exists to prevent, arrived at from the measuring side. So the set is derived from each
  * publishable manifest's own `files`, plus the two names npm always adds.
  *
+ * ★★ AND "SHIPPED" IS TWO SURFACES, NOT ONE. This repository publishes to npm AND to
+ * `agenticterms.integraledger.com`, which is built out of `website/` in this same tree. `M` 2026-09-14 the
+ * deployed site served THREE citations of an internal draft — one of them rendered at `/mcp/boundary`, all
+ * three in `/llms-full.txt`, the file written to be ingested wholesale by agents — while this gate reported
+ * `44 packed file(s) … none spells an internal LCP revision` and was CORRECT: no manifest lists `website/`
+ * in its `files`, so the site was outside the subject set by construction. ⇒ The sentence above about a
+ * pathspec that cannot see a surface was true one level up, about the tarball versus the estate. The
+ * subject set is now WHAT THIS REPOSITORY PUBLISHES. planning register #204.
+ *
  * ⚠️ `dist/` IS IN THE TARBALL AND IS DELIBERATELY NOT WALKED. It is gitignored `tsc` output whose
  * docblocks are copied verbatim out of `src` — measured: every `dist` hit in the opening audit was the same
  * sentence as its `src` original, and there were no others. Walking it would make this gate's subject set
@@ -34,7 +43,18 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+/**
+ * ⚠️ The drive hands in a fixture through `INTEGRA_GATE_ROOT`, the same spelling `check:hermetic-tests`
+ * uses in this directory. ⭐ Unlike that gate this one needs no trailing-separator normalisation: every
+ * path here is built with `join()`, which normalises either spelling, and `join` is the only way `ROOT`
+ * is ever consumed. Said rather than relied on — the sibling gate paid for that difference once.
+ *
+ * USAGE
+ *   node scripts/check-spec-citations.mjs
+ *   INTEGRA_GATE_ROOT=<dir> node scripts/check-spec-citations.mjs   # a fixture (the drive uses this)
+ */
+const ROOT =
+  process.env["INTEGRA_GATE_ROOT"] ?? new URL("..", import.meta.url).pathname;
 
 /**
  * An INTERNAL LCP revision spelled in prose: `v1.37`, `v0.1.38`, `v1.36`.
@@ -47,15 +67,23 @@ const ROOT = new URL("..", import.meta.url).pathname;
  */
 const ANY_REVISION = /v(?:0\.)?1\.\d{2}\b/g;
 
-/** The prose halves of a tarball. Everything else in one is bytes, not sentences. */
+/**
+ * The prose halves of a published surface. Everything else is bytes, not sentences.
+ *
+ * `.mdx` and `.tsx` are here for the site: the documentation pages are MDX and the routes that frame them
+ * are TSX. Neither appears anywhere under `packages/`, so adding them widens the site walk and leaves the
+ * packed walk at exactly the files it had — measured, not assumed.
+ */
 const TEXT_EXT = new Set([
   ".ts",
+  ".tsx",
   ".mts",
   ".cts",
   ".js",
   ".mjs",
   ".cjs",
   ".md",
+  ".mdx",
   ".json",
 ]);
 
@@ -76,21 +104,45 @@ const NOT_WALKED = new Set(["dist"]);
  */
 const FILE_FLOOR = 30;
 
+/**
+ * ⛔⛔ THE SECOND SURFACE: the pages `agenticterms.integraledger.com` serves.
+ *
+ * `website/content` is the MDX a reader loads; `website/src` is the routes and components that frame it,
+ * including `llms.txt` and `llms-full.txt`. ⚠️ Deliberately NOT the whole of `website/`: a lockfile, a
+ * `tsconfig` and a `wrangler.toml` emit no sentence to any reader, and walking them would widen the
+ * subject set without widening the SURFACE — which is the failure this gate exists to refuse, pointed the
+ * other way. `M` 2026-09-14 all ten `LCP §` citations and all three internal revisions under `website/`
+ * were in `website/content`; `website/src` held zero of each and is here because a route that renders
+ * prose is one commit away from carrying some.
+ */
+const SITE_ROOTS = ["website/content", "website/src"];
+
+/**
+ * ⛔ Same job as `FILE_FLOOR`, for the site. 51 files today — 28 under `content`, 23 under `src` — so a
+ * floor of 40 goes red if EITHER root drops out, which is the collapse this is for. Never lower it to
+ * make a deletion pass.
+ */
+const SITE_FLOOR = 40;
+
+/**
+ * ⛔ DIRECTORY-OR-NOT COMES FROM THE SAME DIRECTORY READ, not from a second syscall. A `statSync` between
+ * `readdirSync` and `readFileSync` is a time-of-check/time-of-use window; `withFileTypes` closes it by
+ * answering from the entry already in hand.
+ */
+function walkInto(out, dir, rel) {
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    const name = ent.name;
+    const p = join(dir, name);
+    if (ent.isDirectory()) walkInto(out, p, `${rel}/${name}`);
+    else if (TEXT_EXT.has(name.slice(name.lastIndexOf("."))))
+      out.push({ where: `${rel}/${name}`, text: readFileSync(p, "utf8") });
+  }
+}
+
 /** One piece of shipped prose: where it came from, and what it says. */
 function shippedProse() {
   const out = [];
-  const walk = (dir, rel) => {
-    for (const ent of readdirSync(dir, { withFileTypes: true })) {
-      const name = ent.name;
-      const p = join(dir, name);
-      // ⛔ DIRECTORY-OR-NOT COMES FROM THE SAME DIRECTORY READ, not from a second syscall. A
-      // `statSync` between `readdirSync` and `readFileSync` is a time-of-check/time-of-use window;
-      // `withFileTypes` closes it by answering from the entry already in hand.
-      if (ent.isDirectory()) walk(p, `${rel}/${name}`);
-      else if (TEXT_EXT.has(name.slice(name.lastIndexOf("."))))
-        out.push({ where: `${rel}/${name}`, text: readFileSync(p, "utf8") });
-    }
-  };
+  const walk = (dir, rel) => walkInto(out, dir, rel);
 
   const packages = [];
   for (const pkg of readdirSync(join(ROOT, "packages"))) {
@@ -135,14 +187,31 @@ function shippedProse() {
       } else {
         try {
           walk(p, `packages/${pkg}/${entry}`);
-        } catch {
-          continue;
-        }
+        } catch {}
       }
     }
     packages.push({ pkg, files: out.length - before });
   }
   return { prose: out, packages };
+}
+
+/**
+ * The prose the documentation site serves, one root at a time so a root that contributes nothing is
+ * reportable by name rather than hidden inside a total.
+ *
+ * ⛔ A MISSING ROOT IS A REFUSAL, NOT A SKIP. `readdirSync` is allowed to throw here: if `website/content`
+ * has been moved or renamed, this gate must go red and say so, because the alternative is reporting clean
+ * over a surface it stopped reading. That is the whole defect.
+ */
+function siteProse() {
+  const out = [];
+  const roots = [];
+  for (const root of SITE_ROOTS) {
+    const before = out.length;
+    walkInto(out, join(ROOT, root), root);
+    roots.push({ root, files: out.length - before });
+  }
+  return { prose: out, roots };
 }
 
 // ---- canaries: prove the pattern still discriminates before trusting a clean result ----
@@ -196,22 +265,43 @@ for (const [sample, shouldFlag, what] of CANARIES) {
 }
 
 // ---- the scan ----
-const { prose, packages } = shippedProse();
+const { prose: packed, packages } = shippedProse();
+const { prose: site, roots } = siteProse();
+
+// ⛔⛔ THE TWO SURFACES ARE COUNTED SEPARATELY AND FLOORED SEPARATELY, ON PURPOSE. One combined total under
+// one floor is a total in which losing the entire site walk is masked by the packed files still being
+// there — 44 of 95 clears any floor a 95-file tree would set. Two counts, two floors: each surface has to
+// be present on its own.
+const prose = [...packed, ...site];
 
 // ⛔ THE BLIND-GATE GUARDS. A walker that finds nothing reports clean forever, and so does one that quietly
 // stops descending into a package or drops a surface. Each of these is a way that has actually happened
 // somewhere in this workspace, asserted before any result is believed.
-if (prose.length === 0) {
-  console.error(
-    "⛔ check:spec-citations walked ZERO files. The walk is broken. Refusing to report clean.",
-  );
-  process.exit(1);
+for (const [surface, n, floor] of [
+  ["the packed set", packed.length, FILE_FLOOR],
+  ["the documentation site", site.length, SITE_FLOOR],
+]) {
+  if (n === 0) {
+    console.error(
+      `⛔ check:spec-citations walked ZERO files of ${surface}. The walk is broken. Refusing to report clean.`,
+    );
+    process.exit(1);
+  }
+  if (n < floor) {
+    console.error(
+      `⛔ check:spec-citations walked ${n} file(s) of ${surface}, floor is ${floor}.\n\n` +
+        "   A walk that collapsed is indistinguishable from a clean tree. If surfaces were removed on\n" +
+        "   purpose, lower the floor in this file deliberately and say why.\n",
+    );
+    process.exit(1);
+  }
 }
-if (prose.length < FILE_FLOOR) {
+const emptyRoots = roots.filter((r) => r.files === 0);
+if (emptyRoots.length > 0) {
   console.error(
-    `⛔ check:spec-citations walked ${prose.length} file(s), floor is ${FILE_FLOOR}.\n\n` +
-      "   A walk that collapsed is indistinguishable from a clean tree. If surfaces were removed on\n" +
-      "   purpose, lower the floor in this file deliberately and say why.\n",
+    `⛔ check:spec-citations walked no prose at all under: ${emptyRoots.map((r) => r.root).join(", ")}.\n` +
+      "   A site root contributing nothing means the walk lost it, and the site is deployed from this\n" +
+      "   tree. Refusing to report clean over a surface that a reader can load.\n",
   );
   process.exit(1);
 }
@@ -251,8 +341,9 @@ for (const { where, text } of prose) {
 
 if (offenders.length > 0) {
   console.error(
-    `\nRefusing to verify: ${offenders.length} shipped line(s) spell an internal LCP revision, ` +
-      `across ${prose.length} files that npm packs:\n`,
+    `\nRefusing to verify: ${offenders.length} published line(s) spell an internal LCP revision, ` +
+      `across ${prose.length} file(s) this repository publishes — ${packed.length} that npm packs and ` +
+      `${site.length} that the documentation site serves:\n`,
   );
   for (const o of offenders)
     console.error(`  ${o.where}:${o.line} — cites ${o.cites}`);
@@ -265,8 +356,13 @@ if (offenders.length > 0) {
   process.exit(1);
 }
 
+// ⭐ THE GREEN STATES ITS OWN SUBJECT SET, both halves of it. A reader of this line should be able to
+// tell what a pass does NOT cover without opening the file: it covers what npm packs and what the site
+// serves, and nothing else in this tree.
 console.log(
-  `check:spec-citations — ${prose.length} packed file(s) across ${packages.length} publishable package(s) ` +
-    `(${packages.map((p) => `${p.pkg} ${p.files}`).join(", ")}), none spells an internal LCP revision, ` +
+  `check:spec-citations — ${prose.length} published file(s): ${packed.length} packed across ` +
+    `${packages.length} publishable package(s) (${packages.map((p) => `${p.pkg} ${p.files}`).join(", ")}), ` +
+    `and ${site.length} served by the documentation site ` +
+    `(${roots.map((r) => `${r.root} ${r.files}`).join(", ")}). None spells an internal LCP revision, ` +
     `${CANARIES.length}/${CANARIES.length} pattern canaries.`,
 );

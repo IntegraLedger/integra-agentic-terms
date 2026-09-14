@@ -31,7 +31,7 @@ shape real implementations emit. So both are read.
 
 ## Reconciliation is field by field, not carrier by carrier
 
-The two carriers are **not required to be symmetric**. LCP v1.38 §C.4's own illustration puts `atrHash`
+The two carriers are **not required to be symmetric**. LCP §C.4's own illustration puts `atrHash`
 and `legalContextUrl` in `accepts[].extra` while `extensions.legalContext.info` carries only `type` and
 `value` — so treating each carrier as an atomic `{hash, url}` pair would reject the specification's
 canonical example.
