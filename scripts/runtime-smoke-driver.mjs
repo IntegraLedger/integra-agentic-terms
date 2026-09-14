@@ -9,7 +9,6 @@
  * `--allow-read --allow-env --allow-sys --node-modules-dir=manual` and the `package.json` script carried
  * no notion of deno at all. ⇒ A developer running `pnpm check:runtime` before pushing exercised one of the
  * three runtimes the `README.md` table claims, while the script's name said the check had been made.
- * Filed against this repository from the planning board.
  *
  * ⚠️ **Nothing was unmeasured** — CI did and does exercise all three. This closes the trap, not a hole.
  *
