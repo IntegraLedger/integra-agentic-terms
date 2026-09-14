@@ -13,7 +13,7 @@ import { serverVersion } from "./version.js";
 /**
  * The MCP server name, and the reason it is not the one the specification illustrates.
  *
- * LCP v1.38 §C.9 shows a different tool vocabulary (`get_legal_context`, `verify_terms`, …) and says in the
+ * LCP §C.9 shows a different tool vocabulary (`get_legal_context`, `verify_terms`, …) and says in the
  * same breath that "the standard does not canonize a particular tool registry" and that the MCP stewards
  * are invited to publish canonical names. An appendix example is not an interoperability fact: names an
  * agent host has already learned are, because a host that has learned a name breaks when it changes.

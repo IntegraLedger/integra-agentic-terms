@@ -81,7 +81,7 @@ export const ACP_SESSION_STATUS: readonly string[] = [
 /**
  * The two Verifiable Intent Autonomous-mode credential types, derived from Mastercard's own open-mandate
  * definitions. Formerly pinned against `placement-mastercard-vi`'s write condition; that placement is now
- * declaration-only (LCP v1.38 §C.7 — an unregistered constraint type gets the WHOLE mandate rejected by a
+ * declaration-only (LCP §C.7 — an unregistered constraint type gets the WHOLE mandate rejected by a
  * stock verifier), so it declares no write condition and there is nothing to pin against. Same standing as
  * {@link ACP_SESSION_STATUS}: hand-kept, re-derive against the host when touching it.
  */
@@ -418,7 +418,7 @@ function carrierSlots(manifest: PlacementManifest): readonly CarrierSlot[] {
  * The reference each declared INTEGRITY carrier actually holds, with the path it was read from.
  *
  * Discovery-class slots are skipped before they are read, not after: UCP's `links[type=terms_of_service].url`
- * locates the terms without attesting to them — LCP v1.38 §C.3 files UCP's `links` under "discovery without
+ * locates the terms without attesting to them — LCP §C.3 files UCP's `links` under "discovery without
  * integrity" and says a standing policy page "is not a per-transaction terms record and carries no hash",
  * which is exactly why one cannot stand in for the other. Reading
  * it and discarding it later would also mean decoding a URL under the capability field's `sha256` contract,
@@ -467,7 +467,7 @@ function carrierKey(ref: LegalContextRef): string {
  *
  * FAIL-FAST, four ways, all loud:
  *
- *  - a protocol with no registered placement (`mcp` is the only one, and LCP v1.38 §C.9 makes that terminal:
+ *  - a protocol with no registered placement (`mcp` is the only one, and LCP §C.9 makes that terminal:
  *    it describes an LCP-aware MCP *server*, which has no document field for a reference to ride in);
  *  - a document advertising nothing at any declared carrier;
  *  - DISAGREEMENT between two declared carriers. This is the generalization of the x402 two-carrier rule to
