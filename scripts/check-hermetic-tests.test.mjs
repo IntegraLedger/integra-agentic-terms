@@ -36,6 +36,12 @@ const GATE = fileURLToPath(
  */
 const PLANT = "api.blockcypher.com";
 
+/** The `$` of a `${` a FIXTURE must contain, built here so no plain string in this file holds one. */
+const DOLLAR = "$";
+
+/** A SECOND planted host, so "does not stop at the first" is a thing a case can assert. */
+const SECOND = "cardanoscan.io";
+
 const DECLARATIONS = {
   namedNotCalled: {},
   imports: { vitest: { kind: "inert", why: "the runner" } },
@@ -174,7 +180,7 @@ drive(
       imports: { vitest: { kind: "inert", why: "r" } },
     },
     files: {
-      "packages/p/test/creds.test.ts": `import { it } from "vitest";\nit("x", async () => { await fetch("https://user@${PLANT}/steal"); });\n`,
+      "packages/p/test/creds.test.ts": `import { it } from "vitest";\nit("x", async () => { await fetch("https://user@${PLANT}/steal"); await fetch("https://user@${SECOND}/also"); });\n`,
     },
   },
   (r) => {
@@ -183,9 +189,25 @@ drive(
       1,
       `a declared userinfo must not exempt the host:\n${r.out}`,
     );
+    // ⭐⭐ THREE PROPERTIES, AND THE THIRD IS WHAT MAKES THE FIX DURABLE RATHER THAN MERELY CORRECT.
+    // 1 · the scan reads PAST the `@`, so the real host is named;
     assert.ok(
       namesHost(r.out, PLANT),
       `the refusal must name ${PLANT} as a finding:\n${r.out}`,
+    );
+    // 2 · and it does not stop at the FIRST — which is what says the old behaviour collapsed an
+    //     unbounded set of destinations onto one entry;
+    assert.ok(
+      namesHost(r.out, SECOND),
+      `both hosts behind the same userinfo must be named:\n${r.out}`,
+    );
+    // 3 · ⛔ and because the table is closed in BOTH directions, the `user` entry — the declaration that
+    //     WAS the exploit — is itself reported as excluding nothing. ⇒ The artifact of the hole cannot
+    //     quietly survive its repair: whoever cleans up after this cannot leave the door propped.
+    assert.match(
+      r.out,
+      /\buser\n\s+is listed in namedNotCalled and appears in no test/,
+      `the stale userinfo entry must be reported once it exempts nothing:\n${r.out}`,
     );
   },
 );
@@ -349,6 +371,28 @@ drive(
       0,
       `a reserved host must not be reported:\n${r.out}`,
     ),
+);
+
+// ⛔⛔ The shape that disproved truncating an interpolated authority to its literal prefix. It is the
+// seller-side repository's, carried here because the two gates must answer the same question the same way.
+drive(
+  "⛔⛔ an interpolation INSIDE the host names nothing — not even a fragment",
+  {
+    files: {
+      "packages/p/test/interp.test.ts": `import { it } from "vitest";\nconst h = "https://seam${DOLLAR}{i}.example";\nconst g = "https://u:p@${DOLLAR}{h}/x";\nit("x", () => [h, g]);\n`,
+    },
+  },
+  (r) => {
+    assert.equal(
+      r.status,
+      0,
+      `an interpolated authority names no host:\n${r.out}`,
+    );
+    assert.ok(
+      !r.out.includes("seam"),
+      `reported a fragment of an interpolated host:\n${r.out}`,
+    );
+  },
 );
 
 // ⛔ The declarations file is the gate's subject table; without it the gate would refuse every host.
