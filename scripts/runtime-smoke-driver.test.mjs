@@ -3,7 +3,7 @@
  * `check:runtime`'s drive — **the two homes must not come back.**
  *
  * ⛔ The defect this closes was not an absent check; it was ONE judgement written in TWO places that had
- * already drifted (`IntegraLedger/agent-commerce-plan#197`). So the case that matters is not "does node
+ * already drifted. So the case that matters is not "does node
  * work" — CI proved that daily — it is that `ci.yml` SELECTS a row from `RUNTIMES` rather than carrying
  * its own copy of the dispatch. ⭐ A drive that only tested the table would pass forever while somebody
  * pasted the `case` statement back into the workflow.

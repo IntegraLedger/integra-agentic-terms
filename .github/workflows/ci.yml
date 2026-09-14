@@ -117,7 +117,7 @@ jobs:
       # ⛔ The dispatch used to live here as a `case` statement AND in package.json, and the two had
       # already drifted — this job carried deno's permission flags and `pnpm check:runtime` did not know
       # deno existed. One definition now, in scripts/runtime-smoke-driver.mjs; this job selects a row from
-      # it. agent-commerce-plan#197.
+      # it.
       - name: Smoke the published tarball on one runtime
         run: pnpm check:runtime
         env:
