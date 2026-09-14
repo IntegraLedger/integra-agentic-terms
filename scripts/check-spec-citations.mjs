@@ -31,7 +31,7 @@
  * already refuses a `dist` file whose `src` original is gone. `src` is where the sentence is written and
  * where it gets fixed.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -80,9 +80,13 @@ const FILE_FLOOR = 30;
 function shippedProse() {
   const out = [];
   const walk = (dir, rel) => {
-    for (const name of readdirSync(dir)) {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const name = ent.name;
       const p = join(dir, name);
-      if (statSync(p).isDirectory()) walk(p, `${rel}/${name}`);
+      // ⛔ DIRECTORY-OR-NOT COMES FROM THE SAME DIRECTORY READ, not from a second syscall. A
+      // `statSync` between `readdirSync` and `readFileSync` is a time-of-check/time-of-use window;
+      // `withFileTypes` closes it by answering from the entry already in hand.
+      if (ent.isDirectory()) walk(p, `${rel}/${name}`);
       else if (TEXT_EXT.has(name.slice(name.lastIndexOf("."))))
         out.push({ where: `${rel}/${name}`, text: readFileSync(p, "utf8") });
     }
@@ -93,8 +97,15 @@ function shippedProse() {
     const dir = join(ROOT, "packages", pkg);
     if (!statSync(dir).isDirectory()) continue;
     const manifestPath = join(dir, "package.json");
-    if (!existsSync(manifestPath)) continue;
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    // ⛔ THE READ IS THE CHECK. `existsSync` then `readFileSync` is the same time-of-check/time-of-use
+    // window as the two above, and a package directory with no manifest is not an error worth a
+    // separate syscall to discover.
+    let manifest;
+    try {
+      manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    } catch {
+      continue;
+    }
     if (manifest.private === true) continue;
 
     const before = out.length;
@@ -107,8 +118,15 @@ function shippedProse() {
     for (const entry of entries) {
       if (NOT_WALKED.has(entry)) continue;
       const p = join(dir, entry);
-      if (!existsSync(p)) continue;
-      if (statSync(p).isDirectory()) walk(p, `packages/${pkg}/${entry}`);
+      // ⛔ NO existsSync BEFORE THE READ — that is the check-then-use CodeQL flags. A missing
+      // entry is answered by the read failing, which is the same answer one syscall later.
+      let st;
+      try {
+        st = statSync(p);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) walk(p, `packages/${pkg}/${entry}`);
       else if (TEXT_EXT.has(entry.slice(entry.lastIndexOf("."))))
         out.push({
           where: `packages/${pkg}/${entry}`,
