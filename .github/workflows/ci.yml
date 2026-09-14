@@ -114,16 +114,11 @@ jobs:
           deno-version: v2.x
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build # the tarball is packed from dist/, so it has to exist first
-      - run: node scripts/runtime-consumer.mjs
-      - name: Smoke the guard on ${{ matrix.runtime }}
-        shell: bash
-        working-directory: .runtime-consumer
-        run: |
-          case "${{ matrix.runtime }}" in
-            node) node runtime-smoke.mjs ;;
-            bun)  bun run runtime-smoke.mjs ;;
-            # Deno resolves the npm tree that is already on disk rather than fetching its own, so the run is
-            # over the same bytes the other two legs saw. Permissions are explicit: the smoke reads modules
-            # and touches no network — an `-A` here would hide a dependency that started reaching out.
-            deno) deno run --allow-read --allow-env --allow-sys --node-modules-dir=manual runtime-smoke.mjs ;;
-          esac
+      # ⛔ The dispatch used to live here as a `case` statement AND in package.json, and the two had
+      # already drifted — this job carried deno's permission flags and `pnpm check:runtime` did not know
+      # deno existed. One definition now, in scripts/runtime-smoke-driver.mjs; this job selects a row from
+      # it. agent-commerce-plan#197.
+      - name: Smoke the published tarball on one runtime
+        run: pnpm check:runtime
+        env:
+          INTEGRA_RUNTIME: ${{ matrix.runtime }}
