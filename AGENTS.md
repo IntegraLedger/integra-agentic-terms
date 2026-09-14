@@ -37,8 +37,9 @@ pnpm 11 workspace, Node ≥ 24, TypeScript with `isolatedDeclarations`.
 
 ```
 pnpm verify  =  check:versions → check:commit-messages → check:wire → check:shared-pins
-                → check:public-boundary → check:vocab → check:spec-citations → audit → build
-                → check:dist → lint → depcruise → typecheck → check:docs → test:scripts → test
+                → check:runner-patch → check:public-boundary → check:spec-citations → check:vocab
+                → check:hermetic-tests → audit → build → check:dist → lint → depcruise → typecheck
+                → check:docs → test:scripts → test                              (18 stages)
 pnpm mutation <pkg>            (STRYKER_PKG required; ratchets in stryker.config.mjs — raise, never lower)
 pnpm check:runtime             (packs, installs as a consumer, runs the gate — the Node leg of the matrix)
 pnpm check:currency            (the declared protocol line vs what npmjs serves — scheduled, never in verify)
@@ -56,7 +57,9 @@ difference is a drive FLOOR** — the same shape as `depcruise`'s module floor. 
 that matches nothing prints `tests 0` and **exits 0**; measured three ways, including a one-character
 rename of the only drive. `sh` passes an unmatched glob through literally and Node's own expansion then
 finds nothing, so neither layer errors. The wrapper counts the drives before running them and refuses
-below `FLOOR` (1 today). Raise it as drives are added; never lower it to make a deletion pass.
+below `FLOOR` (**7** today). Raise it as drives are added; never lower it to make a deletion pass.
+⚠️ This line said `1` until 2026-09-14, while the floor had been `6` for some time — a documented number
+that nothing holds to the code, which is the same defect the chain above had.
 
 `check:dist` and `depcruise` were added 2026-08-27, both ported from `integra-protocol` after the
 2026-08-26 three-repo audit found them present there and absent here. Neither is decoration:

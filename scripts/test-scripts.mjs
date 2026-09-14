@@ -16,7 +16,7 @@ import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** Raise as drives are added; never lower it to make a deletion pass. */
-const FLOOR = 6;
+const FLOOR = 7;
 
 const dir = fileURLToPath(new URL(".", import.meta.url));
 const drives = readdirSync(dir)
