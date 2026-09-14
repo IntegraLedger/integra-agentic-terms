@@ -240,8 +240,8 @@ function main() {
 //                                 meta  = file:///tmp/real/m.mjs
 //
 // ⇒ Under a symlinked checkout the two differ, `main()` never runs, and the gate prints nothing and exits
-// 0 — a green that examined nothing, which is `agent-commerce-plan#102` in the one place this file is
-// supposed to be the answer to it. ⚠️ Not hypothetical here: this corpus already records a macOS path
+// 0 — a green that examined nothing: the empty-subject-set defect, arriving in the one place this file
+// exists to be the answer to. ⚠️ Not hypothetical here: this corpus already records a macOS path
 // class where `/tmp` is a symlink to `/private/tmp`.
 //
 // ⭐ `realpathSync` on the invoked path makes the comparison independent of the spelling. The drive spawns

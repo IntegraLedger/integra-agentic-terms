@@ -41,6 +41,11 @@ export const FORBIDDEN_LITERALS = [
     "cd ../integra-agentic-commerce && pnpm verify",
   ],
   [
+    /agent-commerce-plan/i,
+    "the private planning repository by name",
+    "filed as agent-commerce-plan#42",
+  ],
+  [
     /integra-july-2026/i,
     "the internal working-directory layout",
     "cd integra-july-2026/integra-agentic-terms",
