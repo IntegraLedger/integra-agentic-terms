@@ -1,0 +1,157 @@
+name: published-parity
+
+# Hold the PUBLISHED artifact against the source at the SAME version, by content.
+#
+# ⛔⛔ WHY THIS CANNOT LIVE IN `verify`. Every gate in `verify` reads the working tree, and the defect this
+# watches is invisible from there: a version already on the registry can disagree with the source that
+# carries its number, and `check:dist`, `check:runtime` and every test stay green over it. Only the registry
+# can answer, and `verify` must stay runnable without it.
+#
+# ⭐ AND WHY IT IS A SCHEDULE RATHER THAN A PUSH TRIGGER. The defect is created by a PUBLISH, not by a
+# commit. A push-triggered check would first speak whenever someone next opens a pull request, which may be
+# days after the artifact went wrong and is unrelated to it.
+
+on:
+  schedule:
+    # Every six hours. A publish can happen at any hour and a stale artifact serves consumers for the whole
+    # window. The minute is offset off the hour because scheduled workflows queue behind everything at :00.
+    #
+    # ⚠️ Deliberately NOT spaced against `protocol-currency` (:53). Both read the registry, and a published
+    # version is immutable, so an overlap cannot make either ambiguous about what it saw.
+    - cron: "37 */6 * * *"
+  workflow_dispatch:
+
+# ⚠️ LEAST PRIVILEGE IS PER-JOB — job-level blocks REPLACE this one rather than merging, so the job below
+# states every scope it needs. OpenSSF Scorecard flags a top-level write.
+permissions:
+  contents: read
+
+concurrency:
+  group: published-parity
+  cancel-in-progress: true
+
+env:
+  # ⛔ `gh` RESOLVES ITS REPOSITORY FROM THE LOCAL GIT CHECKOUT, and does NOT read `GITHUB_REPOSITORY`. The
+  # sibling workflow's "also fires when the checkout failed" promise is therefore false there: with no
+  # checkout, `gh issue list` has nothing to resolve and the reporting step fails silently instead. Setting
+  # `GH_REPO` here makes every `gh` call below independent of the checkout, which is the only way the
+  # failure-reporting steps can honour what their comments claim.
+  GH_REPO: ${{ github.repository }}
+  DRIFT_TITLE: "published-parity: a published version is behind the source it was cut from"
+  UNMEASURED_TITLE: "published-parity: nothing was compared, so there is no parity claim"
+  FAULT_TITLE: "published-parity: the check could not measure — instrument failure"
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # the whole point of the job is to be able to say something happened
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          # No `cache: pnpm`: nothing is installed here, so there is nothing to cache.
+
+      - name: Compare each published version against the source it was cut from
+        id: parity
+        # ⛔⛔ THE EXIT CODE IS CAPTURED RATHER THAN ALLOWED TO FAIL THE STEP, because this gate has FOUR
+        # answers and three of them are not "pass": 1 drift, 2 nothing comparable, 3 the instrument failed.
+        # Letting the step fail would collapse them into one red, and the reporting below would file "a
+        # published version is behind its source" over a run that measured nothing — the failure this estate
+        # names on the measured-run lock, where `--conflict-exit-code 75` keeps "never got the box" separate
+        # from "below floor".
+        #
+        # ⚠️ `shell: bash` is NOT here for pipefail — this step is deliberately incapable of failing, and the
+        # pipeline's own `$?` is never read. It is here because `PIPESTATUS` does not exist in `sh`, which is
+        # what a bare `run:` may fall back to, and `PIPESTATUS[0]` is the whole mechanism.
+        shell: bash
+        run: |
+          set +e
+          node scripts/check-published-parity.mjs 2>&1 | tee /tmp/parity.log
+          CODE=${PIPESTATUS[0]}
+          set -e
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "check:published-parity exited $CODE"
+          exit 0
+
+      # ⛔ THE RUN CLOSES WHAT THE RUN OPENED. An issue that only ever opens is a claim nobody is accountable
+      # for withdrawing. ⚠️ Only exit 0 closes: a 2 or a 3 means the question was not answered, and closing
+      # a drift issue because the instrument broke would retract a finding on no evidence.
+      - name: Close every issue this job opens, once parity is measured and holds
+        if: steps.parity.outputs.code == '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for TITLE in "$DRIFT_TITLE" "$UNMEASURED_TITLE" "$FAULT_TITLE"; do
+            EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+            [ -z "$EXISTING" ] && continue
+            gh issue close "$EXISTING" --comment "$(printf 'Closed by the run that measured it: every published version matches the source it was cut from, byte for byte.\n\n[Run log](%s)\n' "$RUN_URL")"
+          done
+
+      - name: Open or update the DRIFT issue
+        if: steps.parity.outputs.code == '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # `gh`, not a marketplace action: this repository pins every action by SHA and declares per-workflow
+        # permissions, and widening the supply-chain surface to file an issue would be a poor trade.
+        run: |
+          BODY=$(printf 'A version already on the registry does not carry the bytes this repository says it ships. The files are named below, as ABSENT or as DIFFERENT.\n\n⛔ A republish of the same version is not the remedy and is not possible: a version number is a promise about bytes, and the bytes that were published are what consumers hold. **The remedy is a version bump and a release.**\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$RUN_URL" "$(cat /tmp/parity.log)")
+          EXISTING=$(gh issue list --state open --search "$DRIFT_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$DRIFT_TITLE" --body "$BODY"; fi
+
+      - name: Open or update the NOTHING-MEASURED issue
+        # ⛔⛔ A SEPARATE ISSUE, AND THAT IS THE POINT. Filing "a published version is behind its source" over
+        # a run that compared nothing would assert a defect nobody measured — the flattering error's mirror
+        # image, and just as wrong. This one says only what happened: no opinion is available.
+        if: steps.parity.outputs.code == '2'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          BODY=$(printf 'Fewer packages were comparable than the gate floor requires, so **nothing conclusive was compared**.\n\n⚠️ This is not drift and it is not parity — it is an absence of coverage. A package leaving the comparable set (a dropped `src` from `files`, an unpublish, a rename) takes its own coverage with it, which is exactly what the floor exists to catch.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$RUN_URL" "$(cat /tmp/parity.log)")
+          EXISTING=$(gh issue list --state open --search "$UNMEASURED_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$UNMEASURED_TITLE" --body "$BODY"; fi
+
+      - name: Open or update the INSTRUMENT-FAILURE issue
+        # ⛔ An unreachable registry, an unfetchable tarball or an unreadable source path is a fact about the
+        # INSTRUMENT. Reporting it under the drift title would name the artifact for the tooling's failure.
+        if: steps.parity.outputs.code == '3'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          BODY=$(printf 'The check could not measure. ⛔ This says nothing about whether any published artifact is behind its source — it says the instrument failed, and those are different findings.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$RUN_URL" "$(cat /tmp/parity.log)")
+          EXISTING=$(gh issue list --state open --search "$FAULT_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$FAULT_TITLE" --body "$BODY"; fi
+
+      - name: Report anything the four exits do not cover, or a step that broke before them
+        # ⛔⛔ THE PARTITION ABOVE IS NOT EXHAUSTIVE OVER WHAT A PROCESS CAN EXIT. 127 (node missing), 137
+        # (OOM), or any code a future edit adds would match none of the four conditions — and because the
+        # check step is deliberately incapable of failing, `failure()` cannot backstop them either. Without
+        # this step every one of those is a GREEN, SILENT job, which is the branch nobody watches.
+        #
+        # ⚠️ It also covers a checkout or setup-node that failed, in which case `code` is empty. That is why
+        # `GH_REPO` is set at the workflow level: with no checkout there is no git remote for `gh` to read.
+        if: always() && (failure() || !contains(fromJSON('["0","1","2","3"]'), steps.parity.outputs.code))
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CODE: ${{ steps.parity.outputs.code }}
+        run: |
+          LOG=$(cat /tmp/parity.log 2>/dev/null || echo "(the check did not run — an earlier step failed; see the run log)")
+          BODY=$(printf 'This job reached a state its own reporting does not model: the check exited `%s`, which is none of 0, 1, 2 or 3 — or a step before it failed.\n\n⛔ Nothing here is a claim about any published artifact. It is a claim about this workflow.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "${CODE:-<empty: the check never ran>}" "$RUN_URL" "$LOG")
+          EXISTING=$(gh issue list --state open --search "$FAULT_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$FAULT_TITLE" --body "$BODY"; fi
