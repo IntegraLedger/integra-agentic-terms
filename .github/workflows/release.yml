@@ -25,8 +25,8 @@ name: release
 #
 # So a release is a deliberate act: dispatch it, and type the confirmation. The first release of these
 # names did not come through here at all — it came through a one-off `bootstrap-publish.yml`, because a
-# brand-new name cannot use trusted publishing. That workflow has run and is deleted; see the BOOTSTRAP
-# note below for when it is restored and why it does not live here between times.
+# brand-new name cannot use trusted publishing. That workflow is RESTORED when a new name needs it and
+# DELETED once the name is live; see the BOOTSTRAP note below for why it does not live here between times.
 on:
   # Re-runnable without a commit, which a failed publish needs: the staging step decides what to stage by
   # asking the registry rather than by trusting the trigger, so a re-run resumes instead of duplicating.
@@ -53,10 +53,19 @@ on:
 # and changelogs; the publish loop below is ours. Derive the set from `private`, never a name pattern —
 # a name filter has silently broken twice here.
 #
-# BOOTSTRAP IS DONE, AND THIS FILE NOW OWNS PUBLISHING. Both names went live at 0.9.0 with provenance, so
-# trusted publishing is configurable for them and `npm stage publish` below works. The one-time
-# `bootstrap-publish.yml` has been deleted: it was the only path here that reached a registry token, this
-# workflow needs none, and removing it leaves NO standing credential path in this repository at all.
+# BOOTSTRAP IS A CYCLE, NOT A PAST EVENT, AND THIS FILE OWNS PUBLISHING BETWEEN TURNS OF IT. Three names
+# are live with provenance — `agentic-terms` and `lcp-mcp-server` from 0.9.0, `seller-mcp` from 0.10.0 on
+# 2026-09-14 — so trusted publishing is configurable for each and `npm stage publish` below works for all.
+#
+# ⛔ THIS PARAGRAPH USED TO ASSERT THAT `bootstrap-publish.yml` "HAS BEEN DELETED", AND THAT SENTENCE HAS
+# NOW BEEN FALSE TWICE. `c1162eb` found the file still on `main` while this header said it was gone, and
+# deleted it; 2026-09-14 restored it to publish `seller-mcp` and deleted it again. A claim whose truth
+# ALTERNATES WITH A PROCEDURE should describe the procedure rather than assert a state — otherwise the
+# file that owns this repository's credential story is wrong for the whole of every bootstrap.
+#
+# ⇒ What is true at rest, which is the property that matters: while that workflow is absent, NO path in
+# this repository reaches a registry token, and this one needs none. During a bootstrap a token lives on
+# the `npm-publish` environment behind a required reviewer, and both go when the name is live.
 #
 # A BRAND-NEW PACKAGE NAME STILL CANNOT GO THROUGH HERE. npm can neither configure trusted publishing for a
 # package that does not exist (npm/cli#8544) nor stage a brand-new name, so `npm stage publish` FAILS with
