@@ -120,18 +120,25 @@ function shippedProse() {
       const p = join(dir, entry);
       // ⛔ NO existsSync BEFORE THE READ — that is the check-then-use CodeQL flags. A missing
       // entry is answered by the read failing, which is the same answer one syscall later.
-      let st;
-      try {
-        st = statSync(p);
-      } catch {
-        continue;
+      // ⛔ NO STAT AT ALL. Even inside a try/catch, a `statSync` before a `readFileSync` is a
+      // time-of-check/time-of-use window — the stat answers about one moment and the read happens at
+      // another. ⇒ ATTEMPT THE READ AND LET IT ANSWER: a directory throws `EISDIR`, a missing entry
+      // throws `ENOENT`, and both are answered without a second syscall to disagree with.
+      if (TEXT_EXT.has(entry.slice(entry.lastIndexOf(".")))) {
+        let text;
+        try {
+          text = readFileSync(p, "utf8");
+        } catch {
+          continue;
+        }
+        out.push({ where: `packages/${pkg}/${entry}`, text });
+      } else {
+        try {
+          walk(p, `packages/${pkg}/${entry}`);
+        } catch {
+          continue;
+        }
       }
-      if (st.isDirectory()) walk(p, `packages/${pkg}/${entry}`);
-      else if (TEXT_EXT.has(entry.slice(entry.lastIndexOf("."))))
-        out.push({
-          where: `packages/${pkg}/${entry}`,
-          text: readFileSync(p, "utf8"),
-        });
     }
     packages.push({ pkg, files: out.length - before });
   }
