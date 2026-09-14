@@ -248,6 +248,31 @@ jobs:
             if curl -sf -o /dev/null "https://registry.npmjs.org/$name/$version"; then
               echo "$version is LIVE on the registry — skipping"
               published=$((published+1))
+            # ⛔⛔ REFUSE A BRAND-NEW NAME BEFORE `npm stage publish`, NOT AFTER. This file's header already
+            # states that a name npmjs has never seen cannot be staged — npm can configure trusted
+            # publishing only for a package that exists (npm/cli#8544) — so `npm stage publish` answers
+            # E401. What the header does not make actionable is WHEN: that failure arrives AFTER the
+            # command has signed a provenance statement into the public Sigstore transparency log, and a
+            # failed run does not undo it. ⇒ An expected, well-understood failure mode was minting a
+            # permanent public artifact on its way out.
+            #
+            # ⚠️ AND IT DIED IN THE WRONG PLACE. E401 matches none of the "already staged" wordings below,
+            # so the loop reached `exit 1` — with every package AFTER this one in publish-order never
+            # attempted. `M` 2026-09-14: seller-mcp sits between agentic-terms and lcp-mcp-server, so a
+            # dispatch staged the first, died on the second, and left the third untouched while #16 stayed
+            # half-closed. A re-run does not resolve it; only publishing the missing name does.
+            #
+            # The NAME endpoint, not name/version: 404 here means npmjs has never seen this package at
+            # all, which is a different fact from "this version is not live" and needs a different remedy —
+            # the one-time bootstrap, deliberate and supervised, never a workaround inside this loop.
+            elif ! curl -sf -o /dev/null "https://registry.npmjs.org/$name"; then
+              echo "::error::$name has NEVER been published. A first publish cannot go through this workflow:"
+              echo "::error::npm cannot configure trusted publishing for a name that does not exist, so"
+              echo "::error::npm stage publish would fail E401 — after signing a provenance statement into"
+              echo "::error::the public transparency log, which a failed run does not undo."
+              echo "::error::Use the one-time bootstrap (restored from history, run once, deleted again),"
+              echo "::error::then configure trusted publishing for the name so this workflow owns it."
+              exit 1
             elif npm stage publish "$tarball" 2>&1 | tee /tmp/stage.log; then
               staged=$((staged+1))
             elif grep -qiE "previously published|already staged|cannot publish over|already exists" /tmp/stage.log; then
