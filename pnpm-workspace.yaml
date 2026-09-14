@@ -31,7 +31,7 @@ catalog:
   # other, so every "is this one of mine" branch quietly answers no. `check:shared-pins` is the only thing
   # that sees it, which is why the pin and this sentence move together.
   zod: "4.5.4" # trust boundaries only — never inside verification logic
-  vitest: "4.1.11"
+  vitest: "5.0.0" # 5 changed the full-test-name separator to " > "; see patchedDependencies below
   "@types/node": "24.13.3" # FLOOR-pinned to engines (>=24.0.0): types never exceed the oldest supported runtime
   # The MCP v2 SDK, split from v1's monolithic @modelcontextprotocol/sdk. 2.0.0 is the STABLE line
   # implementing the 2026-07-28 MCP revision.
@@ -72,3 +72,47 @@ overrides:
   # went ESM-only at 4.0.0 and postcss is CJS, so an unbounded `>=3.3.18` resolves to 6.x and satisfies the
   # auditor by breaking the dependency.
   nanoid: ">=3.3.18 <4"
+
+# ⛔⛔ A PATCHED TEST TOOL, AND THE ALTERNATIVE WAS A MUTATION GATE THAT LIES.
+#
+# `@stryker-mutator/vitest-runner` builds its per-mutant test filter by joining a test's suite names and
+# its own name with a SINGLE SPACE (`collectTestName`, `nameParts.join(' ')`), turns that into a regex, and
+# hands it to vitest as `testNamePattern`. vitest 5 composes the name it MATCHES that pattern against with
+# `" > "` instead (`createTaskName(names, separator = " > ")`, matched against `t.fullTestName`). The two
+# spellings are not the same string, so the pattern matches nothing.
+#
+# ⛔ AND THE FAILURE IS SILENT IN THE DANGEROUS DIRECTION. vitest does not error on a pattern that matches
+# nothing — it SKIPS every test and exits 0. Stryker sees a run in which nothing failed and records the
+# mutant SURVIVED, so a package scores against a suite that executed no tests at all.
+#
+# ⭐⭐ MEASURED HERE, NOT INHERITED — `packages/seller-mcp`, vitest 5.0.0, this tree, 2026-09-13. The same
+# package measured twice under the same lock, patched and unpatched, is the ONLY evidence that the filter
+# is live. A passing score is not that evidence: unpatched, this package's score was identical to the one
+# recorded on vitest 4 — what proves the patch is that REMOVING it makes the score collapse.
+#
+#     with this patch:     93.98  —  78 killed,  5 survived   (83 mutants)
+#     without this patch:   4.82  —   4 killed, 79 survived   (83 mutants — same population)
+#
+# ⭐ And the collapse partitions EXACTLY on `static`: all 4 mutants that still die are the package's 4
+# static ones, which are the only mutants Stryker runs unfiltered, and all 79 non-static ones survive.
+# Nothing crosses the line. That is protocol's `5420510` signature reproduced.
+#
+# ⚠️ AND IT WOULD HAVE GONE THE OTHER WAY SOMEWHERE ELSE. A package whose ratchet sits below the score its
+# static mutants alone produce would have stayed GREEN over a suite that ran no tests. This gate's whole
+# purpose is to be the thing that cannot quietly become vacuous, so a red is the good outcome and the
+# reason this is patched rather than waited out.
+#
+# ⛔ IT IS NOT FIXABLE FROM CONFIGURATION. vitest exposes the separator as a default parameter, not as an
+# option, and protocol measured `coverageAnalysis` at `perTest`, `all` and `off` with an identical result.
+#
+# ⭐ FOUR SITES, NOT ONE. `collectTestName` is duplicated in the package — `test-helpers` builds the ids
+# the runner reports, `stryker-setup` builds the ids the in-test-environment hook reports, and both ship as
+# `dist/` JavaScript and as `src/` TypeScript. The filter is built from the ids the SETUP hook produced, so
+# patching the helper alone leaves the two halves spelling the same test differently. All four move together.
+#
+# ⛔ THE REMOVAL CONDITION, because a patch nobody retires is a fork. `10.0.0` is the newest release and it
+# predates vitest 5 by three weeks (runner 2026-08-14, vitest 5.0.0 2026-09-03) — there is no published
+# version that supports vitest 5. When one exists, DELETE this patch and this block rather than rebasing
+# it: pnpm refuses a patch whose target version moved, so the bump cannot silently carry it forward.
+patchedDependencies:
+  '@stryker-mutator/vitest-runner@10.0.0': patches/@stryker-mutator__vitest-runner@10.0.0.patch
