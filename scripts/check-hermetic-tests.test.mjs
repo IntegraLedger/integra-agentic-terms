@@ -101,7 +101,10 @@ drive(
   },
   (r) => {
     assert.equal(r.status, 1);
-    assert.match(r.out, new RegExp(PLANT.replace(/\./g, "\\.")));
+    assert.ok(
+      r.out.includes(PLANT),
+      `the refusal must name ${PLANT}:\n${r.out}`,
+    );
     assert.match(r.out, /packages\/p\/test\/bad\.test\.ts/);
   },
 );
@@ -136,7 +139,10 @@ drive(
   },
   (r) => {
     assert.equal(r.status, 1);
-    assert.match(r.out, new RegExp(PLANT.replace(/\./g, "\\.")));
+    assert.ok(
+      r.out.includes(PLANT),
+      `the refusal must name ${PLANT}:\n${r.out}`,
+    );
     assert.doesNotMatch(
       r.out,
       /^ {2}user$/m,
@@ -162,7 +168,10 @@ drive(
       1,
       `a declared userinfo must not exempt the host:\n${r.out}`,
     );
-    assert.match(r.out, new RegExp(PLANT.replace(/\./g, "\\.")));
+    assert.ok(
+      r.out.includes(PLANT),
+      `the refusal must name ${PLANT}:\n${r.out}`,
+    );
   },
 );
 
@@ -182,7 +191,10 @@ for (const name of ["rail.live.test.ts", "integration.rail.test.ts"])
         r.out,
         /live-harness convention this repository has not\s*\n?\s*adopted/,
       );
-      assert.match(r.out, new RegExp(name.replace(/\./g, "\\.")));
+      assert.ok(
+        r.out.includes(name),
+        `the refusal must name ${name}:\n${r.out}`,
+      );
     },
   );
 
