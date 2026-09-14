@@ -17,7 +17,7 @@
     "check:dist": "node scripts/check-dist-orphans.mjs",
     "check:docs": "node scripts/check-doc-snippets.mjs",
     "check:public-boundary": "node scripts/check-public-boundary.mjs",
-    "check:runtime": "node scripts/runtime-consumer.mjs && node .runtime-consumer/runtime-smoke.mjs",
+    "check:runtime": "node scripts/runtime-consumer.mjs && node scripts/runtime-smoke-driver.mjs",
     "check:shared-pins": "node scripts/check-shared-pins.mjs",
     "check:spec-citations": "node scripts/check-spec-citations.mjs",
     "check:versions": "node scripts/check-versions.mjs",
