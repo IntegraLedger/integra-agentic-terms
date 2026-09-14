@@ -19,6 +19,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -34,6 +35,7 @@ import { fileURLToPath } from "node:url";
 import {
   COMPARABLE_FLOOR,
   declaredSourceFiles,
+  hashTarEntries,
   NetworkRegistry,
   parityReport,
   publishableManifests,
@@ -635,4 +637,96 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
   } finally {
     rmSync(f.root, { recursive: true, force: true });
   }
+});
+
+/* ================================================================ 7 · the archive is never extracted */
+
+/** Build one POSIX ustar entry by hand, so hostile shapes can be planted exactly. */
+function tarEntry(name, body, type = "0") {
+  const header = Buffer.alloc(512);
+  header.write(name.slice(0, 100), 0, "utf8");
+  header.write("000644 \0", 100);
+  header.write("0000000 \0", 108);
+  header.write("0000000 \0", 116);
+  header.write(`${body.length.toString(8).padStart(11, "0")} `, 124);
+  header.write("00000000000 ", 136);
+  header.write(type, 156);
+  header.write("ustar\0" + "00", 257);
+  header.fill(" ", 148, 156); // checksum field is spaces while summing
+  let sum = 0;
+  for (const b of header) sum += b;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
+  const content = Buffer.alloc(Math.ceil(body.length / 512) * 512);
+  Buffer.from(body).copy(content);
+  return Buffer.concat([header, content]);
+}
+
+test("⛔⛔ A HOSTILE ENTRY NAME IS INERT — traversal and absolute paths become Map keys, never files", () => {
+  const canaryRel = join(tmpdir(), "parity-traversal-canary.txt");
+  rmSync(canaryRel, { force: true });
+
+  const tar = Buffer.concat([
+    tarEntry("package/src/ok.ts", "export const ok = 1;\n"),
+    tarEntry(
+      "../../../../../../../../tmp/parity-traversal-canary.txt",
+      "OWNED\n",
+    ),
+    tarEntry("/tmp/parity-traversal-canary.txt", "OWNED\n"),
+    Buffer.alloc(1024),
+  ]);
+
+  const out = hashTarEntries(tar);
+
+  assert.ok(out.has("package/src/ok.ts"), "the legitimate entry is still read");
+  assert.ok(
+    out.has("../../../../../../../../tmp/parity-traversal-canary.txt"),
+    "the hostile name is DATA — a key in a Map, which is the whole point",
+  );
+  assert.equal(
+    existsSync(canaryRel),
+    false,
+    "⛔ nothing may be written to the filesystem: this is why the tar is walked in memory rather than extracted",
+  );
+});
+
+test("⛔ symlink and directory entries are skipped — a link cannot be followed if it is never created", () => {
+  const tar = Buffer.concat([
+    tarEntry("package/src/real.ts", "export const a = 1;\n"),
+    tarEntry("package/src/link.ts", "", "2"), // symlink
+    tarEntry("package/src/nested/", "", "5"), // directory
+    Buffer.alloc(1024),
+  ]);
+  const out = hashTarEntries(tar);
+  assert.deepEqual([...out.keys()], ["package/src/real.ts"]);
+});
+
+test("⭐ the hand-rolled reader agrees with real `tar` output, entry for entry", async () => {
+  // startRegistry builds its fixture with the real `tar czf`, so this compares the parser against the tool.
+  const reg = await startRegistry({ srcFiles: SRC });
+  try {
+    const r = NetworkRegistry({ origin: reg.origin });
+    const meta = await r.metadata(NAME);
+    const contents = await r.contents(
+      NAME,
+      VERSION,
+      meta.versions[VERSION].dist.tarball,
+    );
+    assert.deepEqual(
+      [...contents.keys()].sort(),
+      ["package.json", ...Object.keys(SRC).map((f) => `src/${f}`)].sort(),
+      "a real gzipped tar, parsed in memory, with the package/ prefix stripped",
+    );
+    assert.equal(contents.get("src/index.ts"), sha(SRC["index.ts"]));
+  } finally {
+    reg.stop();
+  }
+});
+
+test("⛔ an unreadable size field is refused rather than silently truncating the archive", () => {
+  const bad = tarEntry("package/x.ts", "hi");
+  bad.write("XXXXXXXXXXX ", 124); // not octal
+  assert.throws(
+    () => hashTarEntries(Buffer.concat([bad, Buffer.alloc(1024)])),
+    /unreadable size field/,
+  );
 });

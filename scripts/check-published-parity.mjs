@@ -53,20 +53,11 @@
  * earlier drive proved `verdict()` RETURNS 0/1/2 long before anything proved `main()` EXITS them, and the
  * exit code is the only thing the workflow reads — this estate's piped-exit defect, one layer up.
  */
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  lstatSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { argv, env, exit } from "node:process";
+import { gunzipSync } from "node:zlib";
 
 // ⛔ IMPORTED, NOT RE-DECLARED. `check-protocol-currency.mjs` already exports this exact literal, and
 // `protocol-deps.mjs` exists in this repository precisely to stop one constant having two homes.
@@ -164,6 +155,61 @@ export function declaredSourceFiles(packageDir, files) {
   return { comparable: dirs.length > 0, files: out, faults };
 }
 
+/* ------------------------------------------------------------------ reading a tarball safely */
+
+/**
+ * \u26d4\u26d4 THE ARCHIVE IS NEVER EXTRACTED TO DISK, AND THAT IS A SECURITY PROPERTY RATHER THAN A STYLE CHOICE.
+ *
+ * A first draft wrote the downloaded tarball to a temp directory and shelled out to `tar xzf`. GitHub's
+ * CodeQL flagged it on the pull request \u2014 *"network data written to file: write to file system depends on
+ * untrusted data"* \u2014 and it was right. A registry tarball is externally controlled input, and extracting
+ * one is a path-traversal and symlink-escape surface: an entry named `../../x`, an absolute path, or a
+ * symlink followed by a later entry can place bytes outside the directory the caller chose. That modern GNU
+ * tar strips most of those is a property of the tool that happened to be on the box, not of this code.
+ *
+ * \u2b50 So the tar is walked in memory and only REGULAR FILE entries are hashed. Nothing is written, nothing is
+ * executed, and a hostile entry name can at worst appear as a key in a Map that is then compared against a
+ * list of names this repository already declared. The traversal class is not mitigated; it is absent.
+ *
+ * The format is POSIX ustar: 512-byte header, `size` as octal at offset 124, content padded to 512.
+ * Type `0` or NUL is a regular file; `x`/`g` are pax metadata and `L` is a GNU long name, whose payloads are
+ * skipped along with everything else that is not a regular file.
+ */
+export function hashTarEntries(tar) {
+  const out = new Map();
+  const BLOCK = 512;
+  for (let off = 0; off + BLOCK <= tar.length; ) {
+    const header = tar.subarray(off, off + BLOCK);
+    // Two consecutive NUL blocks end the archive; one is enough to stop reading names.
+    if (header[0] === 0) break;
+
+    const name = header.subarray(0, 100).toString("utf8").replace(/\0.*$/, "");
+    const prefix = header
+      .subarray(345, 500)
+      .toString("utf8")
+      .replace(/\0.*$/, "");
+    const sizeField = header
+      .subarray(124, 136)
+      .toString("utf8")
+      .replace(/\0.*$/, "")
+      .trim();
+    const size = Number.parseInt(sizeField, 8);
+    if (!Number.isFinite(size) || size < 0)
+      throw new Error(`tar entry '${name}' has an unreadable size field`);
+
+    const type = String.fromCharCode(header[156]);
+    const body = off + BLOCK;
+    if ((type === "0" || type === "\0") && name.length > 0)
+      out.set(
+        prefix.length > 0 ? `${prefix}/${name}` : name,
+        sha256(tar.subarray(body, body + size)),
+      );
+
+    off = body + Math.ceil(size / BLOCK) * BLOCK;
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ the registry seam */
 
 /**
@@ -186,7 +232,7 @@ export function NetworkRegistry({
         throw new Error(`registry answered ${res.status} for ${name}`);
       return await res.json();
     },
-    /** `Map<pathWithoutPackagePrefix, sha256>` for every file in the published tarball. */
+    /** `Map<pathWithoutPackagePrefix, sha256>` for every regular file in the published tarball. */
     async contents(name, version, tarballUrl) {
       if (typeof tarballUrl !== "string" || tarballUrl.length === 0)
         throw new Error(
@@ -197,21 +243,18 @@ export function NetworkRegistry({
         throw new Error(
           `tarball for ${name}@${version} answered ${res.status}`,
         );
-      const dir = mkdtempSync(join(tmpdir(), "parity-"));
-      try {
-        const file = join(dir, "p.tgz");
-        writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-        execFileSync("tar", ["xzf", file, "-C", dir], { stdio: "pipe" });
-        const base = join(dir, "package");
-        const out = new Map();
-        for (const { path, error } of walk(base)) {
-          if (error) continue; // a link inside someone else's tarball is not our finding
-          out.set(relative(base, path), sha256(readFileSync(path)));
-        }
-        return out;
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
+      const entries = hashTarEntries(
+        gunzipSync(Buffer.from(await res.arrayBuffer())),
+      );
+      // \u26d4 npm wraps every tarball in a single `package/` directory, and the caller compares against
+      // paths relative to the package root. Dropping the strip made every declared file read as ABSENT \u2014
+      // 16 of 16 rather than the 4 real defects \u2014 which is a false RED, the cheap direction, and was
+      // caught by the drive's assertion that the prefix is removed.
+      const out = new Map();
+      for (const [path, hash] of entries)
+        if (path.startsWith("package/"))
+          out.set(path.slice("package/".length), hash);
+      return out;
     },
   };
 }
