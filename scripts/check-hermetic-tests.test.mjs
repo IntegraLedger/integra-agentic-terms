@@ -71,6 +71,21 @@ const run = (root) => {
   return { status: r.status, out: `${r.stdout}${r.stderr}` };
 };
 
+/**
+ * Does the refusal list this host as a FINDING, on its own line?
+ *
+ * ⭐ Line EQUALITY, not `out.includes(host)`. Two reasons, and only the first is CodeQL's:
+ *
+ * 1. A bare `.includes()` over a hostname-shaped constant is the `url.includes("example.com")`
+ *    antipattern, and `js/incomplete-url-substring-sanitization` flags it — correctly in general, even
+ *    though nothing here is validating a URL.
+ * 2. ⛔ And it is the weaker assertion anyway: `includes` would also pass on the host appearing inside a
+ *    `named by:` path, inside the remedy sentence, or as a SUFFIX of some longer host. The gate prints a
+ *    finding's host alone on its line, so that is what is asserted.
+ */
+const namesHost = (out, host) =>
+  out.split("\n").some((line) => line.trim() === host);
+
 const drive = (name, options, expect) =>
   test(name, () => {
     const root = tree(options);
@@ -102,8 +117,8 @@ drive(
   (r) => {
     assert.equal(r.status, 1);
     assert.ok(
-      r.out.includes(PLANT),
-      `the refusal must name ${PLANT}:\n${r.out}`,
+      namesHost(r.out, PLANT),
+      `the refusal must name ${PLANT} as a finding:\n${r.out}`,
     );
     assert.match(r.out, /packages\/p\/test\/bad\.test\.ts/);
   },
@@ -140,8 +155,8 @@ drive(
   (r) => {
     assert.equal(r.status, 1);
     assert.ok(
-      r.out.includes(PLANT),
-      `the refusal must name ${PLANT}:\n${r.out}`,
+      namesHost(r.out, PLANT),
+      `the refusal must name ${PLANT} as a finding:\n${r.out}`,
     );
     assert.doesNotMatch(
       r.out,
@@ -169,8 +184,8 @@ drive(
       `a declared userinfo must not exempt the host:\n${r.out}`,
     );
     assert.ok(
-      r.out.includes(PLANT),
-      `the refusal must name ${PLANT}:\n${r.out}`,
+      namesHost(r.out, PLANT),
+      `the refusal must name ${PLANT} as a finding:\n${r.out}`,
     );
   },
 );
