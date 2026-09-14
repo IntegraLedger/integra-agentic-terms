@@ -58,9 +58,9 @@ that misdescribes what went wrong cannot be acted on by the party who can fix it
 `pnpm verify` must exit 0. It runs, in order:
 
 ```
-check:versions → check:commit-messages → check:wire → check:shared-pins → check:public-boundary
-  → check:vocab → check:spec-citations → audit → build → check:dist → lint → depcruise → typecheck
-  → check:docs → test:scripts → test
+check:versions → check:commit-messages → check:wire → check:shared-pins → check:runner-patch
+  → check:public-boundary → check:spec-citations → check:vocab → check:hermetic-tests → audit → build
+  → check:dist → lint → depcruise → typecheck → check:docs → test:scripts → test
 ```
 
 ⚠️ **One gate is deliberately outside that chain.** `pnpm check:runtime` packs the tarball, installs it
@@ -70,7 +70,7 @@ a green `verify` does not cover: `pnpm check:runtime` exercises the Node leg loc
 only in `ci.yml`. It exists because the runtime table in `packages/agentic-terms/README.md` is an enforced
 claim and used to be an argument from the import graph instead of a measurement.
 
-Six of those are less obvious than the rest:
+Seven of those are less obvious than the rest:
 
 - **`check:wire`** seals the protocol identities this gate reads — the discovery capability, the well-known
   path, and every placement's field, encoding and tier. A dependency bump that changes one fails here with a
@@ -95,6 +95,16 @@ Six of those are less obvious than the rest:
   halt with the signer never reached, and matching terms sign with the signer reached exactly once. A
   runtime where the gate refused everything would pass a check that only looked for the halt. It uses no
   test framework on purpose: running Vitest under Bun would measure Vitest's Bun support as much as ours.
+- **`check:hermetic-tests`** refuses a test that reaches a third party. Its subject set is every test under
+  `packages/` AND every drive under `scripts/` — both are `verify` stages — plus every module those import,
+  because a host named in a test and a host called by one look identical to a grep, and the defect this gate
+  was written after sat one `import` outside an earlier version's reach. Third-party imports are classified
+  `inert` / `addressed-in-source` / `endpoint-from-environment`, because a client that takes its address from
+  the environment writes no host into the file at all. ⛔ Closed in both directions: an undeclared host fails,
+  and a declaration matching nothing in the tree fails too. ⚠️ **This repository has no live-harness
+  convention** — unlike both siblings, nothing is excluded — and a file named for a sibling's convention is
+  refused rather than silently exempted.
+
 - **`check:spec-citations`** refuses a shipped sentence that spells an internal LCP revision — `v1.36`,
   `v1.37`, `v1.38`. Those drafts are published nowhere a reader of these packages can reach, so citing one
   ships a reference that cannot be followed and discloses that an unpublished document exists and what it

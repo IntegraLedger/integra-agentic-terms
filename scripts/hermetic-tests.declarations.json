@@ -1,0 +1,95 @@
+{
+  "$comment": "check:hermetic-tests' exception table for integra-agentic-terms, held in the TREE rather than inside the gate: a table baked into a script makes the gate undrivable, because it can only ever run against the one tree whose hosts it already lists. Each namedNotCalled key is a non-loopback, non-reserved host a test names — or that a module a test imports names — with the reason it is a value rather than a call. Adding an entry is a claim that the host is never fetched; read the occurrence before making it. CLOSED IN BOTH DIRECTIONS: an unlisted host fails, and a listed host that appears nowhere fails. NOTE: this repository has NO live-harness convention — 0 files match either sibling's spelling — so nothing is excluded from the subject set, and the gate refuses a file wearing a sibling's live name rather than choosing for you. The walk covers BOTH packages/ and scripts/, because pnpm -r test and pnpm test:scripts are both verify stages and scripts/ is where this repository's network-facing code lives.",
+  "namedNotCalled": {
+    "internal.evil": "⭐ A URL ARGUMENT THE SSRF GUARD REFUSES BEFORE ANY TRANSPORT. `agentic-terms/test/fetch.test.ts` injects BOTH seams: `lookup` returns a fixed `10.0.0.5`, and `httpFetch` is a function that THROWS `fetch must NOT be reached for a refused host`. The suite asserts the refusal, so if anything were dialled the test would fail rather than pass quietly. Nothing resolves this name: `nodeDnsLookup` is the production default and is never the one under test.",
+    "mixed.evil": "The split-horizon case in the same suite, same two injected seams: `lookup` returns a public address AND 169.254.169.254, and the guard must refuse because ANY resolved address is private. `httpFetch` is the throwing `never`. A value in an assertion, not a destination.",
+    "flip.evil": "The DNS-rebinding case in the same suite: `lookup` answers public on the first call and private on the second, proving the guard re-runs on the re-fetch the cache MUST forces. `httpFetch` is a stub returning a fixed `Response`. The name is never resolved and never dialled.",
+    "www.w3.org": "The W3C Verifiable Credentials `@context` URI inside credential fixtures in `proposal-ack.test.ts` and `proposal-universal.test.ts`. A JSON-LD context is an IDENTIFIER in a document — the suites assert the string a proposal carries. ⭐ Nothing here can dereference it: the 19 third-party imports classified below contain no JSON-LD processor and no schema validator, so the capability to fetch it does not exist in this tree.",
+    "legalcontextprotocol.org": "LCP's own published schema identifier, carried as a `$ref` string in a fixture in `proposal-universal.test.ts:59` and compared as a value. Same control as `www.w3.org`: no validator in the import graph resolves a `$ref`, so nothing dereferences it.",
+    "registry.npmjs.org": "⭐ THE REGISTRY IS AN INJECTABLE SEAM, AND THIS IS THE SHAPE THE STANDING HANDOFF NAMES — a control that fires only because the network call was made a seam. `check-protocol-currency.mjs:84` defines it as `REGISTRY_ORIGIN`; its drive asserts that constant as a VALUE and that `NetworkRegistry()` returns a function of one argument, never invoking it, driving every verdict through a `FixedRegistry` table instead. `reconcile-tags.mjs` does fetch it — but only inside `publishedVersions` and `provenanceOrigin`, which are NOT exported, and its `main()` is guarded by a both-sides-realpathed `argv[1]` compare so an import does not run it. ⛔ MEASURED, not inferred: every `scripts/*.test.mjs` drive run under a global-`fetch` trap made 3 calls, all three to `http://127.0.0.1:<ephemeral>` — the drives' own servers. The trap fires, so the result discriminates.",
+    "github.com": "A value in repository-URL parsing, both in `reconcile-tags.test.mjs` (the positive cases for `parseRepositorySlug`) and in `reconcile-tags.mjs`'s own docblock and error-message prose. ⭐ Tags are pushed with `git`, over a configured remote — there is no HTTP client in this file addressed at github.com, and the fetch trap above confirms none is called.",
+    "gitlab.com": "A NEGATIVE case: `reconcile-tags.test.mjs:65` asserts `parseRepositorySlug` returns null for a non-GitHub host. The whole point of the assertion is that it is not matched, let alone fetched.",
+    "mygithub.com": "Prose inside `reconcile-tags.mjs`'s docblock, recording a fixed defect: `url.indexOf(\"github.com/\")` was a substring test that accepted this host and returned a slug for it. It appears in a comment explaining why the host is now PARSED rather than searched for. No code path names it.",
+    "evil-github.com": "The second host in that same docblock sentence, for the same reason. A comment about a defect that was fixed — the adversarial example that motivated parsing the authority properly.",
+    "x": "A placeholder tarball URL — `http://x/t.tgz` — inside the registry METADATA `check-published-parity.test.mjs` injects into the local `node:http` server it starts on 127.0.0.1. It is never resolved: the drive answers every request itself, and `x` exists so the fixture carries a syntactically valid URL. ⚠️ `integra-protocol` carries the identical entry for the identical fixture."
+  },
+  "$comment2": "Every THIRD-PARTY import a test makes — or that a module a test imports makes — classified. A host scan cannot see a client that takes its address from process.env, so every import is accounted for as one of three kinds. inert: it reaches no network at all. addressed-in-source: it can, and any endpoint it is pointed at is written in the file, where the host scan sees it — loopback included, which this gate declares hermetic. endpoint-from-environment: it can, and its address does NOT appear in the file, so a test importing one MUST gate itself on the variable it needs. CLOSED IN BOTH DIRECTIONS. Classifications for packages shared with integra-protocol are carried across with their reasons rather than re-derived.",
+  "imports": {
+    "@modelcontextprotocol/client": {
+      "kind": "addressed-in-source",
+      "why": "The MCP client SDK. Every use here is `InMemoryTransport.createLinkedPair()` — two ends of a pipe inside one process, no socket. The SDK CAN speak HTTP/SSE, but the URL is passed to a transport constructor, so any real endpoint would be written in the file where the host scan sees it."
+    },
+    "@modelcontextprotocol/server": {
+      "kind": "addressed-in-source",
+      "why": "The server half of the same SDK, used for `McpServer` and `InMemoryTransport`. Same reasoning: a network transport takes its address as a constructor argument, in source."
+    },
+    "@modelcontextprotocol/server/stdio": {
+      "kind": "inert",
+      "why": "The stdio transport, reached only from `lcp-mcp-server/src/stdio.ts`. It speaks over this process's stdin and stdout; there is no address and no socket."
+    },
+    "fast-check": {
+      "kind": "inert",
+      "why": "Property-based input generation. No transport."
+    },
+    "zod": {
+      "kind": "inert",
+      "why": "Schema parsing and validation of values already in hand. No transport — and note it does not dereference a `$ref`, which is what keeps `legalcontextprotocol.org` above a value."
+    },
+    "vitest": {
+      "kind": "inert",
+      "why": "The test runner for the package suites."
+    },
+    "node:test": {
+      "kind": "inert",
+      "why": "The test runner for the `scripts/` drives."
+    },
+    "node:assert/strict": {
+      "kind": "inert",
+      "why": "Assertions."
+    },
+    "node:crypto": {
+      "kind": "inert",
+      "why": "Hashing and randomness."
+    },
+    "node:fs": {
+      "kind": "inert",
+      "why": "The local filesystem."
+    },
+    "node:os": {
+      "kind": "inert",
+      "why": "Temp directories and platform facts."
+    },
+    "node:path": {
+      "kind": "inert",
+      "why": "String manipulation."
+    },
+    "node:process": {
+      "kind": "inert",
+      "why": "argv, env and exit. No transport."
+    },
+    "node:url": {
+      "kind": "inert",
+      "why": "URL parsing — parsing an address is not dialling one."
+    },
+    "node:module": {
+      "kind": "inert",
+      "why": "`createRequire` for resolving a path. No transport."
+    },
+    "node:zlib": {
+      "kind": "inert",
+      "why": "gunzip of a tarball already in hand. No transport."
+    },
+    "node:http": {
+      "kind": "addressed-in-source",
+      "why": "Used to BIND a loopback server — `check-published-parity.test.mjs` starts one on `127.0.0.1:0` and drives the gate against it. This gate's head note declares loopback hermetic, and the address is in the file."
+    },
+    "node:child_process": {
+      "kind": "addressed-in-source",
+      "why": "⚠️ It can spawn anything, including something that reaches a network. What bounds it is that the command and its arguments are written at the call site, where they can be read — here they are `node`, `git` and `tar`, spawning this repository's own scripts against local fixtures."
+    },
+    "node:dns/promises": {
+      "kind": "addressed-in-source",
+      "why": "⛔ A REAL RESOLVER, and the one import here that needed thinking about rather than carrying. It is a LAZY dynamic import inside `nodeDnsLookup` (`agentic-terms/src/fetch.ts:46`), so it is pulled in only when that function is called — and `fetch.test.ts:501` asserts precisely that laziness, because the guard must stay runtime-neutral for a Workers build. Classified `addressed-in-source` because the name it resolves is the URL's own hostname, which IS written in source and IS covered by the host scan above; it is not `endpoint-from-environment`, whose defining property is an address the scan cannot see. ⚠️ Every suite that exercises the guard injects its own `lookup`, so this default is never the one under test."
+    }
+  }
+}
