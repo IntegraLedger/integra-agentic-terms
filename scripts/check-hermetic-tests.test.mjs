@@ -42,6 +42,9 @@ const DOLLAR = "$";
 /** A SECOND planted host, so "does not stop at the first" is a thing a case can assert. */
 const SECOND = "cardanoscan.io";
 
+/** The plant, spelled for embedding in fixture source. */
+const PLANT_LITERAL_MARKER = PLANT;
+
 const DECLARATIONS = {
   namedNotCalled: {},
   imports: { vitest: { kind: "inert", why: "the runner" } },
@@ -392,6 +395,44 @@ drive(
       !r.out.includes("seam"),
       `reported a fragment of an interpolated host:\n${r.out}`,
     );
+  },
+);
+
+// ⚠️⚠️ THE BOUNDARY, ASSERTED SO IT CANNOT BE "FIXED" BACK INTO THE DEFECT IT REPLACED. An interpolated
+// authority is unjudgeable and therefore EVADABLE. This case exists to state that as INTENDED, with the
+// reason: truncating to the literal prefix instead fails accidentally — a good-faith declaration of a
+// reported `seam` silently exempts `https://seam${anything}` — while this fails only deliberately, and a
+// `${""}` between scheme and host is visible in review in a way a declarations entry is not.
+// ⛔ If you are here because you found the evasion: closing it by truncating reintroduces the defect this
+// replaced. The claim a green supports is "no test NAMES a literal third-party host".
+drive(
+  "⚠️ KNOWN AND INTENDED: a no-op interpolation evades the scan, while the literal URL does not",
+  {
+    files: {
+      "packages/p/test/evade.test.ts": `import { it } from "vitest";\nit("x", async () => { await fetch(\`https://${PLANT_LITERAL_MARKER}${DOLLAR}{""}/x\`); });\n`,
+    },
+  },
+  (r) => {
+    assert.equal(
+      r.status,
+      0,
+      `the boundary is that this is NOT caught:\n${r.out}`,
+    );
+  },
+);
+
+// ⭐ …and the control that makes the case above a boundary rather than a blind spot: the SAME host,
+// written literally, IS refused. Without this the case could pass because the gate sees nothing at all.
+drive(
+  "⭐ CONTROL: the same host written literally IS refused — so the case above is a boundary, not blindness",
+  {
+    files: {
+      "packages/p/test/literal.test.ts": `import { it } from "vitest";\nit("x", async () => { await fetch("https://${PLANT_LITERAL_MARKER}/x"); });\n`,
+    },
+  },
+  (r) => {
+    assert.equal(r.status, 1, `the literal form must be caught:\n${r.out}`);
+    assert.ok(namesHost(r.out, PLANT), r.out);
   },
 );
 

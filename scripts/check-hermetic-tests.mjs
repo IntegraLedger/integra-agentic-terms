@@ -335,6 +335,20 @@ const hostOf = (authority) => {
   // THAT would exempt `https://seam${anything}` to any host at all, which is the poisoned-declaration
   // shape this whole function exists to remove, reintroduced one line over. ⇒ A host that is not wholly
   // literal is not one this gate can judge.
+  // ⚠️⚠️ AND THIS IS THE GATE'S HONEST CLAIM, WHICH IS NARROWER THAN ITS NAME. Because an interpolated
+  // authority is unjudgeable, it is EVADABLE: `fetch(`https://real-host.example.com${""}/x`)` names no
+  // host to this scan, while the identical literal URL is refused. Measured on all three copies.
+  //
+  // ⛔ NOT CHANGED, and the reasoning is the point. Truncating to the literal prefix instead fails
+  // ACCIDENTALLY — a reader meets a reported `seam` from `https://seam${i}.example`, declares it in good
+  // faith, and has silently exempted `https://seam${anything}`. The blanket skip fails only
+  // DELIBERATELY: somebody has to write `${""}` between the scheme and the host, which is visible in
+  // review in a way a declarations entry is not. ⇒ Of the two failure modes, the one requiring INTENT is
+  // the right one to keep.
+  //
+  // ⇒ So the claim a green supports is "no test NAMES a literal third-party host", not "no test reaches
+  // a third party". A drive case asserts this boundary, so that anyone who later closes it by truncating
+  // meets the reasoning as a red test rather than rediscovering `seam` the hard way.
   if (authority.includes("${")) return null;
   const at = authority.lastIndexOf("@");
   const hostPort = at === -1 ? authority : authority.slice(at + 1);
