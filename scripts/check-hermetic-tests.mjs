@@ -320,18 +320,24 @@ const URL_AUTHORITY = /https?:\/\/([^/?#\s"'`]*)/g;
  *    userinfo exits **0** and prints `1 third-party host(s), each enumerated as named-not-called`.
  * 2. **INTERPOLATION INSIDE THE AUTHORITY.** `https://u:p@${HOST}/x` names no host at all, and the
  *    trailing-`$` check cannot see it because the `$` is not at the end of the match. ⭐ This gate's own
- *    drive is what surfaced it. The authority is truncated at the first `${`, so only what is literally
- *    written counts — and `https://real.example.com${path}` still names its host, which a blanket skip
- *    would have lost.
+ *    drive is what surfaced it. ⇒ An authority carrying an interpolation names nothing; see the note on
+ *    that line for the draft that truncated to the literal prefix, and the sibling tree that disproved it.
  * 3. **IPv6 LITERALS.** `[::1]` must not be split on its own colons.
  *
  * ⚠️ `integra-protocol` and the seller-side repository both still carry the original line — planning
  * register #147.
  */
 const hostOf = (authority) => {
-  const literal = authority.split("${")[0];
-  const at = literal.lastIndexOf("@");
-  const hostPort = at === -1 ? literal : literal.slice(at + 1);
+  // ⛔⛔ AN INTERPOLATED AUTHORITY NAMES NOTHING, AND THE SELLER-SIDE REPOSITORY'S TREE SETTLED IT. A
+  // first draft truncated at the `${` and reported whatever came before, which reads as the safer choice
+  // and is not: that tree builds `https://seam${i}.example`, where the interpolation is INSIDE the host
+  // and the real host is reserved. Truncating reported a third-party host named `seam` — and declaring
+  // THAT would exempt `https://seam${anything}` to any host at all, which is the poisoned-declaration
+  // shape this whole function exists to remove, reintroduced one line over. ⇒ A host that is not wholly
+  // literal is not one this gate can judge.
+  if (authority.includes("${")) return null;
+  const at = authority.lastIndexOf("@");
+  const hostPort = at === -1 ? authority : authority.slice(at + 1);
   if (hostPort === "") return null;
   // ⛔ 4. **A HOST MUST LOOK LIKE ONE.** Capturing the authority rather than the host charset lost the
   // implicit validation the original pattern got for free, and elided prose walked straight in:

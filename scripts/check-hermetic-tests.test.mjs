@@ -36,6 +36,9 @@ const GATE = fileURLToPath(
  */
 const PLANT = "api.blockcypher.com";
 
+/** The `$` of a `${` a FIXTURE must contain, built here so no plain string in this file holds one. */
+const DOLLAR = "$";
+
 const DECLARATIONS = {
   namedNotCalled: {},
   imports: { vitest: { kind: "inert", why: "the runner" } },
@@ -349,6 +352,28 @@ drive(
       0,
       `a reserved host must not be reported:\n${r.out}`,
     ),
+);
+
+// ⛔⛔ The shape that disproved truncating an interpolated authority to its literal prefix. It is the
+// seller-side repository's, carried here because the two gates must answer the same question the same way.
+drive(
+  "⛔⛔ an interpolation INSIDE the host names nothing — not even a fragment",
+  {
+    files: {
+      "packages/p/test/interp.test.ts": `import { it } from "vitest";\nconst h = "https://seam${DOLLAR}{i}.example";\nconst g = "https://u:p@${DOLLAR}{h}/x";\nit("x", () => [h, g]);\n`,
+    },
+  },
+  (r) => {
+    assert.equal(
+      r.status,
+      0,
+      `an interpolated authority names no host:\n${r.out}`,
+    );
+    assert.ok(
+      !r.out.includes("seam"),
+      `reported a fragment of an interpolated host:\n${r.out}`,
+    );
+  },
 );
 
 // ⛔ The declarations file is the gate's subject table; without it the gate would refuse every host.
