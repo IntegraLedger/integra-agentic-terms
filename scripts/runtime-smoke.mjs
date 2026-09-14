@@ -19,6 +19,26 @@
  *
  * The signer counts its own invocations, so "never reached" is a measurement rather than an inference from
  * the returned kind.
+ *
+ * ⛔⛔ AND THE TAMPER MUST STAY A VALID, POLICY-CLEAN DOCUMENT, OR THIS FILE MEASURES NOTHING IT CLAIMS.
+ * `M` 2026-09-14: the tamper here was `TAMPERED ${termsJson}`, which is not JSON. Driven against a build
+ * whose fingerprint comparison was replaced by `return true` — verify-before-sign fully disabled — this
+ * file still reported **6/6 on Node**, because the body halted at `gate/unparseable-terms` long after the
+ * check that was supposed to stop it had waved it through. On the same planted build a tamper of ONE
+ * TRAILING SPACE was **signed**.
+ *
+ * ⇒ A tamper that breaks something ELSE about the document is a tamper any number of unrelated refusals
+ * can catch, and the assertion then passes without the exercise ever happening. The tamper below changes
+ * the bytes and NOTHING else: same shape, same jurisdiction, same method, so the only thing in the gate
+ * that can object to it is the digest.
+ *
+ * ⭐ AND THE HALT'S REASON IS ASSERTED, not just the halt. `decision.code` must be
+ * `gate/fingerprint-mismatch`. That is what separates "the gate stopped it" from "the gate stopped it for
+ * the reason this package exists" — and it is the assertion the planted build fails.
+ *
+ * ⚠️ The unparseable body is kept as its own case, labelled for what it actually is. It was a real
+ * property being asserted under the wrong name, and deleting it would lose coverage to fix a label.
+ * `planning register #205`.
  */
 import { transact } from "@integraledger/agentic-terms";
 import { hashAtr } from "@integraledger/lcp-kernel";
@@ -56,7 +76,12 @@ const policy = {
 };
 
 const failures = [];
+// ⛔ COUNTED, NOT HARD-CODED. The pass line used to say `6/6` as a literal, so adding an assertion and
+// forgetting the literal would report a smaller suite than ran — the same class of stale self-description
+// this file exists to remove one layer up.
+let checks = 0;
 const check = (label, actual, expected) => {
+  checks++;
   const ok = actual === expected;
   console.log(
     `  ${ok ? "ok  " : "FAIL"}  ${label} — got ${actual}, want ${expected}`,
@@ -90,15 +115,41 @@ check(
   true,
 );
 
+// ⛔ THE TAMPER IS A DIFFERENT, EQUALLY VALID DOCUMENT — see the docblock. Same shape, same jurisdiction,
+// same method, one different URL: it parses, it satisfies every policy clause, and the only thing in the
+// gate that can object to it is the digest.
+const tamperedJson = JSON.stringify({
+  terms: "https://s.example/body-substituted",
+  disputeResolution: { jurisdiction: "US-NY", method: "arbitration" },
+});
 signCalls = 0;
 const declined = await transact(
+  proposal,
+  policy,
+  { fetcher: fixedFetcher(enc(tamperedJson)), now },
+  signer,
+);
+check("tampered terms halt", declined.kind, "halted");
+check("tampered terms never reach the signer", signCalls, 0);
+// ⭐ THE ASSERTION THAT MAKES THE TWO ABOVE MEAN WHAT THEY SAY. Without it a halt arriving from any other
+// refusal in the chain reads as a pass, which is how a build with verify-before-sign disabled scored 6/6.
+check(
+  "and it halts on the FINGERPRINT, not on something else about the document",
+  declined.kind === "halted" ? declined.decision.code : undefined,
+  "gate/fingerprint-mismatch",
+);
+
+// ⚠️ The old tamper, kept and renamed to the property it actually measures. A body that does not parse is
+// refused — true, worth asserting, and NOT evidence about verify-before-sign.
+signCalls = 0;
+const unparseable = await transact(
   proposal,
   policy,
   { fetcher: fixedFetcher(enc(`TAMPERED ${termsJson}`)), now },
   signer,
 );
-check("tampered terms halt", declined.kind, "halted");
-check("tampered terms never reach the signer", signCalls, 0);
+check("an unparseable terms body halts", unparseable.kind, "halted");
+check("an unparseable terms body never reaches the signer", signCalls, 0);
 
 signCalls = 0;
 const ok = await transact(
@@ -121,4 +172,4 @@ if (failures.length > 0) {
   );
   throw new Error("runtime-smoke failed");
 }
-console.log(`\nruntime-smoke passed on ${runtime()} — 6/6`);
+console.log(`\nruntime-smoke passed on ${runtime()} — ${checks}/${checks}`);
