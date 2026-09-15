@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   COMPARABLE_FLOOR,
+  declaredComparable,
   declaredSourceFiles,
   hashTarEntries,
   NetworkRegistry,
@@ -231,7 +232,12 @@ test("⛔ THE FLOOR — a package leaving the comparable set must not leave a gr
   }
 });
 
-test("a version not yet on the registry is a note, and leaves the run unmeasured rather than green", async () => {
+test("⛔⛔ A VERSION BUMP IS NOT A MISSING SUBJECT — the release you are preparing must not be the red", async () => {
+  // `M` 2026-09-15. This test previously asserted the OPPOSITE — that an unpublished version leaves the
+  // run UNMEASURED — and that is the defect. Between `changeset version` landing and the publish that
+  // follows, `checked` honestly drops by one on a healthy tree. A number held equal to `checked` therefore
+  // reds every release in progress, which is a control whose failure mode is the thing it is protecting.
+  // ⇒ The declaration is held against the TREE, and `ahead` excuses exactly this window and nothing else.
   const { root, manifests } = fixture({ version: "0.18.0" });
   try {
     const r = await parityReport({
@@ -241,7 +247,16 @@ test("a version not yet on the registry is a note, and leaves the run unmeasured
     assert.deepEqual(r.drift, []);
     assert.deepEqual(r.faults, []);
     assert.match(r.notes[0], /not on the registry yet/);
-    assert.equal(verdict({ ...r, floor: 1 }).code, 2);
+    assert.equal(r.ahead, 1, "the release window is COUNTED, not merely noted");
+    assert.equal(r.checked, 0);
+    assert.equal(
+      verdict({ ...r, declared: 1, floor: 1 }).code,
+      0,
+      "⛔ one package declared, one awaiting publish, nothing lost — this is green",
+    );
+    // ⭐ THE DISCRIMINATOR. Same shortfall, NOT excused, because nothing is awaiting a publish: that is a
+    // subject that LEFT, and it is the case the number exists for.
+    assert.equal(verdict({ ...r, ahead: 0, declared: 1, floor: 1 }).code, 2);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -447,38 +462,77 @@ test("the five verdicts are distinguishable, and drift outranks a fault", () => 
     1,
     "a confirmed product defect outranks an incomplete instrument",
   );
-  // ⛔⛔ THE FIFTH RUNG — more comparable than the floor records. Nothing is wrong with the artifacts,
-  // and reporting it as 0 is exactly how the number came to be one behind.
+  // ⛔⛔ THE FIFTH RUNG — the TREE declares a different number than the record beside it.
+  const stale = { drift: [], faults: [], checked: 3, declared: 3, floor: 2 };
   assert.equal(
-    verdict({ drift: [], faults: [], checked: 3, floor: 2 }).code,
+    verdict(stale).code,
     4,
-    "⛔ a stale floor must not print a tick — the run that first sees a new package is the one that fails",
+    "⛔ a stale declaration must not print a tick — the run that first sees it is the one that fails",
   );
-  assert.match(
-    verdict({ drift: [], faults: [], checked: 3, floor: 2 }).message,
-    /floor records 2/,
-  );
-  // ⭐ AND IT IS NOT COLLAPSED INTO 2. `UNMEASURED` says no opinion is available; here a complete
-  // opinion IS available and it is positive. The two answers are adjacent and mean opposite things.
+  assert.match(verdict(stale).message, /declares 3 .*records 2/s);
+  // ⭐ NOT COLLAPSED INTO 2. `UNMEASURED` says no opinion is available; here a complete opinion IS
+  // available. The two answers are adjacent and mean opposite things.
   assert.notEqual(
-    verdict({ drift: [], faults: [], checked: 3, floor: 2 }).code,
+    verdict(stale).code,
     verdict({ drift: [], faults: [], checked: 1, floor: 2 }).code,
   );
-  // ⛔ A real defect still outranks a stale floor: the artifacts are what the product ships.
+  // ⛔ Real drift outranks it — a defect in what SHIPS beats a defect in this gate's configuration.
+  assert.equal(verdict({ ...stale, drift: ["d"] }).code, 1);
+  // ⛔⛔ BUT A FAULT DOES NOT, AND THAT ORDER IS LOAD-BEARING. An unreachable registry is exactly the run
+  // on which a stale declaration would otherwise go unnoticed for another cycle.
+  assert.equal(verdict({ ...stale, faults: ["f"] }).code, 4);
   assert.equal(
-    verdict({ drift: ["d"], faults: [], checked: 3, floor: 2 }).code,
-    1,
-  );
-  assert.equal(
-    verdict({ drift: [], faults: ["f"], checked: 3, floor: 2 }).code,
+    verdict({ drift: [], faults: ["f"], checked: 3, declared: 3, floor: 3 })
+      .code,
     3,
+    "⭐ the control: same fault, declaration CORRECT — now it IS a fault",
   );
-  // ⛔ EXACTLY the floor is the only passing count.
+  // ⛔ A declaration matching its record is the only passing shape.
   assert.equal(
-    verdict({ drift: [], faults: [], checked: 3, floor: 3 }).code,
+    verdict({ drift: [], faults: [], checked: 3, declared: 3, floor: 3 }).code,
     0,
   );
   assert.equal(COMPARABLE_FLOOR, 3);
+});
+
+test("⛔ `declaredComparable` counts the TREE — publishable AND shipping source — and does not move when a version does", () => {
+  const { root, manifests } = fixture({
+    extra: [
+      {
+        dir: "b",
+        pkg: {
+          name: "@x/b",
+          version: VERSION,
+          files: ["src"],
+          publishConfig: { access: "public" },
+        },
+      },
+      // private: publishable predicate excludes it
+      {
+        dir: "c",
+        pkg: { name: "@x/c", version: VERSION, files: ["src"], private: true },
+      },
+      // publishable but ships only build output: not comparable on this axis
+      {
+        dir: "d",
+        pkg: {
+          name: "@x/d",
+          version: VERSION,
+          files: ["dist"],
+          publishConfig: { access: "public" },
+        },
+      },
+    ],
+  });
+  try {
+    assert.equal(declaredComparable(manifests), 2);
+    // ⭐ THE PROPERTY THAT MATTERS: bumping a version changes nothing here, which is why the declaration
+    // can be held EQUAL where `checked` could not.
+    for (const m of manifests) m.pkg.version = "9.9.9";
+    assert.equal(declaredComparable(manifests), 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 /* ================================================================ 5 · the REAL seam, against a real server */
@@ -489,6 +543,9 @@ function startRegistry({
   name = NAME,
   version = VERSION,
   status = 200,
+  // ⛔ Packages this registry has NEVER published. Without a per-package answer the stub cannot produce a
+  // subject that LEFT, and the unmeasured verdict would be driven only as a unit.
+  versionless = [],
 }) {
   const dir = mkdtempSync(join(tmpdir(), "parity-reg-"));
   const pkgDir = join(dir, "package", "src");
@@ -514,10 +571,13 @@ function startRegistry({
       return;
     }
     const origin = `http://127.0.0.1:${server.address().port}`;
+    const asked = decodeURIComponent(req.url.replace(/^\//, ""));
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
-        versions: { [version]: { dist: { tarball: `${origin}/t.tgz` } } },
+        versions: versionless.includes(asked)
+          ? {}
+          : { [version]: { dist: { tarball: `${origin}/t.tgz` } } },
       }),
     );
   });
@@ -628,25 +688,51 @@ function runGate({ root, origin }) {
 }
 
 test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workflow reads the code and not the return value", async () => {
+  // ⛔ THE FIXTURE MUST DECLARE WHAT `COMPARABLE_FLOOR` RECORDS, or the declaration check fires first and
+  // every other end-to-end assertion below measures that instead of what it names.
+  const three = () => ({
+    extra: ["b", "c"].map((dir) => ({
+      dir,
+      pkg: {
+        name: `@x/${dir}`,
+        version: VERSION,
+        files: ["src"],
+        publishConfig: { access: "public" },
+      },
+    })),
+  });
+
   // parity -> 0
-  const { root, manifests } = fixture({ extra: [] });
+  const { root } = fixture(three());
   const reg = await startRegistry({ srcFiles: SRC });
   try {
-    const floorOne = await runGate({ root, origin: reg.origin });
-    // One comparable package against a floor of 3 is UNMEASURED, which is itself the floor's exit.
-    assert.equal(
-      floorOne.status,
-      2,
-      `expected 2, got ${floorOne.status}: ${floorOne.stderr}`,
-    );
-    assert.match(floorOne.stderr, /below the floor of 3/);
+    const ok = await runGate({ root, origin: reg.origin });
+    assert.equal(ok.status, 0, `expected 0, got ${ok.status}: ${ok.stderr}`);
+    // ⭐ THE POSITIVE CONTROL for every "no tick" assertion in this file: a passing run DOES print it.
+    assert.match(ok.stdout, /every published version matches/);
   } finally {
     reg.stop();
     rmSync(root, { recursive: true, force: true });
   }
 
+  // ⛔ a shortfall with nothing awaiting publish -> 2, UNMEASURED
+  const lost = fixture(three());
+  const lostReg = await startRegistry({ srcFiles: SRC, versionless: ["@x/c"] });
+  try {
+    const out = await runGate({ root: lost.root, origin: lostReg.origin });
+    assert.equal(out.status, 2, `expected 2, got ${out.status}: ${out.stderr}`);
+    assert.match(
+      out.stderr,
+      /2 package\(s\) were compared; 3 are declared and 0 await/,
+    );
+    assert.doesNotMatch(out.stdout, /every published version matches/);
+  } finally {
+    lostReg.stop();
+    rmSync(lost.root, { recursive: true, force: true });
+  }
+
   // drift -> 1
-  const d = fixture();
+  const d = fixture(three());
   const short = { ...SRC };
   delete short["x402-envelope.ts"];
   const driftReg = await startRegistry({ srcFiles: short });
@@ -660,7 +746,7 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
   }
 
   // fault -> 3 (nothing listening on that port)
-  const f = fixture();
+  const f = fixture(three());
   try {
     const out = await runGate({ root: f.root, origin: "http://127.0.0.1:1" });
     assert.equal(out.status, 3, `expected 3, got ${out.status}: ${out.stderr}`);
@@ -693,7 +779,7 @@ test("⛔⛔ STALE FLOOR EXITS 4 FROM THE PROCESS — the arm `main` did not hav
       4,
       `expected 4, got ${out.status}: ${out.stdout}${out.stderr}`,
     );
-    assert.match(out.stderr, /the floor records 3/);
+    assert.match(out.stderr, /declares 4 .*records 3/s);
     // ⛔ AND IT MUST NOT HAVE PRINTED THE TICK. An exit code nobody reads beside a success line on stdout
     // is how a red gate is reported as green by a human reading the log.
     assert.doesNotMatch(out.stdout, /every published version matches/);
