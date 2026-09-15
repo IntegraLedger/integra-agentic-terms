@@ -1,0 +1,120 @@
+name: published-dist-parity
+
+# ⛔⛔ SEPARATE FROM `published-parity.yml` DELIBERATELY, AND NOT BECAUSE OF TIDINESS. That workflow's own
+# comment states its defining property — "No `cache: pnpm`: nothing is installed here, so there is nothing
+# to cache." This gate REBUILDS each package to compare the published `dist/` against what its own source
+# emits, so it needs an install and a build. Folding it in would quietly retire that property and make a
+# registry-reading job depend on a toolchain, which is a different risk profile and should be visible as a
+# different workflow rather than hidden inside an existing one.
+#
+# ⚠️ NOT IN `verify`, for the reason the sibling gate is not: it reaches a third party, and
+# `check-hermetic-tests.mjs` states the consequence — "a gate that reaches a third party fails red for a
+# reason that is not in the tree."
+#
+# The minute is offset off the hour and off both siblings (:23 protocol, :37 terms parity, :53 chart). A
+# published version is immutable, so an overlap could not make any of them ambiguous about what it saw;
+# the offset is only to avoid queueing behind everything GitHub runs at :00.
+on:
+  schedule:
+    - cron: "11 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: published-dist-parity
+  cancel-in-progress: true
+
+env:
+  # ⛔ `gh` resolves its repository from the local checkout and does not read `GITHUB_REPOSITORY`; setting
+  # `GH_REPO` keeps the reporting steps working even if the checkout is what failed.
+  GH_REPO: ${{ github.repository }}
+  DRIFT_TITLE: "published-dist-parity: the published dist/ is not what this source emits"
+  UNMEASURED_TITLE: "published-dist-parity: nothing was compared, so there is no parity claim"
+  FAULT_TITLE: "published-dist-parity: the check could not measure — instrument failure"
+
+jobs:
+  dist-parity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+      # ⛔ The rebuild must use the toolchain this repository pins. `--frozen-lockfile` is the whole
+      # reason a rebuild can be compared byte for byte at all: a floating TypeScript would emit different
+      # output and the gate would report drift about a compiler rather than about an artifact.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Rebuild each published version's dist and compare it to what shipped
+        id: parity
+        # ⛔⛔ THE EXIT CODE IS CAPTURED RATHER THAN ALLOWED TO FAIL THE STEP — this gate has four answers
+        # and three of them are not "pass": 1 drift, 2 nothing compared, 3 the instrument failed, 4 a stale
+        # floor. Letting the step fail collapses them into one red and the reporting below would file
+        # "the published dist is wrong" over a run that measured nothing.
+        #
+        # ⚠️ `shell: bash` is not for pipefail — this step cannot fail. `PIPESTATUS` does not exist in `sh`,
+        # which is what a bare `run:` may fall back to, and `PIPESTATUS[0]` is the whole mechanism.
+        shell: bash
+        run: |
+          set +e
+          node scripts/check-published-dist-parity.mjs 2>&1 | tee /tmp/dist-parity.log
+          CODE=${PIPESTATUS[0]}
+          set -e
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "check:published-dist-parity exited $CODE"
+          exit 0
+
+      # ⛔ THE RUN CLOSES WHAT THE RUN OPENED. ⚠️ Only exit 0 closes: a 2, 3 or 4 means the question was not
+      # answered, and closing a drift issue because the instrument broke retracts a finding on no evidence.
+      - name: Close every issue this job opens, once parity is measured and holds
+        if: steps.parity.outputs.code == '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for TITLE in "$DRIFT_TITLE" "$UNMEASURED_TITLE" "$FAULT_TITLE"; do
+            EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+            [ -z "$EXISTING" ] && continue
+            gh issue close "$EXISTING" --comment "$(printf 'Closed by the run that measured it: every published dist/ rebuilds byte for byte from the source it was cut from.\n\n[Run log](%s)\n' "$RUN_URL")"
+          done
+
+      - name: Open or update the DRIFT issue
+        if: steps.parity.outputs.code == '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          BODY=$(printf 'The `dist/` a consumer loads is not what this source emits. Files are named below as MISSING, as unexpected, or as DIFFERENT in content.\n\n⛔ A republish of the same version is not the remedy and is not possible: a version number is a promise about bytes. **The remedy is a version bump and a release.**\n\n⚠️ If the toolchain moved, this is still true — the published artifact no longer corresponds to its source. Republish; do not weaken the gate.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$RUN_URL" "$(cat /tmp/dist-parity.log)")
+          EXISTING=$(gh issue list --state open --search "$DRIFT_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$DRIFT_TITLE" --body "$BODY"; fi
+
+      - name: Open or update the NOTHING-MEASURED issue
+        if: steps.parity.outputs.code == '2' || steps.parity.outputs.code == '4'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          BODY=$(printf 'This run compared fewer published `dist/` trees than the floor, or none at all. ⛔ That is not a pass: a tick here would be a statement about artifacts the run never opened.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$RUN_URL" "$(cat /tmp/dist-parity.log)")
+          EXISTING=$(gh issue list --state open --search "$UNMEASURED_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$UNMEASURED_TITLE" --body "$BODY"; fi
+
+      - name: Open or update the INSTRUMENT-FAILURE issue
+        if: steps.parity.outputs.code == '3'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          BODY=$(printf 'The check could not measure. ⛔ This is NOT a product finding: the registry, a tarball or the rebuild failed, and nothing is being claimed about any published artifact.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "$RUN_URL" "$(cat /tmp/dist-parity.log)")
+          EXISTING=$(gh issue list --state open --search "$FAULT_TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$FAULT_TITLE" --body "$BODY"; fi
