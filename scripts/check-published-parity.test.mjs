@@ -425,7 +425,7 @@ test("the gate asks the registry for the package and version it is comparing", a
   }
 });
 
-test("the four verdicts are distinguishable, and drift outranks a fault", () => {
+test("the five verdicts are distinguishable, and drift outranks a fault", () => {
   assert.equal(
     verdict({ drift: [], faults: [], checked: 2, floor: 2 }).code,
     0,
@@ -447,7 +447,38 @@ test("the four verdicts are distinguishable, and drift outranks a fault", () => 
     1,
     "a confirmed product defect outranks an incomplete instrument",
   );
-  assert.equal(COMPARABLE_FLOOR, 2);
+  // ⛔⛔ THE FIFTH RUNG — more comparable than the floor records. Nothing is wrong with the artifacts,
+  // and reporting it as 0 is exactly how the number came to be one behind.
+  assert.equal(
+    verdict({ drift: [], faults: [], checked: 3, floor: 2 }).code,
+    4,
+    "⛔ a stale floor must not print a tick — the run that first sees a new package is the one that fails",
+  );
+  assert.match(
+    verdict({ drift: [], faults: [], checked: 3, floor: 2 }).message,
+    /floor records 2/,
+  );
+  // ⭐ AND IT IS NOT COLLAPSED INTO 2. `UNMEASURED` says no opinion is available; here a complete
+  // opinion IS available and it is positive. The two answers are adjacent and mean opposite things.
+  assert.notEqual(
+    verdict({ drift: [], faults: [], checked: 3, floor: 2 }).code,
+    verdict({ drift: [], faults: [], checked: 1, floor: 2 }).code,
+  );
+  // ⛔ A real defect still outranks a stale floor: the artifacts are what the product ships.
+  assert.equal(
+    verdict({ drift: ["d"], faults: [], checked: 3, floor: 2 }).code,
+    1,
+  );
+  assert.equal(
+    verdict({ drift: [], faults: ["f"], checked: 3, floor: 2 }).code,
+    3,
+  );
+  // ⛔ EXACTLY the floor is the only passing count.
+  assert.equal(
+    verdict({ drift: [], faults: [], checked: 3, floor: 3 }).code,
+    0,
+  );
+  assert.equal(COMPARABLE_FLOOR, 3);
 });
 
 /* ================================================================ 5 · the REAL seam, against a real server */
@@ -602,13 +633,13 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
   const reg = await startRegistry({ srcFiles: SRC });
   try {
     const floorOne = await runGate({ root, origin: reg.origin });
-    // One comparable package against a floor of 2 is UNMEASURED, which is itself the floor's exit.
+    // One comparable package against a floor of 3 is UNMEASURED, which is itself the floor's exit.
     assert.equal(
       floorOne.status,
       2,
       `expected 2, got ${floorOne.status}: ${floorOne.stderr}`,
     );
-    assert.match(floorOne.stderr, /below the floor of 2/);
+    assert.match(floorOne.stderr, /below the floor of 3/);
   } finally {
     reg.stop();
     rmSync(root, { recursive: true, force: true });
@@ -636,6 +667,39 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
     assert.match(out.stderr, /THE INSTRUMENT FAILED/);
   } finally {
     rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test("⛔⛔ STALE FLOOR EXITS 4 FROM THE PROCESS — the arm `main` did not have, and the drive could not see", async () => {
+  // ⭐⭐ THIS IS THE CASE THAT CAUGHT A REAL DEFECT. `M` 2026-09-15: `verdict` returned `stale-floor`
+  // with code 4 and 23 unit tests agreed, while `main` tested three kinds by name and let anything else
+  // reach the success line — so the PROCESS printed a tick and exited 0. The plant against the live
+  // registry saw it; nothing that drove `verdict` could. ⇒ Drive the process, not the function it calls.
+  const extra = ["b", "c", "d"].map((dir) => ({
+    dir,
+    pkg: {
+      name: `@x/${dir}`,
+      version: VERSION,
+      files: ["src"],
+      publishConfig: { access: "public" },
+    },
+  }));
+  const { root } = fixture({ extra });
+  const reg = await startRegistry({ srcFiles: SRC });
+  try {
+    const out = await runGate({ root, origin: reg.origin });
+    assert.equal(
+      out.status,
+      4,
+      `expected 4, got ${out.status}: ${out.stdout}${out.stderr}`,
+    );
+    assert.match(out.stderr, /the floor records 3/);
+    // ⛔ AND IT MUST NOT HAVE PRINTED THE TICK. An exit code nobody reads beside a success line on stdout
+    // is how a red gate is reported as green by a human reading the log.
+    assert.doesNotMatch(out.stdout, /every published version matches/);
+  } finally {
+    reg.stop();
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
