@@ -42,7 +42,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
   NetworkRegistry,
@@ -59,22 +59,45 @@ export const DIST_FLOOR = 3;
 
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
-/** Every regular file under `dir`, as `Map<relPath, sha256>`. Returns an empty map when `dir` is absent. */
+/**
+ * Every regular file under `dir`, as `Map<relPath, sha256>`. Returns an empty map when `dir` is absent.
+ *
+ * ⛔⛔ `withFileTypes` RATHER THAN A `statSync` PER ENTRY, FOR TWO REASONS AND THE SECOND IS A DEFECT THIS
+ * FUNCTION SHIPPED WITH. `statSync` FOLLOWS symlinks, so the `st.isSymbolicLink()` guard written here first
+ * could never once be true — a link under the tree was followed and hashed as though it were a regular
+ * file, and the guard that was supposed to stop it read as present. A `Dirent` reports the entry itself,
+ * so the test now means what it says.
+ *
+ * ⚠️ And CodeQL named the other half: `js/file-system-race`, high — stat-then-read is a check whose answer
+ * may be stale by the time the file is opened. One directory read plus a guarded open removes both.
+ */
 export function hashTree(dir) {
   const out = new Map();
   const walk = (d) => {
-    let names;
+    let entries;
     try {
-      names = readdirSync(d);
+      entries = readdirSync(d, { withFileTypes: true });
     } catch {
       return;
     }
-    for (const n of names) {
-      const p = join(d, n);
-      const st = statSync(p, { throwIfNoEntry: false });
-      if (st === undefined || st.isSymbolicLink()) continue;
-      if (st.isDirectory()) walk(p);
-      else if (st.isFile()) out.set(relative(dir, p), sha256(readFileSync(p)));
+    for (const e of entries) {
+      const p = join(d, e.name);
+      // ⛔ A symlink is skipped, never followed: a link out of the tree would hash a file this artifact
+      // does not ship, and a link INTO it would hash one file twice under two names.
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) {
+        walk(p);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      // ⛔ Read and let the read decide, rather than asking first and trusting the answer.
+      let buf;
+      try {
+        buf = readFileSync(p);
+      } catch {
+        continue;
+      }
+      out.set(relative(dir, p), sha256(buf));
     }
   };
   walk(dir);

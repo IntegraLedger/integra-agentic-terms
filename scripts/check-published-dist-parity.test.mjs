@@ -301,3 +301,26 @@ test("⭐⭐ THE LIVE CONTROL — the REAL registry, the REAL tarballs, a REAL r
   assert.equal(r.compared, 3);
   assert.equal(verdict(r).kind, "parity");
 });
+
+test("⛔⛔ A SYMLINK UNDER THE TREE IS SKIPPED, NOT FOLLOWED — the guard that never fired", async () => {
+  // ⚠️ This case exists because the first implementation used `statSync`, which FOLLOWS symlinks, so its
+  // `isSymbolicLink()` guard could never be true. The guard read as present and did nothing: a link out of
+  // the tree was hashed as a file this artifact does not ship, and a link into it hashed one file twice
+  // under two names. ⛔ The whole drive was green before and after the fix, which is what makes this case
+  // worth more than the twelve above it — none of them could see the defect.
+  const { mkdtempSync, writeFileSync, symlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "dist-parity-symlink-"));
+  writeFileSync(join(dir, "real.js"), "export const a = 1;\n");
+  const outside = mkdtempSync(join(tmpdir(), "dist-parity-outside-"));
+  writeFileSync(join(outside, "stranger.js"), "export const b = 2;\n");
+  symlinkSync(join(outside, "stranger.js"), join(dir, "linked.js"));
+  symlinkSync(join(dir, "real.js"), join(dir, "alias.js"));
+
+  const hashed = hashTree(dir);
+  assert.deepEqual(
+    [...hashed.keys()].sort(),
+    ["real.js"],
+    "only the regular file may be hashed: `linked.js` points outside the tree and `alias.js` would hash one file twice",
+  );
+});
