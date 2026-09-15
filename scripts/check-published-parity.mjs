@@ -68,11 +68,19 @@ import { readManifests } from "./protocol-deps.mjs";
 const SOURCE_DIRS = new Set(["src"]);
 
 /**
- * ⛔ THE FLOOR: how many packages a healthy run COMPARES. Raise it as packages start publishing; ⛔ never
- * lower it to make a package that dropped out of the subject set pass. `M` 2026-09-14: `agentic-terms` and
- * `lcp-mcp-server` both publish and both ship `src`; `seller-mcp` has never published.
+ * ⛔ THE FLOOR: how many packages a healthy run COMPARES. ⛔ Never lower it to make a package that dropped
+ * out of the subject set pass. `M` 2026-09-15: `agentic-terms`, `lcp-mcp-server` and `seller-mcp` all
+ * publish and all ship `src`.
+ *
+ * ⛔⛔ AND IT IS HELD EQUAL TO THE COUNT, NOT MERELY BELOW IT — because "raise it as packages start
+ * publishing" is an instruction to a human at the one moment they are thinking about something else, which
+ * is a release. `M` 2026-09-15 this number was `2` while the gate compared `3`: `seller-mcp` was `E404`
+ * when the floor was written and published `0.10.0` that night. Nothing said so, because a run comparing
+ * MORE than the floor printed a tick. ⇒ A package leaving the set would then have dropped the count back to
+ * `2`, met the stale floor, and exited 0 over its own absence — the floor's entire purpose, defeated by the
+ * floor being one behind. See `verdict`'s fifth answer.
  */
-export const COMPARABLE_FLOOR = 2;
+export const COMPARABLE_FLOOR = 3;
 
 /* ------------------------------------------------------------------ the subject set */
 
@@ -401,18 +409,44 @@ export async function parityReport({ manifests, registry }) {
 }
 
 /**
- * ⛔⛔ FOUR ANSWERS, AND THREE OF THEM ARE NOT "PASS". Collapsing any pair would state something nobody
+ * ⛔⛔ FIVE ANSWERS, AND FOUR OF THEM ARE NOT "PASS". Collapsing any pair would state something nobody
  * measured. This estate learned the distinction on the measured-run lock, where `--conflict-exit-code 75`
  * keeps "never got the box" separate from "below floor".
  *
- *   0  compared at least `floor` packages, and every one matched its source byte-for-byte
+ *   0  compared EXACTLY `floor` packages, and every one matched its source byte-for-byte
  *   1  DRIFT — a published artifact is behind its own source. A product finding.
  *   2  UNMEASURED — fewer than `floor` packages were comparable. No opinion is available.
  *   3  FAULT — the instrument failed. ⛔ Never reported as drift.
+ *   4  STALE FLOOR — MORE were comparable than the floor records. Nothing is wrong with the artifacts.
+ *
+ * ⭐⭐ WHY 4 IS NOT 0 WITH A WARNING. A warning is what produced the defect this answer exists for: the
+ * floor sat at `2` against a comparable `3` from the night `seller-mcp` first published, and every run in
+ * between printed a tick. ⇒ The run that FIRST sees a new package must fail, so the floor is raised in the
+ * same change that publishes it rather than by somebody auditing months later.
+ *
+ * ⛔ AND IT IS NOT 2. `UNMEASURED` says no opinion is available; here a COMPLETE opinion is available and
+ * it is positive. Reporting this as unmeasured would state something nobody measured, in the direction
+ * this file's own head note calls the flattering error's mirror image.
+ *
+ * ⚠️ The floor is a RECORDED number the tree is held against, never derived from the tree — deriving it
+ * would let a package dropping `src` lower the floor with it, and the gate would pass over its own
+ * shrinking subject. That is the defect the floor exists for, so the count is compared to the record and
+ * the record is edited by hand, deliberately, in the change that moves it.
  */
 export function verdict({ drift, faults, checked, floor = COMPARABLE_FLOOR }) {
   if (drift.length > 0) return { code: 1, kind: "drift" };
   if (faults.length > 0) return { code: 3, kind: "fault" };
+  if (checked > floor)
+    return {
+      code: 4,
+      kind: "stale-floor",
+      message:
+        `${checked} package(s) were comparable but the floor records ${floor}. Every artifact matched its ` +
+        "source, so this is not a product finding — the FLOOR is behind the repository. ⛔ Raise " +
+        `\`COMPARABLE_FLOOR\` to ${checked} in the same change that publishes the new package. A run that ` +
+        "compared more than its floor and printed a tick is how this number came to be one behind, and a " +
+        "floor one behind lets the next package to LEAVE the set exit 0 over its own absence.",
+    };
   if (checked < floor)
     return {
       code: 2,
@@ -441,19 +475,26 @@ async function main() {
 
   const v = verdict({ drift, faults, checked });
 
-  if (v.kind === "drift") {
-    console.error("\n✕ check:published-parity — DRIFT\n");
-    for (const d of drift) console.error(`  • ${d}\n`);
-    exit(1);
-  }
-  if (v.kind === "fault") {
-    console.error("\n✕ check:published-parity — THE INSTRUMENT FAILED\n");
-    for (const f of faults) console.error(`  • ${f}\n`);
-    exit(3);
-  }
-  if (v.kind === "unmeasured") {
+  // ⛔⛔ THE TICK IS REACHED ONLY BY `parity`, AND NEVER BY FALLING OFF THE END OF A LIST OF KINDS.
+  // `M` 2026-09-15, measured by the plant that added the fifth verdict: this block tested three kinds and
+  // let anything else reach the success line, so `verdict` returned `stale-floor` with code 4 and the
+  // process printed a tick and exited 0. ⭐ Twenty-three green unit tests did not see it — they drive
+  // `verdict`, which was correct; the defect was entirely in the process that reads it.
+  // ⇒ The condition is now the POSITIVE one, so a verdict added later cannot fall through to a pass: it
+  // exits its own code with its own message, and the worst a missing arm can do is print less detail.
+  if (v.kind !== "parity") {
+    if (v.kind === "drift") {
+      console.error("\n✕ check:published-parity — DRIFT\n");
+      for (const d of drift) console.error(`  • ${d}\n`);
+      exit(1);
+    }
+    if (v.kind === "fault") {
+      console.error("\n✕ check:published-parity — THE INSTRUMENT FAILED\n");
+      for (const f of faults) console.error(`  • ${f}\n`);
+      exit(3);
+    }
     console.error(`\n⚠ check:published-parity — ${v.message}\n`);
-    exit(2);
+    exit(v.code);
   }
 
   console.log(
