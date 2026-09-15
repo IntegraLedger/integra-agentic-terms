@@ -37,7 +37,8 @@
     "typecheck": "pnpm -r typecheck",
     "verify": "pnpm check:versions && pnpm check:commit-messages && pnpm check:wire && pnpm check:shared-pins && pnpm check:runner-patch && pnpm check:public-boundary && pnpm check:spec-citations && pnpm check:vocab && pnpm check:hermetic-tests && pnpm audit --audit-level moderate && pnpm -r build && pnpm check:dist && pnpm lint && pnpm depcruise && pnpm -r typecheck && pnpm check:docs && pnpm test:scripts && pnpm -r test",
     "check:runner-patch": "node scripts/check-runner-patch.mjs",
-    "check:hermetic-tests": "node scripts/check-hermetic-tests.mjs"
+    "check:hermetic-tests": "node scripts/check-hermetic-tests.mjs",
+    "check:published-dist-parity": "node scripts/check-published-dist-parity.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
