@@ -82,6 +82,27 @@ const SOURCE_DIRS = new Set(["src"]);
  */
 export const COMPARABLE_FLOOR = 3;
 
+/**
+ * ⛔⛔ WHAT THE FLOOR IS HELD AGAINST — the TREE, and never `checked`.
+ *
+ * `M` 2026-09-15, argued by `sept-15-commerce` from the sibling repository and reproduced here before it
+ * was believed: holding the number equal to `checked` reds the gate on a HEALTHY tree every time somebody
+ * bumps a version, because `checked` legitimately drops between `changeset version` landing and the
+ * publish that follows. Driven at `1a2dfbe` with `agentic-terms` bumped to an unpublished version:
+ *
+ *     floor 2 (before) -> "2 package(s) compared, floor 2."  exit 0
+ *     floor 3 (after)  -> "below the floor of 3."            exit 2   ⛔ the release you are preparing
+ *
+ * ⭐ So the number answers what this repository DECLARES — publishable, and shipping source — which does
+ * not move when a version moves, and is answerable with NO NETWORK. An unreachable registry is exactly
+ * when a stale declaration would otherwise go another cycle unnoticed.
+ */
+export function declaredComparable(manifests) {
+  return publishableManifests(manifests).filter(({ pkg }) =>
+    (pkg.files ?? []).map(normaliseDir).some((d) => SOURCE_DIRS.has(d)),
+  ).length;
+}
+
 /* ------------------------------------------------------------------ the subject set */
 
 /**
@@ -281,6 +302,7 @@ export async function parityReport({ manifests, registry }) {
   const faults = [];
   const notes = [];
   let checked = 0;
+  let ahead = 0;
 
   const subjects = publishableManifests(manifests);
   if (subjects.length === 0)
@@ -322,6 +344,10 @@ export async function parityReport({ manifests, registry }) {
 
     const published = versions[pkg.version];
     if (published === undefined) {
+      // ⛔ COUNTED, not merely noted. A source version ahead of the registry is the NORMAL state between a
+      // version bump and the publish that follows, and it is the ONE reason `checked` may honestly fall
+      // short of what the tree declares. Every other shortfall is a subject that LEFT.
+      ahead += 1;
       notes.push(
         `${label} — this version is not on the registry yet, so there is nothing to be out of parity with. ` +
           `Published: ${Object.keys(versions).sort().join(", ")}.`,
@@ -405,7 +431,7 @@ export async function parityReport({ manifests, registry }) {
     }
   }
 
-  return { drift, faults, notes, checked };
+  return { drift, faults, notes, checked, ahead };
 }
 
 /**
@@ -433,26 +459,41 @@ export async function parityReport({ manifests, registry }) {
  * shrinking subject. That is the defect the floor exists for, so the count is compared to the record and
  * the record is edited by hand, deliberately, in the change that moves it.
  */
-export function verdict({ drift, faults, checked, floor = COMPARABLE_FLOOR }) {
+export function verdict({
+  drift,
+  faults,
+  checked,
+  ahead = 0,
+  declared,
+  floor = COMPARABLE_FLOOR,
+}) {
   if (drift.length > 0) return { code: 1, kind: "drift" };
-  if (faults.length > 0) return { code: 3, kind: "fault" };
-  if (checked > floor)
+  // ⛔⛔ BEFORE `fault`, AND THAT ORDER IS THE POINT. Both `declared` and `floor` are TREE facts, so this
+  // answers when nothing could be fetched — and an unreachable registry is precisely the run on which a
+  // stale declaration would otherwise go unnoticed for another cycle. Only real drift outranks it, because
+  // drift is a defect in what ships and this is a defect in the gate's own configuration.
+  if (declared !== undefined && declared !== floor)
     return {
       code: 4,
       kind: "stale-floor",
       message:
-        `${checked} package(s) were comparable but the floor records ${floor}. Every artifact matched its ` +
-        "source, so this is not a product finding — the FLOOR is behind the repository. ⛔ Raise " +
-        `\`COMPARABLE_FLOOR\` to ${checked} in the same change that publishes the new package. A run that ` +
-        "compared more than its floor and printed a tick is how this number came to be one behind, and a " +
-        "floor one behind lets the next package to LEAVE the set exit 0 over its own absence.",
+        `this repository declares ${declared} publishable package(s) shipping source, and ` +
+        `\`COMPARABLE_FLOOR\` records ${floor}. ⛔ Nothing is wrong with the artifacts — the DECLARATION ` +
+        `is out of date. Set it to ${declared} in the same change that adds or removes the package. ` +
+        "⚠️ A number left behind a package that JOINED lets the next package to LEAVE exit 0 over its own " +
+        "absence, which is the whole of what it defends.",
     };
-  if (checked < floor)
+  if (faults.length > 0) return { code: 3, kind: "fault" };
+  // ⛔ `- ahead` is what keeps a release from being the red: a package whose source version is not yet on
+  // the registry has honestly left the comparable set for the length of one publish, and that is not a
+  // subject going missing.
+  if (checked < floor - ahead)
     return {
       code: 2,
       kind: "unmeasured",
       message:
-        `only ${checked} package(s) were compared, below the floor of ${floor}. Every other publishable ` +
+        `only ${checked} package(s) were compared; ${floor} are declared and ${ahead} await a publish. ` +
+        "Every other publishable " +
         "package was ahead of the registry, never published, or not comparable on this axis. ⛔ A package " +
         "that LEAVES the comparable set takes its own coverage with it, and a run over what remains must " +
         "not print a tick. This is not a pass, it is not drift, and the instrument did not fail.",
@@ -466,14 +507,15 @@ async function main() {
   const root =
     env["INTEGRA_PARITY_ROOT"] ?? new URL("..", import.meta.url).pathname;
   const manifests = readManifests(root);
-  const { drift, faults, notes, checked } = await parityReport({
+  const declared = declaredComparable(manifests);
+  const { drift, faults, notes, checked, ahead } = await parityReport({
     manifests,
     registry: NetworkRegistry(),
   });
 
   for (const n of notes) console.log(`  · ${n}\n`);
 
-  const v = verdict({ drift, faults, checked });
+  const v = verdict({ drift, faults, checked, ahead, declared });
 
   // ⛔⛔ THE TICK IS REACHED ONLY BY `parity`, AND NEVER BY FALLING OFF THE END OF A LIST OF KINDS.
   // `M` 2026-09-15, measured by the plant that added the fifth verdict: this block tested three kinds and
@@ -499,7 +541,7 @@ async function main() {
 
   console.log(
     `✓ every published version matches the source it was cut from, byte for byte ` +
-      `(${checked} package(s) compared, floor ${COMPARABLE_FLOOR}).`,
+      `(${checked} of ${declared} declared compared${ahead > 0 ? `, ${ahead} awaiting publish` : ""}).`,
   );
 }
 
