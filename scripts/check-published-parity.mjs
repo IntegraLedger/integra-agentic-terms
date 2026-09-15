@@ -484,6 +484,29 @@ export function verdict({
         "absence, which is the whole of what it defends.",
     };
   if (faults.length > 0) return { code: 3, kind: "fault" };
+  // ⛔⛔ ZERO COMPARED IS UNMEASURED, HOWEVER WELL ACCOUNTED FOR — and this arm is the one `- ahead`
+  // makes necessary. `M` 2026-09-15, found by `sept-15-commerce` and driven here before it was believed:
+  // `.changeset/config.json` carries a FIXED group, so `agentic-terms` and `lcp-mcp-server` move
+  // together and a changeset touching `seller-mcp` as well moves all three. Then `checked` is 0,
+  // `ahead` is 3, `floor` is 3, and `0 < 3 - 3` is false:
+  //
+  //     ✓ every published version matches the source it was cut from, byte for byte
+  //       (0 of 3 declared compared, 3 awaiting publish).                              exit 0
+  //
+  // ⇒ A tick over a run that opened no tarball at all. That is the empty-subject-set defect wearing the
+  // excuse's costume, in the gate whose entire purpose is refusing it — the same shape `parityReport`
+  // already refuses when the SUBJECT set is zero, arriving instead through the accounting.
+  // ⭐ `unmeasured` is exactly the right answer: not drift, not a fault, and not a pass.
+  if (checked === 0)
+    return {
+      code: 2,
+      kind: "unmeasured",
+      message:
+        `no package was compared. ${declared ?? floor} are declared and ${ahead} carry a version that is ` +
+        "not on the registry yet, which is what a release in progress looks like. ⛔ Nothing was opened, " +
+        "so there is no opinion to give — a tick here would be a statement about tarballs this run never " +
+        "fetched. This is not drift and the instrument did not fail.",
+    };
   // ⛔ `- ahead` is what keeps a release from being the red: a package whose source version is not yet on
   // the registry has honestly left the comparable set for the length of one publish, and that is not a
   // subject going missing.
