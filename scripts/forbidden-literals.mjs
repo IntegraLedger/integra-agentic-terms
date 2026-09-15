@@ -50,6 +50,11 @@ export const FORBIDDEN_LITERALS = [
     "the internal working-directory layout",
     "cd integra-july-2026/integra-agentic-terms",
   ],
+  [
+    /aug-31-live/i,
+    "the private discussion-document repository by name",
+    "the collaboration plan in aug-31-live sets the order",
+  ],
 ];
 
 /** A line that must match NOTHING above — proof the patterns discriminate rather than flagging all prose. */
