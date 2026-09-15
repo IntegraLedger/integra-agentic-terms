@@ -1,0 +1,497 @@
+[
+  {
+    "name": "lcp_compute_atrhash",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "terms": {
+          "description": "Raw terms text to hash, as UTF-8 bytes. Provide this OR termsUrl, never both.",
+          "type": "string"
+        },
+        "termsUrl": {
+          "description": "HTTPS URL of the terms document to fetch and hash. Provide this OR terms, never both.",
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "atrHash": {
+          "type": "string",
+          "description": "0x-prefixed SHA-256 of the terms bytes."
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "How many bytes were hashed."
+        },
+        "reference": {
+          "type": "string",
+          "description": "The LCP §8.1 carrier string, `lcp:sha256:0x…`."
+        }
+      },
+      "required": [
+        "atrHash",
+        "bytes",
+        "reference"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "lcp_generate_legal_context",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "termsUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "HTTPS URL of the terms document. Fetched, so it must be live."
+        },
+        "termsFormat": {
+          "type": "string",
+          "description": "The LCP §2.5 format token for the terms document — one of: markdown, json, plain, html, pdf."
+        },
+        "acceptanceRequired": {
+          "description": "Set true where the service requires explicit signed acceptance before transacting (LCP §3, Level 3).",
+          "type": "boolean"
+        },
+        "disputeResolution": {
+          "description": "The service's dispute-resolution metadata (LCP §3, Level 4), e.g. { method, jurisdiction }.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "returns": {
+          "description": "URL of the returns policy.",
+          "type": "string"
+        },
+        "api": {
+          "description": "Entry point to richer legal functionality (LCP §3, Level 4).",
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "required": [
+        "termsUrl",
+        "termsFormat"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "terms": {
+          "type": "string",
+          "description": "The terms document URL, echoed from the input."
+        },
+        "termsFormat": {
+          "type": "string",
+          "description": "The LCP §2.5 format token."
+        },
+        "atrHash": {
+          "type": "string",
+          "description": "SHA-256 over the bytes served at `terms`, computed here."
+        },
+        "acceptanceRequired": {
+          "description": "Present only where the input declared it.",
+          "type": "boolean"
+        },
+        "disputeResolution": {
+          "description": "Present only where the input declared it.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "returns": {
+          "description": "Present only where the input declared it.",
+          "type": "string"
+        },
+        "api": {
+          "description": "Present only where the input declared it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "terms",
+        "termsFormat",
+        "atrHash"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "lcp_verify_before_pay",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "serviceUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The service's origin (`https://seller.example`) or its full legal-context URL. `/.well-known/legal-context.json` is appended when absent, and a query string, a fragment or credentials in the authority are REFUSED — LCP §2.1 defines the well-known URI with none of them."
+        }
+      },
+      "required": [
+        "serviceUrl"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "mismatch",
+            "unverifiable"
+          ],
+          "description": "verified: the served terms hash to the declared fingerprint. mismatch: they do not. unverifiable: no fingerprint was declared, or the terms format is not machine-readable."
+        },
+        "wouldHalt": {
+          "type": "boolean",
+          "description": "True when an agent MUST NOT pay against these terms."
+        },
+        "atrHashMatch": {
+          "type": "boolean",
+          "description": "True only on `verified` — the LCP §5.3 comparison itself."
+        },
+        "legalContextUrl": {
+          "type": "string",
+          "description": "The discovery document actually read."
+        },
+        "termsUrl": {
+          "type": "string",
+          "description": "The terms document that document points at."
+        },
+        "declaredAtrHash": {
+          "description": "The fingerprint the service declared; absent at Level 1.",
+          "type": "string"
+        },
+        "computedAtrHash": {
+          "description": "The fingerprint recomputed here; absent when nothing was fetched.",
+          "type": "string"
+        },
+        "termsBytes": {
+          "description": "How many bytes of terms were hashed.",
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "acceptanceRequired": {
+          "description": "Present only where the document declares it (LCP Level 3).",
+          "type": "boolean"
+        },
+        "disputeResolutionDeclared": {
+          "type": "boolean",
+          "description": "Whether the document carries a disputeResolution block (Level 4)."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Why this verdict, in one sentence."
+        }
+      },
+      "required": [
+        "verdict",
+        "wouldHalt",
+        "atrHashMatch",
+        "legalContextUrl",
+        "termsUrl",
+        "disputeResolutionDeclared",
+        "detail"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "lcp_scaffold_integration",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "seller",
+            "buyer"
+          ],
+          "description": "Which side to scaffold: 'seller' (publish legal-context.json and place the reference) or 'buyer' (verify before signing or paying)."
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "seller",
+            "buyer"
+          ],
+          "description": "The side that was scaffolded."
+        },
+        "scaffold": {
+          "type": "string",
+          "description": "Markdown: the steps, and the code to paste, for that side."
+        }
+      },
+      "required": [
+        "target",
+        "scaffold"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "lcp_place_reference",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "description": "The commerce protocol whose document this is. See `lcp_place_reference`'s description for the set this build can place into."
+        },
+        "reference": {
+          "type": "string",
+          "description": "The LCP §8.1 carrier string, `lcp:{type}:{value}` — exactly what `lcp_compute_atrhash` returns as `reference`."
+        },
+        "termsUrl": {
+          "description": "Where the terms document the reference identifies can be fetched — `https://` only. REQUIRED where the protocol declares a slot for it and the reference is a digest: a hash no counterparty can resolve is unverifiable to anyone who does not already hold the terms, so the placement refuses one. Where the protocol declares no slot, supplying it is refused rather than silently dropped.",
+          "type": "string"
+        },
+        "document": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "The host protocol's own document, as JSON. Returned unchanged with the reference added; the input is never mutated."
+        }
+      },
+      "required": [
+        "protocol",
+        "reference",
+        "document"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "The host document with the reference placed."
+        },
+        "placement": {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "type": "string",
+              "description": "The LCP protocol id."
+            },
+            "tier": {
+              "type": "string",
+              "description": "§8.3 wire compatibility: A works against stock today, B needs upstream change."
+            },
+            "pattern": {
+              "type": "string",
+              "description": "The §8.3 binding pattern this carrier is."
+            },
+            "container": {
+              "type": "string",
+              "description": "How the field is reached: object-path, tagged-array or header-map."
+            },
+            "encoding": {
+              "type": "string",
+              "description": "How the reference sits in the field."
+            },
+            "field": {
+              "type": "string",
+              "description": "The host-protocol field the reference occupies."
+            }
+          },
+          "required": [
+            "protocol",
+            "tier",
+            "pattern",
+            "container",
+            "encoding",
+            "field"
+          ],
+          "additionalProperties": false,
+          "description": "The placement manifest's own account of where the reference sits."
+        }
+      },
+      "required": [
+        "document",
+        "placement"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "lcp_extract_reference",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "description": "The commerce protocol this document belongs to. See the description for the set this build reads."
+        },
+        "document": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "The host protocol's own document, as JSON."
+        }
+      },
+      "required": [
+        "protocol",
+        "document"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "type": "string",
+          "description": "The LCP §8.1 carrier string recovered from the document."
+        },
+        "type": {
+          "type": "string",
+          "description": "The §8.2 carrier type, e.g. `sha256`."
+        },
+        "value": {
+          "type": "string",
+          "description": "The carrier value, e.g. the 0x ATR hash."
+        },
+        "termsUrl": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "read"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "no-field-declared"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "declared-fields-empty"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "fields"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "description": "Where the document says its terms live. The absences are DISTINCT and both are answers: `no-field-declared` is a fact about the PROTOCOL — it has no slot for a locator — while `declared-fields-empty` is a fact about this DOCUMENT, whose seller left every declared slot empty. Collapsing them would report a seller's silence as a protocol's."
+        },
+        "placement": {
+          "type": "object",
+          "properties": {
+            "protocol": {
+              "type": "string",
+              "description": "The LCP protocol id."
+            },
+            "tier": {
+              "type": "string",
+              "description": "§8.3 wire compatibility: A works against stock today, B needs upstream change."
+            },
+            "pattern": {
+              "type": "string",
+              "description": "The §8.3 binding pattern this carrier is."
+            },
+            "container": {
+              "type": "string",
+              "description": "How the field is reached: object-path, tagged-array or header-map."
+            },
+            "encoding": {
+              "type": "string",
+              "description": "How the reference sits in the field."
+            },
+            "field": {
+              "type": "string",
+              "description": "The host-protocol field the reference occupies."
+            }
+          },
+          "required": [
+            "protocol",
+            "tier",
+            "pattern",
+            "container",
+            "encoding",
+            "field"
+          ],
+          "additionalProperties": false,
+          "description": "The placement manifest's own account of where the reference sits."
+        }
+      },
+      "required": [
+        "reference",
+        "type",
+        "value",
+        "termsUrl",
+        "placement"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    }
+  }
+]
