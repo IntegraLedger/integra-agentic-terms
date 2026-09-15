@@ -249,14 +249,34 @@ test("⛔⛔ A VERSION BUMP IS NOT A MISSING SUBJECT — the release you are pre
     assert.match(r.notes[0], /not on the registry yet/);
     assert.equal(r.ahead, 1, "the release window is COUNTED, not merely noted");
     assert.equal(r.checked, 0);
+    // ⛔⛔ AND YET THIS IS 2, NOT 0 — because NOTHING WAS COMPARED. The excuse is correct and still buys no
+    // opinion: a tick would be a statement about a tarball this run never fetched.
+    assert.equal(verdict({ ...r, declared: 1, floor: 1 }).code, 2);
+    // ⭐ THE CASE THE EXCUSE EXISTS FOR — one awaiting publish while another IS compared.
     assert.equal(
-      verdict({ ...r, declared: 1, floor: 1 }).code,
+      verdict({
+        drift: [],
+        faults: [],
+        checked: 1,
+        ahead: 1,
+        declared: 2,
+        floor: 2,
+      }).code,
       0,
-      "⛔ one package declared, one awaiting publish, nothing lost — this is green",
+      "⛔ one compared, one awaiting publish, nothing lost — this is green",
     );
-    // ⭐ THE DISCRIMINATOR. Same shortfall, NOT excused, because nothing is awaiting a publish: that is a
-    // subject that LEFT, and it is the case the number exists for.
-    assert.equal(verdict({ ...r, ahead: 0, declared: 1, floor: 1 }).code, 2);
+    // ⭐ THE DISCRIMINATOR. Same shortfall, NOT excused, because nothing awaits a publish: a subject LEFT.
+    assert.equal(
+      verdict({
+        drift: [],
+        faults: [],
+        checked: 1,
+        ahead: 0,
+        declared: 2,
+        floor: 2,
+      }).code,
+      2,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -493,6 +513,41 @@ test("the five verdicts are distinguishable, and drift outranks a fault", () => 
     0,
   );
   assert.equal(COMPARABLE_FLOOR, 3);
+});
+
+test("⛔⛔ ZERO COMPARED IS UNMEASURED HOWEVER WELL ACCOUNTED FOR — the excuse must not become the defect", () => {
+  // `M` 2026-09-15, found by `sept-15-commerce` from protocol's fixed version group and driven here
+  // before it was believed. `.changeset/config.json` carries a FIXED group, so `agentic-terms` and
+  // `lcp-mcp-server` move together; a changeset touching `seller-mcp` too moves all three. Then
+  // `checked` is 0, `ahead` is 3, `floor` is 3, and `0 < 3 - 3` is false — so before this arm the gate
+  // printed "✓ every published version matches the source it was cut from ... (0 of 3 declared compared)".
+  // ⇒ A tick over a run that opened no tarball. The empty-subject-set defect arriving through the
+  // ACCOUNTING rather than through the subject set, in the gate whose purpose is refusing it.
+  const all = {
+    drift: [],
+    faults: [],
+    checked: 0,
+    ahead: 3,
+    declared: 3,
+    floor: 3,
+  };
+  assert.equal(verdict(all).code, 2);
+  assert.match(verdict(all).message, /no package was compared/);
+  // ⛔ Still not drift and not a fault — both outrank it and it must not be mistaken for either.
+  assert.equal(verdict({ ...all, drift: ["d"] }).code, 1);
+  assert.equal(verdict({ ...all, faults: ["f"] }).code, 3);
+  // ⭐ THE CONTROL: one package compared IS an opinion, and the same excuse is then honoured.
+  assert.equal(
+    verdict({
+      drift: [],
+      faults: [],
+      checked: 1,
+      ahead: 2,
+      declared: 3,
+      floor: 3,
+    }).code,
+    0,
+  );
 });
 
 test("⛔ `declaredComparable` counts the TREE — publishable AND shipping source — and does not move when a version does", () => {
