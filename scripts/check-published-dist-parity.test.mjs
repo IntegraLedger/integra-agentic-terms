@@ -20,7 +20,6 @@ import {
   publishedSrc,
   verdict,
 } from "./check-published-dist-parity.mjs";
-import { NetworkRegistry } from "./check-published-parity.mjs";
 
 const ROOT = new URL("../packages", import.meta.url).pathname;
 const manifests = () =>
@@ -332,39 +331,90 @@ test("⛔ publishedDist and publishedSrc split one entry map and neither claims 
   assert.deepEqual([...publishedSrc(e).keys()], ["i.ts"]);
 });
 
-test("⭐⭐ THE LIVE CONTROL — the REAL registry, the REAL tarballs, a REAL rebuild, and it is PARITY", async () => {
-  // ⛔ Without this the suite proves only that the gate agrees with its own fixtures. This is the case that
-  // fetches three tarballs from npmjs and runs `pnpm build` three times.
+/**
+ * ⛔⛔ THE LIVE CONTROL AGAINST THE REAL REGISTRY USED TO BE HERE, AND IT HAS MOVED TO
+ * `.github/workflows/published-dist-parity.yml`. It is not lost and it is not weakened: that workflow runs
+ * THIS GATE, against npmjs, six-hourly, and maps every exit code onto a deduplicated, self-closing issue —
+ * which is strictly more than an assertion in a drive could do, because it also says something when it
+ * fails at three in the morning.
+ *
+ * ⭐ WHY IT COULD NOT STAY. This file is a `scripts/` drive, so it runs inside `pnpm test:scripts`, which
+ * is stage 17 of `pnpm verify` — putting a live npmjs fetch inside the inner loop. Two things in this
+ * repository already said that was wrong, and both were already written down when the control landed:
+ *
+ *   · `published-dist-parity.yml`'s own header: "NOT in `verify`, for the reason the sibling gate is not:
+ *     it reaches a third party, and `check-hermetic-tests.mjs` states the consequence — a gate that
+ *     reaches a third party fails red for a reason that is not in the tree."
+ *   · `scripts/hermetic-tests.declarations.json`, whose `registry.npmjs.org` entry claims, as a
+ *     MEASUREMENT, that "every `scripts/*.test.mjs` drive run under a global-`fetch` trap made 3 calls,
+ *     all three to `http://127.0.0.1:<ephemeral>` — the drives' own servers". That stopped being true the
+ *     day this control landed, and `check:hermetic-tests` stayed green over it.
+ *
+ * ⚠️ MEASURED, not argued: run with `INTEGRA_PARITY_ORIGIN=http://127.0.0.1:1`, the control faulted on all
+ * four packages with `fetch failed` — so it really dialled the configured origin, which by default is
+ * npmjs. ⇒ The sibling gate's drive never reached npmjs (its "real seam" case starts a `node:http` server
+ * on 127.0.0.1); only this one did.
+ *
+ * ⛔ AND IT COULD NOT SIMPLY BE WIDENED. Once a never-published name is `skipped` rather than `ahead` — the
+ * defect fixed above — this control's `parity` assertion is FALSE for any tree that declares a package
+ * npmjs has not served yet, which every new package is. Widening it to accept `unmeasured` would have made
+ * a live control assert about a declaration instead of about an artifact, and teaching it which names to
+ * excuse is the exemption-list shape this estate refuses. Moving it is the answer that keeps both: `verify`
+ * becomes hermetic, and the live measurement keeps happening where a red has somewhere to go.
+ *
+ * ⚠️ The cost, stated: drift in a published `dist/` is now found within six hours rather than on the next
+ * `verify`. That is the same latency the src axis has always had, and the same latency this workflow was
+ * built around. ⭐ Reversible on Fisher's word — this applies to terms, by analogy, the principle already
+ * ruled for the sibling repository: the registry-dependent live control leaves `verify`.
+ */
+
+test("⛔⛔ A NAME npmjs HAS NEVER SERVED IS `skipped`, NOT `ahead` — the false green that shipped once", async () => {
+  // ⭐⭐ THE PLANT FOR THIS CASE IS THE PREVIOUS COMMIT'S OWN CODE. `NetworkRegistry` renders a NAME-level
+  // 404 as `{versions: {}}`, so asking only `versions[version] === undefined` cannot tell "not published
+  // yet" from "npmjs has never heard of this package" — and the first cut of the `ahead` fix counted both
+  // as `ahead`, which the shortfall arm forgives. `npm unpublish` or a rename would then have left this
+  // axis green indefinitely while the sibling gate correctly opened its NOTHING-MEASURED issue.
+  const fx = faithful();
+  const gone = Object.keys(fx).find((k) =>
+    k.startsWith("@integraledger/seller-mcp@"),
+  );
+  delete fx[gone]; // the stub answers `{versions: {}}` for a name it holds no key for — a NAME 404
   const r = await distParityReport({
     manifests: manifests(),
-    registry: NetworkRegistry({}),
+    registry: stubRegistry(fx),
+    build: noBuild,
   });
-  assert.deepEqual(
-    r.faults,
-    [],
-    `the live run faulted: ${JSON.stringify(r.faults)}`,
-  );
-  assert.deepEqual(
-    r.drift,
-    [],
-    `the live run found drift: ${JSON.stringify(r.drift)}`,
-  );
-  // ⛔⛔ A FLOOR PLUS AN ACCOUNTING, NOT A BARE EQUALITY — and this pairing is what caught the `ahead`
-  // defect. `compared` legitimately moves the day a newly declared package first publishes; `compared +
-  // ahead + skipped` does not. A bare `assert.equal(r.compared, 3)` went red the moment a fourth package
-  // was DECLARED, which is a true fact about the registry stated as a failure of the tree — and the fix
-  // for it, under deadline, is to edit the number rather than read the verdict. That is how a live
-  // control becomes a fixture.
-  assert.ok(
-    r.compared >= 3,
-    `the live run compared ${r.compared} package(s) — it must open real tarballs to mean anything`,
-  );
   assert.equal(
-    r.compared + r.ahead + r.skipped.length,
-    DIST_FLOOR,
-    "every declared package accounted for, against the real registry",
+    r.ahead,
+    0,
+    "a name npmjs never served is NOT a release in flight",
   );
+  assert.deepEqual(r.skipped, ["@integraledger/seller-mcp"]);
+  assert.match(r.notes.join("\n"), /never published/);
+  assert.match(r.notes.join("\n"), /unpublished or renamed/);
+  assert.equal(verdict(r).kind, "unmeasured");
+  assert.equal(verdict(r).code, 2);
+});
+
+test("⭐ THE CONTROL FOR IT — the name EXISTS and this version is not on it yet, which IS a release", async () => {
+  // ⛔ Without this the case above is satisfied by a gate that forgives nothing, which would red every
+  // release window — the defect the `ahead` bucket exists to fix. The discriminator is the NAME, and this
+  // asserts that it discriminates rather than that it refuses.
+  const fx = faithful();
+  const key = Object.keys(fx).find((k) =>
+    k.startsWith("@integraledger/seller-mcp@"),
+  );
+  fx["@integraledger/seller-mcp@0.0.1-before"] = fx[key];
+  delete fx[key]; // the name is served, carrying a version that is not the tree's
+  const r = await distParityReport({
+    manifests: manifests(),
+    registry: stubRegistry(fx),
+    build: noBuild,
+  });
+  assert.equal(r.ahead, 1, "a version bump awaiting its publish");
+  assert.deepEqual(r.skipped, []);
   assert.equal(verdict(r).kind, "parity");
+  assert.equal(verdict(r).code, 0);
 });
 
 test("⛔⛔ A SYMLINK UNDER THE TREE IS SKIPPED, NOT FOLLOWED — the guard that never fired", async () => {

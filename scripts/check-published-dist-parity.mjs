@@ -74,11 +74,31 @@ import {
  * ⭐ It was caught by the LIVE control in the drive, not by a fixture: `assert.equal(verdict(r).kind,
  * "parity")` against the real registry answered `unmeasured` the moment a fourth package was declared.
  *
- * ⇒ `ahead` is now counted SEPARATELY from `skipped`, exactly as the sibling gate counts it, and the
- * shortfall arm subtracts it. The two are not one bucket: `ahead` is "not on the registry yet", which is a
- * subject that has honestly left for the length of one publish; `skipped` is "published source disagrees
- * with the tree", which is the sibling gate's finding and a state this gate deliberately gives no dist
- * verdict on. Merging them is what let the equality arm pass and the shortfall arm refuse.
+ * ⇒ `ahead` is now counted SEPARATELY from `skipped`, and the shortfall arm subtracts it. The two are not
+ * one bucket: `ahead` is "not on the registry yet", which is a subject that has honestly left for the
+ * length of one publish; `skipped` is "published source disagrees with the tree", which is the sibling
+ * gate's finding and a state this gate deliberately gives no dist verdict on. Merging them is what let the
+ * equality arm pass and the shortfall arm refuse.
+ *
+ * ⛔⛔ AND THE FIRST CUT OF THAT FIX SHIPPED A FALSE GREEN, WHICH IS WHY THERE ARE **THREE** ACCOUNTINGS
+ * AND NOT TWO. This docblock said "exactly as the sibling gate counts it" and that sentence was FALSE.
+ * `NetworkRegistry.metadata` renders a NAME-level 404 as `{versions: {}}`, so a package npmjs has NEVER
+ * heard of — never published, **unpublished, or renamed** — arrived here as `v === undefined` and was
+ * counted as `ahead`, and `ahead` is the one bucket the shortfall arm forgives. Driven with a stub
+ * registry, at the commit that introduced it:
+ *
+ *     the new package answers a NAME 404, the other three are faithful
+ *       -> compared 3, ahead 1, skipped 0   -> parity      exit 0     ⛔ THE FALSE GREEN
+ *     the same tree, before the `ahead` fix -> unmeasured  exit 2
+ *     the sibling gate, same tree           -> unmeasured  exit 2
+ *
+ * ⇒ `npm unpublish` or a rename would have left the dist axis GREEN INDEFINITELY, while the src axis
+ * correctly opened its NOTHING-MEASURED issue for the identical state. ⭐ The sibling does not have this
+ * defect because it tests `Object.keys(versions).length === 0` FIRST and does not count that as `ahead` —
+ * its note says in as many words that a 404 "is what the floor exists to catch".
+ *
+ * ⇒ So a name npmjs has never served is `skipped`: accounted for, named, and NOT forgiven. Only "the name
+ * exists and this version is not on it yet" is `ahead`.
  */
 export const DIST_FLOOR = 4;
 
@@ -198,7 +218,22 @@ export async function distParityReport({
     let entries;
     try {
       const meta = await registry.metadata(name);
-      const v = meta.versions?.[version];
+      const versions = meta.versions ?? {};
+      // ⛔⛔ THE NAME FIRST, AND THE VERSION SECOND. `NetworkRegistry` renders a NAME-level 404 as an empty
+      // `versions`, so asking only about the version cannot tell "we have not published this one yet"
+      // from "npmjs has never heard of this package" — and the second is a subject that LEFT, which is
+      // exactly what the floor is for. See the docblock on DIST_FLOOR: conflating them shipped a false
+      // green on this gate.
+      if (Object.keys(versions).length === 0) {
+        notes.push(
+          `${name} — never published, so there is no dist/ to compare. ⚠️ A registry 404 for the NAME ` +
+            "reads the same way here, so a package that was unpublished or renamed arrives as this note " +
+            "— which is what the floor exists to catch. This is not forgiven and never prints a tick.",
+        );
+        skipped.push(name);
+        continue;
+      }
+      const v = versions[version];
       if (v === undefined) {
         notes.push(
           `${name}@${version} is not published — a release in progress is not a lost subject, and this gate gives no opinion on it.`,
