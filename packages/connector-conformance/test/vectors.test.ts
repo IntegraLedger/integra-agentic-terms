@@ -115,7 +115,9 @@ describe("loading a document that is not the published one", () => {
     const path = join(dir, "connector-conformance-v1.json");
     writeFileSync(path, drifted);
 
-    expect(() => loadVectors(path)).toThrow(/hashes to .* and this package pins/s);
+    expect(() => loadVectors(path)).toThrow(
+      /hashes to .* and this package pins/s,
+    );
   });
 
   it("accepts the published document by the same door, so the refusal discriminates", () => {
