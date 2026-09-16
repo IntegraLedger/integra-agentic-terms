@@ -3,8 +3,8 @@ title: Paying an x402 seller
 description: The fingerprint you verified is the nonce you pay with — the EIP-3009 authorization and the envelope that carries it, end to end.
 ---
 
-Everything else on this site stops at the decision. This page is the other half: how the fingerprint the
-gate proved becomes the payment the seller accepts, on x402.
+Every other page on this site is about the decision. This one is about what the decision is worth: how the
+fingerprint the gate proved becomes the payment the seller accepts, on x402.
 
 Both halves are public npm packages, and the seam between them is one value.
 
@@ -188,6 +188,11 @@ import {
   createX402Adapter,
   getX402Deployment,
 } from "@integraledger/lcp-binding-evm-x402";
+
+declare const payer: string; // your address
+declare const payTo: string; // `accepts[0].payTo`, off the challenge
+declare const amount: string; // `accepts[0].amount`, in token base units
+declare const wallet: { signTypedData(data: unknown): Promise<`0x${string}`> };
 
 const adapter = createX402Adapter(getX402Deployment("base-sepolia"));
 
