@@ -123,9 +123,24 @@ describe("loading a document that is not the published one", () => {
       const path = join(dir, "connector-conformance-v1.json");
       writeFileSync(path, drifted);
 
-      expect(() => loadVectors(path)).toThrow(
-        /hashes to .* and this package pins/s,
+      // ⛔⛔ THE MESSAGE IS ASSERTED, NOT JUST THE THROW, AND IT IS NOT A PROSE TEST. Whoever reads
+      // this refusal is holding bytes they believed were the vectors: what they need from it is WHICH
+      // digest they have, WHICH one this version publishes, and that nothing was loaded. A refusal that
+      // names neither digest tells them a file is wrong and not which file or how to fix it.
+      // ⭐ `M` 2026-09-16: both of this package's surviving mutants were these two string literals,
+      // emptied. They are observable and they matter, so they are asserted rather than classified.
+      let message = "";
+      try {
+        loadVectors(path);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toMatch(new RegExp(`hashes to ${digestOf(drifted)}\\b`));
+      expect(message).toContain(CONNECTOR_CONFORMANCE_V1_SHA256);
+      expect(message).toMatch(
+        /Refusing to load a vector document that is not the one/,
       );
+      expect(message).toMatch(/is not a verdict\.$/);
     } finally {
       // ⛔ BOUND TO THE LIFETIME, NOT TO THE HAPPY PATH. A removal after the assertion leaks the directory
       // on exactly the run that matters — the one where the assertion failed.
