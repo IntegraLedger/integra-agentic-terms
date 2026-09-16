@@ -40,10 +40,12 @@ a seller that has adopted the weld and therefore checks it.
 npm install @integraledger/agentic-terms @integraledger/lcp-binding-evm-x402
 ```
 
-Both sit on the same protocol line at `^0.18.3`, so one copy of `@integraledger/lcp-*` satisfies the gate's
-peers and the binding's dependencies. The envelope (`x402PaymentHeader`, `decodeX402Challenge`,
-`x402AcceptedEntry`) ships in `@integraledger/agentic-terms` from **`0.18.0`** — earlier versions carry the
-gate but not this half.
+The gate peers the `@integraledger/lcp-*` protocol line at `^0.18.3`, and the binding depends on that same
+line, so your package manager installs **one** copy of it for both — which is the shape that matters here:
+two copies of `lcp-binding-core` in one tree break `instanceof` on its error types.
+
+The envelope (`x402PaymentHeader`, `decodeX402Challenge`, `x402AcceptedEntry`) ships in
+`@integraledger/agentic-terms` from **`0.18.0`**. Earlier versions carry the gate and not this half.
 
 <Callout type="warn">
 The binding holds a chain SDK; the gate deliberately does not, and is held to that by its own dependency
