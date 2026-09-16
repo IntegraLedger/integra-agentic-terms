@@ -1,0 +1,311 @@
+---
+title: Paying an x402 seller
+description: The fingerprint you verified is the nonce you pay with — the EIP-3009 authorization and the envelope that carries it, end to end.
+---
+
+Every other page on this site is about the decision. This one is about what the decision is worth: how the
+fingerprint the gate proved becomes the payment the seller accepts, on x402.
+
+Both halves are public npm packages, and the seam between them is one value.
+
+| Half | Package | What it does |
+|---|---|---|
+| **The authorization** | [`lcp-binding-evm-x402`](https://www.npmjs.com/package/@integraledger/lcp-binding-evm-x402) | builds the EIP-3009 `transferWithAuthorization` whose **`nonce` is the `atrHash`** |
+| **The envelope** | [`agentic-terms`](/reference/agentic-terms) | turns that authorization into the `PAYMENT-SIGNATURE` value x402 defines |
+
+The weld is the `nonce`. EIP-3009 gives the payer a 32-byte field that the payer signs over and the token
+contract commits on-chain; putting the `atrHash` there is what makes a payment provably answer one terms
+document, without the token contract knowing what a terms document is.
+
+## What a stock x402 client gets wrong
+
+An x402 client that has never heard of Integra generates a random nonce, because that is what a nonce is
+everywhere else. Against a seller that advertises an `atrHash` and checks it, that payment is refused and
+the 402 is re-issued — every time, because nothing about retrying changes the nonce.
+
+That refusal is not ours to describe second-hand; it is a function in the same public package the payer
+uses. `verifyInboundNonce(presentedNonce, expectedAtrHash)` compares the two as decoded bytes (LCP §2.5)
+and returns `x402/nonce-mismatch` with the halt class `verification-failure` when they differ. The seller
+re-issues the 402 rather than settling an unwelded payment.
+
+<Callout type="info">
+Nothing here requires the seller to run Integra software to be *verified* — the gate works against any
+seller, as [the introduction](/introduction) says. This page is narrower: it is about being **served**, by
+a seller that has adopted the weld and therefore checks it.
+</Callout>
+
+## Install
+
+```bash
+npm install @integraledger/agentic-terms @integraledger/lcp-binding-evm-x402
+```
+
+The gate peers the `@integraledger/lcp-*` protocol line at `^0.18.3`, and the binding depends on that same
+line, so your package manager installs **one** copy of it for both — which is the shape that matters here:
+two copies of `lcp-binding-core` in one tree break `instanceof` on its error types.
+
+The envelope (`x402PaymentHeader`, `decodeX402Challenge`, `x402AcceptedEntry`) ships in
+`@integraledger/agentic-terms` from **`0.18.0`**. Earlier versions carry the gate and not this half.
+
+<Callout type="warn">
+The binding holds a chain SDK; the gate deliberately does not, and is held to that by its own dependency
+rules. Keep them as two imports. Nothing in `@integraledger/agentic-terms` ever reaches a chain, which is
+what lets it run unchanged on Node, Bun and Deno — see [runtimes](/runtimes).
+</Callout>
+
+## End to end
+
+<Steps>
+
+<Step>
+
+### The 402, and the advertisement it carries
+
+`decodeX402Challenge` reads the `payment-required` response header — standard padded base64 JSON, the way
+a conformant client does — and hands back `unknown`. It is a counterparty's document, so everything
+downstream validates it rather than trusting it.
+
+The **header**, deliberately, and not the body: the body is a convenience, and reading it would consume a
+stream you may still want.
+
+</Step>
+
+<Step>
+
+### The typed proposal
+
+`parseProposalFromChallenge` turns the challenge into the record the gate decides on, refusing at the
+boundary — a malformed `atrHash`, a non-HTTPS terms URL, carriers that disagree. See
+[x402](/protocols/x402) for what it reads and what it refuses.
+
+</Step>
+
+<Step>
+
+### Verify, then build the authorization inside the signer
+
+This is the join, and it is one line of plumbing.
+
+`transact` reaches your `GatedSigner` on exactly one path — a Proceed — and hands it the fingerprint it
+proved. So the authorization is built **there**, with `nonce = verifiedAtrHash`. A gate that only returned
+a decision would leave you to remember which hash to weld; a signer that is handed it cannot weld the
+wrong one.
+
+</Step>
+
+<Step>
+
+### The envelope
+
+`x402PaymentHeader` takes the challenge as a **required** argument and copies `accepts[0]` off it, so a
+payment cannot be built without having been served an offer, and the entry you present is the entry you
+were served.
+
+⛔ **With one exception, and it is the one to get right.** `assetTransferMethod` is required on the input
+and is **written over** the served entry's `extra.assetTransferMethod` rather than echoed from it. The
+seller does advertise that field — x402 has it ride in `accepts[].extra` — so pass back the value you were
+served. Pass anything else and you present an entry the seller did not offer, on the one field this API
+will not check for you.
+
+</Step>
+
+<Step>
+
+### The same request again
+
+Retry the resource with the value on the `PAYMENT-SIGNATURE` header. That is 402 → pay → 200.
+
+</Step>
+
+</Steps>
+
+## The gate half, whole
+
+```ts
+import {
+  type BuyerPolicy,
+  type GatePorts,
+  type GatedSigner,
+  type X402Authorization,
+  decodeX402Challenge,
+  parseProposalFromChallenge,
+  transact,
+  x402PaymentHeader,
+} from "@integraledger/agentic-terms";
+
+declare const policy: BuyerPolicy; // your caps, jurisdictions, forbidden clauses
+declare const ports: GatePorts; // the guarded fetcher and a clock
+// The next fence is this function: it is where the binding is called.
+declare function authorize(
+  verifiedAtrHash: `0x${string}`,
+  assetTransferMethod: string,
+): Promise<{ authorization: X402Authorization; signature: `0x${string}` }>;
+
+/**
+ * The method the SELLER asked for, read off the challenge and narrowed rather than assumed —
+ * a buyer does not get to assume a counterparty's types. x402 clients default to `eip3009`
+ * when `extra` names none.
+ */
+function servedAssetTransferMethod(challenge: unknown): string {
+  const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const accepts = asRecord(challenge)?.["accepts"];
+  const entry = Array.isArray(accepts) ? asRecord(accepts[0]) : undefined;
+  const method = asRecord(entry?.["extra"])?.["assetTransferMethod"];
+  return typeof method === "string" ? method : "eip3009";
+}
+
+const resource = "https://seller.example/report";
+
+const challenged = await fetch(resource);
+const challenge = decodeX402Challenge(challenged);
+
+// Read ONCE, and handed to both halves. The binding refuses a method that carries no payer
+// nonce; the envelope writes whatever it is given over the served entry. One value, so the
+// two cannot disagree about what is being answered.
+const assetTransferMethod = servedAssetTransferMethod(challenge);
+
+const proposal = parseProposalFromChallenge(challenge, {
+  level: 3,
+  sellerAssurance: "domain-controlled",
+});
+
+// The signer is reached ONLY on Proceed, and the hash it is handed is the one the
+// gate proved. Keep the authorization it built — `transact` returns the signature,
+// and the envelope needs both.
+let authorization: X402Authorization | undefined;
+const signer: GatedSigner = {
+  async sign(verifiedAtrHash) {
+    const authorized = await authorize(verifiedAtrHash, assetTransferMethod);
+    authorization = authorized.authorization;
+    return { signature: authorized.signature };
+  },
+};
+
+const result = await transact(proposal, policy, ports, signer);
+if (result.kind !== "signed" || authorization === undefined)
+  throw new Error("the gate halted before your key — nothing to pay with");
+
+const header = x402PaymentHeader({
+  challenge,
+  authorization,
+  signature: result.signature,
+  paymentIdentifier: "pay_01HZ",
+  assetTransferMethod,
+});
+
+const served = await fetch(resource, {
+  headers: { "PAYMENT-SIGNATURE": header },
+});
+```
+
+## The authorization half
+
+`authorize` above is this. It is the only place a chain SDK appears.
+
+```ts no-check
+import {
+  type X402Proposal,
+  createX402Adapter,
+  getX402Deployment,
+} from "@integraledger/lcp-binding-evm-x402";
+
+declare const payer: string; // your address
+declare const payTo: string; // `accepts[0].payTo`, off the challenge
+declare const amount: string; // `accepts[0].amount`, in token base units
+declare const wallet: { signTypedData(data: unknown): Promise<`0x${string}`> };
+
+const adapter = createX402Adapter(getX402Deployment("base-sepolia"));
+
+async function authorize(
+  verifiedAtrHash: `0x${string}`,
+  assetTransferMethod: string, // what the seller advertised — not a constant
+) {
+  // `nonce = verifiedAtrHash` is applied here, by the binding.
+  const proposed = await adapter.propose(verifiedAtrHash, {
+    from: payer,
+    payTo,
+    amount,
+    validAfter: "0",
+    validBefore: String(Math.floor(Date.now() / 1000) + 600),
+    assetTransferMethod,
+  });
+  // Every refusal on this path is a VALUE, never a throw. This is where a `permit2` or
+  // `erc7710` offer stops, with `x402/asset-transfer-method-unsupported`.
+  if ("refused" in proposed) throw new Error(proposed.detail);
+  const { authorization, typedData } = proposed.value as X402Proposal;
+
+  return { authorization, signature: await wallet.signTypedData(typedData) };
+}
+```
+
+Three things worth reading twice:
+
+- **`propose` returns an outcome, not a value.** `WeldAdapter.propose` is typed `Outcome<unknown>`, so
+  narrow with `"refused" in proposed` and assert `X402Proposal` on the other side. A refusal carries
+  `haltClass`, `code` and `detail`, and is a value you act on.
+- **`authorization` needs no conversion.** The binding's `Eip3009Authorization` satisfies the gate's
+  `X402Authorization` field for field — `from`, `to`, `value`, `validAfter`, `validBefore`, `nonce`. There
+  is no adapter between the two halves, which is the point of both being on this line.
+- **The payer signs the typed data, not the authorization.** The EIP-712 payload is what commits to the
+  nonce, which is what makes this a signature-grade weld rather than a memo.
+
+## Three ways this goes wrong, and what each looks like
+
+### The asset-transfer method is not `eip3009`
+
+x402's exact-EVM scheme defines `eip3009`, `permit2` and `erc7710`. Only the first exposes a
+payer-controlled 32-byte field, so only the first can carry the weld. The binding refuses the other two
+with `x402/asset-transfer-method-unsupported` rather than settling unwelded, and says which of the two
+kinds of wrong it met — a method x402 defines that has no payer nonce, or a name the scheme does not
+define at all.
+
+An **absent** `assetTransferMethod` is not a refusal: x402's scheme says clients default to `eip3009`.
+
+### The EIP-712 domain came from another chain
+
+`tokenName` and `tokenVersion` are the USDC contract's own EIP-712 domain, and they are **not constant
+across deployments** — Base Sepolia and Monad report `USDC`, Base mainnet and Avalanche report
+`USD Coin`. A config copied from one chain to another produces a wrong domain separator, and every
+authorization signed under it fails at the token: the signature is well-formed and simply does not recover
+to the payer, so the seller sees nothing useful.
+
+Use `getX402Deployment(name)`, which carries values read from each deployed contract rather than inherited
+from a sibling. It throws on a name it has not read, because there is no sane default. A deployment absent
+from it is not refused — it just has not been read off-chain by us; supply your own `X402AdapterConfig`.
+
+### The same ATR is paid twice
+
+An EIP-3009 nonce is one-time use. Two payments welded to the same `atrHash` therefore carry the same
+nonce, and the token refuses the second — the rest of the authorization may well differ, a later
+`validBefore` among it, but the nonce is the field the token holds unique. The refusal is the **token's**,
+so what comes back is a reverted transfer rather than anything that names a terms document.
+
+The binding's own manifest states the rule: the `atrHash` welded as the nonce **must be per-transaction**.
+Mint a record per transaction and the case does not arise.
+
+## After it settles
+
+The weld is recoverable from the chain by anyone: the token's own `AuthorizationUsed` log carries the
+nonce, and the nonce is the `atrHash`. `verifySettled` in `@integraledger/agentic-terms` turns a settled
+reference into a transaction record through an injected binding adapter — see
+[verify before sign](/verify-before-sign#post-settlement-verification). Nothing about that step requires
+either party to keep a copy of anything.
+
+## Which `accepts` entry gets paid
+
+`accepts` is a list of **alternatives**, and both halves of this page take **`accepts[0]`** —
+`parseProposalFromChallenge` does, and so does `x402PaymentHeader`. Neither takes an index, and neither
+picks for you.
+
+⇒ To pay a different entry, **narrow `accepts` to it before either call**, exactly as
+[x402](/protocols/x402#the-first-requirement-and-why-the-gate-does-not-choose) says for the gate. Both
+then answer the same offer, and the entry you present is still one the seller served. Reaching into
+`accepts[2]` and hoping is not an option this code offers.
+
+## What this page does not decide
+
+Whether the price is good, when a quote has gone stale, and which rail to use. Those are agent operations,
+and the gate has [no opinion on any of them](/introduction#what-it-is-not) — deliberately.
