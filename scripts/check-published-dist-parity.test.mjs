@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   compare,
+  DIST_FLOOR,
   distParityReport,
   hashTree,
   publishedDist,
@@ -69,7 +70,10 @@ test("⭐ THE CONTROL — entries that agree with the tree are parity, and the f
   });
   assert.deepEqual(r.drift, []);
   assert.deepEqual(r.faults, []);
-  assert.equal(r.compared, 3);
+  // Every publishable package in the tree has a faithful fixture here, so a healthy run compares all of
+  // them and `ahead` is zero — which is what makes this the control for the live case further down.
+  assert.equal(r.compared, DIST_FLOOR);
+  assert.equal(r.ahead, 0);
   assert.equal(verdict(r).kind, "parity");
 });
 
@@ -253,22 +257,50 @@ test("⛔ THE FLOOR — a package leaving the comparable set must not leave a gr
   );
 });
 
-test("⚠️ A DECLARED PACKAGE AWAITING ITS FIRST PUBLISH READS `unmeasured`, AND SO DOES AN ORDINARY RELEASE", () => {
-  // ⛔ PINNING A DEFECT, NOT BLESSING ONE. The sibling gate subtracts `ahead` precisely so a version that
-  // has honestly left the comparable set for the length of one publish is not read as a subject going
-  // missing; this gate has no such arm, so every release window — and the whole window between a new
-  // package landing and its first publish — exits 2 here. The note this file prints for that state says
-  // it "gives no opinion on it", and the verdict gives one anyway. Asserted so that a change which adds
-  // the allowance has to come past this test and delete it deliberately.
+test("⛔⛔ `ahead` IS NOT `skipped` — a release in flight is parity, a package that LEFT is not", () => {
+  // ⭐⭐ THE DEFECT THIS PINS WAS LIVE UNTIL 2026-09-16, and the LIVE control below is what found it — no
+  // fixture in this file could. Both states used to land in `skipped`, which cleared the equality arm and
+  // was then refused by `compared < floor`. So every release window, from `changeset version` landing
+  // until the publish, exited 2 — while the run's own note for that state said this gate "gives no
+  // opinion on it". The note and the verdict disagreed, and the workflow reads the verdict.
   assert.equal(
-    verdict({ drift: [], faults: [], skipped: ["new"], compared: 3 }).kind,
-    "unmeasured",
-    "a declared package that is not on the registry yet",
+    verdict({ drift: [], faults: [], skipped: [], ahead: 1, compared: 3 }).kind,
+    "parity",
+    "a declared package that is not on the registry yet — every new package, until its first publish",
   );
   assert.equal(
-    verdict({ drift: [], faults: [], skipped: ["bumped"], compared: 3 }).kind,
+    verdict({ drift: [], faults: [], skipped: [], ahead: 2, compared: 2 }).kind,
+    "parity",
+    "an ordinary release in flight: the fixed group moves two packages at once",
+  );
+  // ⛔ AND THE ALLOWANCE MUST NOT SWALLOW THE THING THE FLOOR IS FOR. A package that LEFT the set does not
+  // increment `ahead`, so it still refuses — which is the whole point of holding the floor EQUAL.
+  assert.equal(
+    verdict({ drift: [], faults: [], skipped: [], ahead: 0, compared: 3 }).kind,
+    "stale-floor",
+    "one package simply absent is a stale declaration, not a release",
+  );
+  // ⛔ AND `skipped` IS NOT `ahead` EITHER, WHICH IS THE HALF THAT IS EASY TO GET WRONG IN THE OTHER
+  // DIRECTION. ⭐ Written here as `parity` and driven; the gate answered `unmeasured` and the gate is
+  // right. A package whose PUBLISHED src disagrees with the tree is a subject genuinely lost — the
+  // sibling gate reds on it as drift — so this gate must not print a tick over what remains. Only
+  // "not on the registry yet" is a subject that has honestly left for the length of one publish.
+  assert.equal(
+    verdict({
+      drift: [],
+      faults: [],
+      skipped: ["src-differs"],
+      ahead: 1,
+      compared: 2,
+    }).kind,
     "unmeasured",
-    "and an ordinary release in flight is the same shape",
+    "the third accounting is NOT an allowance: it is the sibling gate's finding, and it loses coverage",
+  );
+  // ⛔ ZERO COMPARED IS STILL UNMEASURED, HOWEVER WELL ACCOUNTED FOR — `- ahead` must not reach this.
+  assert.equal(
+    verdict({ drift: [], faults: [], skipped: [], ahead: 4, compared: 0 }).kind,
+    "unmeasured",
+    "a whole release in flight opens no tarball, and a tick there is the empty-subject-set defect",
   );
 });
 
@@ -317,7 +349,21 @@ test("⭐⭐ THE LIVE CONTROL — the REAL registry, the REAL tarballs, a REAL r
     [],
     `the live run found drift: ${JSON.stringify(r.drift)}`,
   );
-  assert.equal(r.compared, 3);
+  // ⛔⛔ A FLOOR PLUS AN ACCOUNTING, NOT A BARE EQUALITY — and this pairing is what caught the `ahead`
+  // defect. `compared` legitimately moves the day a newly declared package first publishes; `compared +
+  // ahead + skipped` does not. A bare `assert.equal(r.compared, 3)` went red the moment a fourth package
+  // was DECLARED, which is a true fact about the registry stated as a failure of the tree — and the fix
+  // for it, under deadline, is to edit the number rather than read the verdict. That is how a live
+  // control becomes a fixture.
+  assert.ok(
+    r.compared >= 3,
+    `the live run compared ${r.compared} package(s) — it must open real tarballs to mean anything`,
+  );
+  assert.equal(
+    r.compared + r.ahead + r.skipped.length,
+    DIST_FLOOR,
+    "every declared package accounted for, against the real registry",
+  );
   assert.equal(verdict(r).kind, "parity");
 });
 

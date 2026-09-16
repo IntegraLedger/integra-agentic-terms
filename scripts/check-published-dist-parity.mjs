@@ -57,21 +57,28 @@ import {
  *
  * `M` 2026-09-16: 4, when `connector-conformance` joined the publishable set.
  *
- * ⚠️⚠️ AND RAISING IT IS NOT ENOUGH ON ITS OWN, WHICH IS WORTH READING BEFORE THE NEXT PACKAGE IS ADDED.
- * This gate has no equivalent of the sibling's `- ahead`, so a package that is DECLARED and not yet on the
- * registry is counted in `skipped`, clears the equality arm, and is then refused by `compared < floor` as
- * `unmeasured`. Driven rather than reasoned, at this commit:
+ * ⛔⛔ AND RAISING IT EXPOSED A DEFECT IN `verdict` THAT HAD TO BE FIXED IN THE SAME CHANGE, because until
+ * it was, this gate could not carry a package that had not been published yet — which every new package is.
+ * `M` 2026-09-16, driven rather than reasoned:
  *
  *     {skipped: [], compared: 3, floor: 3}       -> parity        exit 0
  *     {skipped: ["new"], compared: 3, floor: 3}  -> stale-floor   exit 4
  *     {skipped: ["new"], compared: 3, floor: 4}  -> unmeasured    exit 2
  *     {skipped: ["a"],   compared: 2, floor: 3}  -> unmeasured    exit 2   <- an ORDINARY release window
  *
- * ⇒ The last line is the point: this is not a cost the new package introduced. Every release window, from
- * `changeset version` landing until the publish, already reads `unmeasured` here — while this file's own
- * `notes` say of exactly that state that "a release in progress is not a lost subject, and this gate gives
- * no opinion on it". The note and the verdict disagree, and the verdict is what the workflow reads.
- * ⛔ Fixing it is a change to what this gate MEANS, not a declaration, so it is filed rather than done here.
+ * ⇒ The last line is what makes it a defect rather than a cost of the new package. From `changeset version`
+ * landing until the publish, EVERY release window read `unmeasured` here — while this file's own `notes`
+ * said of exactly that state that "a release in progress is not a lost subject, and this gate gives no
+ * opinion on it". The note and the verdict disagreed, and the verdict is what the workflow reads.
+ *
+ * ⭐ It was caught by the LIVE control in the drive, not by a fixture: `assert.equal(verdict(r).kind,
+ * "parity")` against the real registry answered `unmeasured` the moment a fourth package was declared.
+ *
+ * ⇒ `ahead` is now counted SEPARATELY from `skipped`, exactly as the sibling gate counts it, and the
+ * shortfall arm subtracts it. The two are not one bucket: `ahead` is "not on the registry yet", which is a
+ * subject that has honestly left for the length of one publish; `skipped` is "published source disagrees
+ * with the tree", which is the sibling gate's finding and a state this gate deliberately gives no dist
+ * verdict on. Merging them is what let the equality arm pass and the shortfall arm refuse.
  */
 export const DIST_FLOOR = 4;
 
@@ -181,6 +188,10 @@ export async function distParityReport({
   const skipped = [];
   const notes = [];
   let compared = 0;
+  // ⛔ NOT `skipped`. See the floor's docblock: a version that is not on the registry yet is a different
+  // state from one this gate declined to judge, and counting them in one bucket is what made an ordinary
+  // release window read as a subject going missing.
+  let ahead = 0;
 
   for (const { dir, pkg } of publishableManifests(manifests)) {
     const { name, version } = pkg;
@@ -192,7 +203,7 @@ export async function distParityReport({
         notes.push(
           `${name}@${version} is not published — a release in progress is not a lost subject, and this gate gives no opinion on it.`,
         );
-        skipped.push(name);
+        ahead += 1;
         continue;
       }
       entries = await registry.contents(name, version, v.dist?.tarball);
@@ -257,7 +268,7 @@ export async function distParityReport({
       );
   }
 
-  return { drift, faults, skipped, notes, compared };
+  return { drift, faults, skipped, notes, compared, ahead };
 }
 
 /**
@@ -269,14 +280,20 @@ export function verdict({
   faults,
   skipped,
   compared,
+  ahead = 0,
   floor = DIST_FLOOR,
 }) {
   if (drift.length > 0) return { code: 1, kind: "drift" };
   if (faults.length > 0) return { code: 3, kind: "fault" };
   if (compared === 0) return { code: 2, kind: "unmeasured" };
-  if (compared + skipped.length !== floor)
+  // ⛔ EVERY DECLARED PACKAGE IS ACCOUNTED FOR, in one of three ways — compared, awaiting a publish, or
+  // deliberately not judged. A total that does not reach the floor means one of them is not there at all.
+  if (compared + skipped.length + ahead !== floor)
     return { code: 4, kind: "stale-floor" };
-  if (compared < floor) return { code: 2, kind: "unmeasured" };
+  // ⛔ `- ahead` is what keeps a release from being the red, and what lets a package that has landed but
+  // never published be carried at all. A package that has LEFT the set still lands here, because leaving
+  // does not increment `ahead`.
+  if (compared < floor - ahead) return { code: 2, kind: "unmeasured" };
   return { code: 0, kind: "parity" };
 }
 
@@ -318,7 +335,9 @@ export async function main({
   }
   if (v.kind === "stale-floor") {
     console.error(
-      `\n✕ check:published-dist-parity — the floor is ${DIST_FLOOR} and this run accounted for ${report.compared + report.skipped.length}. ` +
+      `\n✕ check:published-dist-parity — the floor is ${DIST_FLOOR} and this run accounted for ` +
+        `${report.compared + report.skipped.length + report.ahead} (${report.compared} compared, ` +
+        `${report.ahead} awaiting a publish, ${report.skipped.length} not judged). ` +
         "⛔ Raise DIST_FLOOR when a package joins; never lower it to make a package that left go quiet.\n",
     );
     return v.code;
@@ -332,7 +351,9 @@ export async function main({
   }
 
   console.log(
-    `✓ check:published-dist-parity — ${report.compared} published dist/ tree(s) rebuilt from their own source and matched byte for byte.`,
+    `✓ check:published-dist-parity — ${report.compared} published dist/ tree(s) rebuilt from their own source ` +
+      `and matched byte for byte, of ${DIST_FLOOR} declared (${report.ahead} awaiting a publish, ` +
+      `${report.skipped.length} not judged here).`,
   );
   return 0;
 }

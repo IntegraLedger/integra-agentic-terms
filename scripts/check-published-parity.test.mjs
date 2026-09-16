@@ -834,7 +834,7 @@ test("⛔⛔ STALE FLOOR EXITS 4 FROM THE PROCESS — the arm `main` did not hav
       4,
       `expected 4, got ${out.status}: ${out.stdout}${out.stderr}`,
     );
-    assert.match(out.stderr, /declares 4 .*records 3/s);
+    assert.match(out.stderr, /declares 5 .*records 4/s);
     // ⛔ AND IT MUST NOT HAVE PRINTED THE TICK. An exit code nobody reads beside a success line on stdout
     // is how a red gate is reported as green by a human reading the log.
     assert.doesNotMatch(out.stdout, /every published version matches/);
