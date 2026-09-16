@@ -98,9 +98,16 @@ const ALWAYS_PACKED = ["README.md", "package.json"];
 const NOT_WALKED = new Set(["dist"]);
 
 /**
- * ⛔ Raise as packages and surfaces are added; never lower it to make a deletion pass. 44 files today
- * across three publishable packages, cross-checked against `npm pack --dry-run --json` for each of them.
- * The floor's job is the walk collapsing — losing either large package drops the count to 25.
+ * ⛔ Raise as packages and surfaces are added; never lower it to make a deletion pass. The floor's job is
+ * the walk COLLAPSING: losing either large package takes the count well under it.
+ *
+ * ⚠️ WHAT THIS COMMENT NO LONGER STATES, AND WHY. It used to read "44 files today across three publishable
+ * packages, cross-checked against `npm pack --dry-run --json`". Both numbers went stale the day a fourth
+ * package landed, and a stale number in a comment is worse than none: a reader checking the floor against
+ * it concludes the walk has widened when it has not. ⇒ The count a run actually saw is RENDERED by the
+ * success line below, per package and per surface, which is the only copy that cannot go stale. The
+ * cross-check against `npm pack --dry-run --json` is how the walk was established and is still the way to
+ * re-establish it; it is a method, and it keeps.
  */
 const FILE_FLOOR = 30;
 

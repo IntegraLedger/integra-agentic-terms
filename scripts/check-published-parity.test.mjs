@@ -512,7 +512,7 @@ test("the five verdicts are distinguishable, and drift outranks a fault", () => 
     verdict({ drift: [], faults: [], checked: 3, declared: 3, floor: 3 }).code,
     0,
   );
-  assert.equal(COMPARABLE_FLOOR, 3);
+  assert.equal(COMPARABLE_FLOOR, 4);
 });
 
 test("⛔⛔ ZERO COMPARED IS UNMEASURED HOWEVER WELL ACCOUNTED FOR — the excuse must not become the defect", () => {
@@ -745,8 +745,8 @@ function runGate({ root, origin }) {
 test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workflow reads the code and not the return value", async () => {
   // ⛔ THE FIXTURE MUST DECLARE WHAT `COMPARABLE_FLOOR` RECORDS, or the declaration check fires first and
   // every other end-to-end assertion below measures that instead of what it names.
-  const three = () => ({
-    extra: ["b", "c"].map((dir) => ({
+  const four = () => ({
+    extra: ["b", "c", "d"].map((dir) => ({
       dir,
       pkg: {
         name: `@x/${dir}`,
@@ -758,7 +758,7 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
   });
 
   // parity -> 0
-  const { root } = fixture(three());
+  const { root } = fixture(four());
   const reg = await startRegistry({ srcFiles: SRC });
   try {
     const ok = await runGate({ root, origin: reg.origin });
@@ -771,14 +771,14 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
   }
 
   // ⛔ a shortfall with nothing awaiting publish -> 2, UNMEASURED
-  const lost = fixture(three());
+  const lost = fixture(four());
   const lostReg = await startRegistry({ srcFiles: SRC, versionless: ["@x/c"] });
   try {
     const out = await runGate({ root: lost.root, origin: lostReg.origin });
     assert.equal(out.status, 2, `expected 2, got ${out.status}: ${out.stderr}`);
     assert.match(
       out.stderr,
-      /2 package\(s\) were compared; 3 are declared and 0 await/,
+      /3 package\(s\) were compared; 4 are declared and 0 await/,
     );
     assert.doesNotMatch(out.stdout, /every published version matches/);
   } finally {
@@ -787,7 +787,7 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
   }
 
   // drift -> 1
-  const d = fixture(three());
+  const d = fixture(four());
   const short = { ...SRC };
   delete short["x402-envelope.ts"];
   const driftReg = await startRegistry({ srcFiles: short });
@@ -801,7 +801,7 @@ test("⛔⛔ THE PROCESS EXITS THE CODE — proved end to end, because the workf
   }
 
   // fault -> 3 (nothing listening on that port)
-  const f = fixture(three());
+  const f = fixture(four());
   try {
     const out = await runGate({ root: f.root, origin: "http://127.0.0.1:1" });
     assert.equal(out.status, 3, `expected 3, got ${out.status}: ${out.stderr}`);
@@ -816,7 +816,7 @@ test("⛔⛔ STALE FLOOR EXITS 4 FROM THE PROCESS — the arm `main` did not hav
   // with code 4 and 23 unit tests agreed, while `main` tested three kinds by name and let anything else
   // reach the success line — so the PROCESS printed a tick and exited 0. The plant against the live
   // registry saw it; nothing that drove `verdict` could. ⇒ Drive the process, not the function it calls.
-  const extra = ["b", "c", "d"].map((dir) => ({
+  const extra = ["b", "c", "d", "e"].map((dir) => ({
     dir,
     pkg: {
       name: `@x/${dir}`,
@@ -834,7 +834,7 @@ test("⛔⛔ STALE FLOOR EXITS 4 FROM THE PROCESS — the arm `main` did not hav
       4,
       `expected 4, got ${out.status}: ${out.stdout}${out.stderr}`,
     );
-    assert.match(out.stderr, /declares 4 .*records 3/s);
+    assert.match(out.stderr, /declares 5 .*records 4/s);
     // ⛔ AND IT MUST NOT HAVE PRINTED THE TICK. An exit code nobody reads beside a success line on stdout
     // is how a red gate is reported as green by a human reading the log.
     assert.doesNotMatch(out.stdout, /every published version matches/);

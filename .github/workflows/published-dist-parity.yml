@@ -11,6 +11,16 @@ name: published-dist-parity
 # `check-hermetic-tests.mjs` states the consequence — "a gate that reaches a third party fails red for a
 # reason that is not in the tree."
 #
+# ⛔⛔ AND THIS WORKFLOW IS NOW THE ONLY PLACE THE LIVE MEASUREMENT HAPPENS, which the sentence above always
+# claimed and was not true. `scripts/check-published-dist-parity.test.mjs` carried a control that fetched
+# the real tarballs from npmjs, and that drive runs inside `pnpm test:scripts` — stage 17 of `verify`. So
+# the third-party fetch this header says is not in `verify` was in `verify`, and
+# `hermetic-tests.declarations.json` asserted the opposite as a measurement while `check:hermetic-tests`
+# stayed green. ⇒ The control moved HERE, where a red has somewhere to go: this job maps exit 2 onto a
+# deduplicated, self-closing NOTHING-MEASURED issue, which is more than an assertion in a drive could do.
+# ⚠️ The cost is stated rather than hidden: drift in a published `dist/` is now found within six hours
+# instead of on the next `verify` — the same latency the sibling axis has always had.
+#
 # The minute is offset off the hour and off both siblings (:23 protocol, :37 terms parity, :53 chart). A
 # published version is immutable, so an overlap could not make any of them ambiguous about what it saw;
 # the offset is only to avoid queueing behind everything GitHub runs at :00.

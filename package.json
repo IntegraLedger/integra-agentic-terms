@@ -45,6 +45,7 @@
     "@biomejs/biome": "2.5.12",
     "@changesets/cli": "3.0.2",
     "@integraledger/agentic-terms": "workspace:*",
+    "@integraledger/connector-conformance": "workspace:*",
     "@integraledger/lcp-conformance": "0.18.3",
     "@integraledger/lcp-mcp-server": "workspace:*",
     "@integraledger/seller-mcp": "workspace:*",

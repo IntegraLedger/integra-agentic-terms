@@ -54,8 +54,53 @@ import {
  * merely below it, for the reason the sibling gate states: "raise it as packages start shipping" is a
  * number that only ever moves in the flattering direction, and a package that silently LEFT the set would
  * keep a green behind it.
+ *
+ * `M` 2026-09-16: 4, when `connector-conformance` joined the publishable set.
+ *
+ * ⛔⛔ AND RAISING IT EXPOSED A DEFECT IN `verdict` THAT HAD TO BE FIXED IN THE SAME CHANGE, because until
+ * it was, this gate could not carry a package that had not been published yet — which every new package is.
+ * `M` 2026-09-16, driven rather than reasoned:
+ *
+ *     {skipped: [], compared: 3, floor: 3}       -> parity        exit 0
+ *     {skipped: ["new"], compared: 3, floor: 3}  -> stale-floor   exit 4
+ *     {skipped: ["new"], compared: 3, floor: 4}  -> unmeasured    exit 2
+ *     {skipped: ["a"],   compared: 2, floor: 3}  -> unmeasured    exit 2   <- an ORDINARY release window
+ *
+ * ⇒ The last line is what makes it a defect rather than a cost of the new package. From `changeset version`
+ * landing until the publish, EVERY release window read `unmeasured` here — while this file's own `notes`
+ * said of exactly that state that "a release in progress is not a lost subject, and this gate gives no
+ * opinion on it". The note and the verdict disagreed, and the verdict is what the workflow reads.
+ *
+ * ⭐ It was caught by the LIVE control in the drive, not by a fixture: `assert.equal(verdict(r).kind,
+ * "parity")` against the real registry answered `unmeasured` the moment a fourth package was declared.
+ *
+ * ⇒ `ahead` is now counted SEPARATELY from `skipped`, and the shortfall arm subtracts it. The two are not
+ * one bucket: `ahead` is "not on the registry yet", which is a subject that has honestly left for the
+ * length of one publish; `skipped` is "published source disagrees with the tree", which is the sibling
+ * gate's finding and a state this gate deliberately gives no dist verdict on. Merging them is what let the
+ * equality arm pass and the shortfall arm refuse.
+ *
+ * ⛔⛔ AND THE FIRST CUT OF THAT FIX SHIPPED A FALSE GREEN, WHICH IS WHY THERE ARE **THREE** ACCOUNTINGS
+ * AND NOT TWO. This docblock said "exactly as the sibling gate counts it" and that sentence was FALSE.
+ * `NetworkRegistry.metadata` renders a NAME-level 404 as `{versions: {}}`, so a package npmjs has NEVER
+ * heard of — never published, **unpublished, or renamed** — arrived here as `v === undefined` and was
+ * counted as `ahead`, and `ahead` is the one bucket the shortfall arm forgives. Driven with a stub
+ * registry, at the commit that introduced it:
+ *
+ *     the new package answers a NAME 404, the other three are faithful
+ *       -> compared 3, ahead 1, skipped 0   -> parity      exit 0     ⛔ THE FALSE GREEN
+ *     the same tree, before the `ahead` fix -> unmeasured  exit 2
+ *     the sibling gate, same tree           -> unmeasured  exit 2
+ *
+ * ⇒ `npm unpublish` or a rename would have left the dist axis GREEN INDEFINITELY, while the src axis
+ * correctly opened its NOTHING-MEASURED issue for the identical state. ⭐ The sibling does not have this
+ * defect because it tests `Object.keys(versions).length === 0` FIRST and does not count that as `ahead` —
+ * its note says in as many words that a 404 "is what the floor exists to catch".
+ *
+ * ⇒ So a name npmjs has never served is `skipped`: accounted for, named, and NOT forgiven. Only "the name
+ * exists and this version is not on it yet" is `ahead`.
  */
-export const DIST_FLOOR = 3;
+export const DIST_FLOOR = 4;
 
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
@@ -163,18 +208,37 @@ export async function distParityReport({
   const skipped = [];
   const notes = [];
   let compared = 0;
+  // ⛔ NOT `skipped`. See the floor's docblock: a version that is not on the registry yet is a different
+  // state from one this gate declined to judge, and counting them in one bucket is what made an ordinary
+  // release window read as a subject going missing.
+  let ahead = 0;
 
   for (const { dir, pkg } of publishableManifests(manifests)) {
     const { name, version } = pkg;
     let entries;
     try {
       const meta = await registry.metadata(name);
-      const v = meta.versions?.[version];
+      const versions = meta.versions ?? {};
+      // ⛔⛔ THE NAME FIRST, AND THE VERSION SECOND. `NetworkRegistry` renders a NAME-level 404 as an empty
+      // `versions`, so asking only about the version cannot tell "we have not published this one yet"
+      // from "npmjs has never heard of this package" — and the second is a subject that LEFT, which is
+      // exactly what the floor is for. See the docblock on DIST_FLOOR: conflating them shipped a false
+      // green on this gate.
+      if (Object.keys(versions).length === 0) {
+        notes.push(
+          `${name} — never published, so there is no dist/ to compare. ⚠️ A registry 404 for the NAME ` +
+            "reads the same way here, so a package that was unpublished or renamed arrives as this note " +
+            "— which is what the floor exists to catch. This is not forgiven and never prints a tick.",
+        );
+        skipped.push(name);
+        continue;
+      }
+      const v = versions[version];
       if (v === undefined) {
         notes.push(
           `${name}@${version} is not published — a release in progress is not a lost subject, and this gate gives no opinion on it.`,
         );
-        skipped.push(name);
+        ahead += 1;
         continue;
       }
       entries = await registry.contents(name, version, v.dist?.tarball);
@@ -239,7 +303,7 @@ export async function distParityReport({
       );
   }
 
-  return { drift, faults, skipped, notes, compared };
+  return { drift, faults, skipped, notes, compared, ahead };
 }
 
 /**
@@ -251,14 +315,20 @@ export function verdict({
   faults,
   skipped,
   compared,
+  ahead = 0,
   floor = DIST_FLOOR,
 }) {
   if (drift.length > 0) return { code: 1, kind: "drift" };
   if (faults.length > 0) return { code: 3, kind: "fault" };
   if (compared === 0) return { code: 2, kind: "unmeasured" };
-  if (compared + skipped.length !== floor)
+  // ⛔ EVERY DECLARED PACKAGE IS ACCOUNTED FOR, in one of three ways — compared, awaiting a publish, or
+  // deliberately not judged. A total that does not reach the floor means one of them is not there at all.
+  if (compared + skipped.length + ahead !== floor)
     return { code: 4, kind: "stale-floor" };
-  if (compared < floor) return { code: 2, kind: "unmeasured" };
+  // ⛔ `- ahead` is what keeps a release from being the red, and what lets a package that has landed but
+  // never published be carried at all. A package that has LEFT the set still lands here, because leaving
+  // does not increment `ahead`.
+  if (compared < floor - ahead) return { code: 2, kind: "unmeasured" };
   return { code: 0, kind: "parity" };
 }
 
@@ -300,7 +370,9 @@ export async function main({
   }
   if (v.kind === "stale-floor") {
     console.error(
-      `\n✕ check:published-dist-parity — the floor is ${DIST_FLOOR} and this run accounted for ${report.compared + report.skipped.length}. ` +
+      `\n✕ check:published-dist-parity — the floor is ${DIST_FLOOR} and this run accounted for ` +
+        `${report.compared + report.skipped.length + report.ahead} (${report.compared} compared, ` +
+        `${report.ahead} awaiting a publish, ${report.skipped.length} not judged). ` +
         "⛔ Raise DIST_FLOOR when a package joins; never lower it to make a package that left go quiet.\n",
     );
     return v.code;
@@ -314,7 +386,9 @@ export async function main({
   }
 
   console.log(
-    `✓ check:published-dist-parity — ${report.compared} published dist/ tree(s) rebuilt from their own source and matched byte for byte.`,
+    `✓ check:published-dist-parity — ${report.compared} published dist/ tree(s) rebuilt from their own source ` +
+      `and matched byte for byte, of ${DIST_FLOOR} declared (${report.ahead} awaiting a publish, ` +
+      `${report.skipped.length} not judged here).`,
   );
   return 0;
 }

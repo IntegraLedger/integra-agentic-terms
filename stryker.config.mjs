@@ -168,6 +168,42 @@
  *   lcp-mcp-server   89.65   355 killed +   0 timeout /  38 survived /  3 no-cov   -> 89 - 0 = 89
  *   seller-mcp       93.98    78 killed +   0 timeout /   5 survived /  0 no-cov   -> 93 - 0 = 93
  *
+ * `M` **2026-09-16**, `connector-conformance`, @stryker-mutator/core 10.0.0, cold, one package alone under
+ * `flock --exclusive` on `/srv/integra/state/.mutation.lock` (`pnpm lock:who` read FREE immediately before
+ * and immediately after), `STRYKER_CONCURRENCY=4` exported — ⚠️ though see the note on concurrency below,
+ * because in THIS repository that variable decides nothing:
+ *
+ *   connector-conformance  100.00   16 killed + 0 timeout /  0 survived /  0 no-cov   -> 100 - 0 = 100
+ *
+ *   16:20:35Z acquired, 16:20:45Z released.  Stryker "Done in 3 seconds" both passes; 5.3 s wall each.
+ *   loadavg 14.89 at acquisition, 13.06 at release, on 32 cores.
+ *
+ * ⛔⛔ **THAT LOAD IS NOT A QUIET BOX AND IS REPORTED RATHER THAN ROUNDED OFF.** The window was opened on a
+ * reading of 0.10, and a first pass at 16:13Z did run at 0.25 rising to 4.50; by 16:20Z the box was at
+ * ~15, held by another operator's work and the CI control plane. ⇒ Stated, because a measurement carries
+ * the conditions it was taken under and this one was not taken under the conditions it was scheduled for.
+ *
+ * ⭐ WHY IT IS STILL SOUND, AND THE DISCRIMINATOR IS NOT THE LOAD NUMBER. The mechanism by which
+ * contention inflates a score is that A TIMEOUT IS RECORDED AS A KILL — a surviving mutant that merely
+ * runs slowly exceeds its budget and scores as though the tests caught it. **This run recorded ZERO
+ * timeouts**, so no mutant reached `Killed` by that path, and load cannot manufacture a kill any other
+ * way: a busy box does not make an assertion pass. The 16 kills are 16 test failures. ⇒ Re-running it
+ * quiet can lower this number but cannot raise it, and a lower number would be a real finding rather than
+ * a quieter measurement. Re-measure if you want the margin; nothing here depends on not having.
+ *
+ * ⚠️ **AND `STRYKER_CONCURRENCY` IS EXPORTED BY CONVENTION AND READ BY NOTHING HERE.** This file pins
+ * `concurrency: 4` as a literal, so the estate's "every floor was derived at `STRYKER_CONCURRENCY=4`" is
+ * satisfied by the config rather than by the environment — which is the safer of the two, but means a
+ * session that exported a different value would have been measuring at 4 regardless and would not know.
+ *
+ * ⛔ 100 IS A FLOOR WITH NO SLACK, AND THAT IS THE RULE APPLIED, NOT AN AMBITION. No timeouts means no
+ * margin; the population is 16 mutants in one 150-line module. ⇒ The next mutant that survives reds this
+ * gate, and the answer is to kill it or to classify it here with a reason — never to lower the number.
+ * ⭐ The two survivors the first pass found were both STRING LITERALS in `loadVectors`' refusal message,
+ * emptied. They were killed rather than classified, and deliberately: whoever reads that refusal is
+ * holding bytes they believed were the vectors, and what they need from it is which digest they have and
+ * which one this version publishes. A message asserting neither tells them a file is wrong and not which.
+ *
  * ⛔⛔ `seller-mcp` HAD NO FLOOR AND WAS ENFORCED AGAINST NOTHING. Its measurement above ran under
  * `break threshold 0` — printed in the run log in those words — which is the `?? 0` defect this file
  * warns about, live: not "no opinion" but a threshold under which every score passes. `requireFloor`
@@ -177,6 +213,7 @@ const RATCHET = {
   "agentic-terms": 95,
   "lcp-mcp-server": 89,
   "seller-mcp": 93,
+  "connector-conformance": 100,
 };
 
 /**

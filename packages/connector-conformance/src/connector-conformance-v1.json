@@ -1,0 +1,293 @@
+{
+  "conformanceVersion": 1,
+  "contractVersion": 1,
+  "signingStringShape": "<t>.<label>.<rawBody>",
+  "labels": {
+    "mint": "connector/mint",
+    "observe": "connector/observe"
+  },
+  "derivedFrom": {
+    "groups": [
+      "A",
+      "B",
+      "C"
+    ],
+    "operations": [
+      "mint",
+      "observe"
+    ],
+    "seams": [
+      "pricing",
+      "negotiation",
+      "risk",
+      "accept-decline"
+    ]
+  },
+  "count": 22,
+  "vectors": [
+    {
+      "id": "group-A-mint-accepts",
+      "why": "a well-formed group-A mint, signed for the endpoint it arrived on",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=d91b74e7f6e983fb5008fd26f536f27bef1fd86214fea51e4818bf9a0f616473",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "accept",
+      "rejection": null
+    },
+    {
+      "id": "group-B-mint-accepts",
+      "why": "a well-formed group-B mint, signed for the endpoint it arrived on",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-B\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"cart-and-checkout-validation-function\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":false,\"reason\":\"the validation function returns an ordered list of errors and a target field, with no mechanism to write data or modify cart state\",\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=da5d249d3ec35229b5d3a8627e9eaeb77277901bb61531e1b214cc0188a05a44",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "accept",
+      "rejection": null
+    },
+    {
+      "id": "group-C-mint-accepts",
+      "why": "a well-formed group-C mint, signed for the endpoint it arrived on",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-C\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"api-extension\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"api-extension\",\"runsBeforePersistence\":true,\"field\":\"legalContextAtrHash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=9ccd44e0e4aeac1647a629173415c7f5d6e72d363ab7ff0f3fa28700ca65de47",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "accept",
+      "rejection": null
+    },
+    {
+      "id": "observe-accepts",
+      "why": "a well-formed observe, after the host persisted the order",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "observe",
+      "rawBody": "{\"version\":1,\"operation\":\"observe\",\"requestId\":\"conformance-observe\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"atrHash\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"persistedOrderRef\":\"1042\"}}",
+      "signatureHeader": "t=1786751785,v1=fa2e83acf41e68f6a269204aeadc3112c1cd8ee356ee9f184d2597110119cca7",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "accept",
+      "rejection": null
+    },
+    {
+      "id": "raw-bytes-signed-not-reserialised",
+      "why": "the HMAC covers the RAW body, not a re-serialised one — sign the exact bytes you send. This body is pretty-printed and carries `/` and a non-ASCII character, so a port that re-serialises before signing computes a different HMAC",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\n \"version\": 1,\n \"operation\": \"mint\",\n \"requestId\": \"conformance-raw-bytes\",\n \"sentAt\": \"2026-08-30T09:16:25Z\",\n \"payload\": {\n  \"offerId\": \"cart-1042\",\n  \"price\": {\n   \"amount\": \"4999\",\n   \"unit\": \"usd-cents\"\n  },\n  \"orderDocRef\": \"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\n  \"bindingMoment\": {\n   \"gate\": {\n    \"present\": true,\n    \"name\": \"checkout_process\",\n    \"runsBeforePersistence\": true,\n    \"source\": {\n     \"kind\": \"pinned\",\n     \"document\": \"host-docs.example/hook-reference — récupéré\",\n     \"pin\": \"2026-08-16\"\n    }\n   },\n   \"write\": {\n    \"present\": true,\n    \"name\": \"checkout_create_order\",\n    \"runsBeforePersistence\": true,\n    \"field\": \"_legal_context_atr_hash\",\n    \"reachesOrder\": true,\n    \"source\": {\n     \"kind\": \"pinned\",\n     \"document\": \"host-docs.example/hook-reference — récupéré\",\n     \"pin\": \"2026-08-16\"\n    }\n   }\n  }\n }\n}",
+      "signatureHeader": "t=1786751785,v1=09eb25e87e2633b1e5658b461285a90408dd38af09b2e12b6f4c552bbc92ecd7",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "accept",
+      "rejection": null
+    },
+    {
+      "id": "observe-signature-replayed-at-mint",
+      "why": "a signature made for `observe` must not verify at `mint` — the attack needs no secret, only a copy of a legitimate request",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=46e2846d68802a52a79cc4ca65084faa106f92ba4c341aed6afca3560ddaf76f",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "mint-signature-replayed-at-observe",
+      "why": "a signature made for `mint` must not verify at `observe` — the attack needs no secret, only a copy of a legitimate request",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "observe",
+      "rawBody": "{\"version\":1,\"operation\":\"observe\",\"requestId\":\"conformance-observe\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"atrHash\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"persistedOrderRef\":\"1042\"}}",
+      "signatureHeader": "t=1786751785,v1=8ae58507cee71bd73018885d43f5e652cc4f190171de2e691d5178b88d769dbf",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "envelope-claims-observe-at-mint-endpoint",
+      "why": "the envelope names `observe` and the request arrived at `mint` — the signature is valid, and the body is still refused, because a body that disagrees with where it landed is not one to trust about its own contents",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"observe\",\"requestId\":\"conformance-envelope-observe\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"atrHash\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"persistedOrderRef\":\"1042\"}}",
+      "signatureHeader": "t=1786751785,v1=a30a124d148cc9e7802118c9fb152dffd0468042bf9af86be2616c5c8920770c",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "operation-mismatch"
+    },
+    {
+      "id": "envelope-claims-mint-at-observe-endpoint",
+      "why": "the envelope names `mint` and the request arrived at `observe` — the signature is valid, and the body is still refused, because a body that disagrees with where it landed is not one to trust about its own contents",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "observe",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-envelope-mint\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=372097ba4a1c6f6ffc72aba3f01ebb2ce64c1eab6f7cdbfef744af330cfe154d",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "operation-mismatch"
+    },
+    {
+      "id": "seam-label-pricing-does-not-verify-at-mint",
+      "why": "a signature made under the bare seam label `pricing` must not verify at a connector endpoint — the `connector/` prefix is what keeps the two label spaces disjoint",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=f40f65c72a01cbaffdbff983d39dbb7ca6050121f542e980757cb7e29ce99eab",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "seam-label-negotiation-does-not-verify-at-mint",
+      "why": "a signature made under the bare seam label `negotiation` must not verify at a connector endpoint — the `connector/` prefix is what keeps the two label spaces disjoint",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=d292c9f33cb839d54cb7147470ff56ed34f6968717e52d07a469a9b152138335",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "seam-label-risk-does-not-verify-at-mint",
+      "why": "a signature made under the bare seam label `risk` must not verify at a connector endpoint — the `connector/` prefix is what keeps the two label spaces disjoint",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=b6478c52d94ad9abf5fb85f94367d3bff9469cd7f8f208aa78c6f2d2ba632d5b",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "seam-label-accept-decline-does-not-verify-at-mint",
+      "why": "a signature made under the bare seam label `accept-decline` must not verify at a connector endpoint — the `connector/` prefix is what keeps the two label spaces disjoint",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=6c12b7050391a2d4c9f3cdcf33fac95e4bf2403e78f124bdac3bd901fa900b62",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "unprefixed-operation-label-does-not-verify",
+      "why": "the label is `connector/mint` and not `mint` — a port that drops the namespace passes every other vector in this file and collides with the seam space",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=8c8f4a7eb6c5bedcebf3fa0a56278cede5d7d138eec9a6d2fa178effe2928bda",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "tampered-body-does-not-verify",
+      "why": "the signature was made over a different body — one digit of the price changed after signing",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4099\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=d91b74e7f6e983fb5008fd26f536f27bef1fd86214fea51e4818bf9a0f616473",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "bad-signature"
+    },
+    {
+      "id": "stale-timestamp-is-refused",
+      "why": "the request is an hour old and the tolerance is five minutes",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=d91b74e7f6e983fb5008fd26f536f27bef1fd86214fea51e4818bf9a0f616473",
+      "nowSeconds": 1786755385,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "stale-timestamp"
+    },
+    {
+      "id": "post-dated-timestamp-is-refused",
+      "why": "a timestamp far in the FUTURE is as suspect as a stale one — checking only the past lets an attacker pin a captured request open indefinitely by post-dating it",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=d91b74e7f6e983fb5008fd26f536f27bef1fd86214fea51e4818bf9a0f616473",
+      "nowSeconds": 1786748185,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "stale-timestamp"
+    },
+    {
+      "id": "tolerance-edge-accepts",
+      "why": "exactly at the tolerance is INSIDE the window — a port using `>=` refuses a legitimate request",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=d91b74e7f6e983fb5008fd26f536f27bef1fd86214fea51e4818bf9a0f616473",
+      "nowSeconds": 1786752085,
+      "toleranceSeconds": 300,
+      "expect": "accept",
+      "rejection": null
+    },
+    {
+      "id": "one-second-past-tolerance-is-refused",
+      "why": "one second beyond the tolerance is outside it — a port using `>` on the wrong side accepts it",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=1786751785,v1=d91b74e7f6e983fb5008fd26f536f27bef1fd86214fea51e4818bf9a0f616473",
+      "nowSeconds": 1786752086,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "stale-timestamp"
+    },
+    {
+      "id": "absent-signature-header-is-refused",
+      "why": "an absent header is refused rather than treated as permission",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": null,
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "malformed-header"
+    },
+    {
+      "id": "header-without-timestamp-is-refused",
+      "why": "a header carrying `v1` and no `t` cannot be judged for freshness, so it is not judged at all",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "v1=0000000000000000000000000000000000000000000000000000000000000000",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "malformed-header"
+    },
+    {
+      "id": "header-with-unparseable-timestamp-is-refused",
+      "why": "`t` must be a number — `NaN` compared against a tolerance is `false`, which would accept it",
+      "secret": "connector-conformance-secret",
+      "endpointOperation": "mint",
+      "rawBody": "{\"version\":1,\"operation\":\"mint\",\"requestId\":\"conformance-mint-A\",\"sentAt\":\"2026-08-30T09:16:25Z\",\"payload\":{\"offerId\":\"cart-1042\",\"price\":{\"amount\":\"4999\",\"unit\":\"usd-cents\"},\"orderDocRef\":\"lcp:sha256:0x4b18d0003ab0e8a2c62143bf5692286cc3faadd0985c97018b1bd1d5e46fbfc9\",\"bindingMoment\":{\"gate\":{\"present\":true,\"name\":\"checkout_process\",\"runsBeforePersistence\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}},\"write\":{\"present\":true,\"name\":\"checkout_create_order\",\"runsBeforePersistence\":true,\"field\":\"_legal_context_atr_hash\",\"reachesOrder\":true,\"source\":{\"kind\":\"pinned\",\"document\":\"host-docs.example/hook-reference — récupéré\",\"pin\":\"2026-08-16\"}}}}}",
+      "signatureHeader": "t=not-a-number,v1=0000000000000000000000000000000000000000000000000000000000000000",
+      "nowSeconds": 1786751785,
+      "toleranceSeconds": 300,
+      "expect": "reject",
+      "rejection": "malformed-header"
+    }
+  ]
+}
