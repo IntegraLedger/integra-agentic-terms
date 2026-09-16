@@ -1,0 +1,20 @@
+Integra Connector Conformance
+Copyright 2026 Integra Ledger
+
+This product includes software developed by Integra Ledger (https://integraledger.com).
+
+"Integra", "Integra Ledger", and the Integra logo are trademarks of Integra Ledger.
+Trademark use is not granted by the Apache License 2.0 (see Section 6).
+
+The Legal Context Protocol is co-stewarded by Integra Ledger and AAA-ICDR. This package publishes the
+conformance vectors for the connector wire — the request-signing contract a platform's connector is held
+to — so that a platform can establish that its own implementation is correct without asking anyone. The
+specification itself is published at https://legalcontextprotocol.org/standard and is not part of this
+distribution.
+
+This package contains no connector, no settlement logic and no credential. The `secret` every vector
+carries is a PUBLISHED conformance secret by design: a vector cannot be reproduced without the key the
+signature was computed under, and the value is fixed here so that any implementation can compute the same
+signature and so that a control can refuse it by name.
+
+Nothing in this package is a statement about whether any record is enforceable, binding or lawful.

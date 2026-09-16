@@ -239,17 +239,36 @@ test("⛔ A FAILED REBUILD IS A FAULT — the instrument, not the product", asyn
 
 test("⛔ THE FLOOR — a package leaving the comparable set must not leave a green behind", () => {
   assert.equal(
-    verdict({ drift: [], faults: [], skipped: [], compared: 3 }).kind,
+    verdict({ drift: [], faults: [], skipped: [], compared: 4 }).kind,
     "parity",
   );
   assert.equal(
-    verdict({ drift: [], faults: [], skipped: [], compared: 2 }).kind,
+    verdict({ drift: [], faults: [], skipped: [], compared: 3 }).kind,
     "stale-floor",
   );
   assert.equal(
-    verdict({ drift: [], faults: [], skipped: [], compared: 4 }).kind,
+    verdict({ drift: [], faults: [], skipped: [], compared: 5 }).kind,
     "stale-floor",
     "held EQUAL to the floor, so a package JOINING also refuses until the number is raised",
+  );
+});
+
+test("⚠️ A DECLARED PACKAGE AWAITING ITS FIRST PUBLISH READS `unmeasured`, AND SO DOES AN ORDINARY RELEASE", () => {
+  // ⛔ PINNING A DEFECT, NOT BLESSING ONE. The sibling gate subtracts `ahead` precisely so a version that
+  // has honestly left the comparable set for the length of one publish is not read as a subject going
+  // missing; this gate has no such arm, so every release window — and the whole window between a new
+  // package landing and its first publish — exits 2 here. The note this file prints for that state says
+  // it "gives no opinion on it", and the verdict gives one anyway. Asserted so that a change which adds
+  // the allowance has to come past this test and delete it deliberately.
+  assert.equal(
+    verdict({ drift: [], faults: [], skipped: ["new"], compared: 3 }).kind,
+    "unmeasured",
+    "a declared package that is not on the registry yet",
+  );
+  assert.equal(
+    verdict({ drift: [], faults: [], skipped: ["bumped"], compared: 3 }).kind,
+    "unmeasured",
+    "and an ordinary release in flight is the same shape",
   );
 });
 

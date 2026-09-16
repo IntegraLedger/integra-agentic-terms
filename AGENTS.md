@@ -1,9 +1,10 @@
 # integra-agentic-terms — agent instructions
 
-Three packages, all **public, Apache-2.0, free forever and never monetized**: `agentic-terms`, the
-buyer-side verify-before-sign gate; `lcp-mcp-server`, its Model Context Protocol packaging; and
-`seller-mcp`, the MCP transport for a paid tool. Anything that makes any of them harder to install is a
-defect, not a hardening measure. The first two work against any seller.
+Four packages, all **public, Apache-2.0, free forever and never monetized**: `agentic-terms`, the
+buyer-side verify-before-sign gate; `lcp-mcp-server`, its Model Context Protocol packaging; `seller-mcp`,
+the MCP transport for a paid tool; and `connector-conformance`, the published conformance vectors for the
+connector wire. Anything that makes any of them harder to install is a defect, not a hardening measure.
+The first two work against any seller.
 
 Consumes the Legal Context Protocol's public `@integraledger/lcp-*` packages from npmjs, exact-pinned. The
 separately licensed seller-side application is **not** part of this repository and nothing here may depend
@@ -158,6 +159,17 @@ report a successful release as absent.
 and the `PAYMENT-SIGNATURE` envelope a buyer answers a 402 with ·
 `lcp-mcp-server` — six read-only MCP tools over the same kernel, plus stdio wiring for desktop agent hosts ·
 `seller-mcp` — the MCP transport for a paid tool, structurally typed at both edges and depending on nothing.
+`connector-conformance` — the 22 published vectors for the connector wire, the digest that pins them, and a
+loader. ⛔ **Data, and deliberately no implementation.** A conformance artifact shipping a reference
+implementation beside its vectors tempts a port to agree with the implementation rather than with the
+contract, which is a suite asserting a constant against itself. The pinned digest is a LITERAL for the
+same reason: one recomputed from the file it describes agrees with it by construction and can never fail.
+
+⚠️ **It is the first package here whose product is a DOCUMENT rather than code, and two gates had to be
+told.** `check:published-parity` compares only what a manifest ships under `src/`, so the vector document
+lives there rather than in a `conformance/` directory — that is what puts the published bytes inside the
+byte-for-byte subject set instead of beside it. Both parity floors are held EQUAL to a package count, so
+both moved 3 → 4 in the change that added it.
 
 ⚠️ **`seller-mcp` is NOT in the `fixed` changeset group**, and that is deliberate rather than an omission.
 The group exists because `lcp-mcp-server` depends on `agentic-terms` through `workspace:*` and the two must

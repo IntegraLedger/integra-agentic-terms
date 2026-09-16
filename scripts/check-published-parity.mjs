@@ -69,8 +69,14 @@ const SOURCE_DIRS = new Set(["src"]);
 
 /**
  * ⛔ THE FLOOR: how many packages a healthy run COMPARES. ⛔ Never lower it to make a package that dropped
- * out of the subject set pass. `M` 2026-09-15: `agentic-terms`, `lcp-mcp-server` and `seller-mcp` all
- * publish and all ship `src`.
+ * out of the subject set pass. `M` 2026-09-16: `agentic-terms`, `lcp-mcp-server`, `seller-mcp` and
+ * `connector-conformance` all publish and all ship `src`.
+ *
+ * ⭐ `connector-conformance` IS WHY THE FOURTH ONE IS HERE, AND IT SHIPS `src` DELIBERATELY. Its product is
+ * a DOCUMENT — the connector conformance vectors — rather than code, and `SOURCE_DIRS` below is the whole
+ * of what this gate can compare. A `conformance/` directory would have left the published vectors outside
+ * the subject set by construction, reported NOT COMPARABLE, and exited 0 over the one artifact whose entire
+ * value is that the bytes a platform fetched are the bytes that were reviewed.
  *
  * ⛔⛔ AND IT IS HELD EQUAL TO THE COUNT, NOT MERELY BELOW IT — because "raise it as packages start
  * publishing" is an instruction to a human at the one moment they are thinking about something else, which
@@ -80,7 +86,7 @@ const SOURCE_DIRS = new Set(["src"]);
  * `2`, met the stale floor, and exited 0 over its own absence — the floor's entire purpose, defeated by the
  * floor being one behind. See `verdict`'s fifth answer.
  */
-export const COMPARABLE_FLOOR = 3;
+export const COMPARABLE_FLOOR = 4;
 
 /**
  * ⛔⛔ WHAT THE FLOOR IS HELD AGAINST — the TREE, and never `checked`.

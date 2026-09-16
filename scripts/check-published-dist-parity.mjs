@@ -54,8 +54,26 @@ import {
  * merely below it, for the reason the sibling gate states: "raise it as packages start shipping" is a
  * number that only ever moves in the flattering direction, and a package that silently LEFT the set would
  * keep a green behind it.
+ *
+ * `M` 2026-09-16: 4, when `connector-conformance` joined the publishable set.
+ *
+ * ⚠️⚠️ AND RAISING IT IS NOT ENOUGH ON ITS OWN, WHICH IS WORTH READING BEFORE THE NEXT PACKAGE IS ADDED.
+ * This gate has no equivalent of the sibling's `- ahead`, so a package that is DECLARED and not yet on the
+ * registry is counted in `skipped`, clears the equality arm, and is then refused by `compared < floor` as
+ * `unmeasured`. Driven rather than reasoned, at this commit:
+ *
+ *     {skipped: [], compared: 3, floor: 3}       -> parity        exit 0
+ *     {skipped: ["new"], compared: 3, floor: 3}  -> stale-floor   exit 4
+ *     {skipped: ["new"], compared: 3, floor: 4}  -> unmeasured    exit 2
+ *     {skipped: ["a"],   compared: 2, floor: 3}  -> unmeasured    exit 2   <- an ORDINARY release window
+ *
+ * ⇒ The last line is the point: this is not a cost the new package introduced. Every release window, from
+ * `changeset version` landing until the publish, already reads `unmeasured` here — while this file's own
+ * `notes` say of exactly that state that "a release in progress is not a lost subject, and this gate gives
+ * no opinion on it". The note and the verdict disagree, and the verdict is what the workflow reads.
+ * ⛔ Fixing it is a change to what this gate MEANS, not a declaration, so it is filed rather than done here.
  */
-export const DIST_FLOOR = 3;
+export const DIST_FLOOR = 4;
 
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 

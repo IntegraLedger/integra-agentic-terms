@@ -1,0 +1,57 @@
+{
+  "name": "@integraledger/connector-conformance",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./connector-conformance-v1.json": "./src/connector-conformance-v1.json",
+    "./connector-conformance-v1.json.sha256": "./src/connector-conformance-v1.json.sha256"
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IntegraLedger/integra-agentic-terms.git",
+    "directory": "packages/connector-conformance"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "description": "The conformance vectors for the Integra connector wire, with the digest that pins them — 22 signed requests a platform runs against its own connector to establish that it accepts what it must and refuses what it must, before anything of a customer's depends on the answer. Data and a loader; no connector, no credential.",
+  "keywords": [
+    "lcp",
+    "legal-context-protocol",
+    "conformance",
+    "test-vectors",
+    "hmac",
+    "webhook-signature",
+    "agentic-commerce",
+    "connector"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "bugs": {
+    "url": "https://github.com/IntegraLedger/integra-agentic-terms/issues"
+  },
+  "homepage": "https://github.com/IntegraLedger/integra-agentic-terms/tree/main/packages/connector-conformance#readme"
+}

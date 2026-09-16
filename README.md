@@ -1,6 +1,6 @@
 # Integra Agentic Terms
 
-The buyer/developer side of Legal Context Protocol commerce. Three packages, **Apache-2.0, free forever —
+The buyer/developer side of Legal Context Protocol commerce. Four packages, **Apache-2.0, free forever —
 no account, no key, no token, nothing to sign up for.**
 
 | Package | What it is |
@@ -8,11 +8,13 @@ no account, no key, no token, nothing to sign up for.**
 | [`@integraledger/agentic-terms`](packages/agentic-terms) | Verify before sign, as a type and as a runtime guarantee. The gate fetches the terms the seller advertised, recomputes the LCP `atrHash` over the bytes actually served, and halts before any signing key is invoked if they disagree. |
 | [`@integraledger/lcp-mcp-server`](packages/lcp-mcp-server) | Read-only Model Context Protocol server exposing LCP tools to an AI agent — verify before pay, compute an atrHash, extract and place references across the nine commerce protocols that have one. |
 | [`@integraledger/seller-mcp`](packages/seller-mcp) | The MCP transport for a paid tool: wrap a tool handler so its call is gated by a settled x402 payment, with the payment and the receipt riding MCP's own `_meta`. A library mount in the seller's own process — no dependencies, no settlement logic, no credential. |
+| [`@integraledger/connector-conformance`](packages/connector-conformance) | The conformance vectors for the connector wire, and the digest that pins them: 22 signed requests a platform runs against its own connector to establish that it accepts what it must and refuses what it must, with the reason each refusal has to give. Data and a loader — no connector, no credential. |
 
 ```bash
 npm install @integraledger/agentic-terms
 npm install @integraledger/lcp-mcp-server
 npm install @integraledger/seller-mcp
+npm install @integraledger/connector-conformance
 ```
 
 📘 **Full documentation: [agenticterms.integraledger.com](https://agenticterms.integraledger.com)** — quickstart,
@@ -25,6 +27,12 @@ callback, no network request other than fetching the terms the seller pointed yo
 `seller-mcp` is the one surface here a SELLER mounts rather than a buyer, and it is here because it is
 transport rather than settlement: it holds no key and contains no settlement logic, so it belongs on the
 side of the boundary that anyone can read and install.
+
+`connector-conformance` is neither buyer nor seller: it is what a PLATFORM is held to. It publishes the
+vectors for the connector wire so that a platform can establish its own implementation is correct by
+running them itself, on its own clock, rather than by asking anybody — which is what makes the contract a
+contract rather than a courtesy. It is here for the same reason as `seller-mcp`: it carries no credential
+and no settlement logic, so it belongs on the side of the boundary anyone can read and install.
 
 ## For agents
 
