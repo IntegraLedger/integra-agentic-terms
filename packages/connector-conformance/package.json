@@ -7,8 +7,7 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./connector-conformance-v1.json": "./src/connector-conformance-v1.json",
-    "./connector-conformance-v1.json.sha256": "./src/connector-conformance-v1.json.sha256"
+    "./connector-conformance-v1.json": "./src/connector-conformance-v1.json"
   },
   "files": [
     "dist",

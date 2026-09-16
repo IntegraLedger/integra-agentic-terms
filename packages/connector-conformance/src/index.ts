@@ -107,7 +107,15 @@ export function vectorsPath(): string {
   );
 }
 
-/** The path of the digest sidecar, in `shasum -a 256 -c` format. */
+/**
+ * The path of the digest sidecar, in `shasum -a 256 -c` format.
+ *
+ * ⛔ IT IS REACHED BY PATH AND NOT BY A SUBPATH EXPORT, AND THAT IS NOT AN OVERSIGHT. `exports` once
+ * declared `./connector-conformance-v1.json.sha256`, and `attw --pack` refused it on every resolution
+ * mode — `.sha256` is not an extension Node's resolver can load, so the entry was a promise the resolver
+ * cannot keep. ⚠️ `pnpm verify` does not run `attw`; the CI `verify` job does, which is where it was
+ * caught. The vector document itself IS a subpath export, because JSON resolves.
+ */
 export function digestPath(): string {
   return fileURLToPath(
     new URL("../src/connector-conformance-v1.json.sha256", import.meta.url),
