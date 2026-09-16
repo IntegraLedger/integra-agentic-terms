@@ -97,13 +97,15 @@ wrong one.
 
 ### The envelope
 
-`x402PaymentHeader` takes the challenge as a **required** argument and copies `accepts[0]` off it. You
-cannot build a payment without having been served an offer, and the entry you present is the entry you
-were served — x402 §6.1, where a payment answers one offer and a conformant resource server re-derives its
-own advertisement.
+`x402PaymentHeader` takes the challenge as a **required** argument and copies `accepts[0]` off it, so a
+payment cannot be built without having been served an offer, and the entry you present is the entry you
+were served.
 
-The only field the presentation adds is `extra.assetTransferMethod`, because the seller does not advertise
-one: it is a property of how this buyer chose to pay.
+⛔ **With one exception, and it is the one to get right.** `assetTransferMethod` is required on the input
+and is **written over** the served entry's `extra.assetTransferMethod` rather than echoed from it. The
+seller does advertise that field — x402 has it ride in `accepts[].extra` — so pass back the value you were
+served. Pass anything else and you present an entry the seller did not offer, on the one field this API
+will not check for you.
 
 </Step>
 
@@ -136,12 +138,34 @@ declare const ports: GatePorts; // the guarded fetcher and a clock
 // The next fence is this function: it is where the binding is called.
 declare function authorize(
   verifiedAtrHash: `0x${string}`,
+  assetTransferMethod: string,
 ): Promise<{ authorization: X402Authorization; signature: `0x${string}` }>;
+
+/**
+ * The method the SELLER asked for, read off the challenge and narrowed rather than assumed —
+ * a buyer does not get to assume a counterparty's types. x402 clients default to `eip3009`
+ * when `extra` names none.
+ */
+function servedAssetTransferMethod(challenge: unknown): string {
+  const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const accepts = asRecord(challenge)?.["accepts"];
+  const entry = Array.isArray(accepts) ? asRecord(accepts[0]) : undefined;
+  const method = asRecord(entry?.["extra"])?.["assetTransferMethod"];
+  return typeof method === "string" ? method : "eip3009";
+}
 
 const resource = "https://seller.example/report";
 
 const challenged = await fetch(resource);
 const challenge = decodeX402Challenge(challenged);
+
+// Read ONCE, and handed to both halves. The binding refuses a method that carries no payer
+// nonce; the envelope writes whatever it is given over the served entry. One value, so the
+// two cannot disagree about what is being answered.
+const assetTransferMethod = servedAssetTransferMethod(challenge);
 
 const proposal = parseProposalFromChallenge(challenge, {
   level: 3,
@@ -154,7 +178,7 @@ const proposal = parseProposalFromChallenge(challenge, {
 let authorization: X402Authorization | undefined;
 const signer: GatedSigner = {
   async sign(verifiedAtrHash) {
-    const authorized = await authorize(verifiedAtrHash);
+    const authorized = await authorize(verifiedAtrHash, assetTransferMethod);
     authorization = authorized.authorization;
     return { signature: authorized.signature };
   },
@@ -169,7 +193,7 @@ const header = x402PaymentHeader({
   authorization,
   signature: result.signature,
   paymentIdentifier: "pay_01HZ",
-  assetTransferMethod: "eip3009",
+  assetTransferMethod,
 });
 
 const served = await fetch(resource, {
@@ -183,7 +207,6 @@ const served = await fetch(resource, {
 
 ```ts no-check
 import {
-  EIP3009_TRANSFER_METHOD,
   type X402Proposal,
   createX402Adapter,
   getX402Deployment,
@@ -196,7 +219,10 @@ declare const wallet: { signTypedData(data: unknown): Promise<`0x${string}`> };
 
 const adapter = createX402Adapter(getX402Deployment("base-sepolia"));
 
-async function authorize(verifiedAtrHash: `0x${string}`) {
+async function authorize(
+  verifiedAtrHash: `0x${string}`,
+  assetTransferMethod: string, // what the seller advertised — not a constant
+) {
   // `nonce = verifiedAtrHash` is applied here, by the binding.
   const proposed = await adapter.propose(verifiedAtrHash, {
     from: payer,
@@ -204,9 +230,10 @@ async function authorize(verifiedAtrHash: `0x${string}`) {
     amount,
     validAfter: "0",
     validBefore: String(Math.floor(Date.now() / 1000) + 600),
-    assetTransferMethod: EIP3009_TRANSFER_METHOD,
+    assetTransferMethod,
   });
-  // Every refusal on this path is a VALUE, never a throw.
+  // Every refusal on this path is a VALUE, never a throw. This is where a `permit2` or
+  // `erc7710` offer stops, with `x402/asset-transfer-method-unsupported`.
   if ("refused" in proposed) throw new Error(proposed.detail);
   const { authorization, typedData } = proposed.value as X402Proposal;
 
@@ -251,9 +278,13 @@ from it is not refused — it just has not been read off-chain by us; supply you
 
 ### The same ATR is paid twice
 
-An EIP-3009 nonce is one-time use. One payer paying twice under the same `atrHash` reproduces the same
-authorization and the token rejects the second, with no protocol-level diagnostic to explain it. Mint a
-per-transaction record; LCP §6.1 wants one anyway.
+An EIP-3009 nonce is one-time use. Two payments welded to the same `atrHash` therefore carry the same
+nonce, and the token refuses the second — the rest of the authorization may well differ, a later
+`validBefore` among it, but the nonce is the field the token holds unique. The refusal is the **token's**,
+so what comes back is a reverted transfer rather than anything that names a terms document.
+
+The binding's own manifest states the rule: the `atrHash` welded as the nonce **must be per-transaction**.
+Mint a record per transaction and the case does not arise.
 
 ## After it settles
 
@@ -263,8 +294,18 @@ reference into a transaction record through an injected binding adapter — see
 [verify before sign](/verify-before-sign#post-settlement-verification). Nothing about that step requires
 either party to keep a copy of anything.
 
+## Which `accepts` entry gets paid
+
+`accepts` is a list of **alternatives**, and both halves of this page take **`accepts[0]`** —
+`parseProposalFromChallenge` does, and so does `x402PaymentHeader`. Neither takes an index, and neither
+picks for you.
+
+⇒ To pay a different entry, **narrow `accepts` to it before either call**, exactly as
+[x402](/protocols/x402#the-first-requirement-and-why-the-gate-does-not-choose) says for the gate. Both
+then answer the same offer, and the entry you present is still one the seller served. Reaching into
+`accepts[2]` and hoping is not an option this code offers.
+
 ## What this page does not decide
 
-Which requirement in `accepts` to pay, whether the price is good, when a quote has gone stale, and which
-rail to use. Those are agent operations, and the gate has [no opinion on any of
-them](/introduction#what-it-is-not) — deliberately.
+Whether the price is good, when a quote has gone stale, and which rail to use. Those are agent operations,
+and the gate has [no opinion on any of them](/introduction#what-it-is-not) — deliberately.
