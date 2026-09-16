@@ -8,7 +8,7 @@
  * ⭐ THE ASSERTION IS AGAINST A LITERAL, NOT AGAINST A RECOMPUTED VALUE. `digestOf(readVectorBytes())`
  * compared with `digestOf(readVectorBytes())` is a control that cannot fail.
  */
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -56,9 +56,12 @@ describe("the published vector document", () => {
 
   it("covers both endpoint operations, all four refusal reasons, and both outcomes", () => {
     const doc = loadVectors();
-    // ⛔ A SUBJECT-SET FLOOR, NOT DECORATION. A document trimmed to its five accepting vectors would still
-    // hash, still load, and still say `count` correctly — and a connector that refuses nothing would pass
-    // it. What a platform is held to is the REFUSALS, so their presence is asserted by name.
+    // ⛔ A SUBJECT-SET FLOOR, NOT DECORATION. A document trimmed to its accepting vectors alone would
+    // still hash, still load, and still say `count` correctly — and a connector that refuses nothing
+    // would pass it. What a platform is held to is the REFUSALS, so their presence is asserted by name.
+    // ⚠️ The split is COUNTED below rather than restated in this sentence: a number written into a
+    // comment is a second copy of a fact, and this one was wrong ("five accepting vectors") the first
+    // time it was written.
     const reasons = new Set(
       doc.vectors.map((v) => v.rejection).filter((r) => r !== null),
     );
@@ -74,8 +77,12 @@ describe("the published vector document", () => {
     expect(new Set(doc.vectors.map((v) => v.endpointOperation))).toEqual(
       new Set(["mint", "observe"]),
     );
-    expect(doc.vectors.some((v) => v.expect === "accept")).toBe(true);
-    expect(doc.vectors.some((v) => v.expect === "reject")).toBe(true);
+    const accepting = doc.vectors.filter((v) => v.expect === "accept").length;
+    const refusing = doc.vectors.filter((v) => v.expect === "reject").length;
+    expect(accepting).toBeGreaterThan(0);
+    expect(refusing).toBeGreaterThan(0);
+    // ⛔ AND THE TWO ACCOUNT FOR THE WHOLE DOCUMENT, so a third outcome cannot be added silently.
+    expect(accepting + refusing).toBe(doc.vectors.length);
   });
 
   it("states a rejection reason for every refusal and none for any acceptance", () => {
@@ -112,12 +119,18 @@ describe("loading a document that is not the published one", () => {
     expect(digestOf(drifted)).not.toBe(CONNECTOR_CONFORMANCE_V1_SHA256);
 
     const dir = mkdtempSync(join(tmpdir(), "connector-conformance-"));
-    const path = join(dir, "connector-conformance-v1.json");
-    writeFileSync(path, drifted);
+    try {
+      const path = join(dir, "connector-conformance-v1.json");
+      writeFileSync(path, drifted);
 
-    expect(() => loadVectors(path)).toThrow(
-      /hashes to .* and this package pins/s,
-    );
+      expect(() => loadVectors(path)).toThrow(
+        /hashes to .* and this package pins/s,
+      );
+    } finally {
+      // ⛔ BOUND TO THE LIFETIME, NOT TO THE HAPPY PATH. A removal after the assertion leaks the directory
+      // on exactly the run that matters — the one where the assertion failed.
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("accepts the published document by the same door, so the refusal discriminates", () => {
