@@ -1,4 +1,4 @@
 {
   "title": "Protocols",
-  "pages": ["index", "x402", "acp", "ap2", "mpp", "reading-any-protocol"]
+  "pages": ["index", "x402", "x402-payment", "acp", "ap2", "mpp", "reading-any-protocol"]
 }

@@ -103,3 +103,9 @@ detectProtocol(challenge); // "x402"
 
 The rule is a numeric `x402Version` plus an `accepts` array — cited to the x402 v2 `PaymentRequired`
 definition, §5.1.2.
+
+## Answering it
+
+Parsing the challenge is the first half. [Paying an x402 seller](/protocols/x402-payment) is the second:
+the EIP-3009 authorization whose nonce is the `atrHash` you just verified, and the `PAYMENT-SIGNATURE`
+envelope that carries it back.
