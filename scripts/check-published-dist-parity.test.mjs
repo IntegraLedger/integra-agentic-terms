@@ -484,8 +484,13 @@ test("⛔⛔ A DIRECTORY WITH NO MANIFEST IS A FAULT, NAMED — never a silent s
   assert.ok(unreadable.some((u) => u.startsWith("no-manifest/package.json")));
   assert.ok(unreadable.some((u) => u.startsWith("bad-manifest/package.json")));
 
-  // ⭐ And the verdict the PROCESS carries is 3 — the instrument, not the product — reached before the
-  // registry is touched, which the stub proves by throwing if it ever is.
+  // ⭐ And the code `main` carries is 3 — the instrument, not the product — where the SAME tree with the
+  // guard clause deleted carries 2, an ordinary UNMEASURED over a subject set the read quietly emptied.
+  // ⛔⛔ THE STUB BELOW PROVES NOTHING AND CANNOT FIRE, which is worth saying because an earlier version of
+  // this comment claimed it did: with no readable manifest there is nothing to iterate, so neither method is
+  // called in EITHER arm — measured, `registry_calls=0` with the guard and without it. It is here to make a
+  // reach LOUD if a future edit adds one. ⇒ The assertion doing the work is the code, and it is 3 against 2
+  // that discriminates, not a throw that never happens.
   const code = await main({
     root,
     registry: {
