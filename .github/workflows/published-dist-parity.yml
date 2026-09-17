@@ -29,6 +29,14 @@ on:
     - cron: "11 */6 * * *"
   workflow_dispatch:
 
+# ⚠️ LEAST PRIVILEGE IS PER-JOB — a job-level block REPLACES this one rather than merging, so the job below
+# states every scope it needs and this line only sets the default for a job that states none. `M` 2026-09-17
+# this was the ONE workflow of eleven here with no top-level block: OpenSSF Scorecard reads the absence as
+# the repository default (which can be write), not as the job's narrower grant, so the sibling's block is
+# carried here for the same reason it carries it.
+permissions:
+  contents: read
+
 concurrency:
   group: published-dist-parity
   cancel-in-progress: true
@@ -96,6 +104,21 @@ jobs:
       # then compared for equality. ⚠️ The cost is that an issue whose title a human EDITS is no longer
       # found, and the next run opens a second one. That is the direction to fail in: a duplicate is
       # visible, and closing another gate's finding is not.
+      #
+      # ⛔ AND THE SAME COST FALLS ON US, NOT ONLY ON A HUMAN EDITOR: editing a title literal in this file's
+      # `env:` block STRANDS whatever is open under the old title permanently. Nothing here will ever match
+      # it again, so it is never commented on and never closed — a finding left open with no author. ⇒ A
+      # title change is a change to two things, and the second one is an issue on the repository: close or
+      # retitle the open one in the same change.
+      #
+      # ⚠️ `--limit 100` because `gh issue list` defaults to THIRTY. Equality over a truncated page is a
+      # miss, and a miss here opens a duplicate rather than commenting — the failure would read as the gate
+      # having nothing to say about an issue that is sitting open.
+      #
+      # ⭐ THE SUBJECT SET IS FOURTEEN SITES, NOT THE TEN IN THIS PAIR: `protocol-currency.yml` and
+      # `protocol-latest.yml` carry the same close-and-file shape, two sites each, and were fixed in the
+      # same change. Nothing collides between those two titles today — the defect there is latent, and it
+      # goes live the day somebody files an issue whose title is a word superset of one of them.
       # ⛔ THE RUN CLOSES WHAT THE RUN OPENED. ⚠️ Only exit 0 closes: a 2, 3 or 4 means the question was not
       # answered, and closing a drift issue because the instrument broke retracts a finding on no evidence.
       - name: Close every issue this job opens, once parity is measured and holds
@@ -106,7 +129,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           for TITLE in "$DRIFT_TITLE" "$UNMEASURED_TITLE" "$FAULT_TITLE"; do
-            EXISTING=$(TITLE="$TITLE" gh issue list --state open --search "$TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+            EXISTING=$(TITLE="$TITLE" gh issue list --state open --limit 100 --search "$TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
             [ -z "$EXISTING" ] && continue
             gh issue close "$EXISTING" --comment "$(printf 'Closed by the run that measured it: every published dist/ rebuilds byte for byte from the source it was cut from.\n\n[Run log](%s)\n' "$RUN_URL")"
           done
@@ -120,7 +143,7 @@ jobs:
         run: |
           BODY=$(printf 'The `dist/` a consumer loads is not what this source emits. Files are named below as MISSING, as unexpected, or as DIFFERENT in content.\n\n⛔ A republish of the same version is not the remedy and is not possible: a version number is a promise about bytes. **The remedy is a version bump and a release.**\n\n⚠️ If the toolchain moved, this is still true — the published artifact no longer corresponds to its source. Republish; do not weaken the gate.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "$RUN_URL" "$(cat /tmp/dist-parity.log)")
-          EXISTING=$(TITLE="$DRIFT_TITLE" gh issue list --state open --search "$DRIFT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+          EXISTING=$(TITLE="$DRIFT_TITLE" gh issue list --state open --limit 100 --search "$DRIFT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$DRIFT_TITLE" --body "$BODY"; fi
 
       - name: Open or update the NOTHING-MEASURED issue
@@ -132,7 +155,7 @@ jobs:
         run: |
           BODY=$(printf 'This run compared fewer published `dist/` trees than the floor, or none at all. ⛔ That is not a pass: a tick here would be a statement about artifacts the run never opened.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "$RUN_URL" "$(cat /tmp/dist-parity.log)")
-          EXISTING=$(TITLE="$UNMEASURED_TITLE" gh issue list --state open --search "$UNMEASURED_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+          EXISTING=$(TITLE="$UNMEASURED_TITLE" gh issue list --state open --limit 100 --search "$UNMEASURED_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$UNMEASURED_TITLE" --body "$BODY"; fi
 
       - name: Open or update the INSTRUMENT-FAILURE issue
@@ -144,7 +167,7 @@ jobs:
         run: |
           BODY=$(printf 'The check could not measure. ⛔ This is NOT a product finding: the registry, a tarball or the rebuild failed, and nothing is being claimed about any published artifact.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "$RUN_URL" "$(cat /tmp/dist-parity.log)")
-          EXISTING=$(TITLE="$FAULT_TITLE" gh issue list --state open --search "$FAULT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+          EXISTING=$(TITLE="$FAULT_TITLE" gh issue list --state open --limit 100 --search "$FAULT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$FAULT_TITLE" --body "$BODY"; fi
 
       - name: Report anything the five exits do not cover, or a step that broke before them
@@ -167,7 +190,7 @@ jobs:
           CODE: ${{ steps.parity.outputs.code }}
         run: |
           LOG=$(cat /tmp/dist-parity.log 2>/dev/null || echo "(the check did not run — an earlier step failed; see the run log)")
-          BODY=$(printf 'This job reached a state its own reporting does not model: the check exited `%s`, which is none of 0, 1, 2, 3 or 4 — or a step before it failed.\n\n⛔ Nothing here is a claim about any published artifact. It is a claim about this workflow.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+          BODY=$(printf 'This job did not report the way it is written to, and the code below does not by itself say which way. The check exited `%s`. ⛔ Either that is a code this workflow has NO arm for — 127, 137, or one a future edit adds — or a step in this job FAILED, which includes the step that files the verdict: in that second case the code is ordinary and the finding it carries may have been recorded nowhere at all.\n\n⛔ Nothing here is a claim about any published artifact. It is a claim about this workflow.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "${CODE:-<empty: the check never ran>}" "$RUN_URL" "$LOG")
-          EXISTING=$(TITLE="$FAULT_TITLE" gh issue list --state open --search "$FAULT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+          EXISTING=$(TITLE="$FAULT_TITLE" gh issue list --state open --limit 100 --search "$FAULT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$FAULT_TITLE" --body "$BODY"; fi
