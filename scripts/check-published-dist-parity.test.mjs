@@ -458,7 +458,11 @@ test("⛔⛔ A STRAY FILE UNDER `packages/` IS SKIPPED — an uncaught throw her
   writeFileSync(join(root, ".DS_Store"), "not a package\n");
 
   const { manifests, unreadable } = readManifests(root);
-  assert.deepEqual(unreadable, [], "a file is not a package and is not a fault");
+  assert.deepEqual(
+    unreadable,
+    [],
+    "a file is not a package and is not a fault",
+  );
   assert.equal(manifests.length, 1, "the real package is still read");
   assert.equal(manifests[0].pkg.name, "@x/real");
 });
@@ -486,10 +490,14 @@ test("⛔⛔ A DIRECTORY WITH NO MANIFEST IS A FAULT, NAMED — never a silent s
     root,
     registry: {
       metadata() {
-        throw new Error("the registry must not be reached on an unreadable subject set");
+        throw new Error(
+          "the registry must not be reached on an unreadable subject set",
+        );
       },
       contents() {
-        throw new Error("the registry must not be reached on an unreadable subject set");
+        throw new Error(
+          "the registry must not be reached on an unreadable subject set",
+        );
       },
     },
   });
