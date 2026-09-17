@@ -78,6 +78,24 @@ jobs:
           echo "check:published-dist-parity exited $CODE"
           exit 0
 
+      # ⛔⛔ `in:title` IS A WORD SEARCH, NOT AN EXACT TITLE MATCH, AND THE TWO PARITY WORKFLOWS IN THIS
+      # REPOSITORY COLLIDE ON IT. `M` 2026-09-17, run against the live repository:
+      #
+      #     --search "published-parity: nothing was compared, so there is no parity claim in:title"
+      #         -> #43  "published-dist-parity: nothing was compared, so there is no parity claim"
+      #     --search "published-parity: a published version is behind the source it was cut from in:title"
+      #         -> []                                            <- the control: the search is not matching everything
+      #
+      # ⇒ `published-parity` never opened its own NOTHING-MEASURED issue: every one of its reports since
+      # 2026-09-16 landed as a comment on the SIBLING gate's issue, under a title naming the other gate.
+      # ⛔ And the close loop below is the half that costs something: a run of one gate would have closed
+      # the OTHER gate's open finding, on evidence about a different subject — the retraction this step's
+      # own note forbids, arriving across workflows rather than across verdicts.
+      #
+      # ⇒ The search still narrows the set (it is the only server-side filter available), and the TITLE is
+      # then compared for equality. ⚠️ The cost is that an issue whose title a human EDITS is no longer
+      # found, and the next run opens a second one. That is the direction to fail in: a duplicate is
+      # visible, and closing another gate's finding is not.
       # ⛔ THE RUN CLOSES WHAT THE RUN OPENED. ⚠️ Only exit 0 closes: a 2, 3 or 4 means the question was not
       # answered, and closing a drift issue because the instrument broke retracts a finding on no evidence.
       - name: Close every issue this job opens, once parity is measured and holds
@@ -88,7 +106,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           for TITLE in "$DRIFT_TITLE" "$UNMEASURED_TITLE" "$FAULT_TITLE"; do
-            EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+            EXISTING=$(TITLE="$TITLE" gh issue list --state open --search "$TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
             [ -z "$EXISTING" ] && continue
             gh issue close "$EXISTING" --comment "$(printf 'Closed by the run that measured it: every published dist/ rebuilds byte for byte from the source it was cut from.\n\n[Run log](%s)\n' "$RUN_URL")"
           done
@@ -102,7 +120,7 @@ jobs:
         run: |
           BODY=$(printf 'The `dist/` a consumer loads is not what this source emits. Files are named below as MISSING, as unexpected, or as DIFFERENT in content.\n\n⛔ A republish of the same version is not the remedy and is not possible: a version number is a promise about bytes. **The remedy is a version bump and a release.**\n\n⚠️ If the toolchain moved, this is still true — the published artifact no longer corresponds to its source. Republish; do not weaken the gate.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "$RUN_URL" "$(cat /tmp/dist-parity.log)")
-          EXISTING=$(gh issue list --state open --search "$DRIFT_TITLE in:title" --json number --jq '.[0].number // empty')
+          EXISTING=$(TITLE="$DRIFT_TITLE" gh issue list --state open --search "$DRIFT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$DRIFT_TITLE" --body "$BODY"; fi
 
       - name: Open or update the NOTHING-MEASURED issue
@@ -114,7 +132,7 @@ jobs:
         run: |
           BODY=$(printf 'This run compared fewer published `dist/` trees than the floor, or none at all. ⛔ That is not a pass: a tick here would be a statement about artifacts the run never opened.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "$RUN_URL" "$(cat /tmp/dist-parity.log)")
-          EXISTING=$(gh issue list --state open --search "$UNMEASURED_TITLE in:title" --json number --jq '.[0].number // empty')
+          EXISTING=$(TITLE="$UNMEASURED_TITLE" gh issue list --state open --search "$UNMEASURED_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$UNMEASURED_TITLE" --body "$BODY"; fi
 
       - name: Open or update the INSTRUMENT-FAILURE issue
@@ -126,5 +144,30 @@ jobs:
         run: |
           BODY=$(printf 'The check could not measure. ⛔ This is NOT a product finding: the registry, a tarball or the rebuild failed, and nothing is being claimed about any published artifact.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "$RUN_URL" "$(cat /tmp/dist-parity.log)")
-          EXISTING=$(gh issue list --state open --search "$FAULT_TITLE in:title" --json number --jq '.[0].number // empty')
+          EXISTING=$(TITLE="$FAULT_TITLE" gh issue list --state open --search "$FAULT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
+          if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$FAULT_TITLE" --body "$BODY"; fi
+
+      - name: Report anything the five exits do not cover, or a step that broke before them
+        # ⛔⛔ THE PARTITION ABOVE IS NOT EXHAUSTIVE OVER WHAT A PROCESS CAN EXIT. 127 (node missing), 137
+        # (OOM) — a four-package rebuild is the job here that can reach one — or any code a future edit
+        # adds would match none of the four conditions, and because the check step is deliberately
+        # incapable of failing, `failure()` cannot backstop them either. ⇒ Without this step every one of
+        # those is a GREEN, SILENT job over an artifact nothing opened, which is this gate's own subject
+        # arriving one level up.
+        #
+        # ⚠️ `M` 2026-09-17: the sibling `published-parity.yml` has carried this step since it was written
+        # and this workflow did not, so the same class was reported in one of the two and silent in the
+        # other. ⛔ It has not fired here — it is written from the sibling's stated reason, not from an
+        # observed run.
+        if: always() && (failure() || !contains(fromJSON('["0","1","2","3","4"]'), steps.parity.outputs.code))
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CODE: ${{ steps.parity.outputs.code }}
+        run: |
+          LOG=$(cat /tmp/dist-parity.log 2>/dev/null || echo "(the check did not run — an earlier step failed; see the run log)")
+          BODY=$(printf 'This job reached a state its own reporting does not model: the check exited `%s`, which is none of 0, 1, 2, 3 or 4 — or a step before it failed.\n\n⛔ Nothing here is a claim about any published artifact. It is a claim about this workflow.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
+            "${CODE:-<empty: the check never ran>}" "$RUN_URL" "$LOG")
+          EXISTING=$(TITLE="$FAULT_TITLE" gh issue list --state open --search "$FAULT_TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then gh issue comment "$EXISTING" --body "$BODY"; else gh issue create --title "$FAULT_TITLE" --body "$BODY"; fi
