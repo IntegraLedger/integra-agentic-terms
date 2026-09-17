@@ -16,8 +16,10 @@ import {
   DIST_FLOOR,
   distParityReport,
   hashTree,
+  main,
   publishedDist,
   publishedSrc,
+  readManifests,
   verdict,
 } from "./check-published-dist-parity.mjs";
 
@@ -438,4 +440,71 @@ test("⛔⛔ A SYMLINK UNDER THE TREE IS SKIPPED, NOT FOLLOWED — the guard tha
     ["real.js"],
     "only the regular file may be hashed: `linked.js` points outside the tree and `alias.js` would hash one file twice",
   );
+});
+
+test("⛔⛔ A STRAY FILE UNDER `packages/` IS SKIPPED — an uncaught throw here would have exited 1, which the workflow calls DRIFT", async () => {
+  // ⛔ This is the case the read could not survive before: `readdirSync(root).map(...)` with no filter
+  // threw `ENOTDIR` on the first non-directory entry, the process exited **1**, and 1 is inside the
+  // workflow's mapped set — so the DRIFT step would have filed "the published dist/ is not what this
+  // source emits" over a run that opened no tarball at all.
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const root = mkdtempSync(join(tmpdir(), "dist-parity-root-"));
+  mkdirSync(join(root, "real-package"));
+  writeFileSync(
+    join(root, "real-package", "package.json"),
+    JSON.stringify({ name: "@x/real", version: "1.0.0", private: true }),
+  );
+  writeFileSync(join(root, ".DS_Store"), "not a package\n");
+
+  const { manifests, unreadable } = readManifests(root);
+  assert.deepEqual(
+    unreadable,
+    [],
+    "a file is not a package and is not a fault",
+  );
+  assert.equal(manifests.length, 1, "the real package is still read");
+  assert.equal(manifests[0].pkg.name, "@x/real");
+});
+
+test("⛔⛔ A DIRECTORY WITH NO MANIFEST IS A FAULT, NAMED — never a silent skip the floor absorbs", async () => {
+  // ⚠️ Skipping it would be worse than crashing: the run would compare one package fewer and the floor
+  // would read the absence as a package that left, which is a statement about the tree made by the
+  // instrument's own failure to read it.
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const root = mkdtempSync(join(tmpdir(), "dist-parity-root-"));
+  mkdirSync(join(root, "no-manifest"));
+  mkdirSync(join(root, "bad-manifest"));
+  writeFileSync(join(root, "bad-manifest", "package.json"), "{ not json");
+
+  const { manifests, unreadable } = readManifests(root);
+  assert.deepEqual(manifests, []);
+  assert.equal(unreadable.length, 2);
+  assert.ok(unreadable.some((u) => u.startsWith("no-manifest/package.json")));
+  assert.ok(unreadable.some((u) => u.startsWith("bad-manifest/package.json")));
+
+  // ⭐ And the code `main` carries is 3 — the instrument, not the product — where the SAME tree with the
+  // guard clause deleted carries 2, an ordinary UNMEASURED over a subject set the read quietly emptied.
+  // ⛔⛔ THE STUB BELOW PROVES NOTHING AND CANNOT FIRE, which is worth saying because an earlier version of
+  // this comment claimed it did: with no readable manifest there is nothing to iterate, so neither method is
+  // called in EITHER arm — measured, `registry_calls=0` with the guard and without it. It is here to make a
+  // reach LOUD if a future edit adds one. ⇒ The assertion doing the work is the code, and it is 3 against 2
+  // that discriminates, not a throw that never happens.
+  const code = await main({
+    root,
+    registry: {
+      metadata() {
+        throw new Error(
+          "the registry must not be reached on an unreadable subject set",
+        );
+      },
+      contents() {
+        throw new Error(
+          "the registry must not be reached on an unreadable subject set",
+        );
+      },
+    },
+  });
+  assert.equal(code, 3, "a fault, not the 1 the workflow maps to DRIFT");
 });

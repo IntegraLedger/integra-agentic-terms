@@ -335,6 +335,43 @@ export function verdict({
 /* ------------------------------------------------------------------ the process */
 
 /**
+ * The subject set, read with a guard.
+ *
+ * ⛔⛔ AN UNCAUGHT THROW HERE EXITS **1**, AND THE WORKFLOW MAPS 1 TO DRIFT. A stray file under `packages/`,
+ * or a directory with no manifest, would have ended the process with the code that files *"the published
+ * `dist/` is not what this source emits"* — a product finding, named against artifacts the run never opened.
+ * `M` 2026-09-17: the read was `readdirSync(root).map(...)` with no filter and no `try`.
+ *
+ *   · an entry that is not a DIRECTORY cannot be a package and is skipped: a stray file is not a finding
+ *     about any artifact;
+ *   · a DIRECTORY whose `package.json` cannot be read or parsed is a FAULT, named, and never a silent skip —
+ *     the floor would otherwise absorb it and the run would report over a subject set one package smaller,
+ *     which is this gate's own defect arrived at from the manifest side.
+ *
+ * ⚠️ The sibling gate makes the same choice one level down: its `walk` yields a fault per unreadable path
+ * rather than abandoning the directory (`check-published-parity.mjs`).
+ */
+export function readManifests(root) {
+  const manifests = [];
+  const unreadable = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = join(root, entry.name);
+    try {
+      manifests.push({
+        dir,
+        pkg: JSON.parse(readFileSync(join(dir, "package.json"), "utf8")),
+      });
+    } catch (error) {
+      unreadable.push(
+        `${entry.name}/package.json — ${error.code ?? error.message}`,
+      );
+    }
+  }
+  return { manifests, unreadable };
+}
+
+/**
  * ⛔ THE WORKFLOW READS THE EXIT CODE, not a return value, so `main` is driven as a process by the drive's
  * sibling gate convention. ⭐ A refused run prints NO success line, whatever its kind — a tick beside a
  * refusal is the shape a reader greps for and believes.
@@ -343,10 +380,19 @@ export async function main({
   root = new URL("../packages", import.meta.url).pathname,
   registry = NetworkRegistry({}),
 } = {}) {
-  const manifests = readdirSync(root).map((d) => ({
-    dir: join(root, d),
-    pkg: JSON.parse(readFileSync(join(root, d, "package.json"), "utf8")),
-  }));
+  const { manifests, unreadable } = readManifests(root);
+  if (unreadable.length > 0) {
+    console.error(
+      "\n✕ check:published-dist-parity — THE SUBJECT SET COULD NOT BE READ\n",
+    );
+    for (const u of unreadable) console.error(`   • ${u}`);
+    console.error(
+      "\n⛔ Nothing here is a claim about any published artifact: the instrument could not decide what to " +
+        "compare. This is a fault, and the floor is deliberately not consulted — a package whose manifest " +
+        "cannot be read must not be absorbed as one that left.\n",
+    );
+    return 3;
+  }
   const report = await distParityReport({ manifests, registry });
   const v = verdict(report);
 

@@ -98,7 +98,14 @@ jobs:
           TITLE: "protocol-latest: the caret range does not hold against latest"
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          # ⛔ EQUALITY, NOT THE SEARCH'S OWN ORDER. `--search "<title> in:title"` is a WORD search: it
+          # matches any title containing those words, so `.[0]` can be another workflow's issue entirely.
+          # `M` 2026-09-17 the two published-parity workflows in this repository were doing exactly that to
+          # each other; nothing collides with THIS title today, which makes it latent rather than absent.
+          # ⚠️ `--limit 100` because the default is thirty, and equality over a truncated page reads as "no
+          # issue open" and files a duplicate. ⛔ Editing the title literal below strands whatever is open
+          # under the old one: retitle or close it in the same change.
+          EXISTING=$(gh issue list --state open --limit 100 --search "$TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           [ -z "$EXISTING" ] && exit 0
           LINE=$(node -p "require('./packages/agentic-terms/package.json').devDependencies['@integraledger/lcp-kernel']" 2>/dev/null || echo "unknown")
           gh issue close "$EXISTING" --comment "$(printf 'Closed by the run that verified it: `pnpm verify` passed with the protocol line installed at **%s** (latest).\n\n[Run log](%s)\n' "$LINE" "$RUN_URL")"
@@ -123,7 +130,14 @@ jobs:
           TAIL=$(tail -n 40 /tmp/verify.log 2>/dev/null || echo "(verify did not run — an earlier step failed; see the run log)")
           BODY=$(printf 'This job failed with the protocol line installed at **%s** (latest), while the lockfile pins an earlier version.\n\nThe published peer range `^X.Y.0` admits this version, so a consumer installing today resolves it. Either the range is now wrong, or the newer line changed something this guard depends on, or the failure is in `audit` and unrelated to the protocol — the tail below says which.\n\n[Run log](%s)\n\n```\n%s\n```\n' \
             "$LINE" "$RUN_URL" "$TAIL")
-          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          # ⛔ EQUALITY, NOT THE SEARCH'S OWN ORDER. `--search "<title> in:title"` is a WORD search: it
+          # matches any title containing those words, so `.[0]` can be another workflow's issue entirely.
+          # `M` 2026-09-17 the two published-parity workflows in this repository were doing exactly that to
+          # each other; nothing collides with THIS title today, which makes it latent rather than absent.
+          # ⚠️ `--limit 100` because the default is thirty, and equality over a truncated page reads as "no
+          # issue open" and files a duplicate. ⛔ Editing the title literal below strands whatever is open
+          # under the old one: retitle or close it in the same change.
+          EXISTING=$(gh issue list --state open --limit 100 --search "$TITLE in:title" --json number,title --jq '[.[] | select(.title == env.TITLE)][0].number // empty')
           if [ -n "$EXISTING" ]; then
             gh issue comment "$EXISTING" --body "$BODY"
           else
