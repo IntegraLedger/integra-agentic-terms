@@ -191,11 +191,26 @@ const sourceOf = (file) => {
  * adversarial reviewer walked an unclassified client through twice — `import "redis";`, a side-effect
  * import with no `from`, and `export { createClient } from "redis";`, an import wearing an export's
  * clothes. Both bring the module into the process exactly as a named import does.
+ *
+ * ⛔⛔ **AND THE `from` MUST NOT BE INSIDE A STRING, WHICH COST A REAL FILE A FALSE REFUSAL.** `[^;]*?`
+ * crosses newlines, so an `import`/`export` statement's span reaches into whatever follows it until a
+ * semicolon — and a string literal `"from"` immediately followed by another quoted value reads as the
+ * keyword plus a specifier. Measured, on a declaration of EIP-3009's own field names:
+ *
+ *     export const T = Object.freeze({ … Object.freeze({ name: "from", type: "address" }) … });
+ *                                                        ^^^^^^^^^^^^^^^^^^^^
+ *     → specifier `", type: "`, "which nothing classifies"
+ *
+ * ⇒ The author's only escapes were to declare a non-import in the declarations file — poisoning the one
+ * table this gate's judgement rests on — or to rename a field they do not own. Neither is a fix.
+ * `(?<!["'])` is: the `from` KEYWORD is never immediately preceded by a quote, and a quoted one never is
+ * anything else. ⚠️ A specifier is also never blank or full of commas, but the cause is fixed here rather
+ * than the symptom filtered, because a filter would still be reading the wrong token.
  */
 const specifiersOf = (source) => {
   const specifiers = new Set();
   for (const match of source.matchAll(
-    /(?:^|\n)\s*import[^;]*?from\s*["']([^"']+)["']|(?:^|\n)\s*import\s+["']([^"']+)["']|(?:^|\n)\s*export[^;]*?from\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)|\brequire\(\s*["']([^"']+)["']\s*\)/g,
+    /(?:^|\n)\s*import[^;]*?(?<!["'])from\s*["']([^"']+)["']|(?:^|\n)\s*import\s+["']([^"']+)["']|(?:^|\n)\s*export[^;]*?(?<!["'])from\s*["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)|\brequire\(\s*["']([^"']+)["']\s*\)/g,
   ))
     specifiers.add(match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5]);
   return specifiers;
