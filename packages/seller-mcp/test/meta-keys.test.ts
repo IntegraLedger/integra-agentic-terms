@@ -261,8 +261,27 @@ describe("⛔ every `_meta` key this adapter publishes is a valid MCP key name",
     ["io.modelcontextprotocol/payment", "modelcontextprotocol"],
     ["io.modelcontextprotocol/receipt", "modelcontextprotocol"],
     ["com.mcp/receipt", "mcp"],
+    // ⛔⛔ THE THIRD LABEL IS WHAT MAKES "SECOND" MEAN SECOND. Every other prefix in this file has
+    // exactly two labels, so `labels[1]` and the LAST label are the same string and no case can tell the
+    // two readings apart — measured: `labels[1]` → `labels[labels.length - 1]`, here and in `faults`,
+    // left the whole file green. A reserved prefix with something AFTER the reserved label is the only
+    // shape that separates them.
+    ["io.mcp.example/receipt", "mcp"],
   ] as const)("⭐ sees the reserved label in %s — %s", (key, label) => {
     expect(reservedSecondLabel(key)).toBe(label);
+  });
+
+  /**
+   * ⭐ **And the other direction of the same dimension**, which a reserved-prefix case cannot reach: a
+   * prefix whose LAST label is reserved and whose second is not. Under the second-to-last mutation this
+   * reads as reserved and the case reds; under the rule as published it is an ordinary vendor prefix.
+   * Without it the file could only catch a reading that is too NARROW, never one that is too WIDE.
+   */
+  it.each([
+    ["com.integraledger.mcp/x", "`mcp` is the LAST label here, not the second"],
+    ["com.integraledger/receipt", "an ordinary two-label prefix of ours"],
+  ] as const)("⭐ sees no reserved label in %s — %s", (key, _why) => {
+    expect(reservedSecondLabel(key)).toBeUndefined();
   });
 
   it.each(emitted.map((e) => [e.name, e.value] as const))(
@@ -322,6 +341,14 @@ describe("⛔ every `_meta` key this adapter publishes is a valid MCP key name",
       "a name that does not END with an alphanumeric",
       /alphanumeric-bounded/,
     ],
+    [
+      // ⛔ A RESERVED PREFIX WITH A THIRD LABEL AFTER IT. `faults` reads the second label too, and every
+      // other control here has a two-label prefix, so the same second/last blindness sat in `faults`:
+      // mutated to the last label it still passed every case in this file.
+      "io.mcp.example/receipt",
+      "`mcp` as the second label of a THREE-label prefix",
+      /reserved for MCP/,
+    ],
     ["x402/a/b", "two slashes — a key is a prefix and a name", /more than one/],
     [
       "integraledger.com/legal-context",
@@ -338,6 +365,12 @@ describe("⛔ every `_meta` key this adapter publishes is a valid MCP key name",
    */
   it.each([
     ["com.integraledger/legal-context", "our own reverse-DNS namespace"],
+    [
+      // ⭐ The admitted half of the second/last dimension: `mcp` LAST is not `mcp` SECOND, and a reading
+      // that widened to the last label would refuse this key on a rule that does not say so.
+      "com.integraledger.mcp/x",
+      "a three-label prefix of ours whose last label is `mcp`",
+    ],
     [
       "progressToken",
       "a bare name with no prefix, which the spec itself reserves",
