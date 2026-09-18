@@ -509,3 +509,52 @@ drive(
     );
   },
 );
+
+// ⛔⛔ THE SIDE-EFFECT ARM HAD NO CASE, AND ITS OWN DOCBLOCK NAMES THE FORM. Three of the five specifier
+// forms were added "after something got past" — and `import "x";`, one of those three, was the one nothing
+// drove: deleting that alternative left the suite 21/21 green, while the `from` arm carries 10 cases and
+// `export … from` carries 1. An arm no case reaches is an arm that can be removed by accident.
+drive(
+  '⛔⛔ a SIDE-EFFECT import (`import "x";`, no `from`) is seen and must be classified',
+  {
+    files: {
+      "packages/p/test/side.test.ts":
+        'import { it } from "vitest";\nimport "redis";\nit("x", () => {});\n',
+    },
+  },
+  (r) => {
+    assert.equal(
+      r.status,
+      1,
+      `an unclassified side-effect import must refuse:\n${r.out}`,
+    );
+    assert.match(r.out, /redis/);
+  },
+);
+
+drive(
+  "⭐ …and the same import, DECLARED, passes — the arm classifies rather than merely refusing",
+  {
+    files: {
+      "packages/p/test/side.test.ts":
+        'import { it } from "vitest";\nimport "redis";\nit("x", () => {});\n',
+    },
+    declarations: {
+      namedNotCalled: {},
+      imports: {
+        vitest: { kind: "inert", why: "the runner" },
+        redis: {
+          kind: "inert",
+          why: "brought into the process for its side effects, never called",
+        },
+      },
+    },
+  },
+  (r) => {
+    assert.equal(
+      r.status,
+      0,
+      `a declared side-effect import must pass:\n${r.out}`,
+    );
+  },
+);

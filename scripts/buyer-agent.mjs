@@ -124,14 +124,27 @@ export function authorizationFor({
   nowSeconds,
   validitySeconds,
 }) {
+  // ⛔⛔ THE CLOCK IS CHECKED LIKE EVERY OTHER INPUT, AND IT WAS NOT. `ports.now()` was trusted, so a clock
+  // returning a number, or a string that is not a date, made `Date.parse` yield `NaN` — and the
+  // authorization was signed with `validAfter: "NaN"`, `validBefore: "NaN"`. Driven: the seller settled it.
+  // A validity window that is not a window is not a smaller window; it is a signature over a struct whose
+  // meaning nobody can state.
+  if (!Number.isFinite(nowSeconds) || !Number.isInteger(nowSeconds))
+    throw new Error(
+      `the clock returned ${JSON.stringify(nowSeconds)}, which is not a whole number of seconds — this buyer will not sign a validity window it cannot state`,
+    );
+  if (!Number.isInteger(validitySeconds) || validitySeconds <= 0)
+    throw new Error(
+      `the validity window is ${JSON.stringify(validitySeconds)} seconds, which is not a positive whole number — an authorization with no window is not one`,
+    );
   const entry = record(accepted);
   const to = entry?.["payTo"];
   // ⛔⛔ `amount`, NOT `maxAmountRequired`, AND THIS WAS WRONG THE FIRST TIME. x402's own field name is
-  // `maxAmountRequired`, and a first cut of this file used it on that authority. The seller in this estate
-  // advertises `amount` — `seller-x402/src/middleware.ts` names its tuple as `version, resourceUrl, scheme,
-  // network, asset, payTo, amount, validUntil` — and so does the published gate's own parser, which
-  // REQUIRES `accepts[].amount` and throws without it. ⇒ Reading the spec instead of the seller would have
-  // built every authorization with `undefined` as its value, on a buyer that had already passed its gate.
+  // `maxAmountRequired`, and a first cut of this file used it on that authority. The gate this runtime is
+  // built on requires the other one: `packages/agentic-terms/src/proposal.ts:46` declares
+  // `amount: z.string()`, NON-optional, so a challenge carrying only `maxAmountRequired` throws in the
+  // parser before this line is ever reached. ⇒ Reading the spec instead of the code would have built every
+  // authorization with `undefined` as its value, on a buyer that had already passed its gate.
   const value = entry?.["amount"];
   if (typeof to !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(to))
     throw new Error(
@@ -165,6 +178,7 @@ export async function buy({
   context,
   ports,
   validitySeconds = 600,
+  settlement,
 }) {
   const challengeResponse = await ports.fetch(resourceUrl, { method: "GET" });
   if (challengeResponse.status !== 402)
@@ -224,6 +238,32 @@ export async function buy({
     throw new Error(
       `the seller answered ${paid.status} to a signed payment — the authorization was built but nothing settled`,
     );
+  /* ⛔⛔ THE INDEPENDENT READ, WHICH THIS MODULE CLAIMED AND DID NOT DO. `buy()` used to end at the
+   * seller's 200 — the seller's own word that the seller was paid. For the producer of an acceptance
+   * transcript that is the whole difference between a receipt and evidence.
+   *
+   * ⭐ It runs through `verifySettled` from the published package, with `verifierPorts` and the weld
+   * adapter INJECTED — the same discipline that keeps the package itself free of a chain SDK. ⚠️ When the
+   * caller supplies none, the read DID NOT HAPPEN, and `verification: null` says so rather than the
+   * transcript quietly omitting a clause it owes.
+   */
+  let verification = null;
+  if (settlement !== undefined) {
+    const { verifySettled } = await import("@integraledger/agentic-terms");
+    verification = await verifySettled(settlement.ref, settlement.adapter, {
+      verifierPorts: settlement.verifierPorts,
+      atrBytes: settlement.atrBytes,
+      asOf: ports.now(),
+      coverage: settlement.coverage ?? { ports: [], bindings: [] },
+      identity: {
+        sellerAssurance: context.sellerAssurance,
+        payer: wallet.address,
+      },
+      ...(settlement.claimedClass === undefined
+        ? {}
+        : { claimedClass: settlement.claimedClass }),
+    });
+  }
   return Object.freeze({
     kind: "settled",
     signed,
@@ -231,6 +271,7 @@ export async function buy({
     authorization,
     domain,
     response: paid,
+    verification,
   });
 }
 
@@ -250,6 +291,7 @@ export function renderTranscript({
   drivenBy,
   buyer,
   purpose,
+  verification,
 }) {
   return [
     `⭐ SETTLED — against ${host}, on Base Sepolia, through the shipped facilitator path.`,
@@ -259,6 +301,13 @@ export function renderTranscript({
     `   driven by    ${drivenBy}`,
     `   buyer        ${buyer}`,
     `   purpose      ${purpose ?? "UNRULED — the vocabulary is an open position call"}`,
+    // ⛔ The acceptance clause asks for an INDEPENDENT verify at mechanical depth. A transcript that left
+    // this line out when the read did not happen would read as one where it did.
+    `   verified     ${
+      verification === null || verification === undefined
+        ? "NOT READ — no verifier ports were supplied to this run, so nothing independent has confirmed the seller's 200"
+        : `${String(verification.verified)} (${String(verification.supportedClass ?? "class not stated")})`
+    }`,
   ].join("\n");
 }
 
