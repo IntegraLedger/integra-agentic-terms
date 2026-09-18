@@ -452,3 +452,60 @@ test("⛔ a missing declarations file is refused, not defaulted to an empty tabl
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// ⛔⛔ A STRING LITERAL `"from"` IS NOT AN IMPORT, and reading it as one cost a real file a false refusal.
+// `[^;]*?` crosses newlines, so an `import`/`export` statement's span runs on until a semicolon — and
+// `{ name: "from", type: "address" }`, which is EIP-3009's own field list, yielded the specifier
+// `", type: "`, "which nothing classifies". The author's only escapes were to declare a non-import in the
+// declarations table — poisoning the one table this gate's judgement rests on — or to rename a field they
+// do not own.
+drive(
+  '⛔⛔ a quoted `"from"` inside a declaration is NOT read as an import',
+  {
+    files: {
+      "packages/p/src/eip3009.ts":
+        'export const TYPES = Object.freeze({\n  TransferWithAuthorization: Object.freeze([\n    Object.freeze({ name: "from", type: "address" }),\n  ]),\n});\n',
+      "packages/p/test/eip3009.test.ts":
+        'import { it } from "vitest";\nimport { TYPES } from "../src/eip3009.js";\nit("x", () => { void TYPES; });\n',
+    },
+  },
+  (r) => {
+    assert.equal(
+      r.status,
+      0,
+      `a quoted "from" must not be an import, got:\n${r.out}`,
+    );
+    assert.doesNotMatch(r.out, /, type: /);
+  },
+);
+
+// ⭐ THE CONTROL FOR THAT FIX: the keyword forms it must not have broken. A lookbehind that stopped
+// matching real imports would make this gate blind in exactly the direction it exists to cover — and the
+// declarations below are checked against what was EXTRACTED, so a green here proves both were seen.
+drive(
+  "⭐ …and the real `import from` and `export from` forms still resolve",
+  {
+    files: {
+      "packages/p/test/forms.test.ts":
+        'import { it } from "vitest";\nimport pg from "pg";\nexport { createClient } from "redis";\nit("x", () => { void pg; });\n',
+    },
+    declarations: {
+      namedNotCalled: {},
+      imports: {
+        vitest: { kind: "inert", why: "the runner" },
+        pg: { kind: "inert", why: "a driver, named and never called" },
+        redis: {
+          kind: "inert",
+          why: "an import wearing an export's clothes, named and never called",
+        },
+      },
+    },
+  },
+  (r) => {
+    assert.equal(
+      r.status,
+      0,
+      `the real forms must still resolve, got:\n${r.out}`,
+    );
+  },
+);
