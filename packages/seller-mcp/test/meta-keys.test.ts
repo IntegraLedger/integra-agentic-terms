@@ -87,6 +87,23 @@ function faults(key: string): readonly KeyFault[] {
   return found;
 }
 
+/**
+ * The reserved second label of a key's prefix, or `undefined` when there is none.
+ *
+ * ⛔ **Deliberately not built on {@link faults}.** It transcribes the published rule on its own — *"a
+ * prefix … MUST be a series of labels separated by dots"*, and *"any prefix where the SECOND label is
+ * `modelcontextprotocol` or `mcp` is reserved for MCP use"* — so that the two readings of that rule in
+ * this file can disagree. A helper that delegated would make the second drive an echo of the first.
+ */
+function reservedSecondLabel(key: string): string | undefined {
+  const slash = key.indexOf("/");
+  const labels = slash === -1 ? [] : key.slice(0, slash).split(".");
+  const second = labels[1];
+  return second === "modelcontextprotocol" || second === "mcp"
+    ? second
+    : undefined;
+}
+
 /** Namespaced string constants this module publishes — derived, never listed. */
 const emitted = Object.entries(adapter).flatMap(([name, value]) =>
   typeof value === "string" && value.includes("/") ? [{ name, value }] : [],
@@ -212,22 +229,41 @@ describe("⛔ every `_meta` key this adapter publishes is a valid MCP key name",
    * `faults(key)` for the reserved sentence, which is a SUBSET of the sweep above asserting `faults(key)`
    * empty — measured: under the reserved-prefix plant it failed only in company, and had `faults` lost its
    * reservation branch it would have gone green alongside everything else. A second assertion over the
-   * same predicate is not a second reading; it is the same reading written twice, which is exactly what
-   * the length assertion above is careful to admit about itself.
+   * same predicate is not a second reading; it is the same reading written twice.
    *
-   * ⇒ It now reads the prefix's second label DIRECTLY, from the published rule, without calling `faults`
-   * at all. Two independent instruments on one claim: delete the reservation branch from `faults` and this
-   * still refuses a reserved key; break this and `faults` still does. Driven both ways.
+   * ⇒ {@link reservedSecondLabel} reads the published rule DIRECTLY — a prefix is labels separated by
+   * dots, and the reservation attaches to the SECOND one — without calling `faults` at all. Two
+   * independent instruments on one claim: blind `faults`' reservation branch and this still refuses a
+   * reserved key; blind this and `faults` still does.
    */
   it.each(ALL_KEYS.map((key) => [key] as const))(
     "%s does not sit under a prefix MCP reserves for itself",
     (key) => {
-      const slash = key.indexOf("/");
-      const labels = slash === -1 ? [] : key.slice(0, slash).split(".");
-      expect(labels[1]).not.toBe("modelcontextprotocol");
-      expect(labels[1]).not.toBe("mcp");
+      expect(reservedSecondLabel(key)).toBeUndefined();
     },
   );
+
+  /**
+   * ⛔⛔ **AND THE SECOND INSTRUMENT GETS THE CONTROL THE FIRST ONE HAS, BECAUSE IT HAD NONE.** The rule
+   * one screen up — *"every rule above must be capable of REFUSING"* — binds this rule too, and for a
+   * while it did not hold it: the sweep's whole subject set is nine CONFORMANT keys, so every assertion in
+   * it passes whether the extraction works or not. Measured by mutating the label index from `[1]` to
+   * `[2]`: the suite stayed fully green, and with a reserved key planted in §4.1 as well the instrument was
+   * simply ABSENT from the failure list while the other two reds arrived. An instrument that reports
+   * nothing when it has been blinded is not an instrument.
+   *
+   * ⇒ These cases drive the same extraction over keys that ARE reserved and assert it SEES the reserved
+   * label. One case per key, for the same reason the refusals table has one: two broken readings surface
+   * as two. Both spellings the published rule reserves are covered, and `io.modelcontextprotocol/` twice
+   * under different names, because the reservation is a property of the prefix and not of a name.
+   */
+  it.each([
+    ["io.modelcontextprotocol/payment", "modelcontextprotocol"],
+    ["io.modelcontextprotocol/receipt", "modelcontextprotocol"],
+    ["com.mcp/receipt", "mcp"],
+  ] as const)("⭐ sees the reserved label in %s — %s", (key, label) => {
+    expect(reservedSecondLabel(key)).toBe(label);
+  });
 
   it.each(emitted.map((e) => [e.name, e.value] as const))(
     "%s = %s is conformant, unreserved, and correctly namespaced",
