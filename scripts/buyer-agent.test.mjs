@@ -394,6 +394,15 @@ test("⛔⛔ POLICY — a FORBIDDEN clause category DECLINES, and the wallet is 
       ports: ports(CLAUSED_BYTES),
     });
     assert.equal(result.kind, "halted");
+    // ⛔⛔ THE CODE AND THE REASON, NOT JUST THE HALT. Asserting only `halted` made this a THIRD copy of the
+    // fingerprint test: a wrong `CLAUSED_ATR` halts at `gate/fingerprint-mismatch` and the case passes,
+    // so the constant it depends on was pinned by nothing. Driven: with a wrong hash this case is the only
+    // one that reds.
+    assert.equal(result.decision.code, "policy/forbidden-clause");
+    assert.equal(
+      result.decision.detail,
+      "forbidden clause category: arbitration",
+    );
     assert.equal(
       w.calls.length,
       0,
