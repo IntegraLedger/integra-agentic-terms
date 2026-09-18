@@ -239,34 +239,74 @@ describe("⛔ every `_meta` key this adapter publishes is a valid MCP key name",
   /**
    * ⛔ THE CONTROL. Every rule above must be capable of REFUSING, or the cases above pass for the wrong
    * reason — a validator that accepts everything is the vacuous gate this repository has shipped before.
+   *
+   * ⛔⛔ **ONE CASE PER RULE, BECAUSE EIGHT ASSERTIONS IN ONE `it` REPORT ONE BREAKAGE.** These were a
+   * single block, and the first failing `expect` ends the case — measured: with the `mcp` branch deleted
+   * the run named that control and NEVER EXECUTED the four below it, so a second rule broken in the same
+   * commit was invisible until the first was fixed. A control suite that can only report its first finding
+   * turns an audit into a queue. Each rule is now its own case and its own line of the report.
    */
-  it("⭐ and the grammar refuses each way a key can be wrong", () => {
-    expect(faults("4x02/payment")[0]?.why).toMatch(/label .* is malformed/);
-    expect(faults("io.modelcontextprotocol/payment")[0]?.why).toMatch(
+  it.each([
+    [
+      "4x02/payment",
+      "a label must start with a letter",
+      /label .* is malformed/,
+    ],
+    [
+      "io.modelcontextprotocol/payment",
+      "the prefix MCP reserves for itself",
       /reserved for MCP/,
-    );
-    // ⭐ The reservation attaches to the PREFIX, not to the one name already controlled above. A key named
-    // after one of ours under that prefix must be refused for the prefix, which is what a door emitting
-    // `receipt` would reach for if it ever mistook the reserved namespace for a neutral one.
-    expect(faults("io.modelcontextprotocol/receipt")[0]?.why).toMatch(
+    ],
+    [
+      // ⭐ The reservation attaches to the PREFIX, not to the one name already controlled above. A key
+      // named after one of ours under that prefix must be refused for the prefix, which is what a door
+      // emitting `receipt` would reach for if it ever mistook the reserved namespace for a neutral one.
+      "io.modelcontextprotocol/receipt",
+      "the same reserved prefix under one of OUR names",
       /reserved for MCP/,
-    );
-    // ⛔ AND THE SECOND HALF OF THE SAME PREDICATE, WHICH HAD NO CONTROL. The published rule reserves a
-    // prefix whose second label is `modelcontextprotocol` OR `mcp`; every control here drove the first
-    // spelling only, so deleting the `mcp` branch left the suite green.
-    expect(faults("com.mcp/receipt")[0]?.why).toMatch(/reserved for MCP/);
-    expect(faults("x402/-payment")[0]?.why).toMatch(/alphanumeric-bounded/);
-    // ⛔ AND THE OTHER DIRECTION. The published rule is that a name begins AND ends with an alphanumeric;
-    // a control on the leading character alone passes against a regex anchored only at the start, which is
-    // half a grammar reported as a whole one.
-    expect(faults("x402/payment-")[0]?.why).toMatch(/alphanumeric-bounded/);
-    expect(faults("x402/a/b")[0]?.why).toMatch(/more than one/);
-    expect(faults("integraledger.com/legal-context")[0]?.why).toMatch(
+    ],
+    [
+      // ⛔ THE SECOND HALF OF THE SAME PREDICATE, WHICH HAD NO CONTROL. The published rule reserves a
+      // prefix whose second label is `modelcontextprotocol` OR `mcp`; every control here drove the first
+      // spelling only, so deleting the `mcp` branch left the suite green.
+      "com.mcp/receipt",
+      "`mcp` as the second label, the other half of the reservation",
+      /reserved for MCP/,
+    ],
+    [
+      "x402/-payment",
+      "a name that does not BEGIN with an alphanumeric",
+      /alphanumeric-bounded/,
+    ],
+    [
+      // ⛔ THE OTHER DIRECTION. The published rule is that a name begins AND ends with an alphanumeric; a
+      // control on the leading character alone passes against a regex anchored only at the start, which
+      // is half a grammar reported as a whole one.
+      "x402/payment-",
+      "a name that does not END with an alphanumeric",
+      /alphanumeric-bounded/,
+    ],
+    ["x402/a/b", "two slashes — a key is a prefix and a name", /more than one/],
+    [
+      "integraledger.com/legal-context",
+      "forward DNS for a namespace we own",
       /forward DNS/,
-    );
-    // ⭐ And it ADMITS the shapes the spec admits: our own reverse-DNS namespace, and a bare name with no
-    // prefix at all (`progressToken` is exactly that, and reserved by the spec itself).
-    expect(faults("com.integraledger/legal-context")).toEqual([]);
-    expect(faults("progressToken")).toEqual([]);
+    ],
+  ] as const)("⭐ refuses %s — %s", (key, _why, pattern) => {
+    expect(faults(key)[0]?.why).toMatch(pattern);
+  });
+
+  /**
+   * ⭐ And it ADMITS the shapes the published grammar admits. Separate cases for the same reason as above,
+   * and separate from the refusals because a validator that refuses everything is the other vacuous gate.
+   */
+  it.each([
+    ["com.integraledger/legal-context", "our own reverse-DNS namespace"],
+    [
+      "progressToken",
+      "a bare name with no prefix, which the spec itself reserves",
+    ],
+  ] as const)("⭐ admits %s — %s", (key) => {
+    expect(faults(key)).toEqual([]);
   });
 });
