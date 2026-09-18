@@ -203,15 +203,31 @@ describe("⛔ every `_meta` key this adapter publishes is a valid MCP key name",
     },
   );
 
-  it("⛔ not one of the nine sits under a prefix MCP reserves for itself", () => {
-    // Stated separately from the grammar sweep above because it is the claim the extension specification
-    // makes in prose — *"none sits under the reserved `io.modelcontextprotocol/` prefix"* — and a claim in
-    // a published document deserves a drive of its own rather than a share of someone else's.
-    for (const key of ALL_KEYS)
-      expect(faults(key).map((f) => f.why)).not.toContain(
-        `prefix "${key.split("/")[0]}/" is reserved for MCP`,
-      );
-  });
+  /**
+   * ⛔⛔ **THE RESERVATION CLAIM, READ A SECOND WAY, AND THE SECOND WAY IS THE POINT.** The published
+   * specification makes this claim in prose — *"none sits under the reserved `io.modelcontextprotocol/`
+   * prefix"* — so it gets a drive rather than a share of someone else's.
+   *
+   * ⚠️ **The first form of this test could not red on its own, and that was a defect.** It asked
+   * `faults(key)` for the reserved sentence, which is a SUBSET of the sweep above asserting `faults(key)`
+   * empty — measured: under the reserved-prefix plant it failed only in company, and had `faults` lost its
+   * reservation branch it would have gone green alongside everything else. A second assertion over the
+   * same predicate is not a second reading; it is the same reading written twice, which is exactly what
+   * the length assertion above is careful to admit about itself.
+   *
+   * ⇒ It now reads the prefix's second label DIRECTLY, from the published rule, without calling `faults`
+   * at all. Two independent instruments on one claim: delete the reservation branch from `faults` and this
+   * still refuses a reserved key; break this and `faults` still does. Driven both ways.
+   */
+  it.each(ALL_KEYS.map((key) => [key] as const))(
+    "%s does not sit under a prefix MCP reserves for itself",
+    (key) => {
+      const slash = key.indexOf("/");
+      const labels = slash === -1 ? [] : key.slice(0, slash).split(".");
+      expect(labels[1]).not.toBe("modelcontextprotocol");
+      expect(labels[1]).not.toBe("mcp");
+    },
+  );
 
   it.each(emitted.map((e) => [e.name, e.value] as const))(
     "%s = %s is conformant, unreserved, and correctly namespaced",
