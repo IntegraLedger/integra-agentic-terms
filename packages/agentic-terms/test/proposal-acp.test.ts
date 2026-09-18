@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseProposalFromAcpCheckout } from "../src/proposal-acp.js";
 
-// `Assurance` is a closed union in `@integraledger/lcp-authority` (`src/composition.ts:18-22`):
+// `Assurance` is a closed union in `@integraledger/lcp-authority` (`src/composition.ts:37-41`):
 // "wallet-signature-only" | "domain-controlled" | "attested" | "legal-party". There is no "self-asserted".
 const ctx = {
   level: 2 as const,
