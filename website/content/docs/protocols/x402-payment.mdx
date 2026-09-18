@@ -40,7 +40,7 @@ a seller that has adopted the weld and therefore checks it.
 npm install @integraledger/agentic-terms @integraledger/lcp-binding-evm-x402
 ```
 
-The gate peers the `@integraledger/lcp-*` protocol line at `^0.18.3`, and the binding depends on that same
+The gate peers the `@integraledger/lcp-*` protocol line at `^0.19.0`, and the binding depends on that same
 line, so your package manager installs **one** copy of it for both — which is the shape that matters here:
 two copies of `lcp-binding-core` in one tree break `instanceof` on its error types.
 

@@ -52,8 +52,8 @@ importers:
         specifier: workspace:*
         version: link:packages/connector-conformance
       '@integraledger/lcp-conformance':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-mcp-server':
         specifier: workspace:*
         version: link:packages/lcp-mcp-server
@@ -92,35 +92,35 @@ importers:
         version: 4.6.2
     devDependencies:
       '@integraledger/lcp-authority':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-binding-core':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-discovery':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-evidence':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-kernel':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-placement-ack':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-placement-acp':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-placement-ap2':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-placements':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@integraledger/lcp-verify':
-        specifier: 0.18.3
-        version: 0.18.3
+        specifier: 0.19.0
+        version: 0.19.0
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
@@ -146,32 +146,32 @@ importers:
         specifier: workspace:*
         version: link:../agentic-terms
       '@integraledger/lcp-authority':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-binding-core':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-discovery':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-evidence':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-kernel':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-placement-ack':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-placement-ap2':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-placements':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@integraledger/lcp-verify':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.19.0
+        version: 0.19.0
       '@modelcontextprotocol/server':
         specifier: 'catalog:'
         version: 2.0.0
@@ -667,73 +667,73 @@ packages:
       '@types/node':
         optional: true
 
-  '@integraledger/lcp-authority@0.18.3':
-    resolution: {integrity: sha512-K9IYIaLsEEeUQEoSbMvsxJM853G0zkr5+8pfgpPICReOfPZ5ZullNVSehgdRAac71ekyrw4uvCACDPCEDxw5qw==}
+  '@integraledger/lcp-authority@0.19.0':
+    resolution: {integrity: sha512-cETlOWVlLb0gkphLbTxohuI7vCXQIoEKgN9rM7QKqr1kbQPmrxZFQCOyuUFJudzxppjWo0zZbblAIu+QiHva4g==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-binding-core@0.18.3':
-    resolution: {integrity: sha512-39O2mVVPKjt/k+zHtpkBYXanVlm2x/iWXh2/OJN0F4Kp1NHG6F3NoaX36eiQ6o5EHbDCVAfQ5NZ+kLJSrMSokw==}
+  '@integraledger/lcp-binding-core@0.19.0':
+    resolution: {integrity: sha512-9aYY5ZjIYoRyIFGmH83N/DyqWiQUGc+0PCTJZ8prH5MT2A+8ozmstndT1pGyXjslMSjoeySQcGgC4RDAtnLPaw==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-conformance@0.18.3':
-    resolution: {integrity: sha512-vLhbAa6jjYyXYbRgwOmUTxFSKdSwB9heqSaS+mevAfyCojQWY1ANpMYV8VUJVOqn8epLRvm8oMjwdDzykzA4bw==}
+  '@integraledger/lcp-conformance@0.19.0':
+    resolution: {integrity: sha512-WcMnRGltY8rRt2Q6XJ1v4PHEimf1vn8JULba6RUBwxpOTKDJx/giTnJY7yVKg0hF4AjsKcuZvrkKISjCa2AMzw==}
     engines: {node: '>=24'}
     hasBin: true
 
-  '@integraledger/lcp-discovery@0.18.3':
-    resolution: {integrity: sha512-5D9XrD80w3Rs71iRU5KWPXtmDyYBKrYdulKFRSVR2RTHMRhGVip0LhAJQzzKtGQdM1KqMmUKgMcxVftzQpXTtg==}
+  '@integraledger/lcp-discovery@0.19.0':
+    resolution: {integrity: sha512-ykYA8QArQeCa2ZV1RkLeZWtHhAGAKAs97JnNz7JcDSaT/40SM5MImjkBiyYnQoLx1DnHwO34+VnTMkQjp5Uh2g==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-evidence@0.18.3':
-    resolution: {integrity: sha512-a5Zs1f+P0j4IXt7jBrRt2xhBUabb6n+7jhx15QI0JefjNNmkzhhjuWtgl+V0Ft15EAIUvhRFPqnrTZybSYk4fQ==}
+  '@integraledger/lcp-evidence@0.19.0':
+    resolution: {integrity: sha512-Goblnopl4zhdBZRshVXqvKHKkZJeIFItR+leV9uLBzLIbjSGcw57Jy7TkjmsMl/MXm6vq6mmGyZcEO4vzXa1mw==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-kernel@0.18.3':
-    resolution: {integrity: sha512-q3AkKzRwzIXbZGWTlL4TOJn6MiP7P2+XlS/t0YLK1wW4TCzBw7DGi8+dHNcXfj00LU7wUDLXEI96/bAVuv1q3A==}
+  '@integraledger/lcp-kernel@0.19.0':
+    resolution: {integrity: sha512-vQmqd8p0swPoXuB1NhP+eo1fBuOW/aLh3Lljsh0N8IbIjRdqlT1vX5FmiSfD3VaSDJmuNWx/t4eQ6v16p0ChLw==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-a2a@0.18.3':
-    resolution: {integrity: sha512-T78tPD3fTNVtVTOy/dAbHmfeHnKk2P1zXrjHjSW3rJ0HaP0CwBcCtMtOhFrhmZZuld4OiQu90Qr2T6U3c2YTvQ==}
+  '@integraledger/lcp-placement-a2a@0.19.0':
+    resolution: {integrity: sha512-1lYu1xw/ds06J7ztggLGOaDTe8RYB6jHvYh2ZLfe5N04lfzrKK13hx9F5GWFm5kCiIYCdT1O78u/C5kvUB1XUg==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-ack@0.18.3':
-    resolution: {integrity: sha512-4iEVzWeA0LRSVOJcguEQpyFxkOMvMdgNyGmAPloHO+BbcU4HSos+xuasQP7+sak6pMSWoHxp1ZxsdiG0hKOIFw==}
+  '@integraledger/lcp-placement-ack@0.19.0':
+    resolution: {integrity: sha512-cV+Ht51BnagJvqJZKL8kqseI5L/ZmQ4OeUtuIkdkTCR4p1HiXUI7L6ssfIxSYWBLA5jmMn9+LtKApprR2CSJDw==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-acp@0.18.3':
-    resolution: {integrity: sha512-VIIsCX1lDEa2/dg7NobfXka4rl9kpEMaIuC5PG9cm3mFY6H990j4uXQFbmgqyeuqgtUH293PxLPke32ANPLenQ==}
+  '@integraledger/lcp-placement-acp@0.19.0':
+    resolution: {integrity: sha512-ovhMPSA7qXaDpb52tvkLAysFX7EAedGeTZnXBB+e4YLSqz4wLFFEqJGnWMFbGNd2cZPir6+Yz+/u4+05Lf3BWg==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-ap2@0.18.3':
-    resolution: {integrity: sha512-mNg1boPt9ur678YYnufaRk4d3GmSQtXfbn98XHaTm6FdmZo8aAjKjqPFYY4YjveclJuIGq9X5aUFYJTk0ocpKA==}
+  '@integraledger/lcp-placement-ap2@0.19.0':
+    resolution: {integrity: sha512-Z0QbOgqbYxniHF/IksfLFW7au0lduAsAY/c+PchEX5pvP6atLP5+kg8LoD51VvA14ZfBhfoYAbh43O5TlcaAdA==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-mastercard-vi@0.18.3':
-    resolution: {integrity: sha512-TWlmX4pHrQjPPL21OslVw4qHURkH9P0xP4tJjx/0bnadYXjyVf2Y19VdBvbf+F6Vup9i4zr2m2gPR4drV3jy+g==}
+  '@integraledger/lcp-placement-mastercard-vi@0.19.0':
+    resolution: {integrity: sha512-Av3nq/vuobZwIPnnizNeJimzIeyzD3+pI9LcHn+uYJXwUZ9cGyPuAV5iEumUvPBU38nTOW2lgitNICiPQyXn4w==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-mpp@0.18.3':
-    resolution: {integrity: sha512-CdBF9NeFwYVm2DuYxeYkjeg5HyzQpj0gJ+rKm6rsIYoGmrGGrd6IVq8LAgpbKtkYarV3oQFMqp9plzbfu6rbNA==}
+  '@integraledger/lcp-placement-mpp@0.19.0':
+    resolution: {integrity: sha512-R81pOyLGxoo78rZA9/hN+iBzx875bswzO/FplwV2zM/ot5MxOG/o4cxXTLgrpQQjXexWhAI/2YTE/0QBWHg2pQ==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-ucp@0.18.3':
-    resolution: {integrity: sha512-dZfphLgTJ8M8Z3wH33nvgWZAfAGaRG6ygrYUiePB8kUBe7VTCUqJRTg/cR8mRw/yG9g6Nex9X6LVfSdO9ZxVKg==}
+  '@integraledger/lcp-placement-ucp@0.19.0':
+    resolution: {integrity: sha512-Q1Ied+gkFI1EP7XKM0j4WiN3RaBtkZWAO7Zqto8k4XlB8uNb4W6N5bngYMnJUYjhmKOeabeu/g9aIds65WVIew==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-visa-tap@0.18.3':
-    resolution: {integrity: sha512-ZONmVTTes7LCNZjtCI5lhD0JBqDN9olhfqxfNUnGARK48FGaYnURKQaLSoA0tCqc0ZFZoUTGeASQJiHuqtE1Uw==}
+  '@integraledger/lcp-placement-visa-tap@0.19.0':
+    resolution: {integrity: sha512-CqNXo6GmEFThkc2n6qxpRdHiavTh4I9low6kKwPa7tFs/zVxaOW+wTx7pGHZF/UXDBtsYJRyZ7WJIQ6tmgZurw==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placement-x402@0.18.3':
-    resolution: {integrity: sha512-LHBCWX8FSmuNraNwAxSN8EtWnF0xXIzxeXwh2WwdfhLay/MDr+cTl3+MGd3T2tQmiuk2Jzk0L7Uho4dMHf/D5Q==}
+  '@integraledger/lcp-placement-x402@0.19.0':
+    resolution: {integrity: sha512-2LEdmPGmtje0Rj8fikdrc3oo1fzCOdDzz4yxKn8kFFNh4a1DMwSGT9c5VAHfgb9ujdEalokvFNuAzJ8rkfmD2A==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-placements@0.18.3':
-    resolution: {integrity: sha512-1N6CBTep5k55Wc/kl6AoKhshRzJPhvNarQQc1Qa0woSGuqUEXGHPKk7MWPsl7STGTzpWncfnllMBhTxYqAaIOA==}
+  '@integraledger/lcp-placements@0.19.0':
+    resolution: {integrity: sha512-tUAsEHbYZiXb9pViR0f5BhnP9OQHbkTnOTNJvw+MGgyukBtQm99QaTIZxEHtZxjkiFWWktdLmpumDvE0MA1ijg==}
     engines: {node: '>=24'}
 
-  '@integraledger/lcp-verify@0.18.3':
-    resolution: {integrity: sha512-7SyQOoIcVKHb7Oa20bXncVXJrYZhzkGSDpXIiX2BeOsmJD++NzWlj+4z6N7LQeC+vg6Qrb6jbl+k/2ZTkCC4dw==}
+  '@integraledger/lcp-verify@0.19.0':
+    resolution: {integrity: sha512-HOUtepPz8wmSiQK4souv23kCKGqN9xBScqftdTo045ZNELLewVZR3mSAkLkqIxYD6fJj2VtR1fDDvxN/egA+Kw==}
     engines: {node: '>=24'}
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -2153,9 +2153,6 @@ packages:
     resolution: {integrity: sha512-xYqdZFUK/VYazNl/oCDYN+3WloWQwMfZxBoiNt6qNyk+xfOdi598muWE42rNZFp1kNOiqW936q5RhUdnpqElSg==}
     engines: {node: '>=18'}
 
-  zod@4.5.4:
-    resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
-
   zod@4.6.2:
     resolution: {integrity: sha512-lh5RCAGFa1Cm2hjtNwLQhSs/AsqdWnTQaBER9fEwN/88pSh7KOtJavtBx/0VlkN/uFd61SwYmljLMDAsHlvzBQ==}
 
@@ -2685,94 +2682,94 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.13.3
 
-  '@integraledger/lcp-authority@0.18.3':
+  '@integraledger/lcp-authority@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
-      '@integraledger/lcp-kernel': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
+      '@integraledger/lcp-kernel': 0.19.0
 
-  '@integraledger/lcp-binding-core@0.18.3':
+  '@integraledger/lcp-binding-core@0.19.0':
     dependencies:
-      '@integraledger/lcp-kernel': 0.18.3
+      '@integraledger/lcp-kernel': 0.19.0
 
-  '@integraledger/lcp-conformance@0.18.3':
+  '@integraledger/lcp-conformance@0.19.0':
     dependencies:
       '@cfworker/json-schema': 4.1.1
-      '@integraledger/lcp-authority': 0.18.3
-      '@integraledger/lcp-binding-core': 0.18.3
-      '@integraledger/lcp-discovery': 0.18.3
-      '@integraledger/lcp-evidence': 0.18.3
-      '@integraledger/lcp-kernel': 0.18.3
-      '@integraledger/lcp-placement-x402': 0.18.3
-      '@integraledger/lcp-placements': 0.18.3
-      '@integraledger/lcp-verify': 0.18.3
+      '@integraledger/lcp-authority': 0.19.0
+      '@integraledger/lcp-binding-core': 0.19.0
+      '@integraledger/lcp-discovery': 0.19.0
+      '@integraledger/lcp-evidence': 0.19.0
+      '@integraledger/lcp-kernel': 0.19.0
+      '@integraledger/lcp-placement-x402': 0.19.0
+      '@integraledger/lcp-placements': 0.19.0
+      '@integraledger/lcp-verify': 0.19.0
 
-  '@integraledger/lcp-discovery@0.18.3':
+  '@integraledger/lcp-discovery@0.19.0':
     dependencies:
-      '@integraledger/lcp-kernel': 0.18.3
+      '@integraledger/lcp-kernel': 0.19.0
       zod: 4.6.2
 
-  '@integraledger/lcp-evidence@0.18.3':
+  '@integraledger/lcp-evidence@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
-      '@integraledger/lcp-kernel': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
+      '@integraledger/lcp-kernel': 0.19.0
       multiformats: 14.0.5
 
-  '@integraledger/lcp-kernel@0.18.3': {}
+  '@integraledger/lcp-kernel@0.19.0': {}
 
-  '@integraledger/lcp-placement-a2a@0.18.3':
+  '@integraledger/lcp-placement-a2a@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-ack@0.18.3':
+  '@integraledger/lcp-placement-ack@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-acp@0.18.3':
+  '@integraledger/lcp-placement-acp@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-ap2@0.18.3':
+  '@integraledger/lcp-placement-ap2@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-mastercard-vi@0.18.3':
+  '@integraledger/lcp-placement-mastercard-vi@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-mpp@0.18.3':
+  '@integraledger/lcp-placement-mpp@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-ucp@0.18.3':
+  '@integraledger/lcp-placement-ucp@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-visa-tap@0.18.3':
+  '@integraledger/lcp-placement-visa-tap@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placement-x402@0.18.3':
+  '@integraledger/lcp-placement-x402@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
 
-  '@integraledger/lcp-placements@0.18.3':
+  '@integraledger/lcp-placements@0.19.0':
     dependencies:
-      '@integraledger/lcp-binding-core': 0.18.3
-      '@integraledger/lcp-placement-a2a': 0.18.3
-      '@integraledger/lcp-placement-ack': 0.18.3
-      '@integraledger/lcp-placement-acp': 0.18.3
-      '@integraledger/lcp-placement-ap2': 0.18.3
-      '@integraledger/lcp-placement-mastercard-vi': 0.18.3
-      '@integraledger/lcp-placement-mpp': 0.18.3
-      '@integraledger/lcp-placement-ucp': 0.18.3
-      '@integraledger/lcp-placement-visa-tap': 0.18.3
-      '@integraledger/lcp-placement-x402': 0.18.3
+      '@integraledger/lcp-binding-core': 0.19.0
+      '@integraledger/lcp-placement-a2a': 0.19.0
+      '@integraledger/lcp-placement-ack': 0.19.0
+      '@integraledger/lcp-placement-acp': 0.19.0
+      '@integraledger/lcp-placement-ap2': 0.19.0
+      '@integraledger/lcp-placement-mastercard-vi': 0.19.0
+      '@integraledger/lcp-placement-mpp': 0.19.0
+      '@integraledger/lcp-placement-ucp': 0.19.0
+      '@integraledger/lcp-placement-visa-tap': 0.19.0
+      '@integraledger/lcp-placement-x402': 0.19.0
 
-  '@integraledger/lcp-verify@0.18.3':
+  '@integraledger/lcp-verify@0.19.0':
     dependencies:
-      '@integraledger/lcp-authority': 0.18.3
-      '@integraledger/lcp-binding-core': 0.18.3
-      '@integraledger/lcp-kernel': 0.18.3
+      '@integraledger/lcp-authority': 0.19.0
+      '@integraledger/lcp-binding-core': 0.19.0
+      '@integraledger/lcp-kernel': 0.19.0
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -3549,7 +3546,7 @@ snapshots:
 
   mutation-server-protocol@0.4.1:
     dependencies:
-      zod: 4.5.4
+      zod: 4.6.2
 
   mutation-testing-elements@3.8.4: {}
 
@@ -3936,7 +3933,5 @@ snapshots:
       yargs-parser: 20.2.9
 
   yoctocolors@2.2.0: {}
-
-  zod@4.5.4: {}
 
   zod@4.6.2: {}
