@@ -129,13 +129,17 @@ export function authorizationFor({
   // authorization was signed with `validAfter: "NaN"`, `validBefore: "NaN"`. Driven: the seller settled it.
   // A validity window that is not a window is not a smaller window; it is a signature over a struct whose
   // meaning nobody can state.
+  // ⛔ `String(…)` AND THE TYPE, NEVER `JSON.stringify`: it renders `NaN` as `null`, so the refusal told an
+  // operator their clock returned null when it returned a number that was not a number. The two faults this
+  // catches are a clock handing back `Date.now()`'s milliseconds and one handing back a string that is not
+  // a date, and neither is legible as `null`.
   if (!Number.isFinite(nowSeconds) || !Number.isInteger(nowSeconds))
     throw new Error(
-      `the clock returned ${JSON.stringify(nowSeconds)}, which is not a whole number of seconds — this buyer will not sign a validity window it cannot state`,
+      `the clock returned ${String(nowSeconds)} (${typeof nowSeconds}), which is not a whole number of seconds — this buyer will not sign a validity window it cannot state`,
     );
   if (!Number.isInteger(validitySeconds) || validitySeconds <= 0)
     throw new Error(
-      `the validity window is ${JSON.stringify(validitySeconds)} seconds, which is not a positive whole number — an authorization with no window is not one`,
+      `the validity window is ${String(validitySeconds)} (${typeof validitySeconds}) seconds, which is not a positive whole number — an authorization with no window is not one`,
     );
   const entry = record(accepted);
   const to = entry?.["payTo"];
