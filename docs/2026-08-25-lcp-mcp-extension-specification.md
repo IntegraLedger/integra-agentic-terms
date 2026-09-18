@@ -41,8 +41,9 @@ dropped a buyer's presentation would be a seller's declared policy silently not 
 This extension lets an MCP server declare that it can **verify the legal context bound to a payment
 before that payment is made**, so a host can discover the capability without calling a tool.
 
-It is a **declaration only**, and in v1 that was the whole of it: *"It defines no method, no transport, and
-no obligation on the client."*
+**It is a declaration, seven `_meta` keys, and one refusal.** v1 was the first of those alone and said so:
+*"It is a declaration only. It defines no method, no transport, and no obligation on the client."* §4
+specifies the keys; §4.2 attaches the refusal to one of them, on the request side.
 
 ⚠️ **v1.1 keeps the first two and narrows the third.** It still defines no method and no transport. It now
 places exactly one obligation on a client, and only on a client that chooses to use one key: a client
