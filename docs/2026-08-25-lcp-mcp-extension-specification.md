@@ -12,19 +12,27 @@ identifier fixes a wire identity that a semantic change would force to `-v2`, so
 Key words **MUST**, **MUST NOT**, **SHOULD**, **MAY** are to be interpreted as in RFC 2119, as the MCP
 extension process requires of an extension specification.
 
-⭐ **Revision v1.1, 2026-09-18 — §4 gains seven `_meta` keys, and five other places move with it.** v1
+⭐ **Revision v1.1, 2026-09-18 — §4 gains seven `_meta` keys, and six other places move with it.** v1
 defined none, and said so on purpose; this revision defines them before any server emits one, which is the
 order v1 required.
 
-**What moved, in full**, because *"nothing else moves"* is the sentence a revision note gets wrong:
+**What moved, in full.** The list is every hunk of the revision's diff, counted from it rather than
+recalled — *"nothing else moves"* is the sentence a revision note gets wrong, and a list headed *in full*
+that omits the note itself is the next one:
 
+- **The title line** — v1 → v1.1.
+- **This revision note** — new, and part of what moved.
+- **§1** — the opening sentence stated v1's position in the present tense; it now states v1.1's, with v1's
+  sentence quoted whole beneath it.
 - **§4** — the keys themselves, which is the change.
+- **§5** — *"there is no branch in which this extension rejects a request"*, narrowed to the one branch
+  §4.2 introduces.
 - **§6, conformance clause 4** — it required that a server emit **no** key under `com.integraledger/`; it
   now requires every key it does emit to be one of §4's.
-- **§1, §5 and §8** — three sentences that stated v1's *no keys* position as a standing property of the
-  extension (*"no obligation on the client"*, *"no branch in which this extension rejects a request"*,
-  *"which is the whole of it"*). Each keeps its v1 wording where it stands, as history, and is narrowed
-  rather than deleted.
+- **§8** — *"which is the whole of it"*, which is now one clause more than the whole of it.
+
+Every v1 sentence in that list keeps its wording where it stands, quoted as history, and is narrowed
+rather than deleted. Nothing else in this document changed.
 
 ⚠️ **The revision is additive, and exactly one clause of it is not.** No field is removed, renamed or
 retyped, and the identifier of §2 does not move to `…-v2`. §5's graceful degradation holds in full **for a
@@ -45,8 +53,8 @@ before that payment is made**, so a host can discover the capability without cal
 *"It is a declaration only. It defines no method, no transport, and no obligation on the client."* §4
 specifies the keys; §4.2 attaches the refusal to one of them, on the request side.
 
-⚠️ **v1.1 keeps the first two and narrows the third.** It still defines no method and no transport. It now
-places exactly one obligation on a client, and only on a client that chooses to use one key: a client
+⚠️ **Of the three things that quoted sentence denies, v1.1 keeps two and narrows one.** It still defines
+no method and no transport. It now places exactly one obligation on a client, and only on a client that chooses to use one key: a client
 writing `com.integraledger/intake` into a call's `_meta` **MUST** key it by names the seller declares, and
 §4.2 makes an undeclared name a refusal. A client that writes none of §4's keys carries no obligation at
 all — which is every client that does not use them.
