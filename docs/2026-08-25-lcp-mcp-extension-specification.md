@@ -12,11 +12,27 @@ identifier fixes a wire identity that a semantic change would force to `-v2`, so
 Key words **MUST**, **MUST NOT**, **SHOULD**, **MAY** are to be interpreted as in RFC 2119, as the MCP
 extension process requires of an extension specification.
 
-⭐ **Revision v1.1, 2026-09-18 — §4 gains seven `_meta` keys, and nothing else moves.** v1 defined none,
-and said so on purpose; this revision defines them before any server emits one, which is the order v1
-required. It is **additive**: no field is removed, renamed or retyped, the identifier of §2 does not move
-to `…-v2`, and §5's graceful degradation still holds in full — a client that reads none of these keys sees
-exactly the behaviour it saw before, because MCP requires unknown `_meta` keys to be ignorable.
+⭐ **Revision v1.1, 2026-09-18 — §4 gains seven `_meta` keys, and five other places move with it.** v1
+defined none, and said so on purpose; this revision defines them before any server emits one, which is the
+order v1 required.
+
+**What moved, in full**, because *"nothing else moves"* is the sentence a revision note gets wrong:
+
+- **§4** — the keys themselves, which is the change.
+- **§6, conformance clause 4** — it required that a server emit **no** key under `com.integraledger/`; it
+  now requires every key it does emit to be one of §4's.
+- **§1, §5 and §8** — three sentences that stated v1's *no keys* position as a standing property of the
+  extension (*"no obligation on the client"*, *"no branch in which this extension rejects a request"*,
+  *"which is the whole of it"*). Each keeps its v1 wording where it stands, as history, and is narrowed
+  rather than deleted.
+
+⚠️ **The revision is additive, and exactly one clause of it is not.** No field is removed, renamed or
+retyped, and the identifier of §2 does not move to `…-v2`. §5's graceful degradation holds in full **for a
+client that READS these keys**: one that reads none sees exactly the behaviour it saw before, because MCP
+requires unknown `_meta` keys to be ignorable. It does **not** extend to a client that **WRITES**
+`com.integraledger/intake`, because §4.2 refuses a call whose object is keyed by a name the seller has not
+declared — the one branch v1 said did not exist. That refusal is deliberate and stands: a door that quietly
+dropped a buyer's presentation would be a seller's declared policy silently not applying.
 
 ---
 
@@ -25,7 +41,14 @@ exactly the behaviour it saw before, because MCP requires unknown `_meta` keys t
 This extension lets an MCP server declare that it can **verify the legal context bound to a payment
 before that payment is made**, so a host can discover the capability without calling a tool.
 
-It is a **declaration only**. It defines no method, no transport, and no obligation on the client.
+It is a **declaration only**, and in v1 that was the whole of it: *"It defines no method, no transport, and
+no obligation on the client."*
+
+⚠️ **v1.1 keeps the first two and narrows the third.** It still defines no method and no transport. It now
+places exactly one obligation on a client, and only on a client that chooses to use one key: a client
+writing `com.integraledger/intake` into a call's `_meta` **MUST** key it by names the seller declares, and
+§4.2 makes an undeclared name a refusal. A client that writes none of §4's keys carries no obligation at
+all — which is every client that does not use them.
 
 ⛔ **Out of scope, permanently, per the LCP scope line:** how an agent plans, chooses, negotiates or
 prices anything. LCP has no opinion on agent operations. This extension says a server can *check a
@@ -185,10 +208,17 @@ Declared in the `extensions` field of capabilities, per the 2026-07-28 extension
 - A server implementing this extension **SHOULD** declare it.
 - A client that does not recognize the identifier **MUST** ignore it. MCP requires unknown capabilities
   to be ignorable, and nothing here changes message handling.
-- **Graceful degradation is total, and this is the point.** A server's tools behave **identically**
-  whether or not the client understands the extension. The declaration changes discovery, never
-  behavior. This is the "revert to core protocol behavior" branch the MCP specification requires of the
-  supporting party; there is no branch in which this extension rejects a request.
+- **Graceful degradation is total for a client that READS these keys, and this is the point.** A server's
+  tools behave **identically** whether or not the client understands the extension. The declaration changes
+  discovery, never behavior. This is the "revert to core protocol behavior" branch the MCP specification
+  requires of the supporting party.
+- ⚠️ **v1 ended the clause above *"there is no branch in which this extension rejects a request"*, and that
+  was true of a v1 that defined no keys.** v1.1 defines one such branch and exactly one: §4.2's
+  `com.integraledger/intake` refuses a call whose object is keyed by a name the seller has not declared —
+  on the **request** side, **before any HTTP call** is made. It is reachable only by a client that
+  **writes** that key. Nothing a client omits reaches it, no response carries it, and a client that does
+  not recognize the identifier cannot arrive at it, so the sentence above still describes every client
+  the original one described.
 - A client **MUST NOT** infer from the declaration that any particular seller's terms are bound. The
   declaration is about the **server's capability**, not about any transaction.
 
@@ -249,5 +279,9 @@ with a test asserting a real client sees it and a control showing nothing when t
 ## 8. What this deliberately does not do
 
 It adds no tool, no parser, no protocol row and no public API. It does not widen `PROPOSAL_PARSERS`, and
-"universal" continues to mean **reach, not parsers**. The gate does not grow: this is a declaration that
-an existing capability exists, which is the whole of it.
+"universal" continues to mean **reach, not parsers**. The gate does not grow.
+
+⚠️ **v1 closed this section *"this is a declaration that an existing capability exists, which is the whole
+of it"*, and v1.1 is one clause more than that.** It is that declaration, plus the seven `_meta` keys §4
+specifies, plus the single request-side refusal §4.2 attaches to one of them. Every other line of this
+section still holds unchanged.
