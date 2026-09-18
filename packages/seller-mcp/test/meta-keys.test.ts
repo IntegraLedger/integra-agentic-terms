@@ -306,7 +306,10 @@ describe("⛔ every `_meta` key this adapter publishes is a valid MCP key name",
       "progressToken",
       "a bare name with no prefix, which the spec itself reserves",
     ],
-  ] as const)("⭐ admits %s — %s", (key) => {
+    // ⚠️ Both tuple elements are declared even though only the first is read. `vitest` passes the whole
+    // row, and a callback declaring fewer parameters RUNS GREEN while `tsc --noEmit` refuses it — measured
+    // on this very block, which passed 32/32 and reddened only at the typecheck stage of `verify`.
+  ] as const)("⭐ admits %s — %s", (key, _why) => {
     expect(faults(key)).toEqual([]);
   });
 });
