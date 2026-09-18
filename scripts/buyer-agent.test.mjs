@@ -39,6 +39,18 @@ const CLAUSED_BYTES = new TextEncoder().encode(
 );
 const CLAUSED_ATR =
   "0x4ae693b917004e701ccc2f2d7c975724aee6a6a6a684959be7ea6a0841c611a5";
+/**
+ * Terms that are NOT machine-readable, with their own real hash.
+ *
+ * ⛔ The hash matters more than the bytes. A first cut served these bytes while the challenge still
+ * advertised the PARSEABLE document's hash, so `evaluate` halted at the fingerprint before it ever reached
+ * the disposition — the case was a second copy of the tamper test, and flipping `onNotAttempted` to
+ * `proceed` passed it identically. Advertising the hash of what is actually served is what hands the
+ * decision to the disposition.
+ */
+const UNPARSEABLE_BYTES = new TextEncoder().encode("not machine-readable");
+const UNPARSEABLE_ATR =
+  "0x9359bae8730a5abed4dc44b3a6df57a4dbea16c19449df2b70dea845ccddc8ea";
 const TAMPERED = `0x${"cd".repeat(32)}`;
 const PAY_TO = `0x${"11".repeat(20)}`;
 const ASSET = `0x${"22".repeat(20)}`;
@@ -392,10 +404,14 @@ test("⛔⛔ POLICY — a FORBIDDEN clause category DECLINES, and the wallet is 
   }
 });
 
-test("⭐⭐ THE CONTROL FOR THE LANE — unparseable terms HALT under `onNotAttempted: decline`", async () => {
-  // ⛔ The disposition is what makes the lane live. With `proceed` here — the first version — terms that do
-  // not parse skip the policy entirely, which is how four of its fields came to decide nothing.
-  const s = await seller(challengeBody());
+test("⭐⭐ THE CONTROL FOR THE LANE — unparseable terms HALT on the DISPOSITION, not the fingerprint", async () => {
+  // ⛔⛔ The advertised hash is the hash of the UNPARSEABLE bytes, so the fingerprint PASSES and the halt can
+  // only come from `onNotAttempted`. The first version advertised the parseable document's hash instead,
+  // which halted at `gate/fingerprint-mismatch` — a second copy of the tamper test wearing this one's name,
+  // and it passed identically with the disposition flipped. The code is asserted for exactly that reason.
+  const s = await seller(
+    challengeBody({ accepted: { extra: { atrHash: UNPARSEABLE_ATR } } }),
+  );
   const w = wallet();
   try {
     const result = await buy({
@@ -403,10 +419,34 @@ test("⭐⭐ THE CONTROL FOR THE LANE — unparseable terms HALT under `onNotAtt
       wallet: w,
       policy: POLICY,
       context: CONTEXT,
-      ports: ports(new TextEncoder().encode("not machine-readable")),
+      ports: ports(UNPARSEABLE_BYTES),
     });
     assert.equal(result.kind, "halted");
+    assert.equal(result.decision.code, "gate/unparseable-terms");
     assert.equal(w.calls.length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+test("⭐ THE NEGATIVE CONTROL — the same terms under `onNotAttempted: proceed` SETTLE", async () => {
+  // ⭐ What makes the case above about the disposition: flip the one field and the same bytes pay. If this
+  // settled under `decline` too, or halted under `proceed`, the case above would be measuring something
+  // else — which is precisely what it was doing.
+  const s = await seller(
+    challengeBody({ accepted: { extra: { atrHash: UNPARSEABLE_ATR } } }),
+  );
+  const w = wallet();
+  try {
+    const result = await buy({
+      resourceUrl: s.url,
+      wallet: w,
+      policy: { ...POLICY, onNotAttempted: "proceed" },
+      context: CONTEXT,
+      ports: ports(UNPARSEABLE_BYTES),
+    });
+    assert.equal(result.kind, "settled");
+    assert.equal(w.calls.length, 1);
   } finally {
     await s.close();
   }
@@ -464,5 +504,133 @@ test("⛔ a seller that does not challenge is refused — there is no offer to p
       server.closeAllConnections();
       server.close(resolve);
     });
+  }
+});
+
+/* ── The INDEPENDENT READ, driven through the runtime (`buy`), not through the package ────────────────
+ * ⛔⛔ Nothing passed `settlement` to `buy()`, so the whole verification block was unexercised: replacing
+ * it with `const verification = null` left the suite green. A block no case reaches is a block that can be
+ * deleted by accident — and this one is the difference between a transcript that is a receipt and one that
+ * is evidence.
+ *
+ * ⭐ The ports are STUBS and reach no network: `verifySettled` takes `verifierPorts` and the weld adapter
+ * as injections, which is what keeps the published package free of a chain SDK, and is what lets this be
+ * driven at all.
+ */
+const SETTLEMENT_REF = Object.freeze({
+  rail: "x402",
+  network: "eip155:84532",
+  reference: "0xdeadbeef",
+});
+
+/** A weld adapter that recovers the hash, or refuses to. */
+const adapter = (recovered) => ({
+  async recover() {
+    return recovered === null
+      ? { error: "no weld recovered" }
+      : { ok: true, value: recovered };
+  },
+});
+
+test("⭐⭐ THE READ — a recovered weld reports `verified true (TC-2)` in the transcript", async () => {
+  const s = await seller(challengeBody());
+  const w = wallet();
+  try {
+    const result = await buy({
+      resourceUrl: s.url,
+      wallet: w,
+      policy: POLICY,
+      context: CONTEXT,
+      ports: ports(),
+      settlement: {
+        ref: SETTLEMENT_REF,
+        adapter: adapter(ATR),
+        verifierPorts: {},
+        atrBytes: TERMS_BYTES,
+      },
+    });
+    assert.equal(result.kind, "settled");
+    assert.equal(result.verification.verified, true);
+    assert.equal(result.verification.supportedClass, "TC-2");
+    assert.match(
+      renderTranscript({
+        host: "x",
+        transaction: "0xdead",
+        amount: "1000",
+        atrHash: ATR,
+        drivenBy: "y",
+        buyer: "z",
+        verification: result.verification,
+      }),
+      /verified {5}true \(TC-2\)/,
+    );
+  } finally {
+    await s.close();
+  }
+});
+
+test("⛔⛔ THE READ — a REFUSED recovery reports `verified false`, which is not NOT READ", async () => {
+  // ⛔ The distinction the transcript exists to carry: a read that happened and said no is not a read that
+  // did not happen. Both would be an absent tick; only one of them is evidence about the settlement.
+  const s = await seller(challengeBody());
+  const w = wallet();
+  try {
+    const result = await buy({
+      resourceUrl: s.url,
+      wallet: w,
+      policy: POLICY,
+      context: CONTEXT,
+      ports: ports(),
+      settlement: {
+        ref: SETTLEMENT_REF,
+        adapter: adapter(null),
+        verifierPorts: {},
+        atrBytes: TERMS_BYTES,
+      },
+    });
+    assert.equal(result.verification.verified, false);
+    assert.equal(result.verification.supportedClass, "TC-1");
+    const block = renderTranscript({
+      host: "x",
+      transaction: "0xdead",
+      amount: "1000",
+      atrHash: ATR,
+      drivenBy: "y",
+      buyer: "z",
+      verification: result.verification,
+    });
+    assert.match(block, /verified {5}false \(TC-1\)/);
+    assert.doesNotMatch(block, /NOT READ/);
+  } finally {
+    await s.close();
+  }
+});
+
+test("⭐ THE READ — with no ports supplied it is NOT READ, and the transcript says so", async () => {
+  const s = await seller(challengeBody());
+  const w = wallet();
+  try {
+    const result = await buy({
+      resourceUrl: s.url,
+      wallet: w,
+      policy: POLICY,
+      context: CONTEXT,
+      ports: ports(),
+    });
+    assert.equal(result.verification, null);
+    assert.match(
+      renderTranscript({
+        host: "x",
+        transaction: "0xdead",
+        amount: "1000",
+        atrHash: ATR,
+        drivenBy: "y",
+        buyer: "z",
+        verification: result.verification,
+      }),
+      /verified {5}NOT READ/,
+    );
+  } finally {
+    await s.close();
   }
 });
