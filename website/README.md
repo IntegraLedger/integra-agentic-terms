@@ -1,7 +1,7 @@
 # The documentation site
 
 The site at [agenticterms.integraledger.com](https://agenticterms.integraledger.com): a [Fumadocs](https://fumadocs.dev)
-app on Next.js, exported as static files for Cloudflare Pages.
+app on Next.js, exported as static files and served by Cloudflare as a Worker's static assets.
 
 It holds no documentation of its own. Its pages are the repository's [`docs/`](../docs), read in place, and API pages that
 TypeDoc generates from the packages' TypeScript source at every build.
@@ -37,5 +37,5 @@ pnpm install --frozen-lockfile
 pnpm run build
 ```
 
-The static site is in `out/`. `public/_headers` sets its response headers on Cloudflare Pages. `pnpm run dev` serves it
-locally while you edit `docs/`.
+The static site is in `out/`. `public/_headers` sets its response headers, and `wrangler.toml` deploys `out/` as a
+Worker's static assets with the site's 404 page. `pnpm run dev` serves it locally while you edit `docs/`.

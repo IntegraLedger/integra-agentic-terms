@@ -1,4 +1,4 @@
-# Response headers for every file of the static site, as Cloudflare Pages applies them.
+# Response headers for every file the site serves, as Cloudflare applies them to static assets.
 # Everything the site loads comes from its own origin: fonts, scripts, the search index.
 /*
   Strict-Transport-Security: max-age=63072000; includeSubDomains
