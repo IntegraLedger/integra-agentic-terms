@@ -1,0 +1,25 @@
+{
+ "about": "The settlement BoC of this pairing's B6 row (x402-exact-tvm.json's fixed inputs), and that BoC with one cell replaced by a library cell (TVM's exotic cell type 2, then 32 bytes of 0x01), built with @ton/core 0.63.1 as @integraledger/lcp's tvm test builds it. Each row's expect is @integraledger/lcp's exactTvm.bound for the row's BoC with the fixed placed option: the bound hash, or the refusal code.",
+ "rows": [
+  {
+   "case": "the signed settlement",
+   "settlementBoc": "te6cckECBwEAAVAAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMEAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBgCiAAAAAGxjcDpzaGEyNTY6MHhiYTc4MTZiZjhmMDFjZmVhNDE0MTQwZGU1ZGFlMjIyM2IwMDM2MWEzOTYxNzdhOWNiNDEwZmY2MWYyMDAxNWFkRIi87w==",
+   "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  },
+  {
+   "case": "the transfer's comment replaced by a library cell",
+   "settlementBoc": "te6cckECBwEAASAAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMEAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBghCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBPB2EBg==",
+   "expect": "tvm/boc-malformed"
+  },
+  {
+   "case": "the action list replaced by a library cell",
+   "settlementBoc": "te6cckEBAwEAqgABYEIADtENNxn3kUIAFNc7yAew3UEFynQJ0dvfenH1I4gDsi+AAAAAAAAAAAAAAAAAAQEBoXNpbnR///8RarE7vAAAAAWZIPP+AGU2U43mAfjsaje+4nhm8OhSvY/YhUPSfyJY4EizAfVKK5gCHoEsiHyhC0CjReCANAplzQr9+N2Hxg1BoAIIQgIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAZa38gw=",
+   "expect": "tvm/boc-malformed"
+  },
+  {
+   "case": "the comment replaced by a library cell under nine ordinary cells",
+   "settlementBoc": "te6cckECEAEAATsAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMEAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBgEABwEACAEACQEACgEACwEADAEADQEADgEADwhCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB0mabHw==",
+   "expect": "tvm/boc-malformed"
+  }
+ ]
+}

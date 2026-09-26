@@ -1,0 +1,64 @@
+{
+  "name": "@integraledger/terms",
+  "version": "0.1.0",
+  "description": "Buyer gate: compare the ATR hash with the served bytes, and build the payment with that hash, before signing.",
+  "keywords": [
+    "agentic-commerce",
+    "ai-agents",
+    "legal-context-protocol",
+    "lcp",
+    "atr",
+    "x402",
+    "mpp",
+    "payments",
+    "sha256",
+    "buyer"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=26.10.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IntegraLedger/integra-agentic-terms.git",
+    "directory": "agentic-terms"
+  },
+  "homepage": "https://github.com/IntegraLedger/integra-agentic-terms/tree/main/agentic-terms#readme",
+  "bugs": "https://github.com/IntegraLedger/integra-agentic-terms/issues",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@integraledger/lcp": "0.1.0"
+  },
+  "devDependencies": {
+    "@mysten/sui": "2.31.3",
+    "@near-js/crypto": "2.5.1",
+    "@near-js/transactions": "2.5.1",
+    "@solana/kit": "8.3.0",
+    "@stacks/transactions": "7.6.0",
+    "@stellar/stellar-sdk": "17.1.0",
+    "@ton/core": "0.63.1",
+    "algosdk": "3.8.0",
+    "borsh": "1.0.0",
+    "esbuild": "0.28.2",
+    "ripple-binary-codec": "2.11.0",
+    "viem": "2.56.8"
+  }
+}

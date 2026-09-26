@@ -1,0 +1,93 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@import "fumadocs-twoslash/twoslash.css";
+
+@source "../../node_modules/fumadocs-ui/dist/**/*.js";
+@source "../../node_modules/fumadocs-twoslash/dist/**/*.js";
+
+/* The fonts next/font self-hosts, as the variables Tailwind's font-sans and font-mono resolve to. */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Colours. Each text colour clears WCAG AA (4.5:1) on the background and card it sits on. */
+@theme {
+  --color-fd-primary: hsl(220, 70%, 50%);
+  --color-fd-primary-foreground: hsl(0, 0%, 98%);
+  --color-fd-muted-foreground: hsl(0, 0%, 36%);
+  --color-fd-ring: hsl(0, 0%, 42%);
+}
+
+/* Dark mode. `html.dark` outranks neutral.css's `.dark`. Buttons carry navy text on the lighter primary. */
+html.dark {
+  --color-fd-primary: hsl(220, 70%, 63%);
+  --color-fd-primary-foreground: hsl(222, 47%, 11%);
+  --color-fd-background: hsl(222, 47%, 11%);
+  --color-fd-foreground: hsl(210, 40%, 92%);
+  --color-fd-muted: hsl(223, 47%, 15%);
+  --color-fd-muted-foreground: hsla(215, 20%, 65%, 0.8);
+  --color-fd-popover: hsl(222, 47%, 13%);
+  --color-fd-popover-foreground: hsl(210, 40%, 88%);
+  --color-fd-card: hsl(222, 47%, 13%);
+  --color-fd-card-foreground: hsl(0, 0%, 98%);
+  --color-fd-border: hsla(215, 30%, 30%, 50%);
+  --color-fd-secondary: hsl(223, 47%, 16%);
+  --color-fd-secondary-foreground: hsl(210, 40%, 92%);
+  --color-fd-accent: hsla(215, 40%, 25%, 50%);
+  --color-fd-accent-foreground: hsl(210, 40%, 90%);
+  --color-fd-ring: hsl(220, 60%, 58%);
+}
+
+html.dark #nd-sidebar {
+  --color-fd-muted: hsl(223, 47%, 17%);
+  --color-fd-secondary: hsl(223, 47%, 19%);
+  --color-fd-muted-foreground: hsl(215, 20%, 68%);
+}
+
+/* The body text a step larger than the default, for pages that are read in full. */
+#nd-docs-layout .prose {
+  font-size: 1.0625rem;
+}
+#nd-docs-layout .prose :where(h1) {
+  font-size: 2.25rem;
+}
+#nd-docs-layout .prose :where(h2) {
+  font-size: 1.625rem;
+}
+#nd-docs-layout .prose :where(h3) {
+  font-size: 1.3125rem;
+}
+#nd-docs-layout .prose :where(code),
+#nd-docs-layout .prose :where(table),
+#nd-docs-layout #nd-sidebar,
+#nd-docs-layout #nd-toc {
+  font-size: 0.9375rem;
+}
+
+/* Every character of a code sample is shown as it is typed: no ligatures. */
+code,
+pre,
+kbd,
+samp {
+  font-variant-ligatures: none;
+}
+
+/* Diagrams take the width of the text column and centre in it. */
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

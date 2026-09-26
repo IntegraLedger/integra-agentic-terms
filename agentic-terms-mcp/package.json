@@ -1,0 +1,60 @@
+{
+  "name": "@integraledger/terms-mcp",
+  "version": "0.1.0",
+  "description": "The buyer gate's operations as MCP tools, with a skill for the agent that uses them.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "agent-skill",
+    "agentic-commerce",
+    "ai-agents",
+    "legal-context-protocol",
+    "atr",
+    "x402",
+    "mpp"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=26.10.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IntegraLedger/integra-agentic-terms.git",
+    "directory": "agentic-terms-mcp"
+  },
+  "homepage": "https://github.com/IntegraLedger/integra-agentic-terms/tree/main/agentic-terms-mcp#readme",
+  "bugs": "https://github.com/IntegraLedger/integra-agentic-terms/issues",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "terms-mcp": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/version.mjs && tsc -p tsconfig.json",
+    "typecheck": "node scripts/version.mjs && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "node scripts/version.mjs && vitest run"
+  },
+  "dependencies": {
+    "@integraledger/terms": "workspace:*",
+    "@integraledger/lcp": "0.1.0",
+    "@modelcontextprotocol/server": "2.1.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

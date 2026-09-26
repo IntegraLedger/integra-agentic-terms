@@ -1,0 +1,38 @@
+{
+  "name": "integra-agentic-terms-website",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.27.1",
+  "engines": {
+    "node": ">=26.10.0 <27"
+  },
+  "scripts": {
+    "api": "node scripts/api.mjs",
+    "build": "node scripts/api.mjs && next build",
+    "dev": "node scripts/api.mjs && next dev",
+    "postinstall": "fumadocs-mdx"
+  },
+  "dependencies": {
+    "fumadocs-core": "16.15.14",
+    "fumadocs-mdx": "15.4.5",
+    "fumadocs-twoslash": "4.0.1",
+    "fumadocs-ui": "16.15.14",
+    "mermaid": "12.0.0",
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "shiki": "4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/mdast": "4.0.4",
+    "@types/mdx": "2.0.14",
+    "@types/node": "26.6.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "tailwindcss": "4.3.3",
+    "typedoc": "0.28.20",
+    "typedoc-plugin-markdown": "4.13.1",
+    "typescript": "6.0.3"
+  }
+}

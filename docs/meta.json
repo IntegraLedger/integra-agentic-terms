@@ -1,0 +1,15 @@
+{
+  "title": "Integra Agentic Terms",
+  "pages": [
+    "index",
+    "getting-started",
+    "concepts",
+    "security-model",
+    "---Guides---",
+    "...guides",
+    "---Reference---",
+    "...reference",
+    "---API---",
+    "...api"
+  ]
+}

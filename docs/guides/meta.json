@@ -1,0 +1,13 @@
+{
+  "title": "Guides",
+  "pages": [
+    "pay-with-the-gate",
+    "signers",
+    "agreement-payments",
+    "channels-and-sessions",
+    "keeping-the-record",
+    "rails",
+    "mcp",
+    "python"
+  ]
+}

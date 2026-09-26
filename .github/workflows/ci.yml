@@ -1,0 +1,193 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  commits:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: A DCO sign-off and no agent trailer on every commit pushed
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -eu
+          # The pushed range; the whole history when there is no earlier commit to start from.
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE..$GITHUB_SHA"
+          else
+            range="$GITHUB_SHA"
+          fi
+          unsigned=$(git log --format='%h %(trailers:key=Signed-off-by,valueonly,separator=%x2C)' "$range" | awk 'NF<2')
+          agent=$(git rev-list "$range" | while read -r c; do
+            git show -s --format=%B "$c" | grep -Ei 'co-authored-by|generated with|claude|anthropic' | sed "s/^/${c:0:12} /" || true
+          done)
+          [ -z "$unsigned" ] || printf 'commits without a Signed-off-by: trailer:\n%s\n' "$unsigned"
+          [ -z "$agent" ] || printf 'commit messages naming an agent:\n%s\n' "$agent"
+          if [ -n "$unsigned" ] || [ -n "$agent" ]; then exit 1; fi
+          echo "every commit in $range is signed off and names no agent"
+
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: One-way imports (the @integraledger packages here depend on and import only @integraledger/lcp; the MCP server also on @integraledger/terms)
+        run: |
+          node - <<'EOF'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const allowed = (name) =>
+            name === "@integraledger/terms-mcp"
+              ? ["@integraledger/lcp", "@integraledger/terms"]
+              : ["@integraledger/lcp"];
+          const code = /\.(?:[cm]?[jt]s|tsx)$/;
+          const specifier = /(?:\bfrom|\bimport|\brequire\s*\()\s*\(?\s*["'](@integraledger\/[^"'/]+)/g;
+          let packages = 0;
+          let bad = 0;
+          for (const dir of fs.readdirSync(".").sort()) {
+            const manifest = path.join(dir, "package.json");
+            // The documentation site is not a published package, and imports none of these.
+            if (dir === "website" || !fs.existsSync(manifest)) continue;
+            packages++;
+            const pkg = JSON.parse(fs.readFileSync(manifest, "utf8"));
+            const ok = new Set([pkg.name, ...allowed(pkg.name)]);
+            const found = [];
+            for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+              for (const name of Object.keys(pkg[field] ?? {})) {
+                if (name.startsWith("@integraledger/")) found.push([name, `${manifest} ${field}`]);
+              }
+            }
+            const walk = (d) => {
+              for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                if (e.name === "node_modules" || e.name === "dist" || e.name.startsWith(".")) continue;
+                const p = path.join(d, e.name);
+                if (e.isDirectory()) walk(p);
+                else if (code.test(e.name)) {
+                  for (const m of fs.readFileSync(p, "utf8").matchAll(specifier)) found.push([m[1], p]);
+                }
+              }
+            };
+            walk(dir);
+            for (const [name, where] of found) {
+              if (!ok.has(name)) {
+                console.log(`${where}: ${name}`);
+                bad++;
+              }
+            }
+          }
+          if (packages === 0) {
+            console.log("no package.json one level down: nothing was checked");
+            process.exit(1);
+          }
+          if (bad > 0) process.exit(1);
+          console.log(`${packages} package(s): no @integraledger dependency or import outside the allowed set`);
+          EOF
+      - name: The install policy
+        run: |
+          set -eu
+          grep -qx 'minimumReleaseAge: 1440' pnpm-workspace.yaml
+          grep -qx 'trustPolicy: no-downgrade' pnpm-workspace.yaml
+          grep -qx 'strictDepBuilds: true' pnpm-workspace.yaml
+          echo "pnpm-workspace.yaml sets minimumReleaseAge 1440, trustPolicy no-downgrade and strictDepBuilds"
+      - name: Fetch pnpm
+        run: |
+          set -eu
+          curl -fsSL -o "$RUNNER_TEMP/pnpm-11.27.1.tgz" https://registry.npmjs.org/pnpm/-/pnpm-11.27.1.tgz
+          echo "a81d4c21b9b09a4b0aebf90ef5e527d4262bdda322d26082978cb549023ac6d9cafc98b19fffaa5c71db438a65f70224edb78d7311187861ff96480d1cdca23c  $RUNNER_TEMP/pnpm-11.27.1.tgz" | sha512sum -c -
+          npm install -g "$RUNNER_TEMP/pnpm-11.27.1.tgz"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --if-present run build
+      - run: pnpm -r --if-present run typecheck
+      - name: The tests, the shared vectors through the TypeScript gate among them
+        run: pnpm -r --if-present run test
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.18
+          enable-cache: false
+      - name: The Python gate's tests, and the shared vectors through it, on Python 3.11
+        working-directory: agentic-terms-py
+        run: uv run --locked --python 3.11 pytest -q
+      - name: The Python gate's tests, and the shared vectors through it, on Python 3.14
+        working-directory: agentic-terms-py
+        run: uv run --locked --python 3.14 pytest -q
+      - name: The Python gate's types
+        working-directory: agentic-terms-py
+        run: uv run --locked --python 3.14 mypy --strict src tests
+
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Fetch pnpm
+        run: |
+          set -eu
+          curl -fsSL -o "$RUNNER_TEMP/pnpm-11.27.1.tgz" https://registry.npmjs.org/pnpm/-/pnpm-11.27.1.tgz
+          echo "a81d4c21b9b09a4b0aebf90ef5e527d4262bdda322d26082978cb549023ac6d9cafc98b19fffaa5c71db438a65f70224edb78d7311187861ff96480d1cdca23c  $RUNNER_TEMP/pnpm-11.27.1.tgz" | sha512sum -c -
+          npm install -g "$RUNNER_TEMP/pnpm-11.27.1.tgz"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --if-present run build
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.18
+          enable-cache: false
+      - name: Every sample in the READMEs and docs/, compiled and run against the packages built above, and the pairing tables against the registries
+        run: node scripts/docs.mjs check
+
+  site:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Fetch pnpm
+        run: |
+          set -eu
+          curl -fsSL -o "$RUNNER_TEMP/pnpm-11.27.1.tgz" https://registry.npmjs.org/pnpm/-/pnpm-11.27.1.tgz
+          echo "a81d4c21b9b09a4b0aebf90ef5e527d4262bdda322d26082978cb549023ac6d9cafc98b19fffaa5c71db438a65f70224edb78d7311187861ff96480d1cdca23c  $RUNNER_TEMP/pnpm-11.27.1.tgz" | sha512sum -c -
+          npm install -g "$RUNNER_TEMP/pnpm-11.27.1.tgz"
+      - run: pnpm install --frozen-lockfile
+      - name: The packages, whose types the site's samples and API pages are checked against
+        run: pnpm -r --if-present run build
+      - name: The site's own install, from its own lockfile
+        working-directory: website
+        run: pnpm install --frozen-lockfile
+      - name: The site, as the static export Cloudflare Pages serves (every TypeScript sample type-checked by Twoslash)
+        working-directory: website
+        run: pnpm run build
