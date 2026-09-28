@@ -2,6 +2,10 @@
 
 The ATR hash rides in LCP's string form, as a CBOR text string, in the memo of the one transfer the sender signs.
 Nothing here fetches, hashes the ATR or signs.
+
+The signed transaction is read in x402's wire form, the JSON-serialized V1 sponsored transaction: with
+@concordium/web-sdk, JSON.parse(Transaction.toJSONString(tx)). A value that is not JSON data is
+ccd/transaction-malformed, never an exception.
 """
 
 import hashlib
@@ -13,7 +17,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._cbor import UNDEFINED, CborMap, decode_cbor, is_tag, map_get
-from ._codec import b58_decode, js_json_length
+from ._codec import b58_decode, canonical_or_none
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._x402 import chosen, filter_of, payment_with, read_for
 
@@ -173,6 +177,14 @@ def _token_transfer(ops: bytes) -> AtrHash | Refusal:
     return carrier
 
 
+def _json_size(value: object) -> int | None:
+    """The UTF-8 length of a JSON value's serialization, or None for a value that is not JSON data: a type JSON has
+    no value for, a non-finite number, a string that is not well formed, a member name that is not a string, or
+    nesting past 64 levels."""
+    text = canonical_or_none(value)
+    return None if text is None else len(text.encode("utf-8"))
+
+
 def _signed(presented: object) -> AtrHash | Refusal:
     """The carrier of the signed transaction's one transfer, after the transaction's shape, sender and transfer are
     read as reference reads them."""
@@ -184,7 +196,10 @@ def _signed(presented: object) -> AtrHash | Refusal:
     tx = payload.get("signedTransaction") if is_object(payload) else None
     if not is_object(tx):
         return Refusal("ccd/transaction-malformed")
-    if js_json_length(tx, MAX_TRANSACTION, utf8=True) is None:
+    size = _json_size(tx)
+    if size is None:
+        return Refusal("ccd/transaction-malformed")
+    if size > MAX_TRANSACTION:
         return Refusal("ccd/too-large")
     if not _is_one(tx.get("version")):
         return Refusal("ccd/not-v1")
@@ -234,8 +249,9 @@ class CcdUnsigned:
     _accepted: Mapping[str, Any]
 
     def complete(self, signed_transaction: Json) -> dict[str, Any] | Refusal:
-        """The payment, for the sender-signed V1 sponsored transaction in the SDK's signableToJSON form."""
-        if not is_object(signed_transaction):
+        """The payment, for the sender-signed V1 sponsored transaction in x402's wire form: with @concordium/web-sdk,
+        JSON.parse(Transaction.toJSONString(tx)). A value that is not a JSON object is ccd/transaction-malformed."""
+        if not is_object(signed_transaction) or _json_size(signed_transaction) is None:
             return Refusal("ccd/transaction-malformed")
         return payment_with(self._required, self._accepted, {"signedTransaction": signed_transaction})
 
@@ -278,5 +294,6 @@ class X402ExactCcd:
         return CcdUnsigned(request=request, _required=required, _accepted=accepted)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        """The hash inside what the sender signed: the one transfer's memo. No signature is verified here."""
+        """The hash inside what the sender signed, in x402's wire form: the one transfer's memo. No signature is
+        verified here."""
         return _signed(presented)

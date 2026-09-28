@@ -1,5 +1,6 @@
 """The gate's buyer piece for x402/exact/ccd: the transfer the wallet assembles, with the hash in its memo; the answer
-is the sender-signed sponsored transaction in the Concordium SDK's signableToJSON form."""
+is the sender-signed V1 sponsored transaction in x402's wire form, the JSON-serialized transaction: with
+@concordium/web-sdk, JSON.parse(Transaction.toJSONString(tx)). Any other value is ccd/transaction-malformed."""
 
 from collections.abc import Mapping
 from typing import Any

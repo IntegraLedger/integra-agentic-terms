@@ -73,7 +73,7 @@ every byte string in an answer is `0x` hex.
 | `tron-txid` | The id of a TRC-20 transfer whose memo carries H. | The 65-byte secp256k1 signature `r ‖ s ‖ v`, `0x` hex. |
 | `ton-w5` | The representation hash of a W5 wallet request. | The 64-byte Ed25519 signature, `0x` hex. |
 | `casper-eip712` | CEP-3009 typed data whose nonce is H. | `{ publicKey, signature }`, each hex with its one-byte algorithm tag. |
-| `ccd-transfer` | A Concordium transfer whose memo carries H, which the wallet assembles. | The sender-signed sponsored transaction, in the Concordium SDK's `signableToJSON` form. |
+| `ccd-transfer` | A Concordium transfer whose memo carries H, which the wallet assembles. | The sender-signed V1 sponsored transaction in x402's wire form: with `@concordium/web-sdk`, `JSON.parse(Transaction.toJSONString(tx))`. |
 | `stacks-contract-call` | A SIP-010 `transfer` whose memo is H. | The signed transaction's bytes, `0x` hex. |
 | `bolt11-pay` | A BOLT11 invoice. Your Lightning node pays exactly this invoice. | The payment preimage: 64 lower-case hex digits, no `0x`. |
 

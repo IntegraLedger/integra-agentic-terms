@@ -169,10 +169,10 @@ def canonical_json(value: Any, depth: int = 0) -> str:
     if isinstance(value, (list, tuple)):
         return "[" + ",".join(canonical_json(v, depth + 1) for v in value) + "]"
     if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError("not JSON data")
         keys = sorted(value, key=_utf16_key)
         for key in keys:
-            if not isinstance(key, str):
-                raise TypeError("not JSON data")
             key.encode("utf-8")
         return "{" + ",".join(_string(k) + ":" + canonical_json(value[k], depth + 1) for k in keys) + "}"
     return js_json(value)
