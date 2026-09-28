@@ -18,7 +18,7 @@ from ._lcp import is_object
 from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, read
 from ._mpp_checks import solana_network_of
 from ._session_within import action_kind, echoed_details, within_checks
-from ._svm import SvmTx, channel_voucher_message, decode_svm_tx, key_bytes, key_string, wire_of
+from ._svm import SvmTx, channel_voucher_message, decode_svm_tx, key_bytes, key_string, static_nonce, wire_of
 
 ID = "mpp/session/solana"
 OPEN_DISCRIMINATOR = 1
@@ -98,6 +98,9 @@ def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
     tx = decode_svm_tx(wire)
     if isinstance(tx, Refusal):
         return tx
+    from_table = static_nonce(tx)
+    if from_table is not None:
+        return from_table
     opened = open_of(tx, e.checked.details.get("channelProgram"))
     if isinstance(opened, Refusal):
         return opened

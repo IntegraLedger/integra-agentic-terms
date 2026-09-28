@@ -416,7 +416,8 @@ def test_x402_upto_solana_eu4_read_of_an_option_without_a_flow_succeeds() -> Non
 def test_x402_upto_solana_plant_an_opening_whose_carrier_is_not_this_atrs_h(row: dict[str, Any]) -> None:
     tx = _svm.decode_svm_tx(base64.b64decode(row["wireBase64"]))
     assert not isinstance(tx, Refusal)
-    assert hashlib.sha256(tx.message).hexdigest() == row["messageSha256"]
+    if "messageSha256" in row:
+        assert hashlib.sha256(tx.message).hexdigest() == row["messageSha256"]
     assert X402_UPTO_SOLANA.bound(upto_presented(row["accepted"], row["wireBase64"])) == Refusal(row["expect"])
 
 

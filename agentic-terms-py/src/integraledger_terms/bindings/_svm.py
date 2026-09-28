@@ -15,7 +15,7 @@ from typing import Any, Literal
 from .._core import AtrHash
 from .._types import Refusal
 from ._codec import b58_decode, b58_encode, b64_decode, b64_encode
-from ._lcp import from_lcp_string
+from ._lcp import from_lcp_string, to_lcp_string
 
 MEMO_V3 = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 MEMO_V4 = "Memo4c2pN8afCj432Lb7RMVKi9PbQnnW7ewFFaV3oAH"
@@ -69,6 +69,8 @@ def is_solana_network(value: object) -> bool:
     return isinstance(value, str) and _NETWORK.fullmatch(value) is not None
 
 
+_SYSTEM_BYTES = b58_decode(SYSTEM)
+_ADVANCE_NONCE_ACCOUNT = bytes([4, 0, 0, 0])
 _MEMO_V3_BYTES = b58_decode(MEMO_V3)
 _MEMO_V4_BYTES = b58_decode(MEMO_V4)
 _PAYMENT_CHANNELS_BYTES = b58_decode(PAYMENT_CHANNELS)
@@ -190,7 +192,8 @@ class Carrier:
 
 def svm_carrier(tx: SvmTx) -> Carrier | Refusal:
     """The one top-level Memo instruction (v3 or v4) and the ATR hash its UTF-8 data carries in LCP string form. None,
-    or more than one, is svm/memo-count."""
+    or more than one, is svm/memo-count. The memo must be the hash's LCP string exactly, in lower-case hex; the same
+    hash in any other spelling is svm/carrier-not-canonical."""
     memos = [ix for ix in tx.instructions if _program_is(tx, ix, _MEMO_V3_BYTES) or _program_is(tx, ix, _MEMO_V4_BYTES)]
     if len(memos) != 1:
         return Refusal("svm/memo-count")
@@ -201,7 +204,24 @@ def svm_carrier(tx: SvmTx) -> Carrier | Refusal:
     h = from_lcp_string(memo)
     if h is None:
         return Refusal("svm/memo-not-lcp")
-    return Carrier(h, memo)
+    return canonical_carrier(h, memo)
+
+
+def canonical_carrier(h: AtrHash, memo: str) -> Carrier | Refusal:
+    """The carrier when memo is the hash's LCP string exactly, else svm/carrier-not-canonical."""
+    return Carrier(h, memo) if memo == to_lcp_string(h) else Refusal("svm/carrier-not-canonical")
+
+
+def static_nonce(tx: SvmTx) -> Refusal | None:
+    """svm/nonce-account-not-static when the message's first instruction is the System program's AdvanceNonceAccount
+    (data 04000000) and its nonce account or its RecentBlockhashes sysvar is an address lookup table entry, past the
+    static keys: the runtime resolves those entries and can take the message as durable, while the message alone
+    cannot show the nonce it uses. Else None."""
+    first = tx.instructions[0] if tx.instructions else None
+    if first is None or not _program_is(tx, first, _SYSTEM_BYTES) or first.data[:4] != _ADVANCE_NONCE_ACCOUNT:
+        return None
+    named = first.accounts[:2]
+    return Refusal("svm/nonce-account-not-static") if any(i >= len(tx.keys) for i in named) else None
 
 
 def wire_of(text: object) -> bytes | Refusal:

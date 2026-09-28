@@ -36,6 +36,7 @@ from ._svm import (
     memo_length,
     signature_bytes,
     signed_wire,
+    static_nonce,
     svm_carrier,
     to_base64,
     wire_of,
@@ -427,6 +428,9 @@ class X402BatchSettlementSolana:
             return Refusal("x402/payload-malformed")
         if isinstance(tx, Refusal):
             return tx
+        from_table = static_nonce(tx)
+        if from_table is not None:
+            return from_table
         carrier = svm_carrier(tx)
         if isinstance(carrier, Refusal):
             return carrier

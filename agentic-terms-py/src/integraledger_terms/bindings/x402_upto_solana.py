@@ -28,6 +28,7 @@ from ._svm import (
     is_key,
     is_solana_network,
     memo_length,
+    static_nonce,
     svm_carrier,
     to_base64,
     wire_of,
@@ -186,6 +187,9 @@ class X402UptoSolana:
         tx = decode_svm_tx(wire)
         if isinstance(tx, Refusal):
             return tx
+        from_table = static_nonce(tx)
+        if from_table is not None:
+            return from_table
         carrier = svm_carrier(tx)
         if isinstance(carrier, Refusal):
             return carrier
