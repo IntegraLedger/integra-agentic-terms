@@ -27,7 +27,8 @@ _BASE32 = re.compile(r"[A-Z2-7]*")
 
 
 def is_stellar_network(value: object) -> bool:
-    return value in PASSPHRASE
+    """Whether value is a string naming a Stellar network the rail's passphrase table holds."""
+    return isinstance(value, str) and value in PASSPHRASE
 
 
 # ── strkeys ──────────────────────────────────────────────────────────────────────────────────────────────────────

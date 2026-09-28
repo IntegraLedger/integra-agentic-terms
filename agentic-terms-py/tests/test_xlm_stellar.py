@@ -2,17 +2,20 @@
 rows. Expected values are the vector file's; the payer signs with the Ed25519 seed the file publishes."""
 
 import base64
+import copy
 import hashlib
 from dataclasses import replace
 from typing import Any
 
-from integraledger_terms import X402_EXACT_STELLAR, Refusal
+import pytest
+
+from integraledger_terms import X402_EXACT_STELLAR, Declined, Refusal, transact
 from integraledger_terms.bindings import _stellar
 from integraledger_terms.bindings._stellar import StellarUnsigned
 
 import ed25519
-from breadth import H, Pairing, build_and_sign, plant, x402_doc
-from support import hexb, load
+from breadth import ABC, H, Pairing, build_and_sign, link_calls, plant, run, x402_doc
+from support import CountingSigner, hexb, load, serving
 from xlm_support import EVM_ACCOUNT, REF, b10, b16, with_identifier
 
 T = load("x402-exact-stellar.json")
@@ -72,6 +75,23 @@ def test_x402_exact_stellar_b10_http_link() -> None:
 
 def test_x402_exact_stellar_b16_other_accounts() -> None:
     b16(STELLAR, [EVM_ACCOUNT, f"stellar:pubnet:{F['payer']}"])
+
+
+@pytest.mark.parametrize("network", [[], {}, [["x"]], 1, None, True])
+def test_x402_exact_stellar_an_option_whose_network_is_not_a_string_has_no_payable_option(network: Any) -> None:
+    """x402 v2's PaymentRequirements carries network as a string, a CAIP-2 network id (the protocol package types it
+    `network: string`). An option whose network is any other JSON value is no payable option, the TypeScript gate's
+    decline for the same document, and nothing is fetched or signed."""
+    assert _stellar.is_stellar_network(network) is False
+    doc = copy.deepcopy(STELLAR.doc)
+    doc["accepts"][0]["network"] = network
+    out, calls = link_calls(STELLAR, STELLAR.account, doc)
+    assert out == Declined("offer-unreadable", "x402/no-payable-option")
+    assert calls == 0
+    signer = CountingSigner(account=STELLAR.account)
+    moved = run(lambda c: transact(doc, X402_EXACT_STELLAR, signer, c), serving(ABC))
+    assert moved == Declined("offer-unreadable", "x402/no-payable-option")
+    assert signer.requests == []
 
 
 # ── the buyer half's vector rows ──────────────────────────────────────────────────────────────────────────────────

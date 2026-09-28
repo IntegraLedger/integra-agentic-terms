@@ -324,6 +324,17 @@ describe("x402/exact/stellar", () => {
     expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
   });
   refusals(p, [EVM_ACCOUNT, `stellar:pubnet:${f.payer}`]);
+  // x402 v2's PaymentRequirements carries `network` as a string, a CAIP-2 network id; the Python gate declines the same
+  // documents with the same code.
+  it.each([[], {}, [["x"]], 1, null, true])("an option whose network is %j has no payable option; nothing is fetched", async (network) => {
+    const doc = p.doc as PaymentRequired;
+    const odd = { ...doc, accepts: [{ ...doc.accepts[0]!, network }] } as unknown as PaymentRequired;
+    let fetched = 0;
+    const fetch = async () => (fetched++, new Response("abc"));
+    const out = await confirm(odd, exactStellar, p.account, fetch, p.inputs);
+    expect(out).toEqual({ decline: { code: "offer-unreadable", detail: "x402/no-payable-option" } });
+    expect(fetched).toBe(0);
+  });
 });
 
 // ── x402/exact/xrpl ──────────────────────────────────────────────────────────────────────────────────────────────
