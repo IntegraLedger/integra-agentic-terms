@@ -21,8 +21,8 @@ importers:
   agentic-terms:
     dependencies:
       '@integraledger/lcp':
-        specifier: 0.1.0
-        version: 0.1.0(@mysten/sui@2.31.3(typescript@7.0.2))(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/transactions@2.5.1(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@solana/kit@8.3.0(typescript@7.0.2))(@stacks/transactions@7.6.0)(@stellar/stellar-sdk@17.1.0(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@1.0.0)(ripple-binary-codec@2.11.0)
+        specifier: 0.2.0
+        version: 0.2.0(@mysten/sui@2.31.3(typescript@7.0.2))(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/transactions@2.5.1(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@solana/kit@8.3.0(typescript@7.0.2))(@stacks/transactions@7.6.0)(@stellar/stellar-sdk@17.1.0(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@1.0.0)(ripple-binary-codec@2.11.0)
     devDependencies:
       '@mysten/sui':
         specifier: 2.31.3
@@ -64,8 +64,8 @@ importers:
   agentic-terms-mcp:
     dependencies:
       '@integraledger/lcp':
-        specifier: 0.1.0
-        version: 0.1.0(@mysten/sui@2.31.3(typescript@7.0.2))(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/transactions@2.5.1(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@solana/kit@8.3.0(typescript@7.0.2))(@stacks/transactions@7.6.0)(@stellar/stellar-sdk@17.1.0(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@1.0.0)(ripple-binary-codec@2.11.0)
+        specifier: 0.2.0
+        version: 0.2.0(@mysten/sui@2.31.3(typescript@7.0.2))(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/transactions@2.5.1(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@solana/kit@8.3.0(typescript@7.0.2))(@stacks/transactions@7.6.0)(@stellar/stellar-sdk@17.1.0(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@1.0.0)(ripple-binary-codec@2.11.0)
       '@integraledger/terms':
         specifier: workspace:*
         version: link:../agentic-terms
@@ -289,8 +289,8 @@ packages:
     peerDependencies:
       graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  '@integraledger/lcp@0.1.0':
-    resolution: {integrity: sha512-5cy6QGu53WGZMu6P+ZHeO6hvoQYpTSdgMO7NDfZ1R/66dPxydcAksR8Qfmiz2Y2VX1tXy7Re3LU7l6NrbWv+0g==}
+  '@integraledger/lcp@0.2.0':
+    resolution: {integrity: sha512-CPdy2Kxj2PN0LJlmzb82wY7joktK0kmXxiIYzyh0YZZvGinAksJqdTSUOPUwUrZnxQ/eKqWIDnf4l3UPPutCuQ==}
     engines: {node: '>=26.10.0'}
     peerDependencies:
       '@mysten/sui': 2.31.3
@@ -1853,7 +1853,7 @@ snapshots:
     dependencies:
       graphql: 17.0.2
 
-  '@integraledger/lcp@0.1.0(@mysten/sui@2.31.3(typescript@7.0.2))(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/transactions@2.5.1(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@solana/kit@8.3.0(typescript@7.0.2))(@stacks/transactions@7.6.0)(@stellar/stellar-sdk@17.1.0(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@1.0.0)(ripple-binary-codec@2.11.0)':
+  '@integraledger/lcp@0.2.0(@mysten/sui@2.31.3(typescript@7.0.2))(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/transactions@2.5.1(@near-js/crypto@2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1)))(@solana/kit@8.3.0(typescript@7.0.2))(@stacks/transactions@7.6.0)(@stellar/stellar-sdk@17.1.0(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@1.0.0)(ripple-binary-codec@2.11.0)':
     dependencies:
       '@noble/curves': 2.4.0
       '@noble/hashes': 2.4.0

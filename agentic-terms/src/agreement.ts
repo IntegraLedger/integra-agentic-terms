@@ -7,7 +7,17 @@
  * agreement option's `maxTimeoutSeconds` + 180 seconds; no second agreement payment is signed, and every decline after
  * it was sent carries it as `moved`.
  */
-import { BINDINGS, hashEquals, isHttpsLink, isOtherSchemeLink, pairingOf, parseJson, type AtrHash, type Refusal } from "@integraledger/lcp";
+import {
+  BINDINGS,
+  hashEquals,
+  isHttpsLink,
+  isOtherSchemeLink,
+  isRefusal,
+  pairingOf,
+  parseJson,
+  type AtrHash,
+  type Refusal,
+} from "@integraledger/lcp";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import { pay, redirected } from "./gate.js";
 import type { AgreementReceipt, Binding, DeclineCode, Declined, Fetch, Inputs, Presented, Signer } from "./types.js";
@@ -39,10 +49,6 @@ function declined(code: DeclineCode, detail: string): Declined {
 }
 
 const failed = (detail: string): Declined => declined("agreement-failed", detail);
-
-function isRefusal(v: unknown): v is Refusal {
-  return typeof v === "object" && v !== null && (v as { refused?: unknown }).refused === true;
-}
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);

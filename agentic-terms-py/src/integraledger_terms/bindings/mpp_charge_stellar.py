@@ -52,8 +52,10 @@ class MppChargeStellar:
     def build(self, choice: Any, h: AtrHash) -> StellarChargeUnsigned | Refusal:
         """The authorization preimage from the buyer's simulated transaction, with the entry's expiration at
         currentLedger + ceil((expires - now) / 5). The request's recipient must carry muxed_id(h) and equal the to of
-        the invocation the payer's entry signs, and the operation must invoke exactly that. With feePayer true the
-        source is the all-zeros account."""
+        the invocation the payer's entry signs, and the operation must invoke exactly that. That invocation's token
+        contract must then be the request's currency, its amount the request's amount exactly, and its from the
+        choice's payer. Nothing reaches the signer unless every one holds. With feePayer true the source is the
+        all-zeros account."""
         if not is_object(choice):
             return Refusal("stellar/tx-malformed")
         checked = chosen_for(choice.get("challenge"), h, ID)
@@ -75,6 +77,12 @@ class MppChargeStellar:
             return Refusal("stellar/carrier-mismatch")
         if not s.agrees:
             return Refusal("stellar/not-one-transfer")
+        if s.payment.asset != checked.request.get("currency"):
+            return Refusal("stellar/asset-mismatch")
+        if s.payment.amount != int(checked.request["amount"]):
+            return Refusal("stellar/amount-mismatch")
+        if s.payment.source != choice.get("payer"):
+            return Refusal("stellar/payer-mismatch")
         return StellarChargeUnsigned(request=s.unsigned.request, _unsigned=s.unsigned, _challenge=choice["challenge"])
 
     def bound(self, presented: Any) -> AtrHash | Refusal:

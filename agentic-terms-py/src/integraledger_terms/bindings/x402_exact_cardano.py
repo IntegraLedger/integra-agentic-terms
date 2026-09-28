@@ -69,29 +69,63 @@ def _metadata_of(aux: Item) -> Item | None:
 
 
 def _carrier(aux: Item) -> AtrHash | Refusal:
-    """The one LCP_MARKER line followed by 64 lower-case hex digits in label 674's "msg" lines."""
+    """The hash in label 674's "msg" lines: exactly one line equal to LCP_MARKER, followed by a line of 64 lower-case
+    hex digits. The metadata may hold label 674 once, and its map may not repeat a key, so every reader of the message
+    reads the same lines. Marker lines are counted ignoring case and a leading byte-order mark: more than one is
+    cardano/ambiguous, and one that is not exactly LCP_MARKER followed by lower-case hex carries no hash."""
     metadata = _metadata_of(aux)
-    found: list[AtrHash] = []
-    if metadata is not None:
-        for label, value in metadata.items:
-            if label.kind != "uint" or label.value != _LABEL_MESSAGE or value.kind != "map":
-                continue
-            for key, lines in value.items:
-                if key.kind != "text" or key.value != "msg" or lines.kind != "array":
-                    continue
-                items = lines.items
-                for i in range(len(items) - 1):
-                    a, b = items[i], items[i + 1]
-                    if a.kind != "text" or a.value != LCP_MARKER or b.kind != "text" or _HEX64.fullmatch(b.value) is None:
-                        continue
-                    h = from_lcp_string(LCP_MARKER + b.value)
-                    if h is not None:
-                        found.append(h)
-    if not found:
-        return Refusal("cardano/hash-not-carried")
-    if len(found) > 1:
+    entries = metadata.items if metadata is not None else []
+    messages = [value for label, value in entries if label.kind == "uint" and label.value == _LABEL_MESSAGE]
+    if len(messages) > 1:
         return Refusal("cardano/ambiguous")
-    return found[0]
+    candidates: list[tuple[Item, Item | None]] = []
+    if messages and messages[0].kind == "map":
+        keys: set[tuple[Any, ...]] = set()
+        for key, _ in messages[0].items:
+            k = _key_of(key)
+            if k in keys:
+                return Refusal("cardano/ambiguous")
+            keys.add(k)
+        for key, lines in messages[0].items:
+            if key.kind != "text" or key.value != "msg" or lines.kind != "array":
+                continue
+            for i, line in enumerate(lines.items):
+                if line.kind == "text" and _is_marker_like(line.value):
+                    candidates.append((line, lines.items[i + 1] if i + 1 < len(lines.items) else None))
+    if len(candidates) > 1:
+        return Refusal("cardano/ambiguous")
+    marker, digits = candidates[0] if candidates else (None, None)
+    if (
+        marker is None
+        or marker.value != LCP_MARKER
+        or digits is None
+        or digits.kind != "text"
+        or _HEX64.fullmatch(digits.value) is None
+    ):
+        return Refusal("cardano/hash-not-carried")
+    h = from_lcp_string(LCP_MARKER + digits.value)
+    return h if h is not None else Refusal("cardano/hash-not-carried")
+
+
+def _is_marker_like(line: str) -> bool:
+    """A line that reads as LCP_MARKER once case and a leading byte-order mark are ignored."""
+    return line.removeprefix("\ufeff").lower() == LCP_MARKER
+
+
+def _key_of(k: Item) -> tuple[Any, ...]:
+    """A map key's identity as a decoded value, so that two encodings of one value are the same key. A text key is
+    compared without a leading byte-order mark, and every float is one key."""
+    if k.kind == "text":
+        return ("text", k.value.removeprefix("\ufeff"))
+    if k.kind == "array":
+        return ("array", tuple(_key_of(i) for i in k.items))
+    if k.kind == "map":
+        return ("map", tuple((_key_of(a), _key_of(b)) for a, b in k.items))
+    if k.kind == "tag":
+        return ("tag", k.value, _key_of(k.items[0]))
+    if k.kind == "float":
+        return ("float",)
+    return (k.kind, k.value)
 
 
 @dataclass(frozen=True, slots=True)

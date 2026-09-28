@@ -80,6 +80,16 @@ def decode_blob(text: object) -> Blob | Refusal:
     return Blob(tx=tx, hash=digest[:32].hex().upper())
 
 
+def decode_presented(text: object) -> Blob | Refusal:
+    """The signed blob a presented payment holds, decoded as decode_blob decodes it. A blob that carries Signers is
+    xrpl/multisigned: the payer signs with a single key, so the transaction hash computed from the blob is the one that
+    can land."""
+    blob = decode_blob(text)
+    if isinstance(blob, Refusal):
+        return blob
+    return Refusal("xrpl/multisigned") if "Signers" in blob.tx else blob
+
+
 _PAY_CHANNEL_SPACE = bytes.fromhex("0078")
 _CLAIM_PREFIX = bytes.fromhex("434C4D00")
 _HASH256_TEXT = re.compile(r"[0-9A-Fa-f]{64}")

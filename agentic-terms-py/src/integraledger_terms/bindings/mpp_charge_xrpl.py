@@ -10,7 +10,7 @@ from .._core import AtrHash, hash_equals
 from .._types import Advertised, Refusal
 from ._lcp import is_object
 from ._mpp import chosen_for, credential_of, echoed_for, read
-from ._xrpl import decode_blob, is_blob_hex, mpp_invoice_id, same_invoice
+from ._xrpl import decode_presented, is_blob_hex, mpp_invoice_id, same_invoice
 
 ID = "mpp/charge/xrpl"
 
@@ -110,7 +110,8 @@ class MppChargeXrpl:
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """H from the echoed challenge, once the signed Payment's InvoiceID is the request's invoiceId and equals
-        that H. The signature is not verified here."""
+        that H. A multi-signed blob is xrpl/multisigned: the payer signs with a single key. The signature is not
+        verified here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
@@ -120,7 +121,7 @@ class MppChargeXrpl:
         blob = _presented_blob(e.payload)
         if isinstance(blob, Refusal):
             return blob
-        decoded = decode_blob(blob)
+        decoded = decode_presented(blob)
         if isinstance(decoded, Refusal):
             return decoded
         tx = decoded.tx

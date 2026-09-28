@@ -234,9 +234,12 @@ class X402ExactEip155Eip3009:
         return _Unsigned(typed_data=typed_data, _required=required, _accepted=accepted)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The authorization's nonce, as a lower-case hash. The signature is not verified here."""
+        """The authorization's nonce, as a lower-case hash. A payment that carries a refused member, the member
+        refusals use, is x402/payload-malformed. The signature is not verified here."""
         if not isinstance(presented, Mapping) or _safe_int(presented.get("x402Version")) != 2:
             return Refusal("x402/not-v2")
+        if "refused" in presented:
+            return Refusal("x402/payload-malformed")
         accepted = presented.get("accepted")
         if not isinstance(accepted, Mapping):
             return Refusal("x402/payload-malformed")

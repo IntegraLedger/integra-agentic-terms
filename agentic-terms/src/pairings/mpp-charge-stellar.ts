@@ -18,7 +18,7 @@ export const mppChargeStellar = mppRailPiece({
   pairing: PAIRING,
   namespace: "stellar",
   address: STELLAR_ACCOUNT,
-  payer: null,
+  payer: "payer",
   now: true,
   inputs,
   revive: (c) => c,

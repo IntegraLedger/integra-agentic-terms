@@ -118,7 +118,13 @@ def test_x402_exact_stellar_v4_refusals() -> None:
 def test_x402_exact_stellar_v3v2_address_credentials_v2() -> None:
     row = T["V3v2"]
     doc = STELLAR.doc
-    choice = {"required": doc, "accepted": doc["accepts"][0], "simulatedXdr": row["simulatedXdr"], "currentLedger": row["currentLedger"]}
+    choice = {
+        "required": doc,
+        "accepted": doc["accepts"][0],
+        "simulatedXdr": row["simulatedXdr"],
+        "currentLedger": row["currentLedger"],
+        "payer": F["payer"],
+    }
     unsigned = X402_EXACT_STELLAR.build(choice, H)
     assert isinstance(unsigned, StellarUnsigned), unsigned
     preimage = unsigned.request["preimage"]
@@ -145,7 +151,13 @@ def test_x402_exact_stellar_agreed_refusals() -> None:
     other = {**accepted, "extra": {"areFeesSponsored": False}}
     assert X402_EXACT_STELLAR.bound(presented(V3["envelope"], other, extensions)) == Refusal("x402/option-not-this-pairing")
     doc = STELLAR.doc
-    choice = {"required": doc, "accepted": doc["accepts"][0], "simulatedXdr": V2["simulatedXdr"], "currentLedger": 988}
+    choice = {
+        "required": doc,
+        "accepted": doc["accepts"][0],
+        "simulatedXdr": V2["simulatedXdr"],
+        "currentLedger": 988,
+        "payer": F["payer"],
+    }
     unsigned = X402_EXACT_STELLAR.build(choice, H)
     assert isinstance(unsigned, StellarUnsigned)
     assert unsigned.complete(b"\x01" * 63) == Refusal("stellar/tx-malformed")

@@ -66,7 +66,9 @@ class X402ExactStellar:
     def build(self, choice: Json, h: AtrHash) -> _stellar.StellarUnsigned | Refusal:
         """The authorization preimage for the payer to sign, from the buyer's simulated transaction, with the entry's
         expiration at currentLedger + ceil(maxTimeoutSeconds / 5). The option's payTo must carry muxed_id(h) and
-        equal the simulated to."""
+        equal the to of the invocation the payer's entry signs, and the operation must invoke exactly that. That
+        invocation's token contract must then be the option's asset, its amount the option's amount exactly, and its
+        from the choice's payer. Nothing reaches the signer unless every one holds."""
         c: Mapping[str, Any] = choice if is_object(choice) else {}
         ok = chosen(c.get("required"), c.get("accepted"), _THIS)
         if ok is not True:
@@ -90,6 +92,12 @@ class X402ExactStellar:
             return Refusal("stellar/carrier-mismatch")
         if not s.agrees:
             return Refusal("stellar/not-one-transfer")
+        if s.payment.asset != accepted["asset"]:
+            return Refusal("stellar/asset-mismatch")
+        if s.payment.amount != int(accepted["amount"]):
+            return Refusal("stellar/amount-mismatch")
+        if s.payment.source != c.get("payer"):
+            return Refusal("stellar/payer-mismatch")
         return s.unsigned
 
     def bound(self, presented: Json) -> AtrHash | Refusal:

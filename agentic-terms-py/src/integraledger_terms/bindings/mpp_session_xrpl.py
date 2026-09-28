@@ -14,7 +14,7 @@ from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
 from ._mpp import Checked, chosen_for, credential_of, echoed_for, read
 from ._mpp_checks import xrpl_network_of
 from ._session_within import action_kind, echoed_details, within_checks
-from ._xrpl import channel_id, claim_bytes, decode_blob, is_blob_hex
+from ._xrpl import channel_id, claim_bytes, decode_presented, is_blob_hex
 
 ID = "mpp/session/xrpl"
 WITHIN_ACTIONS = ("voucher",)
@@ -103,7 +103,7 @@ def _opening(presented: object) -> Opening | Refusal:
     blob = e.payload.get("transaction")
     if not isinstance(blob, str):
         return Refusal("xrpl/blob-malformed")
-    decoded = decode_blob(blob)
+    decoded = decode_presented(blob)
     if isinstance(decoded, Refusal):
         return decoded
     if decoded.tx.get("TransactionType") != "PaymentChannelCreate":
@@ -210,8 +210,9 @@ class MppSessionXrpl:
         )
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        """H from an opening's echoed challenge, once the signed PaymentChannelCreate's one LCP memo is that H. The
-        signature is not verified here."""
+        """H from an opening's echoed challenge, once the signed PaymentChannelCreate's one LCP memo is that H. A
+        multi-signed blob is xrpl/multisigned: the payer signs with a single key. The signature is not verified
+        here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
@@ -249,7 +250,7 @@ class MppSessionXrpl:
         blob = e.payload.get("transaction")
         if not isinstance(blob, str):
             return Refusal("xrpl/blob-malformed")
-        decoded = decode_blob(blob)
+        decoded = decode_presented(blob)
         if isinstance(decoded, Refusal):
             return decoded
         channel = channel_id(decoded.tx.get("Account"), decoded.tx.get("Destination"), _sequence(decoded.tx))

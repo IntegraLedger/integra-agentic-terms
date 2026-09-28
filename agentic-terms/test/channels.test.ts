@@ -12,6 +12,7 @@ import { sessionTempo, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeSvmTx } from "@integraledger/lcp/svm";
 import { batchCloudflare, batchEvm, batchSvm } from "@integraledger/lcp/x402-batch-settlement";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
+import { refuse as refusal } from "../src/pairings/common.js";
 import {
   openChannel,
   recordCharge,
@@ -468,8 +469,8 @@ describe("mpp/session/tempo: the channel hold", () => {
 
   /**
    * The session binding whose `buildWithin` records the `SessionWithin` the gate hands it (the in-channel payment:
-   * the within challenge, the held opening, the cumulative amount and the action) before building, or refuses
-   * with `refuse`.
+   * the within challenge, the held opening, the cumulative amount and the action) before building, or returns a
+   * refusal with the code `refuse`.
    */
   function withBuildWithin(refuse?: string) {
     const seen: { challenge: MppChallenge; opening: unknown; cumulativeAmount: bigint; action: string }[] = [];
@@ -477,7 +478,7 @@ describe("mpp/session/tempo: the channel hold", () => {
       ...sessionTempo,
       async buildWithin(w: (typeof seen)[number], h: AtrHash) {
         seen.push(w);
-        if (refuse !== undefined) return { refused: true, code: refuse };
+        if (refuse !== undefined) return refusal(refuse);
         return sessionTempo.buildWithin(w as never, h);
       },
     } as unknown as typeof sessionTempo;

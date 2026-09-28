@@ -79,7 +79,8 @@ def test_mpp_usdc_request_nested_past_64_is_request_malformed() -> None:
 
 def test_lightning_atr_nested_past_64_is_not_read() -> None:
     def atr(levels: int) -> bytes:
-        text = '{"x402":{"accepts":[{"extra":{"invoice":"lnbc1"}}]},"z":' + arrays(levels - 1) + "}"
+        head = '{"atrVersion":"1","id":"i","x402":{"accepts":[{"extra":{"invoice":"lnbc1"}}]},"z":'
+        text = head + arrays(levels - 1) + "}"
         return text.encode("utf-8")
 
     assert atr_names_invoice(atr(64), "lnbc1") is True

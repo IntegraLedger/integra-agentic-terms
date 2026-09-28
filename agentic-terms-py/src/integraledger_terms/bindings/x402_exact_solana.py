@@ -25,6 +25,7 @@ from ._svm import (
     is_key,
     is_solana_network,
     memo_length,
+    static_nonce,
     svm_carrier,
     to_base64,
     wire_of,
@@ -65,7 +66,11 @@ _read = read_for(_THIS)
 
 
 def bound_of(accepted: Mapping[str, Any], tx: SvmTx) -> AtrHash | Refusal:
-    """The hash in the one memo, which must equal the option's extra.memo."""
+    """The hash in the one memo, which must equal the option's extra.memo, in a message whose durable nonce, if it uses
+    one, is named by static keys."""
+    from_table = static_nonce(tx)
+    if from_table is not None:
+        return from_table
     carrier = svm_carrier(tx)
     if isinstance(carrier, Refusal):
         return carrier

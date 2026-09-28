@@ -7,7 +7,7 @@ import type { Json, Refusal } from "@integraledger/lcp";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { BatchUnsigned } from "@integraledger/lcp/x402-batch-settlement";
 import type { Chosen, Inputs, Presented, Signature, SigningRequest } from "../types.js";
-import { bigintOf, choiceOf, hexOf, isObject, refuse, withPaymentIdentifier } from "./common.js";
+import { bigintOf, choiceOf, hexOf, isObject, isRefusal, refuse, withPaymentIdentifier } from "./common.js";
 
 /**
  * The deposit: `extra.minDeposit` when the option carries one, else the buyer's `deposit` input. A deposit above the
@@ -58,7 +58,7 @@ export async function batchComplete(unsigned: unknown, signature: Signature, cho
     return refuse("x402/signature-malformed");
   }
   const signed = u.complete(signature as string[]);
-  if ("refused" in signed) return signed;
+  if (isRefusal(signed)) return signed;
   return withPaymentIdentifier(signed as unknown as Presented, choiceOf(chosen)?.["required"], chosen.ref);
 }
 

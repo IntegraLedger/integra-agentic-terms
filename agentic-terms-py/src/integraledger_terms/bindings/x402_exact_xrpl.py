@@ -13,7 +13,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_object, to_lcp_string
 from ._x402 import chosen, filter_of, payment_with, read_for
-from ._xrpl import Blob, decode_blob, is_blob_hex, is_xrpl_network, network_id, same_invoice, x402_invoice_id
+from ._xrpl import Blob, decode_presented, is_blob_hex, is_xrpl_network, network_id, same_invoice, x402_invoice_id
 
 ID = "x402/exact/xrpl"
 
@@ -89,7 +89,7 @@ def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | R
     payload = presented.get("payload")
     if not is_object(payload):
         return Refusal("x402/payload-malformed")
-    blob = decode_blob(payload.get("signedTxBlob"))
+    blob = decode_presented(payload.get("signedTxBlob"))
     if isinstance(blob, Refusal):
         return blob
     if blob.tx.get("TransactionType") != "Payment":
@@ -161,6 +161,7 @@ class X402ExactXrpl:
         return XrplUnsigned(request={"kind": "xrpl-tx", "txJson": tx}, _required=required, _accepted=accepted)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash whose LCP string's SHA-256 is the signed InvoiceID. The signature is not verified here."""
+        """The hash whose LCP string's SHA-256 is the signed InvoiceID. A multi-signed blob is xrpl/multisigned: the
+        payer signs with a single key. The signature is not verified here."""
         p = _presented(presented)
         return p if isinstance(p, Refusal) else p[2]

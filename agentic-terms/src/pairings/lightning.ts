@@ -48,7 +48,7 @@ export function lnbtcPiece(pairing: string, named: boolean): BuyerPiece {
   return Object.freeze({
     async choose(read: Read, account: string, inputs: Inputs, _now: number, ref: string): Promise<Chosen | Refusal> {
       const o = firstOption(read, account, "lnbtc", pairing);
-      if ("refused" in o) return refuse("x402/no-payable-option");
+      if (isRefusal(o)) return refuse("x402/no-payable-option");
       const request = isObject(inputs) ? inputs["request"] : undefined;
       if (request === undefined) return refuse("x402/input-missing");
       const resource = isObject(o.required) && isObject(o.required.resource) ? o.required.resource["url"] : undefined;

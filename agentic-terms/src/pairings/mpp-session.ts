@@ -46,7 +46,7 @@ async function sessionComplete(unsigned: unknown, signature: Signature): Promise
   const u = unsigned as SessionUnsigned;
   if (typeof signature === "string") {
     const voucher = u.voucher(signature as Hex);
-    if ("refused" in voucher) return voucher;
+    if (isRefusal(voucher)) return voucher;
     return { next: { kind: "eip712", typedData: voucher } as unknown as SigningRequest };
   }
   if (!Array.isArray(signature) || signature.length !== 2) return refuse("mpp/credential-malformed");

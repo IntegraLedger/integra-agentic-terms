@@ -1,5 +1,6 @@
 """A bounded CBOR reader (RFC 8949) that keeps each item's byte span. Definite and indefinite lengths and tags are
-read; nesting is at most 64 deep. Anything malformed raises CborError."""
+read; nesting is at most 64 deep. Text is strict UTF-8 and keeps a leading byte-order mark. Anything malformed raises
+CborError."""
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -14,8 +15,8 @@ class CborError(Exception):
 @dataclass(slots=True)
 class Item:
     """One data item: its kind, its span [start, end) in the bytes, and its content. kind is uint, nint, bytes, text,
-    array, map, tag, simple or float; value holds a uint's, bytes', text's, simple's value or a tag number; items an
-    array's items, a map's entries as pairs, or a tag's one item."""
+    array, map, tag, simple or float; value holds a uint's, nint's, bytes', text's, simple's value or a tag number;
+    items an array's items, a map's entries as pairs, or a tag's one item."""
 
     kind: str
     start: int
@@ -61,7 +62,7 @@ class SpanReader:
     @staticmethod
     def _text(data: bytes) -> str:
         try:
-            return data.decode("utf-8-sig")
+            return data.decode("utf-8")
         except UnicodeDecodeError as e:
             raise CborError("text") from e
 
@@ -78,7 +79,7 @@ class SpanReader:
         if major == 0:
             it.kind, it.value = "uint", arg
         elif major == 1:
-            it.kind = "nint"
+            it.kind, it.value = "nint", -1 - arg
         elif major == 2:
             it.kind, it.value = "bytes", self._take(arg)
         elif major == 3:

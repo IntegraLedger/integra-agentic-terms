@@ -17,14 +17,17 @@ from ._mpp_checks import usdc_profile
 from ._svm import (
     MEMO_V3,
     MEMO_V4,
+    Carrier,
     SvmBuildInput,
     SvmTx,
     build_sol_message,
     build_svm_message,
+    canonical_carrier,
     decode_svm_tx,
     integer_of,
     key_bytes,
     signed_wire,
+    static_nonce,
     to_base64,
     wire_of,
 )
@@ -37,15 +40,10 @@ _MEMO_V4_KEY = key_bytes(MEMO_V4)
 _ABSENT = object()
 
 
-@dataclass(frozen=True, slots=True)
-class Carrier:
-    h: AtrHash
-    memo: str
-
-
 def mpp_svm_carrier(tx: SvmTx) -> Carrier | Refusal:
     """The one top-level Memo instruction (v3 or v4) whose UTF-8 data parses as an LCP string, and its hash. Memo
-    instructions whose data is not an LCP string are not read. None is svm/no-carrier; more than one svm/memo-count."""
+    instructions whose data is not an LCP string are not read. None is svm/no-carrier; more than one svm/memo-count.
+    The one found must be the hash's LCP string exactly, in lower-case hex, else svm/carrier-not-canonical."""
     found: list[Carrier] = []
     for ix in tx.instructions:
         program = tx.keys[ix.program] if ix.program < len(tx.keys) else None
@@ -62,7 +60,7 @@ def mpp_svm_carrier(tx: SvmTx) -> Carrier | Refusal:
         return Refusal("svm/no-carrier")
     if len(found) > 1:
         return Refusal("svm/memo-count")
-    return found[0]
+    return canonical_carrier(found[0].h, found[0].memo)
 
 
 def _presented_tx(payload: Mapping[str, Any], transaction_only: bool) -> SvmTx | Refusal:
@@ -187,6 +185,9 @@ class MppChargeSolana:
         tx = _presented_tx(e.payload, self.transaction_only)
         if isinstance(tx, Refusal):
             return tx
+        from_table = static_nonce(tx)
+        if from_table is not None:
+            return from_table
         carrier = mpp_svm_carrier(tx)
         if isinstance(carrier, Refusal):
             return carrier
