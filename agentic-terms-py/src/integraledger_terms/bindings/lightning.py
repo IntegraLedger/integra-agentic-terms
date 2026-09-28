@@ -15,7 +15,7 @@ from .._core import MAX_ATR_BYTES, AtrHash
 from .._types import Advertised, Json, Refusal
 from ._bolt11 import FIELD, Bolt11, Currency, decode, invoice_h
 from ._channel import ChannelKind, ChannelRef
-from ._jose import parse_json
+from ._jose import member_names, parse_json
 from ._mpp import challenge_bound, check_challenge, credential_of
 from ._mpp import read as mpp_read
 from ._mpp_checks import decode_object
@@ -100,16 +100,22 @@ def check_option(o: Mapping[str, Any], h: AtrHash | None) -> Bolt11 | Refusal:
 
 
 def atr_names_invoice(atr: object, invoice: object) -> bool:
-    """True when the ATR's bytes are one JSON object whose x402 slot's accepts holds, among its first 32 entries, an
-    option whose extra.invoice is exactly the invoice. Only that slot is read."""
+    """True when the ATR's bytes are one JSON object in the core's layout whose x402 slot's accepts holds, among its
+    first 32 entries, an option whose extra.invoice is exactly the invoice. The object's first members are atrVersion,
+    id and x402, in that order, and no member name appears twice, so every JSON reader finds the same x402 slot. The
+    text is strict UTF-8 with a leading byte-order mark kept, so an ATR that begins with one is not one JSON object.
+    Only that slot is read."""
     if not isinstance(atr, (bytes, bytearray)) or len(atr) > MAX_ATR_BYTES or not isinstance(invoice, str):
         return False
     try:
-        text = bytes(atr).decode("utf-8").removeprefix("﻿")
+        text = bytes(atr).decode("utf-8")
     except UnicodeDecodeError:
         return False
     parsed = parse_json(text)
     if not isinstance(parsed, dict):
+        return False
+    names = member_names(text)
+    if names[:3] != ["atrVersion", "id", "x402"] or len(set(names)) != len(names):
         return False
     slot = parsed.get("x402")
     accepts = slot.get("accepts") if isinstance(slot, dict) else None

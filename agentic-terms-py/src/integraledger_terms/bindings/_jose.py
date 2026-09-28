@@ -109,6 +109,19 @@ def parse_json(text: str) -> Any:
     return _json_parse(text)
 
 
+def member_names(text: str) -> list[str]:
+    """The member names of the JSON object text holds, decoded, in the order written, a repeated name each time it is
+    written. text is one JSON object that parse_json has read; the root object's members are the last ones the parser
+    hands over."""
+    names: list[str] = []
+
+    def record(pairs: list[tuple[str, Any]]) -> None:
+        names[:] = [k for k, _ in pairs]
+
+    json.loads(text, object_pairs_hook=record, parse_constant=_no_constant)
+    return names
+
+
 _JSON_TOKEN = re.compile(
     r'[ \t\n\r]*(?:([][{}:,])|("(?:[^"\\\x00-\x1f]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*")'
     r"|(-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|true|false|null))"
