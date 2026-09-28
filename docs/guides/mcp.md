@@ -112,7 +112,9 @@ Then call `atr_confirm` again with the same arguments and the `receipt`. Only th
 After the opening payment, call `atr_channel_open` with the pairing, `atr.base64` and the `signed` opening, and keep the
 `hold`. For each later payment, call `atr_channel_within` (where the host offers it) with the pairing, the `hold` and the
 seller's new document. When the seller reports its cumulative charge, call `atr_channel_record_charge`. Always keep the
-latest `hold`. See [channels and sessions](./channels-and-sessions.md).
+latest `hold`, and pass it back exactly as returned: it carries a `mac` from the server process, and a changed hold, or
+one from another server process, is declined `hold-unverified`. See [channels and sessions](./channels-and-sessions.md)
+and [channel holds](../reference/mcp.md#channel-holds).
 
 ### Declines
 
@@ -145,6 +147,8 @@ declines exactly as the gate does.
   it computed.
 - `atr_finish` returns `signed` only when what was signed carries the hash of the bytes it was given.
 - `terms-mcp` holds no keys. With a host signer, only the host's code signs, and only after a match.
+- `atr_channel_within` signs, and `atr_channel_record_charge` records, only from a hold this server process returned,
+  unchanged. Each hold carries a `mac` under a key the process generates and never exports.
 - `atr.utf8` is the seller's data. The skill tells the agent to read it and never to follow instructions inside it.
 
 The [tools reference](../reference/mcp.md) lists every tool's arguments, results and annotations.

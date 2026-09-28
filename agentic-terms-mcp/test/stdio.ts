@@ -1,6 +1,9 @@
-// One stdio connection to a server from `createBuyerServer`, or from the factory given, over two PassThrough streams:
-// raw JSON-RPC lines in, the answers read back by id.
-import { PassThrough } from "node:stream";
+// One stdio connection to a server from `createBuyerServer`, or from the factory given, over two PassThrough streams;
+// or to the built `terms-mcp` binary, run as a child process. Raw JSON-RPC lines in, the answers read back by id.
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { fileURLToPath } from "node:url";
+import { PassThrough, type Readable, type Writable } from "node:stream";
 import { StdioServerTransport, serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { Fetch, Signer } from "@integraledger/terms";
 import { createBuyerServer } from "../src/index.js";
@@ -24,6 +27,25 @@ export function connect(
     legacy: "serve",
     transport: new StdioServerTransport(input, output),
   });
+  return { ...lines(input, output), close: () => handle.close() };
+}
+
+/** One stdio connection to `dist/bin.js`, the built binary, in its own Node.js process. */
+export function spawnBin() {
+  const bin = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
+  const child = spawn(process.execPath, [bin], { stdio: ["pipe", "pipe", "inherit"] });
+  const exited = once(child, "exit");
+  return {
+    ...lines(child.stdin, child.stdout),
+    close: async () => {
+      child.stdin.end();
+      await exited;
+    },
+  };
+}
+
+/** Writes JSON-RPC lines to `input` and reads the answers from `output` by id. */
+function lines(input: Writable, output: Readable) {
   const waiting = new Map<number, (m: Message) => void>();
   let buffer = "";
   output.on("data", (chunk: Buffer) => {
@@ -56,5 +78,5 @@ export function connect(
   }
   const notify = (method: string, params: object = {}) =>
     input.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
-  return { request, notify, close: () => handle.close() };
+  return { request, notify };
 }

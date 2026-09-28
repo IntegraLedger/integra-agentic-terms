@@ -2,7 +2,7 @@
  * The buyer gate's operations as MCP tools: `atr_confirm`, `atr_finish`, `atr_check`, `atr_channel_open` and
  * `atr_channel_record_charge`; where the host wires its own signer, `atr_transact` and `atr_channel_within`; and where
  * it wires a signer or an agreement signer, `atr_agree`. Each tool call is one call of the gate; this package adds
- * transport and words only.
+ * transport and words, and seals each channel hold it returns so that a hold passed back is used only unchanged.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
@@ -26,6 +26,7 @@ import {
   type Signer,
 } from "@integraledger/terms";
 import { BINDINGS as LCP_BINDINGS, hash, hashEquals, type Json } from "@integraledger/lcp";
+import { seal, unseal, type HoldJson } from "./hold.js";
 import { VERSION } from "./version.js";
 
 /** Every pairing of the protocol package the gate has a buyer piece for. */
@@ -50,13 +51,16 @@ const DESCRIPTIONS = {
     "payment carries the ATR hash. Returns the agreement's receipt once it is recorded; pass it to atr_confirm.",
   atr_channel_open:
     "Keeps a channel you opened: takes the signed opening payment and the ATR bytes it was confirmed against, and " +
-    "returns the channel `hold` to keep and pass to the other channel tools.",
+    "returns the channel `hold` to keep and pass to the other channel tools. The hold is opaque: pass it back exactly " +
+    "as returned.",
   atr_channel_within:
     "Signs one later payment in a held channel with this host's signer, only when the seller's document advertises " +
-    "the held ATR hash. Returns the payment to send and the updated `hold`.",
+    "the held ATR hash. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the payment " +
+    "to send and the updated `hold`.",
   atr_channel_record_charge:
     "Records the seller's cumulative charge in a held channel, no lower than the last recorded and no higher than " +
-    "what was signed. Returns the updated `hold`.",
+    "what was signed. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the updated " +
+    "`hold`.",
 } as const;
 
 type Result = {
@@ -110,6 +114,18 @@ function atrOf(bytes: Uint8Array): { base64: string; utf8: string | null } {
   }
   return { base64: Buffer.from(bytes).toString("base64"), utf8 };
 }
+
+/** The decline for a hold whose `mac` does not verify: a changed hold, or one another server process returned. */
+const holdUnverified = (): Result =>
+  result(
+    {
+      decline: {
+        code: "hold-unverified",
+        detail: "The hold is not one this server process returned, unchanged. Pass back the latest hold exactly as returned.",
+      },
+    },
+    true,
+  );
 
 /** The bytes of a standard base64 string. */
 const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
@@ -245,7 +261,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
     async (a) => {
       const out = await openChannel(bytesOf(a.atr), a.signed as Presented, bindingOf(a.pairing));
       if ("decline" in out) return declinedResult(out);
-      return result({ atrHash: out.h, hold: jsonOf(out) });
+      return result({ atrHash: out.h, hold: await seal(jsonOf(out) as HoldJson) });
     },
   );
 
@@ -257,9 +273,11 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
-      const out = recordCharge(a.hold as unknown as ChannelHold, a.charged);
+      const held = await unseal(a.hold);
+      if (held === undefined) return holdUnverified();
+      const out = recordCharge(held as unknown as ChannelHold, a.charged);
       if ("decline" in out) return declinedResult(out);
-      return result({ atrHash: out.h, hold: jsonOf(out) });
+      return result({ atrHash: out.h, hold: await seal(jsonOf(out) as HoldJson) });
     },
   );
 
@@ -278,17 +296,19 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       },
       async (a) => {
+        const held = await unseal(a.hold);
+        if (held === undefined) return holdUnverified();
         const refund = a.refund === undefined ? undefined : a.refund.amount === undefined ? {} : { amount: a.refund.amount };
         const out = await within(
           a.document,
-          a.hold as unknown as ChannelHold,
+          held as unknown as ChannelHold,
           bindingOf(a.pairing),
           signer,
           refund,
           (a.inputs ?? {}) as Inputs,
         );
         if ("decline" in out) return declinedResult(out);
-        return result({ atrHash: out.hold.h, signed: jsonOf(out.signed), hold: jsonOf(out.hold) });
+        return result({ atrHash: out.hold.h, signed: jsonOf(out.signed), hold: await seal(jsonOf(out.hold) as HoldJson) });
       },
     );
   }
