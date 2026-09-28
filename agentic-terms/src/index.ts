@@ -3,6 +3,8 @@ export { openChannel, recordCharge, within, type ChannelHold } from "./channels.
 export { check, confirm, finish } from "./gate.js";
 export { transact } from "./transact.js";
 export type {
+  AgreeOptions,
+  AgreementPayment,
   AgreementReceipt,
   Binding,
   Chosen,
@@ -15,5 +17,6 @@ export type {
   Signature,
   Signer,
   SigningRequest,
+  ToApprove,
   TransactOptions,
 } from "./types.js";

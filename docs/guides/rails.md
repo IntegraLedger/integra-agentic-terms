@@ -177,7 +177,7 @@ payment.
 
 ## Pairings that pay an agreement first
 
-Every pairing whose payment is not itself a public proof of H pays the seller's agreement URL first. The
-[pairings reference](../reference/pairings.md) marks them, and the
+Every pairing whose payment is not itself a public proof of H pays the seller's agreement URL first, once the buyer's
+agent has approved that payment. The [pairings reference](../reference/pairings.md) marks them, and the
 [agreement payments guide](./agreement-payments.md) describes the exchange. Pass `agreementSigner` to `transact` when a
 different wallet pays the agreement, for example an EVM wallet beside a card.

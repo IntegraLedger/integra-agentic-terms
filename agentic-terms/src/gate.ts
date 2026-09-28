@@ -186,7 +186,8 @@ function cancel(s: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint
 /**
  * Reads the offer, chooses the option, fetches the ATR and compares its SHA-256 with the advertised hash. Only on a
  * match does it build, with the hash it computed. A pairing whose build has nothing for the buyer to sign returns
- * `request: null`: the comparison is the whole of the buyer's step.
+ * `request: null`: the comparison is the whole of the buyer's step. For a pairing whose payment is not itself a public
+ * proof, `chosen.agreement` is the agreement URL the offer names.
  */
 export async function confirm(
   doc: unknown,
@@ -194,9 +195,7 @@ export async function confirm(
   account: string,
   fetch: Fetch,
   inputs: Inputs = {},
-): Promise<
-  { chosen: Chosen; request: SigningRequest | null; bytes: Uint8Array; h: AtrHash; agreement?: string } | Declined
-> {
+): Promise<{ chosen: Chosen; request: SigningRequest | null; bytes: Uint8Array; h: AtrHash } | Declined> {
   const piece = pieceOf(binding);
   if (piece === undefined) return unsupported(binding);
   const b = steps(binding);
@@ -208,8 +207,9 @@ export async function confirm(
     return declined("offer-unreadable", "The offer names an agreement URL that is not a string.");
   }
 
-  const chosen = await piece.choose(read, account, isObject(inputs) ? inputs : {}, Math.floor(Date.now() / 1000), newRef(), doc);
-  if (isRefusal(chosen)) return declined("no-payable-option", chosen.code);
+  const choice = await piece.choose(read, account, isObject(inputs) ? inputs : {}, Math.floor(Date.now() / 1000), newRef(), doc);
+  if (isRefusal(choice)) return declined("no-payable-option", choice.code);
+  const chosen: Chosen = agreement === undefined ? choice : { ...choice, agreement };
 
   if (!isHttpsLink(read.link)) return declined("link-not-https", linkRefusal(binding, read.link));
 
@@ -225,14 +225,13 @@ export async function confirm(
   }
 
   const unsigned = await buildWith(piece, b, chosen, computed, bytes);
-  const withAgreement = agreement === undefined ? {} : { agreement };
   if (isRefusal(unsigned)) {
-    if (NOTHING_TO_SIGN.test(unsigned.code)) return { chosen, request: null, bytes, h: computed, ...withAgreement };
+    if (NOTHING_TO_SIGN.test(unsigned.code)) return { chosen, request: null, bytes, h: computed };
     return declined("offer-unreadable", unsigned.code);
   }
   const request = piece.request(unsigned);
   if (isRefusal(request)) return declined("offer-unreadable", request.code);
-  return { chosen, request, bytes, h: computed, ...withAgreement };
+  return { chosen, request, bytes, h: computed };
 }
 
 /** The pairing's build over the choice the piece revives from `chosen`. */
@@ -339,24 +338,20 @@ export async function check(
 }
 
 /**
- * Chooses, builds and signs one payment for a read the caller has already compared: the signer is called once, or,
- * for a pairing signed in steps, once per step in order, and the payment is returned only through `finish`.
+ * Builds and signs the payment `chosen` names, with the hash of `bytes`: the signer is called once, or, for a pairing
+ * signed in steps, once per step in order, and the payment is returned only through `finish`. `signed` is null where the
+ * pairing has nothing for the buyer to sign.
  */
 export async function pay(
   binding: Binding,
-  read: Read,
-  doc: unknown,
+  chosen: Chosen,
   signer: Signer,
-  inputs: Inputs,
   bytes: Uint8Array,
 ): Promise<{ signed: Presented | null; landed?: unknown; h: AtrHash } | Declined> {
   const piece = pieceOf(binding);
   if (piece === undefined) return unsupported(binding);
-  const b = steps(binding);
-  const chosen = await piece.choose(read, signer.account, isObject(inputs) ? inputs : {}, Math.floor(Date.now() / 1000), newRef(), doc);
-  if (isRefusal(chosen)) return declined("no-payable-option", chosen.code);
   const h = await hash(bytes);
-  const unsigned = await buildWith(piece, b, chosen, h, bytes);
+  const unsigned = await buildWith(piece, steps(binding), chosen, h, bytes);
   if (isRefusal(unsigned)) {
     if (NOTHING_TO_SIGN.test(unsigned.code)) return { signed: null, h };
     return declined("offer-unreadable", unsigned.code);

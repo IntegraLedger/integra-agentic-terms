@@ -9,19 +9,27 @@ The seller's payment request carries the hash of an Agentic Transaction Record (
 the payment you sign is what links the payment to that record. These tools make the link exact. What the record says
 is for you and your principal to judge.
 
-1. If this host offers `atr_transact`, call it with the pairing and the seller's document. It pays any agreement the
-   pairing needs first, then signs. Send the `signed` payment it returns as the protocol sends a payment (x402 over
-   HTTP: base64 of its JSON in `PAYMENT-SIGNATURE`; x402 over MCP: the object in `_meta["x402/payment"]`; MPP: the
-   credential in the field the challenge selects, `Authorization` by default, after `Payment `).
+1. If this host offers `atr_transact`, call it with the pairing and the seller's document. Send the `signed` payment it
+   returns as the protocol sends a payment (x402 over HTTP: base64 of its JSON in `PAYMENT-SIGNATURE`; x402 over MCP:
+   the object in `_meta["x402/payment"]`; MPP: the credential in the field the challenge selects, `Authorization` by
+   default, after `Payment `). If it returns `approve` instead, the pairing needs an agreement payment first, and
+   nothing has been signed: `approve.option` is that payment's `amount`, `asset`, payee (`payTo`) and `network`, and
+   `approve.url` is where it is paid. It is a payment like any other: approve it as you would any payment, or do not.
+   To approve it, call `atr_transact` again with the same arguments and `approved` set to `approve`, unchanged; it pays
+   the agreement, then signs the payment for the resource.
 2. Otherwise call `atr_confirm` with the pairing, the seller's document and your payer account (CAIP-10, for example
    `eip155:84532:0x…`). Put in `inputs` any value of your own the pairing needs; a decline whose detail ends
    `input-missing` names that case.
-3. If `atr_confirm` returns an `agreement` URL and no `request`, this payment does not itself carry the hash in public,
-   so an agreement payment carrying it must be recorded first. If this host offers `atr_agree`, call it with
-   `atr.base64` and the `agreement` URL. Otherwise request the agreement URL yourself: it answers with an x402 payment
-   request for the same ATR hash, which you pay through these tools (steps 2, 4 and 5, with the pairing its option
-   names), then request the URL again with that payment until it answers 200 with the receipt. Then call `atr_confirm`
-   again with the same arguments and `receipt`. Never sign this payment without the receipt.
+3. If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, this payment does not itself carry the hash in
+   public, so an agreement payment carrying it must be recorded first. It is a payment like any other, and you approve
+   it as you would any payment. If this host offers `atr_agree`, call it with `atr.base64` and `chosen`, exactly as
+   `atr_confirm` returned it, `mac` included; a changed `chosen` is declined `chosen-unverified` and nothing is paid. It
+   returns `approve`, whose `option` is the agreement payment's `amount`, `asset`, payee (`payTo`) and `network`, and
+   signs nothing. To approve it, call `atr_agree` again with the same arguments and `approved` set to `approve`,
+   unchanged; it returns the agreement's `receipt`. Otherwise request `chosen.agreement` yourself: it answers with an
+   x402 payment request for the same ATR hash, which you review and pay through these tools (steps 2, 4 and 5, with
+   the pairing its option names), then request the URL again with that payment until it answers 200 with the receipt.
+   Then call `atr_confirm` again with the same arguments and `receipt`. Never sign this payment without the receipt.
 4. Have your wallet sign exactly `request`, changing nothing. Its `kind` names what is signed: `eip712` is EIP-712
    typed data; the other kinds are a rail's message, transaction, mandate or invoice, handed over as given, with byte
    values as `0x` hex. A request marked `broadcast`, and a Lightning invoice, move the payment when your wallet acts on

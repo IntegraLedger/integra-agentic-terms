@@ -91,7 +91,7 @@ const signer: Signer = {
 const opened = await transact(offer, batchEvm, signer, fetch, {
   inputs: { payerAuthorizer: authorizer.address, deposit: "100000" },
 });
-if ("decline" in opened || opened.signed === null) throw new Error("the channel did not open");
+if ("decline" in opened || "approve" in opened || opened.signed === null) throw new Error("the channel did not open");
 let hold = await openChannel(opened.bytes, opened.signed, batchEvm);
 if ("decline" in hold) throw new Error(hold.decline.code);
 console.log("channel ", hold.channel);

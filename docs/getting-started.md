@@ -82,6 +82,7 @@ const signer: Signer = {
 
 const result = await transact(offer, exactEip3009, signer, fetch);
 if ("decline" in result) throw new Error(`${result.decline.code}: ${result.decline.detail}`);
+if ("approve" in result) throw new Error("this pairing pays no agreement first");
 
 const payment = result.signed as Eip3009Payment;
 console.log("H          ", result.h);

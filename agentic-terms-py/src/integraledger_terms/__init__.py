@@ -8,6 +8,7 @@ from ._gate import check, confirm, finish, transact
 from ._types import (
     Advertised,
     Agreed,
+    AgreementPayment,
     AgreementReceipt,
     Binding,
     Checked,
@@ -23,6 +24,7 @@ from ._types import (
     Signature,
     Signer,
     Step,
+    ToApprove,
     Transacted,
     Unsigned,
 )
@@ -226,6 +228,7 @@ __all__ = [
     "MPP_SESSION_XRPL",
     "Advertised",
     "Agreed",
+    "AgreementPayment",
     "AgreementReceipt",
     "AtrHash",
     "BatchUnsigned",
@@ -245,6 +248,7 @@ __all__ = [
     "Signature",
     "Signer",
     "Step",
+    "ToApprove",
     "Transacted",
     "Unsigned",
     "Within",

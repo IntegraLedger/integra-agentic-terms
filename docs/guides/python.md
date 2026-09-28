@@ -21,7 +21,9 @@ Python `>=3.11`. It depends on `httpx` and `cryptography`, and is fully typed.
 | HTTP client | `fetch`, WHATWG's call shape | an `httpx.AsyncClient` |
 | Result | an object, or `{ decline: { code, detail }, moved? }` | a dataclass (`Transacted`, `Confirmed`, `Finished`, …), or `Declined(code, detail, moved)` |
 | ATR bytes | `bytes: Uint8Array` | `atr_bytes: bytes` |
-| `transact`'s options | `{ inputs, agreementSigner }` | keyword arguments `inputs=`, `agreement_signer=` |
+| `transact`'s options | `{ inputs, agreementSigner, approved, signal }` | keyword arguments `inputs=`, `agreement_signer=`, `approved=`, `signal=` |
+| Ending the agreement exchange | `signal`, an `AbortSignal` | `signal=`, an `asyncio.Event` that you set |
+| The agreement payment to approve | `{ approve, bytes, h }` | `ToApprove(approve, atr_bytes, h)` |
 | Byte strings in a signing request | `Uint8Array`, as built | `0x` and lower-case hex |
 | Channel functions | `openChannel`, `within`, `recordCharge` | `open_channel`, `within`, `record_charge` |
 
@@ -61,11 +63,14 @@ A signer that raises is a `Declined("signer-failed", …)`.
 
 ## The flows
 
-- **One call:** `await transact(doc, binding, signer, client, inputs=…, agreement_signer=…)`.
+- **One call:** `await transact(doc, binding, signer, client, inputs=…, agreement_signer=…)`. Where the pairing needs
+  an agreement payment, the call returns `ToApprove` and signs nothing; once your agent approves `result.approve`, call
+  again with `approved=result.approve`.
 - **Two calls:** `await confirm(doc, binding, account, client, inputs)`, then your signer, then
   `finish(atr_bytes, chosen, signature, binding)`.
 - **Later:** `check(atr_bytes, presented, binding)`.
-- **Agreement:** `await agree(h, url, signer, client, atr_bytes=…, inputs=…)`.
+- **Agreement:** `await agree(atr_bytes, url, signer, client)` returns `ToApprove`, signing nothing; once your agent
+  approves it, `await agree(atr_bytes, url, signer, client, approved=…)` pays it and returns `Agreed`.
 - **Channels:** `open_channel(atr_bytes, opened, binding)`, `await within(doc, hold, binding, signer)`,
   `record_charge(hold, charged)`.
 

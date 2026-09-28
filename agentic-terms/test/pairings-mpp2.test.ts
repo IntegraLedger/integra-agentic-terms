@@ -214,6 +214,7 @@ describe("mpp/charge/hedera", () => {
     expect(signed).not.toHaveProperty("landed");
     const whole = await transact(push.doc, offered(built), counting(push.account, push.answer), serving(ABC), { inputs: push.inputs! });
     if (isDeclined(whole)) throw new Error(whole.decline.code);
+    if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(whole.landed).toEqual(V.fetchPresented.expectLanded);
     expect(await chargeHedera.bound(signed)).toEqual({ refused: true, code: V.push.expectWithout });
     expect(await chargeHedera.reference({ ...(signed as object), landed: whole.landed })).toEqual(V.push.expectReference);
@@ -543,6 +544,7 @@ describe("mpp/session/solana", () => {
       const signer = operatorSigner(kinds);
       const out = await transact(doc, sessionSolana, { ...signer, sign: (r) => (seen.push(request(r)), signer.sign(r)) }, serving(ABC));
       if (isDeclined(out)) throw new Error(out.decline.detail);
+      if ("approve" in out) throw new Error("an agreement payment to approve");
       expect(kinds).toEqual(V.SV5.expectRequestKinds);
       expect(Buffer.from(seen[1]!["message"] as Uint8Array).toString("utf8")).toBe(V.SV3.expectProofText);
       expect(seen[1]!["signer"]).toBe(V.SV3.payer);
@@ -559,6 +561,7 @@ describe("mpp/session/solana", () => {
       const kinds: string[] = [];
       const out = await transact(p.doc, sessionSolana, operatorSigner(kinds), serving(ABC));
       if (isDeclined(out)) throw new Error(out.decline.detail);
+      if ("approve" in out) throw new Error("an agreement payment to approve");
       expect(kinds).toEqual([V.SV5.expectRequestKinds[0]]);
       expect((out.signed as MppCredential).payload).not.toHaveProperty("authentication");
     });

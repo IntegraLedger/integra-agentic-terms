@@ -17,6 +17,7 @@ import {
   type Signature,
   type Signer,
   type SigningRequest,
+  type TransactOptions,
 } from "../src/index.js";
 
 /** A vector file of `@integraledger/lcp`, as data of the shape the caller names. */
@@ -93,6 +94,23 @@ export function offered(binding: Binding): Binding {
   } as unknown as Binding;
 }
 
+/**
+ * `transact` in its two calls: the first returns the agreement payment to approve, and the second is made with that
+ * payment approved unchanged. A pairing that pays no agreement, or whose agreement is already recorded, finishes in the
+ * first.
+ */
+export async function transactApproved(
+  doc: unknown,
+  binding: Binding,
+  signer: Signer,
+  fetch: Fetch,
+  options: TransactOptions = {},
+): ReturnType<typeof transact> {
+  const first = await transact(doc, binding, signer, fetch, options);
+  if (!("approve" in first)) return first;
+  return transact(doc, binding, signer, fetch, { ...options, approved: first.approve });
+}
+
 export const isDeclined = (r: unknown): r is Declined => typeof r === "object" && r !== null && "decline" in r;
 export const code = (r: unknown): string | undefined => (r as Declined).decline?.code;
 
@@ -147,6 +165,7 @@ export async function buildAndSign(
   const signer = counting(p.account, p.answer);
   const whole = await transact(p.doc, binding, signer, serving(ABC), { inputs: p.inputs ?? {} });
   if (isDeclined(whole)) throw new Error(`${whole.decline.code}: ${whole.decline.detail}`);
+  if ("approve" in whole) throw new Error("an agreement payment to approve");
   expect(signer.requests.length).toBe(answers.length);
   expect(whole.bytes).toEqual(ABC);
   expect(whole.agreement).toEqual(isPublicProof(p.binding) ? undefined : RECEIPT);

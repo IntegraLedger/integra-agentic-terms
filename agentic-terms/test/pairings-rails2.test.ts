@@ -562,6 +562,7 @@ describe.each(rows.map((r) => [r.id, r] as const))("%s", (_id, row) => {
       doc.extensions["payment-identifier"] = { info: {}, schema: {} };
       const out = await transact(doc, offered(p.binding), counting(p.account, p.answer), serving(new TextEncoder().encode("abc")), { inputs: p.inputs ?? {} });
       if ("decline" in out) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
+      if ("approve" in out) throw new Error("an agreement payment to approve");
       const ext = (out.signed as unknown as { extensions: Record<string, { info: { id?: string } }> }).extensions;
       expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
     }));

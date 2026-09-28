@@ -45,13 +45,19 @@ document `D` advertising `hash(A)`, the published Anvil development key as the p
 | B16 | An account on another network or chain: `no-payable-option`, with no fetch. |
 | B17 | A binding the gate does not serve: `pairing-not-supported`. |
 | B18 | A `payment-identifier` that already holds an id, or is not an object: the identifier cannot be written, and no payment is returned. |
-| BA1 | A pairing whose payment is not a public proof: the agreement is paid first (one signature), then the payment (one signature). |
-| BA2 | An agreement URL that advertises another hash: `hash-mismatch`, nothing signed. |
-| BA3 | An agreement that stays `202`: the same payment is re-sent every 2 seconds until `maxTimeoutSeconds` plus 180 seconds, then `agreement-pending`; the main payment is never signed. |
-| BA4 | A receipt for another hash: `agreement-failed`; the main payment is never signed. |
+| BA1 | A pairing whose payment is not a public proof: the gate returns the agreement payment for approval (its `amount`, `asset`, `payTo` and `network`); once approved, the agreement is paid first (one signature), then the payment (one signature). |
+| BA2 | An agreement URL that advertises another hash: `hash-mismatch`, nothing signed, before any approval is asked. |
+| BA3 | An approved agreement that stays `202`: the same payment is re-sent every 2 seconds until `maxTimeoutSeconds` plus 180 seconds, then `agreement-pending`; the main payment is never signed. |
+| BA4 | An approved agreement answered by a receipt for another hash: `agreement-failed`; the main payment is never signed. |
 | BA5 | An `http://` agreement URL: `link-not-https`, with no fetch. |
 | BA6 | A pairing whose payment is itself a public proof ignores an agreement URL in the offer. |
 | BA7 | `transact` returns the agreement's receipt beside the payment. |
+| BA8 | An agreement payment the agent has not approved: the gate returns it for approval, one unpaid request, and signs and pays nothing. |
+| BA9 | A payment request listing a Solana option, then an EVM one, to an EVM signer: the EVM option is the one returned for approval and paid. |
+| BA10 | As BA9, pending: the exchange is bounded by the chosen EVM option's `maxTimeoutSeconds` plus 180 seconds, never the Solana option's. |
+| BA11 | `maxTimeoutSeconds` written `60.0` is the number 60: the agreement is paid as in BA1. |
+| BE1 | The ATR served under a content coding (gzip, x-gzip, deflate, br, stacked, two gzip members, `identity, gzip`): `atr-unfetchable` before anything is hashed or signed; every request asks for `Accept-Encoding: identity`. |
+| BE2 | The agreement URL's `402` or `200` answered under a content coding: `agreement-failed`; after the agreement payment is signed, the main payment never is. |
 | BS1, BS2 | `x402/exact/stellar` and `mpp/charge/stellar`: a simulated transfer of another amount, on another token contract, or from another account than the payer is declined `offer-unreadable` (`stellar/amount-mismatch`, `stellar/asset-mismatch`, `stellar/payer-mismatch`) before the signer is called; the transfer the option asks for reaches the signer as `stellar-auth`. |
 | BX1 | `mpp/session/xrpl`: a challenge whose `amount` is not a u64 of drops written in decimal (an array, a boolean, a number, a decimal point, a sign, 2^64) is `mpp/request-malformed`, so the gate declines `no-payable-option` and signs nothing; the amount `"100"` reaches the signer as `xrpl-session-open`. |
 

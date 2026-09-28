@@ -27,7 +27,7 @@ import type { TvmUnsigned } from "@integraledger/lcp/tvm";
 import type { Unsigned as UcpUnsigned } from "@integraledger/lcp/ucp";
 import type { Unsigned as Ap2Unsigned } from "@integraledger/lcp/ap2";
 import type { Unsigned as AcpUnsigned } from "@integraledger/lcp/acp";
-import type { X402Unsigned } from "@integraledger/lcp/x402";
+import type { PaymentRequired, PaymentRequirements, X402Unsigned } from "@integraledger/lcp/x402";
 import type { SigningRequest as BatchRequest } from "@integraledger/lcp/x402-batch-settlement";
 import type { SvmUnsigned } from "@integraledger/lcp/x402-exact-solana";
 import type { XrplUnsigned } from "@integraledger/lcp/xrpl";
@@ -117,11 +117,15 @@ export interface Signer {
 /** The buyer's own values a pairing's build needs beside the offer, such as a recent block or an account nonce. */
 export type Inputs = { readonly [k: string]: Json };
 
-/** What the gate chose to pay, as plain JSON data, so `finish` can rebuild the same request. */
+/**
+ * What the gate chose to pay, as plain JSON data, so `finish` can rebuild the same request. `agreement` is the agreement
+ * URL the seller's offer names, for a pairing whose payment is not itself a public proof of the ATR hash.
+ */
 export interface Chosen {
   pairing: string;
   choice: Json;
   ref: string;
+  agreement?: string;
 }
 
 export type DeclineCode =
@@ -152,10 +156,26 @@ export type Declined = {
   readonly moved?: { readonly signed: unknown; readonly bytes: Uint8Array; readonly h: AtrHash };
 };
 
-/** `transact`'s optional members: the buyer's own chain values, and the signer that pays the agreement. */
+/**
+ * `transact`'s optional members: the buyer's own chain values; the signer that pays the agreement; the agreement payment
+ * the agent approved, exactly as `transact` or `agree` returned it in `approve`; and a signal that ends the agreement
+ * exchange.
+ */
 export interface TransactOptions {
   readonly inputs?: Inputs | undefined;
   readonly agreementSigner?: Signer | undefined;
+  readonly approved?: AgreementPayment | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/**
+ * `agree`'s optional members: the agreement payment the agent approved, exactly as it was returned in `approve`; the
+ * buyer's own chain values; and a signal that ends the exchange.
+ */
+export interface AgreeOptions {
+  readonly approved?: AgreementPayment | undefined;
+  readonly inputs?: Inputs | undefined;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** The next request of a pairing signed in steps. */
@@ -168,6 +188,24 @@ export interface Read {
   h: AtrHash;
   link: string;
   offer?: unknown;
+}
+
+/**
+ * The agreement payment, for the buyer's agent to approve before anything is signed: the agreement URL; `option`, the
+ * option of the agreement URL's payment request that the gate pays, whose `amount`, `asset`, `payTo` and `network` are
+ * what the payment moves; and `required`, that payment request as the agreement URL served it.
+ */
+export interface AgreementPayment {
+  readonly url: string;
+  readonly option: PaymentRequirements;
+  readonly required: PaymentRequired;
+}
+
+/** An agreement payment the agent approves before it is signed, with the ATR bytes the gate compared and their hash. */
+export interface ToApprove {
+  readonly approve: AgreementPayment;
+  readonly bytes: Uint8Array;
+  readonly h: AtrHash;
 }
 
 /** The agreement resource's answer once the agreement payment carrying the ATR hash is recorded. */

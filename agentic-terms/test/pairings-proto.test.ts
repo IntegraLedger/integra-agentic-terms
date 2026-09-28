@@ -59,6 +59,7 @@ async function signsOver(
   const signer = counting(p.account, p.answer);
   const whole = await transact(p.doc, offered(p.binding), signer, serving(atr), { inputs: p.inputs ?? {} });
   if (isDeclined(whole)) throw new Error(`${whole.decline.code}: ${whole.decline.detail}`);
+  if ("approve" in whole) throw new Error("an agreement payment to approve");
   expect(signer.requests.length).toBe(1);
   expect(whole.signed).toEqual(done.signed);
   expect(whole.bytes).toEqual(atr);

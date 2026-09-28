@@ -15,6 +15,7 @@ guarantees, how, and what it does not do.
 | The payment carries the computed hash. | The build takes the hash the gate computed, not the string the seller advertised. |
 | What was signed is read back. | `finish` rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and reads H back out of the signed contents through the pairing's binding. It returns the payment only when that value is the hash of the bytes. |
 | A payment without a public proof waits for one. | For a pairing whose payment is not itself a public proof of H, the payment is signed only after the agreement URL answers with a receipt for that H. |
+| Every payment is shown before it is signed. | The agreement payment is returned to the buyer's agent with its amount, asset, payee and network, and signed only when a second call carries it back. The gate applies no spending limit: what to approve is the agent's decision. |
 | The fetch is bounded. | One `GET` of an `https` link, with no redirect, one 10-second deadline over headers and body, and at most 1 MiB read. A declared or streamed length over the bound cancels the body. |
 | The bytes hashed are the bytes sent. | Every request asks for `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding (gzip, br, a stacked list) is declined with its body unread. Nothing is decompressed, so the bounds apply to the bytes on the wire. The agreement receipt is read the same way, at most 64 KiB. |
 | A channel pays under its ATR. | `within` re-derives every value from the hold, never from the seller's new challenge, and signs only when that challenge advertises the held H. A recorded charge cannot exceed what was signed. |
@@ -47,6 +48,9 @@ does not; the [pairings reference](./reference/pairings.md) quotes every stateme
 - A channel opening and a channel hold the tools return carry a `mac` under a key of the server process.
   `atr_channel_open` declines any other opening, `opening-unverified`, and `atr_channel_within` and
   `atr_channel_record_charge` decline any other hold, `hold-unverified`, before the gate is called.
+- The `chosen` that `atr_confirm` returns carries a `mac` under the same key. `atr_agree` pays only the agreement URL in
+  a `chosen` whose `mac` verifies, and declines any other `chosen`, `chosen-unverified`, before anything is fetched or
+  signed.
 - The `terms-mcp` binary fetches only from public addresses. A link that names a loopback, private-use, shared,
   link-local, unique-local, documentation, multicast or reserved address is refused before any connection, and a host
   name is resolved once and connected to only when every address it resolves to is public. A host that serves the tools

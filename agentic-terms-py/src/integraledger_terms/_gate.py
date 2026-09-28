@@ -1,12 +1,14 @@
 """The buyer gate: fetch the ATR, compare its hash with the advertised one, build the payment with that hash, pay the
-agreement when the pairing's payment is not itself a public proof, sign only on a match, and confirm the hash inside
-what was signed, or, for a pairing whose proof is the agreement payment, complete the payment without that reading."""
+agreement the buyer's agent approved when the pairing's payment is not itself a public proof, sign only on a match, and
+confirm the hash inside what was signed, or, for a pairing whose proof is the agreement payment, complete the payment
+without that reading."""
 
 import asyncio
 import re
 import secrets
 import time
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 import httpx
@@ -14,7 +16,7 @@ import httpx
 from . import _agreement
 from ._core import MAX_ATR_BYTES, AtrHash, atr_hash, hash_equals
 from ._types import (
-    Advertised,
+    AgreementPayment,
     Binding,
     Checked,
     Chosen,
@@ -31,6 +33,7 @@ from ._types import (
     Signature,
     Signer,
     Step,
+    ToApprove,
     Transacted,
 )
 from .bindings._lcp import is_https_link, is_other_scheme_link
@@ -159,7 +162,8 @@ async def confirm(
 ) -> Confirmed | Declined:
     """Read the offer (the seller's document as given: an object, a list of challenges, or a string), choose the
     option, fetch the ATR and compare hashes. Only on a match build, with the hash
-    computed. A pairing whose build has nothing for the buyer to sign returns request None."""
+    computed. A pairing whose build has nothing for the buyer to sign returns request None. For a pairing whose payment
+    is not itself a public proof, chosen.agreement is the agreement URL the offer names."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
@@ -170,9 +174,10 @@ async def confirm(
     if agreement is not None and not isinstance(agreement, str):
         return Declined("offer-unreadable", "The offer names an agreement URL that is not a string.")
     given = inputs if isinstance(inputs, Mapping) else {}
-    chosen = piece.choose(advertised, account, given, _now(), _ref(), doc)
-    if isinstance(chosen, Refusal):
-        return Declined("no-payable-option", chosen.code)
+    choice = piece.choose(advertised, account, given, _now(), _ref(), doc)
+    if isinstance(choice, Refusal):
+        return Declined("no-payable-option", choice.code)
+    chosen = choice if agreement is None else replace(choice, agreement=agreement)
     if not is_https_link(advertised.link):
         return Declined("link-not-https", _link_refusal(binding, advertised.link))
     fetched = await _fetch(fetch, advertised.link)
@@ -188,12 +193,12 @@ async def confirm(
     unsigned = _build(piece, binding, chosen, computed, fetched)
     if isinstance(unsigned, Refusal):
         if _NOTHING_TO_SIGN.fullmatch(unsigned.code):
-            return Confirmed(chosen=chosen, request=None, atr_bytes=fetched, h=computed, agreement=agreement)
+            return Confirmed(chosen=chosen, request=None, atr_bytes=fetched, h=computed)
         return Declined("offer-unreadable", unsigned.code)
     request = piece.request(unsigned)
     if isinstance(request, Refusal):
         return Declined("offer-unreadable", request.code)
-    return Confirmed(chosen=chosen, request=json_form(request), atr_bytes=fetched, h=computed, agreement=agreement)
+    return Confirmed(chosen=chosen, request=json_form(request), atr_bytes=fetched, h=computed)
 
 
 def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding) -> Finished | Next | Declined:
@@ -248,18 +253,13 @@ def check(atr_bytes: bytes, presented: Any, binding: Binding) -> Checked | Decli
     return Checked(h=h)
 
 
-async def pay(
-    binding: Binding, read: Advertised, doc: Any, signer: Signer, inputs: Inputs, atr_bytes: bytes
-) -> Finished | Declined | None:
-    """Choose, build and sign one payment for a read the caller has already compared: the signer is called once, or
-    once per step for a payment signed in steps, and the payment is returned only through finish. None where the
-    pairing has nothing for the buyer to sign."""
+async def pay(binding: Binding, chosen: Chosen, signer: Signer, atr_bytes: bytes) -> Finished | Declined | None:
+    """Build and sign the payment chosen names, with the hash of atr_bytes: the signer is called once, or once per step
+    for a payment signed in steps, and the payment is returned only through finish. None where the pairing has nothing
+    for the buyer to sign."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
-    chosen = piece.choose(read, signer.account, inputs if isinstance(inputs, Mapping) else {}, _now(), _ref(), doc)
-    if isinstance(chosen, Refusal):
-        return Declined("no-payable-option", chosen.code)
     h = atr_hash(atr_bytes)
     unsigned = _build(piece, binding, chosen, h, atr_bytes)
     if isinstance(unsigned, Refusal):
@@ -310,16 +310,25 @@ async def transact(
     *,
     inputs: Inputs | None = None,
     agreement_signer: Signer | None = None,
-) -> Transacted | Declined:
-    """confirm, then, for a pairing whose payment is not itself a public proof, the agreement payment and its receipt,
-    then the signer, then finish. The signer is called once, or once per step for a payment signed in steps, and never
-    on a decline before it. Where the pairing has nothing for the buyer to sign, signed is None after the comparison.
-    When the agreement was paid first, agreement is its receipt. Inputs that are not a mapping, or an agreement signer
-    with no sign method, are declined before any fetch or signer call."""
+    approved: AgreementPayment | None = None,
+    signal: asyncio.Event | None = None,
+) -> Transacted | ToApprove | Declined:
+    """confirm, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer, then
+    finish. Without approved, an agreement not yet recorded is returned as ToApprove, the agreement payment for the
+    agent to approve, and nothing is signed; with approved, that payment is signed and paid, and the resource's payment
+    is signed only with the agreement's receipt in hand. The signer is called once, or once per step for a payment
+    signed in steps, and never on a decline before it. Where the pairing has nothing for the buyer to sign, signed is
+    None after the comparison. agreement is the agreement's receipt, where the pairing needs one. Setting signal ends
+    the agreement exchange. Inputs that are not a mapping, an agreement signer with no sign method, an approved value
+    that is not an AgreementPayment, or a signal that is not an asyncio.Event are declined before any fetch or signer
+    call."""
     if _piece(binding) is None:
         return _unsupported(binding)
-    if (inputs is not None and not isinstance(inputs, Mapping)) or (
-        agreement_signer is not None and not callable(getattr(agreement_signer, "sign", None))
+    if (
+        (inputs is not None and not isinstance(inputs, Mapping))
+        or (agreement_signer is not None and not callable(getattr(agreement_signer, "sign", None)))
+        or (approved is not None and not isinstance(approved, AgreementPayment))
+        or (signal is not None and not isinstance(signal, asyncio.Event))
     ):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
     given = inputs if inputs is not None else {}
@@ -328,17 +337,18 @@ async def transact(
         return confirmed
     atr_bytes, chosen = confirmed.atr_bytes, confirmed.chosen
     receipt = None
-    if confirmed.agreement is not None:
-        agreed = await _agreement.agree(
-            confirmed.h,
-            confirmed.agreement,
+    if chosen.agreement is not None:
+        agreed = await _agreement.exchange(
+            atr_bytes,
+            chosen.agreement,
             agreement_signer if agreement_signer is not None else signer,
             fetch,
-            atr_bytes=atr_bytes,
+            approved=approved,
             inputs=given,
+            signal=signal,
             ns=_namespace(binding),
         )
-        if isinstance(agreed, Declined):
+        if isinstance(agreed, (Declined, ToApprove)):
             return agreed
         receipt = agreed.receipt
 

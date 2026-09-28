@@ -187,25 +187,32 @@ UTF-8), integers as decimal strings, byte strings as `0x` hex.
 
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
-| `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request`; and `agreement` (the URL) where the pairing pays an agreement first | read-only, open-world |
+| `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
 | `atr_finish` | `pairing`, `atr` (base64), `chosen`, `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash` and `next` for a pairing signed in steps | read-only |
 | `atr_check` | `pairing`, `atr` (base64), `presented` | `atrHash` when the payment carries the hash of those bytes | read-only |
 | `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening) and `mac`, exactly as returned | `atrHash` and `hold`, with its `mac` | read-only |
 | `atr_channel_record_charge` | `hold` (exactly as returned), `charged` (decimal) | `atrHash` and the updated `hold` | read-only |
 
-When `atr_confirm` names an `agreement` URL, it returns no `request` until the agent passes that agreement's `receipt`
-for this H. The payment is signed only after the agreement is recorded.
+When `atr_confirm` returns `chosen.agreement`, it returns no `request` until the agent passes that agreement's
+`receipt` for this H. The payment is signed only after the agreement is recorded.
 
 ### Offered when the host wires a signer
 
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
-| `atr_transact` | `pairing`, `document`, `inputs?` | `atrHash`, `atr`, `signed` (with `mac` for a channel opening), and `agreement` (the receipt) where one was paid | not read-only, not idempotent, open-world |
-| `atr_agree` | `atr` (base64), `agreement` (URL), `inputs?` | `atrHash` and `receipt` | not read-only, not idempotent, open-world |
+| `atr_transact` | `pairing`, `document`, `inputs?`, `approved?` | `atrHash`, `atr`, `signed` (with `mac` for a channel opening), and `agreement` (the receipt) where the pairing needs one; or `atrHash`, `atr` and `approve`, the agreement payment to approve, with nothing signed | not read-only, not idempotent, open-world |
+| `atr_agree` | `atr` (base64), `chosen` (from `atr_confirm`, exactly as returned), `approved?`, `inputs?` | `atrHash` and `approve`, the agreement payment to approve, with nothing signed; or, with `approved`, `atrHash` and `receipt` | not read-only, not idempotent, open-world |
 | `atr_channel_within` | `pairing`, `hold` (exactly as returned), `document`, `refund?`, `inputs?` | `atrHash`, `signed` and the updated `hold` | not read-only, not idempotent, open-world |
 
-`atr_agree` is offered when the host wires a signer or an agreement signer. `pairing` is one of the ids in
-[the table below](#supported-pairings); any other value is refused by the tool's input schema.
+`atr_agree` is offered when the host wires a signer or an agreement signer. It reads the agreement URL from `chosen`,
+never from an argument of its own. `chosen` carries a `mac` under the server process's key, as the channel holds do, and
+`atr_agree` declines a `chosen` whose `mac` does not verify with `chosen-unverified`, before anything is fetched or
+signed. The agreement payment is a payment like any other: `approve.option` shows its
+`amount`, `asset`, `payTo` and `network`, and it is signed only when the agent calls again with `approved` set to
+`approve`, unchanged. A client's `notifications/cancelled` for a call ends its agreement exchange.
+
+`pairing` is one of the ids in [the table below](#supported-pairings); any other value is refused by the tool's input
+schema.
 
 ### Channel holds
 
@@ -223,8 +230,10 @@ back exactly as returned. After a restart it opens a new channel; an earlier cha
 `skills/confirming-the-atr-hash-before-paying/SKILL.md` tells the agent, in order:
 
 1. Use `atr_transact` where the host offers it; otherwise `atr_confirm`, sign exactly `request`, then `atr_finish`.
-2. When `atr_confirm` names an agreement URL, pay the agreement first (`atr_agree`, or by hand through the same tools)
-   and call `atr_confirm` again with the receipt. Never sign the payment without it.
+2. When `atr_confirm` returns `chosen.agreement`, pay the agreement first, approving it like any other payment
+   (`atr_agree` shows it as `approve` and pays it when called again with `approved`; or by hand through the same
+   tools), and call `atr_confirm` again with the receipt. Never sign the payment without it. `atr_transact` shows an
+   agreement payment the same way before it pays it.
 3. Send only the `signed` payment `atr_finish` returns, as the protocol sends a payment: x402 over HTTP, base64 of its
    JSON in `PAYMENT-SIGNATURE`; x402 over MCP, the object in `_meta["x402/payment"]`; MPP, the credential in the field
    the challenge selects, `Authorization` by default.

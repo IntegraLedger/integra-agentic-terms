@@ -18,12 +18,14 @@ from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from integraledger_terms import (
     Advertised,
     Agreed,
+    AgreementPayment,
     AgreementReceipt,
     Confirmed,
     X402_EXACT_EIP155_ERC7710,
     Declined,
     Json,
     Refusal,
+    ToApprove,
     Transacted,
     _agreement,
     _gate,
@@ -126,6 +128,25 @@ def run(link: Link, go: Any) -> Any:
     return asyncio.run(main())
 
 
+async def approve_and_agree(signer: Any, client: httpx.AsyncClient, **options: Any) -> ToApprove | Agreed | Declined:
+    """agree in its two calls: the agreement payment to approve, then that payment, approved unchanged."""
+    first = await agree(A, URL, signer, client, **options)
+    if not isinstance(first, ToApprove):
+        return first
+    return await agree(A, URL, signer, client, approved=first.approve, **options)
+
+
+async def approve_and_transact(
+    doc: Any, binding: Any, signer: Any, client: httpx.AsyncClient, **options: Any
+) -> Transacted | ToApprove | Declined:
+    """transact in its two calls: the agreement payment to approve, then the call with that payment approved
+    unchanged."""
+    first = await transact(doc, binding, signer, client, **options)
+    if not isinstance(first, ToApprove):
+        return first
+    return await transact(doc, binding, signer, client, approved=first.approve, **options)
+
+
 def declined(result: object, code: str) -> bool:
     return isinstance(result, Declined) and result.code == code
 
@@ -139,12 +160,12 @@ def test_the_agreement_challenges_read_as_the_agreement_option_for_each_hash() -
     assert other.h == BUYER["fixed"]["hashC"]
 
 
-def test_confirm_returns_the_agreement_url_the_binding_read() -> None:
+def test_confirm_carries_the_agreement_url_the_binding_read_in_chosen() -> None:
     seller = Seller([])
     with_url = run(seller.link(), lambda c: confirm(D, with_agreement(URL), ACCOUNT, c))
-    assert isinstance(with_url, Confirmed) and with_url.agreement == URL
+    assert isinstance(with_url, Confirmed) and with_url.chosen.agreement == URL
     without = run(seller.link(), lambda c: confirm(D, BINDING, ACCOUNT, c))
-    assert isinstance(without, Confirmed) and without.agreement is None
+    assert isinstance(without, Confirmed) and without.chosen.agreement is None
 
 
 def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(clock: Clock) -> None:
@@ -152,7 +173,7 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
     seller = Seller(r["input"]["agreement"])
     signer = RecordingSigner()
     start = clock.now
-    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(seller.link(), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert isinstance(out, Transacted)
     assert clock.now - start == int(r["input"]["agreement"][1]["retryAfter"])
 
@@ -183,14 +204,14 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
 
     assert out.signed is not None and out.signed["payload"]["signature"] == B6_SIGNATURE
     assert out.h == HASH_A and out.atr_bytes == A
-    assert [str(q.url) for q in seller.requests] == [LINK_A, URL, URL, URL]
+    assert [str(q.url) for q in seller.requests] == [LINK_A, URL, LINK_A, URL, URL]
     assert "payment-signature" not in seller.agreement_requests()[0].headers
 
 
 def test_ba1_agree_returns_the_receipt_and_an_agreement_signer_signs_the_agreement() -> None:
     r = row("BA1")
     receipt = AG[r["expect"]["receipt"]]
-    out = run(Seller(r["input"]["agreement"]).link(), lambda c: agree(HASH_A, URL, RecordingSigner(), c, atr_bytes=A))
+    out = run(Seller(r["input"]["agreement"]).link(), lambda c: approve_and_agree(RecordingSigner(), c))
     assert out == Agreed(
         AgreementReceipt(
             atr_hash=receipt["atrHash"],
@@ -204,7 +225,7 @@ def test_ba1_agree_returns_the_receipt_and_an_agreement_signer_signs_the_agreeme
     agreement_signer = RecordingSigner()
     whole = run(
         Seller(r["input"]["agreement"]).link(),
-        lambda c: transact(D, with_agreement(URL), signer, c, agreement_signer=agreement_signer),
+        lambda c: approve_and_transact(D, with_agreement(URL), signer, c, agreement_signer=agreement_signer),
     )
     assert isinstance(whole, Transacted)
     assert [q["typedData"]["message"]["value"] for q in agreement_signer.requests] == [1]
@@ -216,14 +237,14 @@ def test_ba2_the_plant_an_agreement_challenge_for_another_hash_is_never_signed()
     assert r["plant"] is True
     seller = Seller(r["input"]["agreement"])
     signer = RecordingSigner()
-    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(seller.link(), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert declined(out, r["expect"]["decline"])
     assert len(signer.requests) == r["expect"]["signCalls"]
     assert len(seller.paid()) == r["expect"]["paidRequests"]
 
     direct = RecordingSigner()
     assert declined(
-        run(Seller(r["input"]["agreement"]).link(), lambda c: agree(HASH_A, URL, direct, c, atr_bytes=A)), r["expect"]["decline"]
+        run(Seller(r["input"]["agreement"]).link(), lambda c: approve_and_agree(direct, c)), r["expect"]["decline"]
     )
     assert len(direct.requests) == r["expect"]["signCalls"]
 
@@ -235,7 +256,7 @@ def test_ba3_a_202_that_never_becomes_200_is_pending_at_the_exchange_bound_with_
     seller = Seller(r["input"]["agreement"])
     signer = RecordingSigner()
     start = clock.now
-    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(seller.link(), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert declined(out, "agreement-pending")
     assert clock.now - start == EXCHANGE_S
     assert len(signer.requests) == r["expect"]["signCalls"]
@@ -259,7 +280,7 @@ def test_ba3_the_exchange_bound_runs_from_the_payments_first_sending_not_from_th
             return await RecordingSigner.sign(self, request)
 
     start = clock.now
-    out = run(seller.link(), lambda c: agree(HASH_A, URL, SlowSigner(), c, atr_bytes=A))
+    out = run(seller.link(), lambda c: approve_and_agree(SlowSigner(), c))
     assert declined(out, "agreement-pending")
     assert clock.now - start == 30 + EXCHANGE_S
 
@@ -280,7 +301,7 @@ def test_a_paid_request_that_never_answers_is_bounded_and_sent_again_until_the_e
     monkeypatch.setattr(_agreement, "_get", unanswered)
     signer = RecordingSigner()
     start = clock.now
-    out = run(Seller([{"status": 402, "paymentRequired": "required"}]).link(), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(Seller([{"status": 402, "paymentRequired": "required"}]).link(), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert declined(out, "agreement-pending")
     assert clock.now - start == EXCHANGE_S
     assert seconds == [PAID_REQUEST_S, EXCHANGE_S - PAID_REQUEST_S - 2]
@@ -299,7 +320,7 @@ def test_a_paid_request_answered_200_after_15_s_is_waited_for(clock: Clock, monk
         return handle(request)
 
     signer = RecordingSigner()
-    out = run(Link(slow), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(Link(slow), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert isinstance(out, Transacted) and out.agreement is not None
     assert len(seller.paid()) == 1 and len(signer.requests) == 2
 
@@ -312,7 +333,7 @@ def test_an_answer_that_does_not_complete_the_agreement_payment_sends_nothing() 
         async def sign(self, request: Json) -> str:
             return "0x00"
 
-    out = run(seller.link(), lambda c: agree(HASH_A, URL, Wrong(), c, atr_bytes=A))
+    out = run(seller.link(), lambda c: approve_and_agree(Wrong(), c))
     assert declined(out, "signed-not-bound")
     assert seller.paid() == []
 
@@ -333,7 +354,7 @@ def test_an_agreement_placed_by_another_public_proof_pairing_is_paid_by_that_pai
         return response
 
     signer = RecordingSigner()
-    out = run(Link(permit2), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(Link(permit2), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert isinstance(out, Transacted), out
     assert out.agreement is not None
     assert [q["typedData"]["primaryType"] for q in signer.requests][1] == "TransferWithAuthorization"
@@ -343,7 +364,7 @@ def test_an_agreement_placed_by_another_public_proof_pairing_is_paid_by_that_pai
 def test_an_unpaid_202_is_agreement_pending_and_nothing_is_signed() -> None:
     """Another sending of the agreement is still settling: the gate never pays a second agreement."""
     signer = RecordingSigner()
-    out = run(Seller([{"status": 202, "retryAfter": "2"}]).link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A))
+    out = run(Seller([{"status": 202, "retryAfter": "2"}]).link(), lambda c: approve_and_agree(signer, c))
     assert declined(out, "agreement-pending")
     assert isinstance(out, Declined) and out.moved is None
     assert signer.requests == []
@@ -352,7 +373,7 @@ def test_an_unpaid_202_is_agreement_pending_and_nothing_is_signed() -> None:
 def test_ba4_a_receipt_naming_another_hash_fails_and_the_payment_is_never_signed() -> None:
     r = row("BA4")
     signer = RecordingSigner()
-    out = run(Seller(r["input"]["agreement"]).link(), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(Seller(r["input"]["agreement"]).link(), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert declined(out, r["expect"]["decline"])
     assert len(signer.requests) == r["expect"]["signCalls"]
     assert signer.requests[0]["typedData"]["message"]["value"] == 1
@@ -362,14 +383,14 @@ def test_ba5_an_http_agreement_url_is_declined_before_any_fetch_of_it() -> None:
     r = row("BA5")
     seller = Seller([])
     signer = RecordingSigner()
-    out = run(seller.link(), lambda c: agree(HASH_A, r["input"]["agreementUrl"], signer, c, atr_bytes=A))
+    out = run(seller.link(), lambda c: agree(A, r["input"]["agreementUrl"], signer, c))
     assert declined(out, r["expect"]["decline"])
     assert len(seller.requests) == r["expect"]["agreementFetches"]
     assert len(signer.requests) == r["expect"]["signCalls"]
 
     through = Seller([])
     again = RecordingSigner()
-    out = run(through.link(), lambda c: transact(D, with_agreement(r["input"]["agreementUrl"]), again, c))
+    out = run(through.link(), lambda c: approve_and_transact(D, with_agreement(r["input"]["agreementUrl"]), again, c))
     assert declined(out, r["expect"]["decline"])
     assert len(through.agreement_requests()) == r["expect"]["agreementFetches"]
     assert len(again.requests) == r["expect"]["signCalls"]
@@ -386,7 +407,7 @@ def test_ba5_an_http_agreement_url_is_declined_before_any_fetch_of_it() -> None:
 def test_an_agreement_url_the_gate_refuses_carries_the_protocol_packages_code(url: str, detail: str) -> None:
     seller = Seller([])
     signer = RecordingSigner()
-    out = run(seller.link(), lambda c: transact(D, with_agreement(url), signer, c))
+    out = run(seller.link(), lambda c: approve_and_transact(D, with_agreement(url), signer, c))
     assert out == Declined("link-not-https", detail)
     assert len(seller.agreement_requests()) == 0
     assert len(signer.requests) == 0
@@ -418,7 +439,7 @@ def test_ba6_a_pairing_whose_payment_is_a_public_proof_does_not_pay_the_agreemen
 
 def test_ba7_transact_returns_the_agreements_receipt_beside_the_payment() -> None:
     r = row("BA7")
-    out = run(Seller(r["input"]["agreement"]).link(), lambda c: transact(D, with_agreement(URL), RecordingSigner(), c))
+    out = run(Seller(r["input"]["agreement"]).link(), lambda c: approve_and_transact(D, with_agreement(URL), RecordingSigner(), c))
     assert isinstance(out, Transacted)
     receipt = AG[r["expect"]["agreement"]]
     assert out.agreement == AgreementReceipt(
@@ -431,7 +452,7 @@ def test_ba7_transact_returns_the_agreements_receipt_beside_the_payment() -> Non
 
 def test_a_recorded_agreement_answers_200_at_once_with_no_signature() -> None:
     signer = RecordingSigner()
-    out = run(Seller([{"status": 200, "body": "receipt"}]).link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A))
+    out = run(Seller([{"status": 200, "body": "receipt"}]).link(), lambda c: approve_and_agree(signer, c))
     assert isinstance(out, Agreed) and out.receipt.transaction == AG["receipt"]["transaction"]
     assert signer.requests == []
 
@@ -443,21 +464,21 @@ def test_a_recorded_agreement_answers_200_at_once_with_no_signature() -> None:
 )
 def test_other_unpaid_answers_fail_and_nothing_is_signed(script: list[dict[str, Any]]) -> None:
     signer = RecordingSigner()
-    assert declined(run(Seller(script).link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A)), "agreement-failed")
+    assert declined(run(Seller(script).link(), lambda c: approve_and_agree(signer, c)), "agreement-failed")
     assert signer.requests == []
 
 
 def test_a_paid_402_rechallenge_fails_after_one_signature() -> None:
     signer = RecordingSigner()
     script = [{"status": 402, "paymentRequired": "required"}, {"status": 402, "paymentRequired": "required"}]
-    assert declined(run(Seller(script).link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A)), "agreement-failed")
+    assert declined(run(Seller(script).link(), lambda c: approve_and_agree(signer, c)), "agreement-failed")
     assert len(signer.requests) == 1
 
 
 def test_a_signer_on_no_offered_chain_has_no_payable_option() -> None:
     signer = RecordingSigner(account="eip155:1:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
     script = [{"status": 402, "paymentRequired": "required"}]
-    assert declined(run(Seller(script).link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A)), "no-payable-option")
+    assert declined(run(Seller(script).link(), lambda c: approve_and_agree(signer, c)), "no-payable-option")
     assert signer.requests == []
 
 
@@ -471,7 +492,7 @@ def test_an_agreement_url_that_never_answers_fails_at_the_request_deadline(monke
     def handler(request: httpx.Request) -> Awaitable[httpx.Response]:
         return never(request)
 
-    out = run(Link(handler), lambda c: agree(HASH_A, URL, RecordingSigner(), c, atr_bytes=A))
+    out = run(Link(handler), lambda c: approve_and_agree(RecordingSigner(), c))
     assert declined(out, "agreement-failed")
 
 
@@ -490,7 +511,7 @@ def test_a_5xx_to_the_paid_request_is_sent_again_then_agreement_pending_with_mov
     seller = Seller([{"status": 402, "paymentRequired": "required"}, {"status": status, "repeats": True}])
     signer = RecordingSigner()
     start = clock.now
-    out = run(seller.link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A))
+    out = run(seller.link(), lambda c: approve_and_agree(signer, c))
     assert declined(out, "agreement-pending")
     assert clock.now - start == EXCHANGE_S
     assert len(signer.requests) == 1
@@ -512,7 +533,7 @@ def test_a_5xx_to_the_paid_request_is_sent_again_then_agreement_pending_with_mov
 def test_any_other_answer_to_the_paid_request_is_agreement_failed_with_moved(answer: dict[str, Any]) -> None:
     seller = Seller([{"status": 402, "paymentRequired": "required"}, answer])
     signer = RecordingSigner()
-    out = run(seller.link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A))
+    out = run(seller.link(), lambda c: approve_and_agree(signer, c))
     assert declined(out, "agreement-failed")
     assert len(signer.requests) == 1
     assert len(seller.paid()) == 1
@@ -576,7 +597,7 @@ class Relaying(Seller):
 def test_a_relayed_settle_failure_declines_with_the_sent_payment_kept_as_moved(status: int, rechallenge: bool, expected: str) -> None:
     seller = Relaying([], status=status, rechallenge=rechallenge)
     signer = RecordingSigner()
-    out = run(seller.link(), lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A))
+    out = run(seller.link(), lambda c: approve_and_agree(signer, c))
     assert declined(out, expected)
     assert len(signer.requests) == 1
     assert len(set(seller.paid())) == 1
@@ -586,7 +607,245 @@ def test_a_relayed_settle_failure_declines_with_the_sent_payment_kept_as_moved(s
 def test_through_transact_the_402_settle_failure_declines_agreement_failed_with_moved() -> None:
     seller = Relaying([], status=402, rechallenge=True)
     signer = RecordingSigner()
-    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), signer, c))
+    out = run(seller.link(), lambda c: approve_and_transact(D, with_agreement(URL), signer, c))
     assert declined(out, "agreement-failed")
     assert len(signer.requests) == 1
     _kept_as_moved(out, seller)
+
+
+# The agreement payment is a payment the buyer's agent approves like any other. The first call fetches the agreement
+# URL's challenge and returns the payment it would make, signing nothing; only a second call carrying that payment back
+# signs it. The option paid is chosen with the main payment's rule: the challenge's options in document order, the first
+# the signer can pay whose pairing's payment is itself a public proof. The exchange is bounded by that option's
+# maxTimeoutSeconds, a JSON number with an integral value, plus 180 s. Options are the vector files': buyer.json's
+# agreement option, x402-exact-solana.json's option and x402-exact-eip155-erc7710.json's option.
+
+SOLANA_OPTION: dict[str, Any] = load("x402-exact-solana.json")["fixed"]["option"]
+ERC7710_OPTION: dict[str, Any] = load("x402-exact-eip155-erc7710.json")["fixed"]["option"]
+OPTION: dict[str, Any] = AG["option"]
+RECORDED = [{"status": 200, "body": "receipt"}]
+PENDING = [{"status": 202, "retryAfter": "2", "repeats": True}]
+
+
+@dataclass
+class Challenging(Seller):
+    """A seller whose unpaid agreement answer is 402 with header as PAYMENT-REQUIRED, then plays the script."""
+
+    header: str = ""
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if str(request.url) != LINK_A and "payment-signature" not in request.headers:
+            self.requests.append(request)
+            return httpx.Response(402, headers={"payment-required": self.header})
+        return Seller.handle(self, request)
+
+
+def with_accepts(accepts: list[Any]) -> str:
+    return b64({**AG["required"], "accepts": accepts})
+
+
+def written(text: str) -> str:
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def test_transact_returns_the_agreement_payment_for_approval_and_signs_nothing() -> None:
+    seller = Seller(row("BA1")["input"]["agreement"])
+    signer = RecordingSigner()
+    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), signer, c))
+    assert out == ToApprove(approve=AgreementPayment(url=URL, option=OPTION, required=AG["required"]), atr_bytes=A, h=HASH_A)
+    assert signer.requests == []
+    assert seller.paid() == []
+    assert len(seller.agreement_requests()) == 1
+
+
+def test_agree_returns_the_agreement_payment_for_approval_and_signs_nothing() -> None:
+    seller = Seller(row("BA1")["input"]["agreement"])
+    signer = RecordingSigner()
+    out = run(seller.link(), lambda c: agree(A, URL, signer, c))
+    assert out == ToApprove(approve=AgreementPayment(url=URL, option=OPTION, required=AG["required"]), atr_bytes=A, h=HASH_A)
+    assert signer.requests == [] and seller.paid() == []
+
+
+def test_the_approved_payment_is_signed_as_shown() -> None:
+    seller = Seller(row("BA1")["input"]["agreement"])
+    signer = RecordingSigner()
+
+    async def go(c: httpx.AsyncClient) -> Any:
+        first = await agree(A, URL, signer, c)
+        assert isinstance(first, ToApprove)
+        return first, await agree(A, URL, signer, c, approved=first.approve)
+
+    first, out = run(seller.link(), go)
+    assert isinstance(out, Agreed) and out.receipt.atr_hash == HASH_A
+    assert len(signer.requests) == 1
+    typed = signer.requests[0]["typedData"]
+    option = first.approve.option
+    assert [typed["message"]["to"], int(typed["message"]["value"]), typed["domain"]["verifyingContract"]] == [
+        option["payTo"],
+        int(option["amount"]),
+        option["asset"],
+    ]
+    assert f"eip155:{typed['domain']['chainId']}" == option["network"]
+    assert typed["message"]["nonce"] == HASH_A
+    assert json.loads(base64.b64decode(seller.paid()[0]))["accepted"] == option
+    assert all("payment-signature" in q.headers for q in seller.agreement_requests()[1:])
+
+
+def test_an_approved_payment_for_another_agreement_url_fails_with_nothing_signed_or_sent() -> None:
+    seller = Seller(row("BA1")["input"]["agreement"])
+    signer = RecordingSigner()
+    approved = AgreementPayment(url="https://api.seller.example/agreement/other", option=OPTION, required=AG["required"])
+    out = run(seller.link(), lambda c: agree(A, URL, signer, c, approved=approved))
+    assert out == Declined("agreement-failed", "The approved agreement payment names another agreement URL.")
+    assert signer.requests == [] and seller.requests == []
+
+
+def test_an_approved_value_that_is_not_an_agreement_payment_is_no_payable_option() -> None:
+    seller = Seller([])
+    out = run(seller.link(), lambda c: agree(A, URL, RecordingSigner(), c, approved={"url": URL}))  # type: ignore[arg-type]
+    assert out == Declined("no-payable-option", "x402/input-malformed")
+    assert seller.requests == []
+
+
+def test_an_approved_payment_whose_challenge_advertises_another_hash_is_never_signed() -> None:
+    seller = Seller([])
+    signer = RecordingSigner()
+    approved = AgreementPayment(url=URL, option=OPTION, required=AG["requiredOtherHash"])
+    assert declined(run(seller.link(), lambda c: agree(A, URL, signer, c, approved=approved)), "hash-mismatch")
+    assert signer.requests == [] and seller.requests == []
+
+
+def test_accepts_solana_then_evm_with_an_evm_signer_approves_and_pays_the_evm_option() -> None:
+    seller = Challenging(RECORDED, header=with_accepts([SOLANA_OPTION, OPTION]))
+    signer = RecordingSigner()
+
+    async def go(c: httpx.AsyncClient) -> Any:
+        first = await agree(A, URL, signer, c)
+        assert isinstance(first, ToApprove) and first.approve.option == OPTION
+        return await agree(A, URL, signer, c, approved=first.approve)
+
+    out = run(seller.link(), go)
+    assert isinstance(out, Agreed)
+    assert [int(q["typedData"]["message"]["value"]) for q in signer.requests] == [1]
+
+
+@pytest.mark.parametrize(
+    "first_option",
+    [pytest.param(ERC7710_OPTION, id="a pairing with no public proof"), pytest.param({**OPTION, "network": "eip155:1"}, id="another chain")],
+)
+def test_an_option_the_rule_passes_over_leaves_the_next_one_to_approve(first_option: dict[str, Any]) -> None:
+    seller = Challenging(RECORDED, header=with_accepts([first_option, OPTION]))
+    out = run(seller.link(), lambda c: agree(A, URL, RecordingSigner(), c))
+    assert isinstance(out, ToApprove) and out.approve.option == OPTION
+
+
+def test_no_option_the_signer_can_pay_with_a_public_proof_pairing_is_no_payable_option() -> None:
+    seller = Challenging(RECORDED, header=with_accepts([SOLANA_OPTION, ERC7710_OPTION]))
+    signer = RecordingSigner()
+    assert declined(run(seller.link(), lambda c: agree(A, URL, signer, c)), "no-payable-option")
+    assert signer.requests == []
+
+
+def test_the_exchange_is_bounded_by_the_chosen_options_max_timeout_seconds(clock: Clock) -> None:
+    seller = Challenging(PENDING, header=with_accepts([{**SOLANA_OPTION, "maxTimeoutSeconds": 600}, OPTION]))
+    start = clock.now
+    out = run(seller.link(), lambda c: approve_and_agree(RecordingSigner(), c))
+    assert declined(out, "agreement-pending")
+    assert clock.now - start == EXCHANGE_S
+
+
+def test_max_timeout_seconds_written_60_0_is_the_value_60(clock: Clock) -> None:
+    text = json.dumps(AG["required"], separators=(",", ":")).replace('"maxTimeoutSeconds":60', '"maxTimeoutSeconds":60.0')
+    assert '"maxTimeoutSeconds":60.0' in text
+    seller = Challenging(PENDING, header=written(text))
+    signer = RecordingSigner()
+    start = clock.now
+    out = run(seller.link(), lambda c: approve_and_agree(signer, c))
+    assert declined(out, "agreement-pending")
+    assert clock.now - start == EXCHANGE_S
+    assert len(signer.requests) == 1
+
+
+@pytest.mark.parametrize("value", ["60.5", "0", '"60"', "9007199254740992"])
+def test_max_timeout_seconds_that_is_not_an_integral_number_of_seconds_is_option_malformed(value: str) -> None:
+    text = json.dumps(AG["required"], separators=(",", ":")).replace('"maxTimeoutSeconds":60', f'"maxTimeoutSeconds":{value}')
+    signer = RecordingSigner()
+    out = run(Challenging(RECORDED, header=written(text)).link(), lambda c: agree(A, URL, signer, c))
+    assert out == Declined("offer-unreadable", "x402/option-malformed")
+    assert signer.requests == []
+
+
+# The caller's signal, an asyncio.Event, ends the agreement exchange at its next step. Before the agreement payment is
+# sent, nothing is signed or sent and the result is agreement-failed; after, the result is agreement-pending with the
+# payment as moved.
+
+
+def test_a_signal_already_set_fails_with_no_request() -> None:
+    seller = Seller(row("BA1")["input"]["agreement"])
+
+    async def go(c: httpx.AsyncClient) -> Any:
+        signal = asyncio.Event()
+        signal.set()
+        return await agree(A, URL, RecordingSigner(), c, signal=signal)
+
+    assert declined(run(seller.link(), go), "agreement-failed")
+    assert seller.requests == []
+
+
+def test_a_signal_set_while_the_unpaid_request_is_unanswered_fails_and_nothing_is_signed() -> None:
+    signal = asyncio.Event()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        signal.set()
+        await asyncio.sleep(3600)
+        return httpx.Response(500)
+
+    signer = RecordingSigner()
+    out = run(Link(handler), lambda c: agree(A, URL, signer, c, signal=signal))
+    assert declined(out, "agreement-failed")
+    assert signer.requests == []
+
+
+def test_a_signal_set_after_the_payment_is_sent_is_agreement_pending_with_the_payment_as_moved() -> None:
+    seller = Seller(row("BA3")["input"]["agreement"])
+    signer = RecordingSigner()
+    signal = asyncio.Event()
+
+    def aborting(request: httpx.Request) -> httpx.Response:
+        answer = seller.handle(request)
+        if len(seller.paid()) == 2:
+            signal.set()
+        return answer
+
+    async def go(c: httpx.AsyncClient) -> Any:
+        first = await agree(A, URL, signer, c)
+        assert isinstance(first, ToApprove)
+        return await agree(A, URL, signer, c, approved=first.approve, signal=signal)
+
+    out = run(Link(aborting), go)
+    assert declined(out, "agreement-pending")
+    assert len(seller.paid()) == 2 and len(signer.requests) == 1
+    assert isinstance(out, Declined) and out.moved is not None
+    assert json.loads(base64.b64decode(seller.paid()[0])) == out.moved.signed
+
+
+def test_through_transact_a_set_signal_ends_the_exchange_before_the_agreement_is_signed() -> None:
+    seller = Seller(row("BA1")["input"]["agreement"])
+    signer = RecordingSigner()
+
+    async def go(c: httpx.AsyncClient) -> Any:
+        first = await transact(D, with_agreement(URL), signer, c)
+        assert isinstance(first, ToApprove)
+        signal = asyncio.Event()
+        signal.set()
+        return await transact(D, with_agreement(URL), signer, c, approved=first.approve, signal=signal)
+
+    assert declined(run(seller.link(), go), "agreement-failed")
+    assert signer.requests == [] and seller.paid() == []
+
+
+def test_through_transact_a_signal_that_is_not_an_event_is_declined_before_any_fetch() -> None:
+    seller = Seller([])
+    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), RecordingSigner(), c, signal=object()))  # type: ignore[arg-type]
+    assert out == Declined("no-payable-option", "x402/input-malformed")
+    assert seller.requests == []

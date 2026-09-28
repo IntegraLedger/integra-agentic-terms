@@ -1,17 +1,17 @@
 /**
- * The seals on what the channel tools take back. A channel hold's `mac` member, and the `mac` returned beside a channel
- * pairing's signed opening, are each an HMAC-SHA-256 keyed with a key this process generates on first use, cannot
- * export, and never logs or returns. Each is over a label naming what is sealed and the sealed members. A hold or an
- * opening passed back is used only when its `mac` verifies, so one with any member changed, added or removed, or one
- * another process sealed, is not used.
+ * The seals on what the tools take back. A channel hold's `mac` member, the `mac` returned beside a channel pairing's
+ * signed opening, and the `mac` member of the `chosen` that `atr_confirm` returns, are each an HMAC-SHA-256 keyed with a
+ * key this process generates on first use, cannot export, and never logs or returns. Each is over a label naming what
+ * is sealed and the sealed members. A hold, an opening or a `chosen` passed back is used only when its `mac` verifies,
+ * so one with any member changed, added or removed, or one another process sealed, is not used.
  */
 import type { Json } from "@integraledger/lcp";
 
 /** A JSON object: its members by name. */
 export type HoldJson = { [member: string]: Json };
 
-/** What a `mac` seals: a channel hold, or a signed opening with its pairing. */
-type Sealed = "hold" | "opening";
+/** What a `mac` seals: a channel hold, a signed opening with its pairing, or the `chosen` that `atr_confirm` returns. */
+type Sealed = "hold" | "opening" | "chosen";
 
 /** A `mac` as the tools write it: the 32-byte HMAC-SHA-256 tag as `0x` and lowercase hex. */
 const MAC = /^0x[0-9a-f]{64}$/;

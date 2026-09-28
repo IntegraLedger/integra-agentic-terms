@@ -35,6 +35,7 @@ describe("mpp/session/hedera: the channel the gate opened is held with its lande
   it("transact returns landed as JSON, its block number a decimal string", async () => {
     const out = await transact(doc, offered(sessionHedera), signer(), serving(ABC), { inputs });
     if (isDeclined(out)) throw new Error(out.decline.detail);
+    if ("approve" in out) throw new Error("an agreement payment to approve");
     expect(out.landed).toEqual({ transaction: V.HS3.txHash, blockNumber: String(BLOCK), logs: [V.HS3.log] });
     expect(JSON.parse(JSON.stringify(out.landed))).toEqual(out.landed);
   });
@@ -42,6 +43,7 @@ describe("mpp/session/hedera: the channel the gate opened is held with its lande
   it("openChannel(bytes, transact().signed, binding, transact().landed) holds the session", async () => {
     const out = await transact(doc, offered(sessionHedera), signer(), serving(ABC), { inputs });
     if (isDeclined(out)) throw new Error(out.decline.detail);
+    if ("approve" in out) throw new Error("an agreement payment to approve");
     const hold = await openChannel(out.bytes, out.signed!, sessionHedera, out.landed);
     if (isDeclined(hold)) throw new Error(`${hold.decline.code}: ${hold.decline.detail}`);
     expect([hold.pairing, hold.channel, hold.h]).toEqual(["mpp/session/hedera", V.HS1.expectChannelId, H]);
@@ -51,6 +53,7 @@ describe("mpp/session/hedera: the channel the gate opened is held with its lande
   it("without the landed receipt the opening cannot be held: bound has no log to read", async () => {
     const out = await transact(doc, offered(sessionHedera), signer(), serving(ABC), { inputs });
     if (isDeclined(out)) throw new Error(out.decline.detail);
+    if ("approve" in out) throw new Error("an agreement payment to approve");
     const hold = await openChannel(out.bytes, out.signed!, sessionHedera);
     expect(isDeclined(hold) && hold.decline).toEqual({ code: "signed-not-bound", detail: "The opening does not carry the hash of these bytes." });
   });

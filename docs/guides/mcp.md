@@ -96,13 +96,17 @@ seller's own flow completes the payment.
 
 ### Pairings that pay an agreement first
 
-If `atr_confirm` returns an `agreement` URL and no `request`, the payment does not itself carry H in public, and an
-agreement payment carrying it must be recorded first:
+If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, the payment does not itself carry H in public,
+and an agreement payment carrying it must be recorded first. The agreement payment is a payment like any other, and the
+agent approves it as it approves any payment:
 
-- where the host offers `atr_agree`, call it with `atr.base64` and the `agreement` URL;
-- otherwise, request the agreement URL. It answers with an x402 payment request for the same H; pay it through
-  `atr_confirm` and `atr_finish` with the pairing its option names, then request the URL again with that payment until
-  it answers `200` with the receipt.
+- where the host offers `atr_agree`, call it with `atr.base64` and `chosen`, exactly as returned, `mac` included (a
+  changed `chosen` is declined `chosen-unverified`, and nothing is fetched or signed). It returns `approve`, the
+  agreement payment, and signs nothing: `approve.option` is its `amount`, `asset`, `payTo` and `network`. To approve
+  it, call `atr_agree` again with `approved` set to `approve`, unchanged; it returns the `receipt`;
+- otherwise, request `chosen.agreement`. It answers with an x402 payment request for the same H; review it and pay it
+  through `atr_confirm` and `atr_finish` with the pairing its option names, then request the URL again with that
+  payment until it answers `200` with the receipt.
 
 Then call `atr_confirm` again with the same arguments and the `receipt`. Only then does it return `request`. See
 [agreement payments](./agreement-payments.md).
@@ -126,7 +130,7 @@ with the ATR, and present it again rather than signing a new one. See [declines]
 ## Serve the tools with your own signer
 
 A host that holds a wallet can serve the same tools with it. The server then also offers `atr_transact` (confirm, pay
-any agreement, sign and finish in one call), `atr_agree` and `atr_channel_within`:
+the agreement the agent approved, sign and finish), `atr_agree` and `atr_channel_within`:
 
 ```ts no-run
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -140,7 +144,9 @@ serveStdio(() => createBuyerServer({ fetch: globalThis.fetch, signer, agreementS
 ```
 
 With a host signer, the agent never sees a request: `atr_transact` returns the payment to send and the ATR to keep, and
-declines exactly as the gate does.
+declines exactly as the gate does. Every payment is still shown before it is signed: where the pairing needs an
+agreement payment, `atr_transact` first returns it as `approve` and signs nothing, and pays it only when called again
+with `approved` set to `approve`.
 
 ## What the server guarantees
 
