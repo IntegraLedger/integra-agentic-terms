@@ -31,6 +31,7 @@ _PAYMENT_HASH = re.compile(r"[0-9a-f]{64}")
 _CAIP2 = re.compile(r"[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}")
 _XRPL_AMOUNT = re.compile(r"(?:0|[1-9][0-9]{0,39})(?:\.[0-9]{1,40})?")
 _XRPL_ZERO = re.compile(r"[0.]+")
+_XRPL_DROPS = re.compile(r"0|[1-9][0-9]{0,19}")
 _XRPL_ADDRESS = re.compile(r"r[1-9A-HJ-NP-Za-km-z]{24,34}")
 _XRPL_CURRENCY = re.compile(r"(?:[A-Za-z0-9?!@#$%^&*<>(){}\[\]|]{3}|[0-9A-Fa-f]{40})")
 _XRPL_MPT = re.compile(r"[0-9A-Fa-f]{48}")
@@ -114,6 +115,11 @@ def is_decimal(value: object) -> bool:
 
 def is_u64_positive(value: object) -> bool:
     return isinstance(value, str) and _DECIMAL.fullmatch(value) is not None and 0 < int(value) < U64_LIMIT
+
+
+def is_drops(value: object) -> bool:
+    """A u64 in decimal, as an XRP amount in drops is written: no sign, point or leading zero."""
+    return isinstance(value, str) and _XRPL_DROPS.fullmatch(value) is not None and int(value) < U64_LIMIT
 
 
 def is_key(value: object) -> bool:
@@ -600,6 +606,8 @@ def solana_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 
 
 def xrpl_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    """session on xrpl: channelId absent or ""; network named; currency absent or "XRP"; a classic recipient; amount
+    a u64 in drops, written in decimal with no sign, point or leading zero."""
     if r.get("channelId") is not None:
         named = r["channelId"] != ""
     else:
@@ -611,7 +619,7 @@ def xrpl_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         return network
     if _has(r, "currency") and r["currency"] != "XRP":
         return Refusal("xrpl/currency-not-xrp")
-    if not is_xrpl_address(r.get("recipient")):
+    if not is_xrpl_address(r.get("recipient")) or not is_drops(r.get("amount")):
         return Refusal("mpp/request-malformed")
     return ["mpp/session/xrpl"]
 

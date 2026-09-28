@@ -18,7 +18,7 @@ export const x402ExactStellar = railPiece({
   pairing: PAIRING,
   namespace: "stellar",
   address: /^G[A-Z2-7]{55}$/,
-  payer: null,
+  payer: "payer",
   now: false,
   inputs,
   revive: (c) => c,
