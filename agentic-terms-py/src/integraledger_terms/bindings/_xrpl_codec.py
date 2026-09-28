@@ -96,6 +96,7 @@ _NAMES: dict[tuple[int, int], str] = {
     (OBJECT, 1): "ObjectEndMarker",
     (OBJECT, 10): "Memo",
     (ARRAY, 1): "ArrayEndMarker",
+    (ARRAY, 3): "Signers",
     (ARRAY, 9): "Memos",
 }
 
