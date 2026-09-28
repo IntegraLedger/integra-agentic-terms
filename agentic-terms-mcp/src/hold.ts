@@ -1,13 +1,17 @@
 /**
- * The seal on a channel hold the server hands out. A hold's `mac` member is an HMAC-SHA-256 over its other members,
- * keyed with a key this process generates on first use, cannot export, and never logs or returns. A hold passed back is
- * used only when its `mac` verifies, so a hold with any member changed, added or removed, or a hold another process
- * sealed, is not used.
+ * The seals on what the channel tools take back. A channel hold's `mac` member, and the `mac` returned beside a channel
+ * pairing's signed opening, are each an HMAC-SHA-256 keyed with a key this process generates on first use, cannot
+ * export, and never logs or returns. Each is over a label naming what is sealed and the sealed members. A hold or an
+ * opening passed back is used only when its `mac` verifies, so one with any member changed, added or removed, or one
+ * another process sealed, is not used.
  */
 import type { Json } from "@integraledger/lcp";
 
-/** A hold as JSON: its members by name. */
+/** A JSON object: its members by name. */
 export type HoldJson = { [member: string]: Json };
+
+/** What a `mac` seals: a channel hold, or a signed opening with its pairing. */
+type Sealed = "hold" | "opening";
 
 /** A `mac` as the tools write it: the 32-byte HMAC-SHA-256 tag as `0x` and lowercase hex. */
 const MAC = /^0x[0-9a-f]{64}$/;
@@ -20,14 +24,17 @@ function processKey(): Promise<CryptoKey> {
   return key;
 }
 
-/** The members as UTF-8 JSON with every object's keys sorted, so the order the members arrive in does not change it. */
-function canonical(members: HoldJson): Uint8Array<ArrayBuffer> {
+/**
+ * The label, a line feed, and the members as JSON with every object's keys sorted, as UTF-8: the order the members
+ * arrive in does not change it.
+ */
+function message(label: Sealed, members: HoldJson): Uint8Array<ArrayBuffer> {
   const text = JSON.stringify(members, (_k, v: unknown) =>
     typeof v === "object" && v !== null && !Array.isArray(v)
       ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
       : v,
   );
-  return new TextEncoder().encode(text);
+  return new TextEncoder().encode(`${label}\n${text}`);
 }
 
 function hex(bytes: Uint8Array): string {
@@ -42,20 +49,29 @@ function fromHex(s: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
+/** This process's HMAC-SHA-256 of the label and the members, as `0x` hex. */
+export async function macOf(label: Sealed, members: HoldJson): Promise<string> {
+  return hex(new Uint8Array(await crypto.subtle.sign("HMAC", await processKey(), message(label, members))));
+}
+
+/** Whether `mac` is this process's HMAC-SHA-256 of the label and the members. */
+export async function verifies(label: Sealed, members: HoldJson, mac: unknown): Promise<boolean> {
+  if (typeof mac !== "string" || !MAC.test(mac)) return false;
+  try {
+    return await crypto.subtle.verify("HMAC", await processKey(), fromHex(mac), message(label, members));
+  } catch {
+    return false;
+  }
+}
+
 /** The hold with its `mac`: this process's HMAC-SHA-256 of every other member. */
 export async function seal(hold: HoldJson): Promise<HoldJson> {
   const { mac: _, ...members } = hold;
-  const tag = await crypto.subtle.sign("HMAC", await processKey(), canonical(members));
-  return { ...members, mac: hex(new Uint8Array(tag)) };
+  return { ...members, mac: await macOf("hold", members) };
 }
 
 /** The hold's members without `mac` when `mac` is this process's HMAC-SHA-256 of them, else undefined. */
 export async function unseal(hold: HoldJson): Promise<HoldJson | undefined> {
   const { mac, ...members } = hold;
-  if (typeof mac !== "string" || !MAC.test(mac)) return undefined;
-  try {
-    return (await crypto.subtle.verify("HMAC", await processKey(), fromHex(mac), canonical(members))) ? members : undefined;
-  } catch {
-    return undefined;
-  }
+  return (await verifies("hold", members, mac)) ? members : undefined;
 }

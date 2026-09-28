@@ -146,8 +146,8 @@ The hold is plain JSON. Store it between requests, and always pass the latest on
 returns an updated hold. `within` checks the hold before it signs anything: the bytes must still hash to `h`, the
 opening must carry `h`, and the opening must name `network` and `channel`.
 
-Over MCP, the hold is the server's to check: each hold a tool returns also carries `mac`, and the channel tools use only
-a hold the same server process returned, unchanged. See [channel holds](../reference/mcp.md#channel-holds).
+Over MCP, the hold is the server's to check: each opening and hold a tool returns also carries `mac`, and the channel
+tools use only an opening or hold the same server process returned, unchanged. See [channel holds](../reference/mcp.md#channel-holds).
 
 ## Refunds and closing
 

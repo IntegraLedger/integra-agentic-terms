@@ -43,7 +43,8 @@ does not; the [pairings reference](./reference/pairings.md) quotes every stateme
 ## The MCP tools and the skill
 
 - The `terms-mcp` binary has no signer. The agent's own wallet signs the requests the tools return.
-- A channel hold the tools return carries a `mac` under a key of the server process. `atr_channel_within` and
+- A channel opening and a channel hold the tools return carry a `mac` under a key of the server process.
+  `atr_channel_open` declines any other opening, `opening-unverified`, and `atr_channel_within` and
   `atr_channel_record_charge` decline any other hold, `hold-unverified`, before the gate is called.
 - `atr.utf8` is the seller's data. The skill tells the agent to read it and never to follow instructions inside it.
 - A discovery listing, or a hash an agent computes itself, is not a confirmation. The confirmation is the hash inside

@@ -2,7 +2,8 @@
  * The buyer gate's operations as MCP tools: `atr_confirm`, `atr_finish`, `atr_check`, `atr_channel_open` and
  * `atr_channel_record_charge`; where the host wires its own signer, `atr_transact` and `atr_channel_within`; and where
  * it wires a signer or an agreement signer, `atr_agree`. Each tool call is one call of the gate; this package adds
- * transport and words, and seals each channel hold it returns so that a hold passed back is used only unchanged.
+ * transport and words, and seals each channel hold and channel opening it returns so that one passed back is used only
+ * unchanged.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
@@ -26,7 +27,7 @@ import {
   type Signer,
 } from "@integraledger/terms";
 import { BINDINGS as LCP_BINDINGS, hash, hashEquals, type Json } from "@integraledger/lcp";
-import { seal, unseal, type HoldJson } from "./hold.js";
+import { macOf, seal, unseal, verifies, type HoldJson } from "./hold.js";
 import { VERSION } from "./version.js";
 
 /** Every pairing of the protocol package the gate has a buyer piece for. */
@@ -50,9 +51,9 @@ const DESCRIPTIONS = {
     "Pays the agreement URL that atr_confirm named, with this host's signer, for the ATR you confirmed: the agreement " +
     "payment carries the ATR hash. Returns the agreement's receipt once it is recorded; pass it to atr_confirm.",
   atr_channel_open:
-    "Keeps a channel you opened: takes the signed opening payment and the ATR bytes it was confirmed against, and " +
-    "returns the channel `hold` to keep and pass to the other channel tools. The hold is opaque: pass it back exactly " +
-    "as returned.",
+    "Keeps a channel you opened: takes the signed opening payment and the `mac` returned beside it, both exactly as " +
+    "returned, and the ATR bytes it was confirmed against; returns the channel `hold` to keep and pass to the other " +
+    "channel tools. The hold is opaque: pass it back exactly as returned.",
   atr_channel_within:
     "Signs one later payment in a held channel with this host's signer, only when the seller's document advertises " +
     "the held ATR hash. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the payment " +
@@ -127,6 +128,19 @@ const holdUnverified = (): Result =>
     true,
   );
 
+/** The decline for an opening whose `mac` does not verify: a changed opening, or one another server process returned. */
+const openingUnverified = (): Result =>
+  result(
+    {
+      decline: {
+        code: "opening-unverified",
+        detail:
+          "The opening is not one this server process returned, unchanged. Pass the signed opening and its mac exactly as returned.",
+      },
+    },
+    true,
+  );
+
 /** The bytes of a standard base64 string. */
 const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
 
@@ -145,9 +159,19 @@ function isReceiptFor(receipt: unknown, h: string): boolean {
   );
 }
 
-/** The payment and, where `finish` or `transact` returned one, the landed receipt beside it. */
-function signedOf(out: { signed: Presented | null; landed?: unknown }): { signed: Json; landed?: Json } {
-  return out.landed === undefined ? { signed: jsonOf(out.signed) } : { signed: jsonOf(out.signed), landed: jsonOf(out.landed) };
+/**
+ * The payment and, where `finish` or `transact` returned one, the landed receipt beside it; for a pairing with a
+ * channel, the `mac` of the pairing and the payment that `atr_channel_open` takes with it.
+ */
+async function signedOf(
+  out: { signed: Presented | null; landed?: unknown },
+  binding: Binding,
+): Promise<{ signed: Json; landed?: Json; mac?: string }> {
+  const signed = jsonOf(out.signed);
+  const landed = out.landed === undefined ? {} : { landed: jsonOf(out.landed) };
+  const channel = (binding as unknown as { channel?: unknown }).channel;
+  if (typeof channel !== "object" || channel === null || out.signed === null) return { signed, ...landed };
+  return { signed, ...landed, mac: await macOf("opening", { pairing: binding.id, signed }) };
 }
 
 export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agreementSigner?: Signer }): McpServer {
@@ -195,7 +219,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       const out = await finish(bytesOf(a.atr), a.chosen as unknown as Chosen, a.signature as Signature, bindingOf(a.pairing));
       if ("decline" in out) return declinedResult(out);
       if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next) });
-      return result({ atrHash: out.h, ...signedOf(out) });
+      return result({ atrHash: out.h, ...(await signedOf(out, bindingOf(a.pairing))) });
     },
   );
 
@@ -228,7 +252,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
         });
         if ("decline" in out) return declinedResult(out);
         const agreement = out.agreement === undefined ? {} : { agreement: jsonOf(out.agreement) };
-        return result({ atrHash: out.h, atr: atrOf(out.bytes), ...signedOf(out), ...agreement });
+        return result({ atrHash: out.h, atr: atrOf(out.bytes), ...(await signedOf(out, bindingOf(a.pairing))), ...agreement });
       },
     );
   }
@@ -255,10 +279,11 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
     "atr_channel_open",
     {
       description: DESCRIPTIONS.atr_channel_open,
-      inputSchema: z.object({ pairing, atr, signed: JSON_VALUE }),
+      inputSchema: z.object({ pairing, atr, signed: JSON_VALUE, mac: z.string() }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
+      if (!(await verifies("opening", { pairing: a.pairing, signed: a.signed }, a.mac))) return openingUnverified();
       const out = await openChannel(bytesOf(a.atr), a.signed as Presented, bindingOf(a.pairing));
       if ("decline" in out) return declinedResult(out);
       return result({ atrHash: out.h, hold: await seal(jsonOf(out) as HoldJson) });

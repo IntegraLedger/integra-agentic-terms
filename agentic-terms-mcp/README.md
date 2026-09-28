@@ -188,9 +188,9 @@ UTF-8), integers as decimal strings, byte strings as `0x` hex.
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
 | `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request`; and `agreement` (the URL) where the pairing pays an agreement first | read-only, open-world |
-| `atr_finish` | `pairing`, `atr` (base64), `chosen`, `signature` | `atrHash` and `signed` (with `landed` where there is one), or `atrHash` and `next` for a pairing signed in steps | read-only |
+| `atr_finish` | `pairing`, `atr` (base64), `chosen`, `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash` and `next` for a pairing signed in steps | read-only |
 | `atr_check` | `pairing`, `atr` (base64), `presented` | `atrHash` when the payment carries the hash of those bytes | read-only |
-| `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening) | `atrHash` and `hold`, with its `mac` | read-only |
+| `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening) and `mac`, exactly as returned | `atrHash` and `hold`, with its `mac` | read-only |
 | `atr_channel_record_charge` | `hold` (exactly as returned), `charged` (decimal) | `atrHash` and the updated `hold` | read-only |
 
 When `atr_confirm` names an `agreement` URL, it returns no `request` until the agent passes that agreement's `receipt`
@@ -200,7 +200,7 @@ for this H. The payment is signed only after the agreement is recorded.
 
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
-| `atr_transact` | `pairing`, `document`, `inputs?` | `atrHash`, `atr`, `signed`, and `agreement` (the receipt) where one was paid | not read-only, not idempotent, open-world |
+| `atr_transact` | `pairing`, `document`, `inputs?` | `atrHash`, `atr`, `signed` (with `mac` for a channel opening), and `agreement` (the receipt) where one was paid | not read-only, not idempotent, open-world |
 | `atr_agree` | `atr` (base64), `agreement` (URL), `inputs?` | `atrHash` and `receipt` | not read-only, not idempotent, open-world |
 | `atr_channel_within` | `pairing`, `hold` (exactly as returned), `document`, `refund?`, `inputs?` | `atrHash`, `signed` and the updated `hold` | not read-only, not idempotent, open-world |
 
@@ -209,11 +209,14 @@ for this H. The payment is signed only after the agreement is recorded.
 
 ### Channel holds
 
-Every `hold` a tool returns carries `mac`, an HMAC-SHA-256 over its other members under a key the server process
-generates on first use and never exports, logs or returns. `atr_channel_record_charge` and `atr_channel_within` use a
-hold only when its `mac` verifies, and decline any other with `hold-unverified` before the gate is called: a hold with a
-member changed, added or removed, or one another server process returned, including one from before a restart. The
-agent keeps the latest hold and passes it back exactly as returned.
+A channel opening that `atr_transact` or `atr_finish` returns comes with `mac` beside `signed`, and every `hold` a tool
+returns carries `mac` among its members: an HMAC-SHA-256 under a key the server process generates on first use and
+never exports, logs or returns. `atr_channel_open` takes an opening only with its `mac`, and declines any other with
+`opening-unverified`; `atr_channel_record_charge` and `atr_channel_within` use a hold only when its `mac` verifies, and
+decline any other with `hold-unverified`. Both declines come before the gate is called, for one with a member changed,
+added or removed, or one another server process returned, including one from before a restart. The agent passes each
+back exactly as returned. After a restart it opens a new channel; an earlier channel's host closes it with
+`@integraledger/terms`'s `within` and `refund: {}`, over the hold without its `mac`.
 
 ## The skill
 

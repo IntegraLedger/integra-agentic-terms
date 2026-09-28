@@ -148,8 +148,9 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
     const opened = await call(c, "atr_transact", { pairing, document: document(), inputs });
     expect(at(opened, "result.isError")).toBeUndefined();
     const signed = at(opened, "result.structuredContent.signed");
+    const mac = at(opened, "result.structuredContent.mac");
 
-    const held = await call(c, "atr_channel_open", { pairing, atr, signed });
+    const held = await call(c, "atr_channel_open", { pairing, atr, signed, mac });
     expect(at(held, "result.structuredContent.hold")).toMatchObject({
       pairing,
       network: BV.EB6.expectRef.network,
@@ -181,7 +182,12 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
   it("atr_channel_open refuses an opening against other bytes", async () => {
     const c = connect({ fetch: seller(), signer: opening() });
     const opened = await call(c, "atr_transact", { pairing, document: document(), inputs });
-    const m = await call(c, "atr_channel_open", { pairing, atr: Buffer.from("abd").toString("base64"), signed: at(opened, "result.structuredContent.signed") });
+    const m = await call(c, "atr_channel_open", {
+      pairing,
+      atr: Buffer.from("abd").toString("base64"),
+      signed: at(opened, "result.structuredContent.signed"),
+      mac: at(opened, "result.structuredContent.mac"),
+    });
     await c.close();
     expect(at(m, "result.isError")).toBe(true);
     expect(at(m, "result.structuredContent")).not.toHaveProperty("hold");
