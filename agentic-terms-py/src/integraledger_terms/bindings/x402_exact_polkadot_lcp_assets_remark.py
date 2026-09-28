@@ -49,6 +49,16 @@ def encode_profile_call(asset_id: int, dest: bytes, amount: int, remark: bytes) 
     )  # fmt: skip
 
 
+def _remark_carrier(remark: bytes) -> AtrHash | None:
+    """The hash a remark carries: the remark must be exactly the UTF-8 of the hash's LCP string with lower-case hex,
+    because the chain's Remarked event hashes the remark's bytes as signed."""
+    try:
+        h = from_lcp_string(remark.decode("utf-8"))
+    except UnicodeDecodeError:
+        return None
+    return h if h is not None and remark == to_lcp_string(h).encode() else None
+
+
 def decode_profile_call(call: bytes) -> tuple[int, bytes, int, bytes] | Refusal:
     """The profile's call, exactly, with canonical compacts and no trailing byte: asset id, dest, amount, remark."""
     no = Refusal("polkadot/call-not-profile")
@@ -181,8 +191,8 @@ class X402ExactPolkadotLcpAssetsRemark:
         return PolkadotUnsigned(request=request, _required=required, _accepted=accepted, _call=call)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        """The hash inside what the payer signed: the remark of the profile call the extrinsic ends with. No signature
-        is verified here."""
+        """The hash inside what the payer signed: the remark of the profile call the extrinsic ends with, which must be
+        the hash's LCP string with lower-case hex, byte for byte. No signature is verified here."""
         p = presented_with(presented, _check)
         if isinstance(p, Refusal):
             return p
@@ -203,9 +213,5 @@ class X402ExactPolkadotLcpAssetsRemark:
         decoded = decode_profile_call(call_bytes)
         if isinstance(decoded, Refusal):
             return decoded
-        try:
-            remark = decoded[3].decode("utf-8")
-        except UnicodeDecodeError:
-            return Refusal("polkadot/remark-not-lcp")
-        h = from_lcp_string(remark)
+        h = _remark_carrier(decoded[3])
         return Refusal("polkadot/remark-not-lcp") if h is None else h
