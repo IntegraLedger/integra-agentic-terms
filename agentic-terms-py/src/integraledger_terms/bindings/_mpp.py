@@ -397,8 +397,9 @@ def _json_within(value: object, limit: int) -> bool:
 
 
 def credential_of(c: object) -> Mapping[str, Any] | Refusal:
-    """A credential's shape: an echoed challenge with an id, an optional string source, and a payload object."""
-    if not is_object(c) or not is_object(c.get("challenge")) or not is_object(c.get("payload")):
+    """A credential's shape: an echoed challenge with an id, an optional string source, and a payload object. A
+    credential that carries a refused member, the member refusals use, is mpp/credential-malformed."""
+    if not is_object(c) or "refused" in c or not is_object(c.get("challenge")) or not is_object(c.get("payload")):
         return Refusal("mpp/credential-malformed")
     if not is_challenge_shape(c["challenge"]) or not isinstance(c["challenge"].get("id"), str):
         return Refusal("mpp/credential-malformed")

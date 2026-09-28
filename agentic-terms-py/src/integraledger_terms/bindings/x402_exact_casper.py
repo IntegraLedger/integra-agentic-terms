@@ -132,9 +132,10 @@ class CasperUnsigned:
 
 
 def _payment_of(presented: object) -> Mapping[str, Any] | Refusal:
-    """The payment's shape as this pairing requires it, or casper/payload-malformed."""
+    """The payment's shape as this pairing requires it, or casper/payload-malformed. A payment that carries a refused
+    member, the member refusals use, is malformed."""
     malformed = Refusal("casper/payload-malformed")
-    if not is_object(presented) or safe_int(presented.get("x402Version")) != 2:
+    if not is_object(presented) or safe_int(presented.get("x402Version")) != 2 or "refused" in presented:
         return malformed
     if not casper_option(presented.get("accepted")):
         return malformed
