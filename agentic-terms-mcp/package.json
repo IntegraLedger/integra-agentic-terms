@@ -1,6 +1,6 @@
 {
   "name": "@integraledger/terms-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The buyer gate's operations as MCP tools, with a skill for the agent that uses them.",
   "keywords": [
     "mcp",

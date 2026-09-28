@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "integraledger-terms"
-version = "0.1.0"
+version = "0.2.0"
 description = "Buyer gate: compare the ATR hash with the served bytes, and build the payment with that hash, before signing."
 readme = "README.md"
 license = "Apache-2.0"
