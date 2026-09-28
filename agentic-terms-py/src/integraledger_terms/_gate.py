@@ -6,7 +6,6 @@ import asyncio
 import re
 import secrets
 import time
-import zlib
 from collections.abc import Mapping
 from typing import Any
 
@@ -78,77 +77,34 @@ def _too_large() -> Declined:
     return Declined("atr-too-large", f"The ATR is larger than {MAX_ATR_BYTES} bytes.")
 
 
-class _Bounded:
-    """Decodes a gzip or deflate body without ever producing more than the bytes asked for."""
-
-    def __init__(self, encoding: str) -> None:
-        self._raw_fallback = encoding == "deflate"
-        self._started = False
-        wbits = zlib.MAX_WBITS | 16 if encoding in ("gzip", "x-gzip") else zlib.MAX_WBITS
-        self._inflate = zlib.decompressobj(wbits)
-
-    def decode(self, data: bytes, limit: int) -> bytes:
-        """At most `limit` decoded bytes of `data`, and whatever is still pending when the limit is reached is kept."""
-        try:
-            out = self._inflate.decompress(data, limit)
-        except zlib.error:
-            if not self._raw_fallback or self._started:
-                raise
-            self._inflate = zlib.decompressobj(-zlib.MAX_WBITS)
-            out = self._inflate.decompress(data, limit)
-        self._started = True
-        return out
-
-    @property
-    def pending(self) -> bytes:
-        return self._inflate.unconsumed_tail
-
-    def flush(self) -> bytes:
-        return self._inflate.flush()
+# The request header that asks for the body with no content coding, so the bytes hashed are the bytes sent.
+IDENTITY = {"Accept-Encoding": "identity"}
 
 
-def _decoder(encoding: str | None) -> _Bounded | None | Declined:
-    """None for an unencoded body, a bounded decoder for gzip or deflate, and a decline for any other encoding."""
-    value = (encoding or "").strip().lower()
-    if value in ("", "identity"):
-        return None
-    if value in ("gzip", "x-gzip", "deflate"):
-        return _Bounded(value)
-    return Declined("atr-unfetchable", "The link served a content encoding the gate does not decode.")
+def is_identity(content_encoding: str | None) -> bool:
+    """Whether a Content-Encoding value names no coding: absent, empty, or identity."""
+    return (content_encoding or "").strip().lower() in ("", "identity")
 
 
 async def _fetch(fetch: httpx.AsyncClient, link: str) -> bytes | Declined:
-    """One GET asking for an unencoded body, no redirect, one deadline over headers and body, and at most
-    MAX_ATR_BYTES of decoded body. A gzip or deflate body is decoded with the bound applied to its decoded bytes. A
-    response the client's transport has already read in whole is taken as read."""
+    """One GET asking for the identity coding, no redirect, one deadline over headers and body, and at most
+    MAX_ATR_BYTES read as sent. A 200 whose Content-Encoding names any coding is declined with its body unread: nothing
+    is decoded. A response the client's transport has already read in whole is taken as read."""
     try:
         async with asyncio.timeout(FETCH_DEADLINE_S):
-            async with fetch.stream(
-                "GET", link, headers={"Accept-Encoding": "identity"}, follow_redirects=False
-            ) as response:
+            async with fetch.stream("GET", link, headers=IDENTITY, follow_redirects=False) as response:
                 if response.status_code != 200:
                     return Declined("atr-unfetchable", f"The link answered status {response.status_code}.")
+                if not is_identity(response.headers.get("content-encoding")):
+                    return Declined("atr-unfetchable", "The link served a content coding other than identity.")
                 declared = (response.headers.get("content-length") or "").strip()
                 if _DECIMAL.fullmatch(declared) and int(declared) > MAX_ATR_BYTES:
                     return _too_large()
-                decoder = _decoder(response.headers.get("content-encoding"))
-                if isinstance(decoder, Declined):
-                    return decoder
                 if response.is_stream_consumed:
                     return response.content if len(response.content) <= MAX_ATR_BYTES else _too_large()
                 body = bytearray()
                 async for chunk in response.aiter_raw():
-                    if decoder is None:
-                        body += chunk
-                    else:
-                        data = chunk
-                        while data and len(body) <= MAX_ATR_BYTES:
-                            body += decoder.decode(data, MAX_ATR_BYTES + 1 - len(body))
-                            data = decoder.pending
-                    if len(body) > MAX_ATR_BYTES:
-                        return _too_large()
-                if decoder is not None:
-                    body += decoder.flush()
+                    body += chunk
                     if len(body) > MAX_ATR_BYTES:
                         return _too_large()
                 return bytes(body)

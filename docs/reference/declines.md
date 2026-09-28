@@ -29,14 +29,14 @@ log `detail`.
 | `offer-unreadable` | The binding cannot read the seller's document, the chosen payment carries no choice, a build refuses, or the agreement URL's option is malformed. For `recordCharge`: the charged amount is not a decimal, is below the charge already recorded, or is above the largest amount signed. | No |
 | `no-payable-option` | No option in the document is payable by the signer's account on its network; an input the build needs is missing or malformed (`<protocol>/input-missing`); or `transact`'s options hold something other than `inputs` and `agreementSigner` (`<protocol>/input-malformed`). | No |
 | `link-not-https` | The ATR's link, or the agreement URL, is not an `https` URL. `detail` is `<protocol>/link-not-https` for another scheme and `<protocol>/legal-context-malformed` for a value that is not a URL. Nothing was fetched. | No |
-| `atr-unfetchable` | The link answered a status other than `200`, redirected, did not answer within 10 seconds, or failed. The Python gate also declines a content encoding other than gzip or deflate. | No |
+| `atr-unfetchable` | The link answered a status other than `200`, redirected, answered `200` with a `Content-Encoding` other than `identity`, did not answer within 10 seconds, or failed. | No |
 | `atr-too-large` | The ATR is larger than 1,048,576 bytes, by its declared `Content-Length` or as it streamed. Also for bytes over that size passed to `finish`, `check` or `openChannel`. | No |
 | `hash-mismatch` | SHA-256 of the served bytes is not the advertised H. The agreement URL's challenge advertises another H. A later channel challenge advertises another H than the held one, or the held bytes do not hash to the held H. | No |
 | `signer-failed` | Your signer threw (TypeScript) or raised (Python). | Yes |
 | `signed-not-bound` | What was signed does not carry the hash of the compared bytes; the signer's answer did not complete the payment; a payment presented to `check` does not carry the hash; a channel opening or voucher does not belong to the held channel. The payment is not returned. | Yes, or not needed |
 | `agreement-not-offered` | The pairing's payment is not itself a public proof of H, and the seller's offer names no agreement URL. | No |
 | `agreement-pending` | The agreement URL answered `202` before the gate paid (another agreement payment for this ATR is settling), or the agreement payment was sent and not recorded within the agreement option's `maxTimeoutSeconds` plus 180 seconds. | For the agreement only |
-| `agreement-failed` | The agreement URL could not be reached; answered a status other than `200`, `202` or `402`; answered `402` without a readable `PAYMENT-REQUIRED`; or answered `200` with something other than a receipt for this H. | For the agreement only, when it failed after payment |
+| `agreement-failed` | The agreement URL could not be reached; answered a status other than `200`, `202` or `402`; answered `402` without a readable `PAYMENT-REQUIRED`; answered `200` with a `Content-Encoding` other than `identity`; or answered `200` with something other than a receipt for this H, a receipt over 64 KiB included. | For the agreement only, when it failed after payment |
 
 The MCP server adds two codes of its own:
 

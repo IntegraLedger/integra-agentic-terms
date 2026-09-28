@@ -19,7 +19,7 @@ import {
   type Refusal,
 } from "@integraledger/lcp";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
-import { pay, redirected } from "./gate.js";
+import { IDENTITY, isIdentity, pay, redirected } from "./gate.js";
 import type { AgreementReceipt, Binding, DeclineCode, Declined, Fetch, Inputs, Presented, Signer } from "./types.js";
 
 const UNPAID_DEADLINE_MS = 10_000;
@@ -91,8 +91,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * One GET of the agreement URL, with no redirect followed and a deadline of `ms` over headers and body. A redirect is
- * `agreement-failed`. A 200 body is read up to 64 KiB; any other body is cancelled unread.
+ * One GET of the agreement URL, asking for the identity coding, with no redirect followed and a deadline of `ms` over
+ * headers and body. A redirect is `agreement-failed`, and so is a 200 whose `Content-Encoding` names any coding. A 200
+ * body is read as sent, up to 64 KiB; any other body is cancelled unread.
  */
 async function get(
   fetch: Fetch,
@@ -114,8 +115,9 @@ async function get(
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let whole = false;
   try {
-    const init: Parameters<Fetch>[1] = { method: "GET", redirect: "manual", signal: controller.signal };
-    if (signature !== undefined) init.headers = { "PAYMENT-SIGNATURE": signature };
+    const headers: Record<string, string> = { ...IDENTITY };
+    if (signature !== undefined) headers["PAYMENT-SIGNATURE"] = signature;
+    const init: Parameters<Fetch>[1] = { method: "GET", redirect: "manual", signal: controller.signal, headers };
     const response = await Promise.race([fetch(url, init), deadline]);
     body = response.body;
     if (redirected(response)) return failed("The agreement URL answered with a redirect.");
@@ -126,6 +128,9 @@ async function get(
       body: null,
     };
     if (response.status !== 200) return answer;
+    if (!isIdentity(response.headers.get("content-encoding"))) {
+      return failed("The agreement URL served a content coding other than identity.");
+    }
     const declared = response.headers.get("content-length")?.trim();
     if (declared !== undefined && /^[0-9]+$/.test(declared) && Number(declared) > MAX_ANSWER_BYTES) {
       return failed("The agreement receipt is larger than 64 KiB.");

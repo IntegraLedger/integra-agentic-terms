@@ -160,7 +160,7 @@ amount signed in the channel.
 | --- | --- |
 | `Binding` | A pairing's binding: a binding of `@integraledger/lcp`. |
 | `Presented` | A payment in its protocol's form. |
-| `Fetch` | `(url: string, init: { method: "GET"; redirect: "manual"; signal: AbortSignal; headers?: Record<string, string> }) => Promise<Response>`. A `3xx` answer, or one of type `opaqueredirect`, is a redirect, which the gate never follows. |
+| `Fetch` | `(url: string, init: { method: "GET"; redirect: "manual"; signal: AbortSignal; headers?: Record<string, string> }) => Promise<Response>`. A `3xx` answer, or one of type `opaqueredirect`, is a redirect, which the gate never follows. Every request the gate makes carries `Accept-Encoding: identity`. |
 | `Signer` | `{ readonly account: string; sign(request: SigningRequest): Promise<Signature> }`. `account` is CAIP-10. |
 | `SigningRequest` | What a signer is handed: the union of every request kind. See [signers](../guides/signers.md). |
 | `Signature` | The signer's answer, as JSON. Byte strings are `0x` hex; a list, in order, for `batch`. |
@@ -182,6 +182,7 @@ amount signed in the channel.
 | Largest ATR fetched, hashed or checked | 1,048,576 bytes |
 | ATR fetch deadline, over headers and body | 10 seconds |
 | ATR fetch | one `GET`, `redirect: "manual"`, a redirect answered is `atr-unfetchable`, `https` only |
+| Content coding, every request | `Accept-Encoding: identity`; a `200` with any other `Content-Encoding` is declined unread (`atr-unfetchable` for the ATR, `agreement-failed` for the agreement URL) |
 | Signer calls for one payment | at most 2 |
 | Agreement URL, unpaid request | 10 seconds |
 | Agreement URL, each paid request | `min(maxTimeoutSeconds, 120) + 70` seconds |

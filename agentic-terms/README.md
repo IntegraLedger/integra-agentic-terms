@@ -135,7 +135,7 @@ sequenceDiagram
     participant S as Seller
     participant W as Your signer
     A->>G: confirm(offer, binding, account, fetch)
-    G->>S: GET the link (https, no redirect, at most 1 MiB, 10 s)
+    G->>S: GET the link (https, identity coding, no redirect, at most 1 MiB, 10 s)
     S-->>G: The ATR's bytes
     G->>G: SHA-256(bytes) equals H?
     G-->>A: The signing request, built with H
@@ -359,14 +359,14 @@ it again rather than signing a new payment.
 | `offer-unreadable` | The seller's document, the chosen option or a build could not be read, or a recorded charge is out of range. `detail` carries the reason. |
 | `no-payable-option` | No option is payable by this account, an input the build needs is missing or malformed, or `transact`'s options are malformed. |
 | `link-not-https` | The ATR link or the agreement URL is not an `https` URL. Nothing was fetched. |
-| `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure). |
+| `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure), or answered `200` with a `Content-Encoding` other than `identity`. |
 | `atr-too-large` | The ATR is larger than 1 MiB (1,048,576 bytes). |
 | `hash-mismatch` | The served bytes do not hash to the advertised H; the agreement URL or a later channel challenge advertises another H; or a hold's bytes do not hash to its H. Nothing was signed. |
 | `signer-failed` | Your signer threw. |
 | `signed-not-bound` | What was signed does not carry the hash of the compared bytes. The payment is not returned. |
 | `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
 | `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
-| `agreement-failed` | The agreement URL could not be reached, or answered with something other than a receipt for this H. |
+| `agreement-failed` | The agreement URL could not be reached, answered `200` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H. |
 
 ## API reference
 
@@ -499,7 +499,9 @@ What the gate guarantees, in the code:
   agreement's receipt for that hash.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB read. A declared or streamed length over the bound cancels the body.
-- **Exact bytes.** The ATR is hashed as received and returned as received. It is never parsed.
+- **Exact bytes.** The ATR is hashed as received and returned as received. It is never parsed. Every request asks for
+  `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding is declined unread, so nothing is
+  decompressed: the bytes hashed are the bytes sent.
 - **No keys.** The gate hands requests to your signer and holds nothing that could sign.
 - **Your network policy.** Every request goes through the `fetch` you pass.
 

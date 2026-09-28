@@ -386,14 +386,14 @@ signing a new payment.
 | `offer-unreadable` | The seller's document, the chosen option or a build could not be read, or a recorded charge is out of range. `detail` carries the reason. |
 | `no-payable-option` | No option is payable by this account, an input the build needs is missing or malformed, or `transact`'s arguments are malformed. |
 | `link-not-https` | The ATR link or the agreement URL is not an `https` URL. Nothing was fetched. |
-| `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure), or served a content encoding other than gzip or deflate. |
+| `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure), or answered `200` with a `Content-Encoding` other than `identity`. |
 | `atr-too-large` | The ATR is larger than 1 MiB (1,048,576 bytes). |
 | `hash-mismatch` | The served bytes do not hash to the advertised H; the agreement URL or a later channel challenge advertises another H; or a hold's bytes do not hash to its H. Nothing was signed. |
 | `signer-failed` | Your signer raised. |
 | `signed-not-bound` | What was signed does not carry the hash of the compared bytes. The payment is not returned. |
 | `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
 | `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
-| `agreement-failed` | The agreement URL could not be reached, or answered with something other than a receipt for this H. |
+| `agreement-failed` | The agreement URL could not be reached, answered `200` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H. |
 
 ## API reference
 
@@ -415,7 +415,9 @@ Everything below is exported from `integraledger_terms`.
 | `hash_equals` | `(a: str, b: str) -> bool` | Compares two hashes as 32 decoded bytes, in either case; `False` when either is malformed. |
 
 `fetch` is an `httpx.AsyncClient`. The gate asks it for one `GET` of the link, with `Accept-Encoding: identity` and no
-redirect, and decodes a gzip or deflate body with the size bound applied to the decoded bytes.
+redirect, and reads the body as sent, stopping at the size bound. A `200` whose `Content-Encoding` names any coding is
+declined with its body unread, so nothing is decompressed and the bytes hashed are the bytes sent. The agreement URL is
+asked the same way, and its receipt read as sent, at most 64 KiB.
 
 ### Results and types
 
@@ -533,7 +535,9 @@ What the gate guarantees, in the code:
   agreement's receipt for that hash.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB of decoded body.
-- **Exact bytes.** The ATR is hashed as received and returned as received. It is never parsed.
+- **Exact bytes.** The ATR is hashed as received and returned as received. It is never parsed. Every request asks for
+  `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding is declined unread, so nothing is
+  decompressed: the bytes hashed are the bytes sent.
 - **No keys.** The gate hands requests to your signer and holds nothing that could sign.
 
 What it does not do:
