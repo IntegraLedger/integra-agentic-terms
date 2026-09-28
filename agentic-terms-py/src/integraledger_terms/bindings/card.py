@@ -177,8 +177,9 @@ def _trim_sp_htab(text: str) -> str:
 
 
 def tap_bound(presented: object) -> AtrHash | Refusal:
-    """The hash from a TAP payment request: the one lcp-hash line, when an agent-payer-auth signature lists "lcp-hash"
-    without parameters and has its Signature member. No signature, key, window or nonce is verified."""
+    """The hash from a TAP payment request: the one lcp-hash line, when every agent-payer-auth signature lists
+    "lcp-hash" without parameters and one of them has its Signature member, so whichever payer signature the seller's
+    recognition verifies covers the hash. No signature, key, window or nonce is verified."""
     if not is_object(presented):
         return Refusal("card/tap-signature-input-malformed")
     signature_input = presented.get("signatureInput")
@@ -208,10 +209,9 @@ def tap_bound(presented: object) -> AtrHash | Refusal:
     payers = [(label, m) for label, m in inputs.items() if _is_payer(m)]
     if not payers:
         return Refusal("card/tap-no-payer-signature")
-    covering = [label for label, m in payers if isinstance(m, InnerList) and any(map(_is_bare_hash_component, m.list))]
-    if not covering:
+    if not all(isinstance(m, InnerList) and any(map(_is_bare_hash_component, m.list)) for _, m in payers):
         return Refusal("card/tap-hash-not-covered")
-    if not any(label in signatures for label in covering):
+    if not any(label in signatures for label, _ in payers):
         return Refusal("card/tap-signature-missing")
 
     if not is_list(lcp_hash):
