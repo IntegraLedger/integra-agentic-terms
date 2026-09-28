@@ -45,7 +45,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@integraledger/lcp": "0.1.0"
+    "@integraledger/lcp": "0.2.0"
   },
   "devDependencies": {
     "@mysten/sui": "2.31.3",
