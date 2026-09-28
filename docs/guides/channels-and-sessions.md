@@ -15,7 +15,7 @@ The gate follows that shape:
    and names its channel, and returns a **hold**: the bytes, the opening and the channel, as JSON you keep.
 3. **Pay within.** For each later request, `within(doc, hold, binding, signer)` signs one voucher from the hold. It
    re-derives the bytes, the hash and the channel from the hold, never from the seller's new challenge, and signs only
-   when that challenge advertises the held H.
+   when that challenge advertises the held H and the payment it builds names the held channel.
 4. **Record the charge.** When the seller reports its cumulative charge, `recordCharge(hold, charged)` records it. The
    charge may not fall below the last one recorded, nor rise above the largest amount you signed.
 
@@ -166,7 +166,11 @@ An MPP session closes with `refund: {}`; a partial refund in a session is declin
 - A hold for another pairing: `pairing-not-supported`.
 - A hold whose bytes, opening or channel do not agree: `hash-mismatch` or `signed-not-bound`.
 - A challenge that advertises another H: `hash-mismatch`. The signer is not called.
-- An MPP challenge that names a channel this hold did not open: `no-payable-option`.
+- An MPP challenge that names a channel this hold did not open: `no-payable-option`. The signer is not called.
+- An x402 challenge under which the voucher or refund would name a channel this hold did not open:
+  `no-payable-option`. Before it calls the signer, `within` completes the build with placeholder answers and reads the
+  channel that payment names with the binding's `channel.ref`. On Solana the channel address is derived from the
+  option's `feePayer` as well as the held configuration, so a challenge naming another fee payer is refused here.
 - A signed voucher of the wrong kind, for another channel, or not committed to H: `signed-not-bound`, and it is dropped.
 
 ## In Python

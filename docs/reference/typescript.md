@@ -139,9 +139,10 @@ declare function within(
 ): Promise<{ signed: Presented; hold: ChannelHold } | Declined>;
 ```
 
-Signs one later voucher, or a refund, in a held channel. Everything is re-derived from the hold, and the challenge must
-advertise the held hash. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is
-the recorded charge. See [channels and sessions](../guides/channels-and-sessions.md).
+Signs one later voucher, or a refund, in a held channel. Everything is re-derived from the hold, the challenge must
+advertise the held hash, and the payment the build returns must name the held channel before the signer is called. A
+voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the recorded charge. See
+[channels and sessions](../guides/channels-and-sessions.md).
 
 ### `recordCharge`
 

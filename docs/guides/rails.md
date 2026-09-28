@@ -73,6 +73,16 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 | `x402/exact/stellar` | `stellar-auth` | `simulatedXdr` (string: your simulated `transfer` transaction), `currentLedger` (integer) |
 | `mpp/charge/stellar` | `stellar-auth` | `simulatedXdr`, `currentLedger` |
 
+The gate passes your account's address to the build as the payer. Before anything reaches your signer, the build
+compares the `transfer` your simulated transaction carries with what the seller asked for, and declines
+`offer-unreadable` when they differ:
+
+| Detail | The simulated transfer |
+| --- | --- |
+| `stellar/asset-mismatch` | calls a token contract other than the option's `asset` (x402) or the request's `currency` (MPP). |
+| `stellar/amount-mismatch` | moves an amount other than the option's or the request's `amount` exactly. x402's Stellar scheme: argument 2, the amount, *"MUST equal `requirements.amount` exactly"*. |
+| `stellar/payer-mismatch` | is `from` an account other than yours. |
+
 ## XRP Ledger
 
 | Pairing | Request | Inputs |
@@ -80,6 +90,11 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 | `x402/exact/xrpl` | `xrpl-tx` | `fee` (decimal), `lastLedgerSequence` (integer), and `sequence` (integer) or, where the option's `extra.assetTransferMethod` is `ticketSequence`, `ticketSequence` (integer) |
 | `mpp/charge/xrpl` | `xrpl-tx` | `fee` (decimal), `sequence` (integer), `lastLedgerSequence` (integer) |
 | `mpp/session/xrpl` | `xrpl-session-open` | `deposit` (decimal) and `xrpl` (object): `publicKey` (hex), `settleDelay` (integer), `fee` (decimal), `sequence` (integer), `lastLedgerSequence` (integer), `cancelAfter` (integer, optional) |
+
+An `mpp/session/xrpl` challenge's `amount` is the first claim's cumulative total in drops, which the claim signs as a
+64-bit unsigned integer. A challenge whose `amount` is anything but such a number written as a decimal string, with no
+sign, point or leading zero, does not offer the pairing (`mpp/request-malformed`): the gate declines
+`no-payable-option`, and nothing is signed.
 
 ## Hedera
 

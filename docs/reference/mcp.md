@@ -183,7 +183,7 @@ Returns `atrHash` and `receipt`. Annotations: not read-only, not destructive, no
 ### `atr_channel_within`
 
 Offered with a host `signer`. Signs one later payment in a held channel, only when the seller's document advertises the
-held H.
+held H and the payment names the held channel.
 
 | Argument | Type | |
 | --- | --- | --- |

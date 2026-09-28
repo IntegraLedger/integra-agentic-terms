@@ -339,7 +339,8 @@ voucher up to 2000
 ```
 
 The hold is plain JSON: store it, and pass the latest one to each call. `within` re-derives everything from the hold,
-never from the new challenge, and signs only when that challenge advertises the held H.
+never from the new challenge, and signs only when that challenge advertises the held H and the payment it builds names
+the held channel.
 
 ### Confirm a payment later: `check`
 
@@ -357,7 +358,7 @@ it again rather than signing a new payment.
 | --- | --- |
 | `pairing-not-supported` | The binding names no pairing the gate serves; `chosen` or a hold belongs to another pairing; the pairing has no channel; or the agreement URL's option is not paid with a public-proof pairing. |
 | `offer-unreadable` | The seller's document, the chosen option or a build could not be read, or a recorded charge is out of range. `detail` carries the reason. |
-| `no-payable-option` | No option is payable by this account, an input the build needs is missing or malformed, or `transact`'s options are malformed. |
+| `no-payable-option` | No option is payable by this account, an input the build needs is missing or malformed, `transact`'s options are malformed, or a later channel challenge asks for a payment in a channel the hold did not open. |
 | `link-not-https` | The ATR link or the agreement URL is not an `https` URL. Nothing was fetched. |
 | `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure), or answered `200` with a `Content-Encoding` other than `identity`. |
 | `atr-too-large` | The ATR is larger than 1 MiB (1,048,576 bytes). |

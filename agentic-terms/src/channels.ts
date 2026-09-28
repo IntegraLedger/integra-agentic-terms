@@ -67,6 +67,16 @@ const MAX_OPAQUE = 10_924;
 const NOT_BOUND_WITHIN = /\/not-bound-within$/;
 const REF_BYTES = 24;
 const HOLD_KEYS = ["pairing", "network", "channel", "h", "atr", "charged", "signedMax"] as const;
+/**
+ * For each request kind an in-channel build returns, an answer of the form that kind takes, of zero bytes: 65 bytes in
+ * `0x` hex for `eip712`, 64 bytes in base58 for `ed25519-raw` and `solana-message`. It completes a build without a
+ * signature, so that the channel its payment names can be read before the signer is called.
+ */
+const UNSIGNED_ANSWER: Readonly<Record<string, string>> = Object.freeze({
+  eip712: `0x${"00".repeat(65)}`,
+  "ed25519-raw": "1".repeat(64),
+  "solana-message": "1".repeat(64),
+});
 
 function declined(code: DeclineCode, detail: string): Declined {
   return { decline: { code, detail } };
@@ -120,6 +130,24 @@ function isHold(v: unknown): v is ChannelHold {
     DECIMAL.test(v["signedMax"] as string) &&
     isObject(v["opening"])
   );
+}
+
+/**
+ * The channel an in-channel build's payment would name, read by the binding's `channel.ref` from the build completed
+ * with `UNSIGNED_ANSWER`s, before anything is signed.
+ */
+async function wouldBeChannel(
+  batch: Batch,
+  channel: NonNullable<ChannelSteps["channel"]>,
+): Promise<{ network: string; channel: string } | Declined> {
+  const answers = batch.requests.map((r) => (Object.hasOwn(UNSIGNED_ANSWER, r.kind) ? UNSIGNED_ANSWER[r.kind] : undefined));
+  if (!answers.every((a): a is string => a !== undefined)) {
+    return declined("offer-unreadable", "The in-channel payment's channel cannot be read before it is signed.");
+  }
+  const completed = await guarded(() => batch.complete(answers));
+  if (isRefusal(completed)) return declined("offer-unreadable", completed.code);
+  const ref = await guarded(() => channel.ref(completed));
+  return isRefusal(ref) ? declined("offer-unreadable", ref.code) : ref;
 }
 
 /**
@@ -197,8 +225,9 @@ export async function openChannel(
  * Signs one later voucher, or a refund, in a held channel. The ATR bytes, the opening's hash and the opening's
  * channel are re-derived from the hold, and the challenge must advertise the held hash. A voucher's
  * `maxClaimableAmount` is the recorded charge plus the option's amount; a refund's is the recorded charge. `inputs`
- * are the buyer's own chain values a refund's build takes. What was signed must be of the expected kind and belong to
- * the held channel, or it is dropped.
+ * are the buyer's own chain values a refund's build takes. Before the signer is called, the channel the built payment
+ * would name must be the held one. What was signed must be of the expected kind and belong to the held channel, or it
+ * is dropped.
  */
 export async function within(
   doc: unknown,
@@ -274,6 +303,11 @@ export async function within(
   );
   if (isRefusal(unsigned)) return declined("offer-unreadable", unsigned.code);
   const batch = unsigned as Batch;
+  const wouldBe = await wouldBeChannel(batch, channel);
+  if ("decline" in wouldBe) return wouldBe;
+  if (wouldBe.network !== hold.network || wouldBe.channel !== hold.channel) {
+    return declined("no-payable-option", "The challenge asks for a payment in a channel this hold did not open.");
+  }
   const request = {
     kind: "batch",
     requests: batch.requests,
