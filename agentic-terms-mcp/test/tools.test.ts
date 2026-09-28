@@ -212,6 +212,7 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
     const signed = at(m, "result.structuredContent.signed");
     expect(at(signed, "payload.authorization.nonce")).toBe("0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938");
     expect(at(signed, "payload.signature")).toBe(S);
+    expect(at(m, "result.structuredContent")).not.toHaveProperty("mac");
     const checked = await call(c, "atr_check", {
       pairing: "x402/exact/eip155/eip3009",
       atr: Buffer.from(C).toString("base64"),
