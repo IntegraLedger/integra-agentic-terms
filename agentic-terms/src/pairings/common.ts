@@ -2,7 +2,7 @@
  * What the buyer pieces share: the CAIP-10 account, the first x402 option on the account's network, the payment
  * identifier the x402 client writes, and the JSON forms of byte strings and integers.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import { isRefusal as isLcpRefusal, type Json, type Refusal } from "@integraledger/lcp";
 import type { PaymentRequired, PaymentRequirements, X402Offer } from "@integraledger/lcp/x402";
 import type { Chosen, Inputs, Read } from "../types.js";
 
@@ -11,12 +11,22 @@ const PAYMENT_IDENTIFIER = "payment-identifier";
 const HEX = /^0x(?:[0-9a-fA-F]{2})*$/;
 const DECIMAL = /^[0-9]{1,78}$/;
 
+/** Every refusal the gate makes. Membership, not shape, is what makes a value one of them. */
+const made = new WeakSet<object>();
+
+/** A refusal with `code`, made by the gate. */
 export function refuse(code: string): Refusal {
-  return { refused: true, code };
+  const r = { refused: true as const, code };
+  made.add(r);
+  return r;
 }
 
+/**
+ * True for a refusal the protocol package made (its `isRefusal`) or the gate made (`refuse`). A value from a seller,
+ * a signer or a caller that is shaped `{ refused: true, … }` is neither, so it is never passed on as a refusal.
+ */
 export function isRefusal(v: unknown): v is Refusal {
-  return typeof v === "object" && v !== null && (v as { refused?: unknown }).refused === true;
+  return isLcpRefusal(v) || (typeof v === "object" && v !== null && made.has(v));
 }
 
 export function isObject(v: unknown): v is Record<string, unknown> {

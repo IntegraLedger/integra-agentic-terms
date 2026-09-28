@@ -19,7 +19,7 @@ const isU64 = (v: Json | undefined): boolean => typeof v === "string" && U64.tes
 export const x402BatchSettlementSolana: BuyerPiece = Object.freeze({
   choose(read: Read, account: string, inputs: Inputs, now: number, ref: string): Chosen | Refusal {
     const o = firstOption(read, account, "solana", PAIRING, KEY);
-    if ("refused" in o) return refuse("x402/no-payable-option");
+    if (isRefusal(o)) return refuse("x402/no-payable-option");
     const extra = isObject(o.accepted.extra) ? o.accepted.extra : {};
     const offered = extra["recentBlockhash"];
     const required = inputsOf(inputs, PAIRING, {

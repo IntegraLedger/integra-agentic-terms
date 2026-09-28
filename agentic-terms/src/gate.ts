@@ -6,6 +6,7 @@
  * kept bytes.
  */
 import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
+import { isRefusal, refuse } from "./pairings/common.js";
 import { PIECES } from "./pairings/index.js";
 import {
   MAX_ATR_BYTES,
@@ -45,10 +46,6 @@ const DECIMAL = /^[0-9]+$/;
 
 export function declined(code: DeclineCode, detail: string): Declined {
   return { decline: { code, detail } };
-}
-
-function isRefusal(v: unknown): v is Refusal {
-  return typeof v === "object" && v !== null && (v as { refused?: unknown }).refused === true;
 }
 
 export function isObject(v: unknown): v is Record<string, unknown> {
@@ -232,7 +229,7 @@ async function buildWith(piece: BuyerPiece, b: Steps, chosen: Chosen, h: AtrHash
   try {
     return await (piece.build !== undefined ? piece.build(choice, h) : b.build(choice, h));
   } catch {
-    return { refused: true, code: `${b.id.split("/")[0]}/build-failed` } satisfies Refusal;
+    return refuse(`${b.id.split("/")[0]}/build-failed`);
   }
 }
 
@@ -309,7 +306,7 @@ async function boundOf(b: Steps, presented: unknown): Promise<AtrHash | Refusal>
   try {
     return await b.bound(presented);
   } catch {
-    return { refused: true, code: "bound-failed" };
+    return refuse("bound-failed");
   }
 }
 

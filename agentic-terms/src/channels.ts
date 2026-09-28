@@ -9,7 +9,7 @@
 import { fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { offers, requestOf } from "./pairings/mpp.js";
-import { withPaymentIdentifier } from "./pairings/common.js";
+import { isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
 import {
   MAX_ATR_BYTES,
   type Binding,
@@ -72,10 +72,6 @@ function declined(code: DeclineCode, detail: string): Declined {
   return { decline: { code, detail } };
 }
 
-function isRefusal(v: unknown): v is Refusal {
-  return typeof v === "object" && v !== null && (v as { refused?: unknown }).refused === true;
-}
-
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -87,7 +83,7 @@ async function guarded<T>(run: () => Promise<T> | T): Promise<T | Refusal> {
   try {
     return await run();
   } catch {
-    return { refused: true, code: "member-failed" };
+    return refuse("member-failed");
   }
 }
 

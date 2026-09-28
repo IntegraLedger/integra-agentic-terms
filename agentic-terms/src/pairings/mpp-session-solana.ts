@@ -9,7 +9,7 @@ import type { Refusal } from "@integraledger/lcp";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import { sessionProof } from "@integraledger/lcp/svm";
 import type { Chosen, Inputs, Next, Presented, Signature } from "../types.js";
-import { choiceOf, inputsOf, isObject, refuse } from "./common.js";
+import { choiceOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";
 import { requestOf } from "./mpp.js";
 import { completeWith, mppRailPiece, sessionRevive } from "./mpp-rails.js";
 import { SOLANA_ADDRESS } from "./x402-exact-solana.js";
@@ -40,7 +40,7 @@ function operatorMode(chosen: Chosen): { challenge: MppChallenge & { id: string 
 async function complete(unsigned: unknown, signature: Signature, chosen: Chosen): Promise<Presented | Next | Refusal> {
   const mode = operatorMode(chosen);
   if (mode === null) return completeOpen(unsigned, signature, chosen);
-  if ("refused" in mode) return mode;
+  if (isRefusal(mode)) return mode;
   if (isObject(signature)) {
     const channelId = signature["channelId"];
     if (typeof channelId !== "string" || !SOLANA_ADDRESS.test(channelId)) return refuse("mpp/credential-malformed");

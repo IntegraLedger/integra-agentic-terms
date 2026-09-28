@@ -15,7 +15,7 @@ const HASH32 = /^0x[0-9a-fA-F]{64}$/;
 export const x402BatchSettlementEip155: BuyerPiece = Object.freeze({
   choose(read: Read, account: string, inputs: Inputs, now: number, ref: string): Chosen | Refusal {
     const o = firstOption(read, account, "eip155", PAIRING, EVM_ADDRESS);
-    if ("refused" in o) return refuse("x402/no-payable-option");
+    if (isRefusal(o)) return refuse("x402/no-payable-option");
     const given = optionalInputs(inputs, "x402", { payerAuthorizer: EVM_ADDRESS, authSalt: HASH32 });
     if (isRefusal(given)) return given;
     if (given["payerAuthorizer"] === undefined) return refuse("x402/input-missing");

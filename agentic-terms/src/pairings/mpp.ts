@@ -188,7 +188,7 @@ export function tempoBuild(binding: TempoBinding): NonNullable<BuyerPiece["build
 export async function pushComplete(unsigned: unknown, signature: Signature): Promise<Presented | Refusal> {
   if (!isObject(signature) || typeof signature["hash"] !== "string") return refuse("mpp/credential-malformed");
   const credential = (unsigned as { complete(s: Hex): MppCredential | Refusal }).complete(signature["hash"] as Hex);
-  if ("refused" in credential) return credential;
+  if (isRefusal(credential)) return credential;
   const landed = signature["landed"];
   if (landed === undefined) return credential;
   if (!isObject(landed) || typeof landed["transaction"] !== "string" || !Array.isArray(landed["logs"])) {

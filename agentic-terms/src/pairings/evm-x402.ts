@@ -7,7 +7,7 @@ import type { Refusal } from "@integraledger/lcp";
 import type { Hex } from "@integraledger/lcp/evm";
 import type { PaymentPayload, Unsigned, X402Unsigned } from "@integraledger/lcp/x402";
 import type { BuyerPiece, Chosen, Presented, Read, Signature, SigningRequest } from "../types.js";
-import { choiceOf, firstOption, isObject, refuse, withPaymentIdentifier, x402Chosen } from "./common.js";
+import { choiceOf, firstOption, isObject, isRefusal, refuse, withPaymentIdentifier, x402Chosen } from "./common.js";
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
@@ -39,7 +39,7 @@ async function complete(unsigned: unknown, signature: Signature, chosen: Chosen)
       delegator: delegator as Hex,
     });
   }
-  if ("refused" in signed) return signed;
+  if (isRefusal(signed)) return signed;
   return withPaymentIdentifier(signed, choiceOf(chosen)?.["required"], chosen.ref);
 }
 
@@ -48,7 +48,7 @@ export function evmX402Piece(pairing: string): BuyerPiece {
   return Object.freeze({
     choose(read: Read, account: string, _inputs: unknown, now: number, ref: string): Chosen | Refusal {
       const o = firstOption(read, account, "eip155", pairing, EVM_ADDRESS);
-      if ("refused" in o) return refuse("x402/no-payable-option");
+      if (isRefusal(o)) return refuse("x402/no-payable-option");
       return x402Chosen(pairing, { required: o.required, accepted: o.accepted, from: o.address, now }, ref);
     },
     choice: (chosen: Chosen) => choiceOf(chosen) ?? refuse("x402/choice-malformed"),
