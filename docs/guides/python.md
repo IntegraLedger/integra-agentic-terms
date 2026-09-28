@@ -23,10 +23,10 @@ Python `>=3.11`. It depends on `httpx` and `cryptography`, and is fully typed.
 | ATR bytes | `bytes: Uint8Array` | `atr_bytes: bytes` |
 | `transact`'s options | `{ inputs, agreementSigner }` | keyword arguments `inputs=`, `agreement_signer=` |
 | Byte strings in a signing request | `Uint8Array`, as built | `0x` and lower-case hex |
-| Response encodings | whatever your `fetch` decodes | asks for `identity`; decodes gzip or deflate itself, with the 1 MiB bound on the decoded bytes; declines any other encoding |
 | Channel functions | `openChannel`, `within`, `recordCharge` | `open_channel`, `within`, `record_charge` |
 
-Everything else is the same: the order of the steps, the bounds of the fetch, the twelve decline codes, the agreement
+Everything else is the same: the order of the steps, the bounds of the fetch, the identity-only content coding, the
+twelve decline codes, the agreement
 exchange and its timings, the channel hold's members.
 
 ## A signer

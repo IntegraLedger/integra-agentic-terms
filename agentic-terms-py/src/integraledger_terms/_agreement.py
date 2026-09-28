@@ -94,9 +94,10 @@ def _retry_seconds(header: str | None) -> int:
 async def _get(
     fetch: httpx.AsyncClient, url: str, signature: str | None, seconds: float
 ) -> _Answer | _Unanswered | Declined:
-    """One GET of the agreement URL, with no redirect and a deadline of seconds over headers and body. A 200 body is
-    read up to 64 KiB; any other body is left unread."""
-    headers = None if signature is None else {"PAYMENT-SIGNATURE": signature}
+    """One GET of the agreement URL, asking for the identity coding, with no redirect and a deadline of seconds over
+    headers and body. A 200 whose Content-Encoding names any coding is agreement-failed with its body unread; a 200
+    body is read as sent, up to 64 KiB, and nothing is decoded; any other body is left unread."""
+    headers = dict(_gate.IDENTITY) if signature is None else {**_gate.IDENTITY, "PAYMENT-SIGNATURE": signature}
     too_large = _failed("The agreement receipt is larger than 64 KiB.")
     try:
         async with asyncio.timeout(seconds):
@@ -109,11 +110,15 @@ async def _get(
                 )
                 if response.status_code != 200:
                     return answer
+                if not _gate.is_identity(response.headers.get("content-encoding")):
+                    return _failed("The agreement URL served a content coding other than identity.")
                 declared = response.headers.get("content-length")
                 if declared is not None and declared.strip().isdigit() and int(declared) > MAX_ANSWER_BYTES:
                     return too_large
+                if response.is_stream_consumed:
+                    return too_large if len(response.content) > MAX_ANSWER_BYTES else replace(answer, body=response.content)
                 body = bytearray()
-                async for chunk in response.aiter_bytes():
+                async for chunk in response.aiter_raw():
                     body += chunk
                     if len(body) > MAX_ANSWER_BYTES:
                         return too_large

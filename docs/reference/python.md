@@ -22,8 +22,10 @@ outcome: each returns its result or a `Declined`.
 | `hash_equals` | `hash_equals(a: str, b: str)` | `bool`: the two hashes as 32 decoded bytes, in either case; `False` when either is malformed |
 
 `fetch` is an `httpx.AsyncClient`. The gate asks it for one `GET` of the link with `Accept-Encoding: identity`, no
-redirect, and a 10-second deadline over headers and body. It decodes a gzip or deflate body itself, applying the 1 MiB
-bound to the decoded bytes.
+redirect, and a 10-second deadline over headers and body. It reads the body as sent, with `aiter_raw`, and stops at
+1 MiB. A `200` whose `Content-Encoding` names any coding is declined `atr-unfetchable` with its body unread: the gate
+decompresses nothing, whatever the client would decode. The agreement URL is asked the same way, and its receipt read
+as sent up to 64 KiB.
 
 Each function does what its TypeScript namesake does; the [TypeScript reference](./typescript.md) describes each in
 full.

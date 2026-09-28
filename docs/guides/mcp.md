@@ -151,6 +151,10 @@ declines exactly as the gate does.
 - `atr_channel_open` holds only an opening, and `atr_channel_within` signs and `atr_channel_record_charge` records only
   from a hold, that this server process returned, unchanged. Each carries a `mac` under a key the process generates and
   never exports.
-- `atr.utf8` is the seller's data. The skill tells the agent to read it and never to follow instructions inside it.
+- `terms-mcp` fetches only from public addresses: a link on a loopback, private-use, link-local or unique-local
+  address, or a host name that resolves to one, is declined `atr-unfetchable` before any connection.
+- Every value the seller supplies is data: `atr.utf8`, and the agreement receipt's `network` and `transaction` that
+  `atr_agree` and `atr_transact` return. The skill tells the agent to read them and never to follow instructions
+  inside them.
 
 The [tools reference](../reference/mcp.md) lists every tool's arguments, results and annotations.

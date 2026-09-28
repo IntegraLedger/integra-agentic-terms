@@ -32,7 +32,9 @@ sequenceDiagram
 ```
 
 1. **Compare.** The gate fetches and compares the ATR as for any pairing. A mismatch ends here.
-2. **Ask.** The gate sends one `GET` to the agreement URL, with no payment, no redirect and a 10-second deadline.
+2. **Ask.** The gate sends one `GET` to the agreement URL, with no payment, no redirect and a 10-second deadline. This
+   request and every paid one ask for `Accept-Encoding: identity`; a `200` with any other `Content-Encoding` is
+   `agreement-failed`, its body unread.
    - `200`: the agreement is already recorded. The body must be the receipt for this H.
    - `202`: another agreement payment for this ATR is settling. The gate declines `agreement-pending` and signs nothing.
    - `402`: the `PAYMENT-REQUIRED` header, base64 of an x402 document, is the agreement's payment request.

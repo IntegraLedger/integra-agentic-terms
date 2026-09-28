@@ -16,6 +16,7 @@ guarantees, how, and what it does not do.
 | What was signed is read back. | `finish` rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and reads H back out of the signed contents through the pairing's binding. It returns the payment only when that value is the hash of the bytes. |
 | A payment without a public proof waits for one. | For a pairing whose payment is not itself a public proof of H, the payment is signed only after the agreement URL answers with a receipt for that H. |
 | The fetch is bounded. | One `GET` of an `https` link, with no redirect, one 10-second deadline over headers and body, and at most 1 MiB read. A declared or streamed length over the bound cancels the body. |
+| The bytes hashed are the bytes sent. | Every request asks for `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding (gzip, br, a stacked list) is declined with its body unread. Nothing is decompressed, so the bounds apply to the bytes on the wire. The agreement receipt is read the same way, at most 64 KiB. |
 | A channel pays under its ATR. | `within` re-derives every value from the hold, never from the seller's new challenge, and signs only when that challenge advertises the held H. A recorded charge cannot exceed what was signed. |
 | The gate holds nothing that signs. | It hands requests to your signer and never sees a key. |
 | Your network policy applies. | Every request goes through the `fetch` (or `httpx.AsyncClient`) you pass. |
@@ -46,7 +47,13 @@ does not; the [pairings reference](./reference/pairings.md) quotes every stateme
 - A channel opening and a channel hold the tools return carry a `mac` under a key of the server process.
   `atr_channel_open` declines any other opening, `opening-unverified`, and `atr_channel_within` and
   `atr_channel_record_charge` decline any other hold, `hold-unverified`, before the gate is called.
-- `atr.utf8` is the seller's data. The skill tells the agent to read it and never to follow instructions inside it.
+- The `terms-mcp` binary fetches only from public addresses. A link that names a loopback, private-use, shared,
+  link-local, unique-local, documentation, multicast or reserved address is refused before any connection, and a host
+  name is resolved once and connected to only when every address it resolves to is public. A host that serves the tools
+  with `createBuyerServer` applies its own network policy through the `fetch` it passes.
+- Every value the seller supplies is data: `atr.utf8`, and the agreement receipt's `network` and `transaction` that
+  `atr_agree` and `atr_transact` return. The skill tells the agent to read them and never to follow instructions inside
+  them.
 - A discovery listing, or a hash an agent computes itself, is not a confirmation. The confirmation is the hash inside
   what the wallet signs.
 

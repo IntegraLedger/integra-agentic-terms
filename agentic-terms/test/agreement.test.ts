@@ -211,7 +211,7 @@ describe("agreement rows", () => {
     expect(out.h).toBe(H);
     expect(out.bytes).toEqual(A);
     expect(fetch.calls.map((c) => c.url)).toEqual([LINK_A, AGREEMENT_URL, AGREEMENT_URL, AGREEMENT_URL]);
-    expect(fetch.agreementCalls()[0]!.init.headers).toBeUndefined();
+    expect(fetch.agreementCalls()[0]!.init.headers).toEqual({ "Accept-Encoding": "identity" });
     for (const c of fetch.calls) {
       expect(c.init.method).toBe("GET");
       expect(c.init.redirect).toBe("manual");

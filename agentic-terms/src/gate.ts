@@ -96,9 +96,19 @@ export function redirected(response: Response): boolean {
   return response.type === "opaqueredirect" || (response.status >= 300 && response.status <= 399);
 }
 
+/** The request header that asks for the body with no content coding, so the bytes hashed are the bytes sent. */
+export const IDENTITY = { "Accept-Encoding": "identity" } as const;
+
+/** Whether a `Content-Encoding` value names no coding: absent, empty, or `identity`. */
+export function isIdentity(contentEncoding: string | null): boolean {
+  const v = (contentEncoding ?? "").trim().toLowerCase();
+  return v === "" || v === "identity";
+}
+
 /**
- * One GET of the link, with no redirect followed, one 10-second deadline over headers and body, and at most
- * `MAX_ATR_BYTES` read. A redirect, like any status but 200, is `atr-unfetchable`. A declared or streamed length over the
+ * One GET of the link, asking for the identity coding, with no redirect followed, one 10-second deadline over headers
+ * and body, and at most `MAX_ATR_BYTES` read. A redirect, like any status but 200, is `atr-unfetchable`, and so is a 200
+ * whose `Content-Encoding` names any coding: its body is never read or decoded. A declared or streamed length over the
  * bound cancels the body. The bytes are returned exactly as received.
  */
 async function fetchAtr(fetch: Fetch, link: string): Promise<Uint8Array | Declined> {
@@ -117,12 +127,15 @@ async function fetchAtr(fetch: Fetch, link: string): Promise<Uint8Array | Declin
   let whole = false;
   try {
     const response = await Promise.race([
-      fetch(link, { method: "GET", redirect: "manual", signal: controller.signal }),
+      fetch(link, { method: "GET", redirect: "manual", signal: controller.signal, headers: { ...IDENTITY } }),
       deadline,
     ]);
     body = response.body;
     if (redirected(response)) return declined("atr-unfetchable", "The link answered with a redirect.");
     if (response.status !== 200) return declined("atr-unfetchable", `The link answered status ${response.status}.`);
+    if (!isIdentity(response.headers.get("content-encoding"))) {
+      return declined("atr-unfetchable", "The link served a content coding other than identity.");
+    }
     const declared = response.headers.get("content-length")?.trim();
     if (declared !== undefined && DECIMAL.test(declared) && Number(declared) > MAX_ATR_BYTES) return tooLarge();
     if (body === null) {
