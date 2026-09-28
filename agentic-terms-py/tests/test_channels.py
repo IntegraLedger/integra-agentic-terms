@@ -223,12 +223,17 @@ def test_a_hold_whose_opening_was_edited_to_eb6s_plant() -> None:
     assert s.requests == []
 
 
+ZERO = "0x" + "00" * 65
+
+
 @dataclass(frozen=True)
 class Planted:
-    """The batch-settlement binding, with a build_within whose completed payment names another salt and channel."""
+    """The batch-settlement binding, with a build_within whose completed payment names another salt and channel, or,
+    with late, does so only once the answers are not all zero."""
 
     salt: str
     channel_id: str
+    late: bool = False
     id: str = BINDING.id
 
     def read(self, doc: Any) -> Any:
@@ -251,6 +256,8 @@ class Planted:
         assert isinstance(unsigned, BatchUnsigned)
 
         def complete(signatures: Any) -> Any:
+            if self.late and signatures[0] == ZERO:
+                return unsigned.complete(signatures)
             p: Any = copy.deepcopy(unsigned.complete(signatures))
             p["payload"]["channelConfig"] = {**p["payload"]["channelConfig"], "salt": self.salt}
             p["payload"]["voucher"]["channelId"] = self.channel_id
@@ -259,13 +266,22 @@ class Planted:
         return BatchUnsigned(requests=unsigned.requests, complete=complete)
 
 
-def test_a_signed_voucher_that_commits_to_another_agreement_is_dropped() -> None:
+def test_a_voucher_that_would_commit_to_another_agreement_is_refused_before_the_signer() -> None:
     hold, _ = evm_hold()
-    for salt, channel_id in ((HPRIME, BV["EB1"]["channelId"]), (HPRIME, BV["EB6"]["plant"]["matchedChannelId"])):
+    plants = (
+        (BV["EB1"]["channelId"], "offer-unreadable", "x402/channel-id-mismatch"),
+        (BV["EB6"]["plant"]["matchedChannelId"], "no-payable-option", None),
+    )
+    for channel_id, decline, detail in plants:
         s = signer()
-        out = run_within(hold, binding=Planted(salt, channel_id), s=s)
-        assert code(out) == "signed-not-bound"
-        assert len(s.requests) == 1
+        out = run_within(hold, binding=Planted(HPRIME, channel_id), s=s)
+        assert isinstance(out, Declined) and out.code == decline, out
+        assert detail is None or out.detail == detail
+        assert s.requests == []
+    s = signer()
+    out = run_within(hold, binding=Planted(HPRIME, BV["EB6"]["plant"]["matchedChannelId"], late=True), s=s)
+    assert code(out) == "signed-not-bound"
+    assert len(s.requests) == 1
     matched = {**hold["opening"], "payload": {
         "type": "voucher",
         "channelConfig": {**hold["opening"]["payload"]["channelConfig"], "salt": HPRIME},

@@ -246,35 +246,46 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
         expect(code(await within(evmDoc, { ...hold, opening }, batchEvm, signer))).toBe("signed-not-bound");
         expect(signer.requests.length).toBe(0);
       }));
-    it("a signed voucher that commits to another agreement (EB6's plant) is dropped: signed-not-bound", () =>
+    /** batchEvm, with a buildWithin whose payment names salt and channelId once `when` holds for the answers. */
+    const plantedEvm = (salt: string, channelId: string, when: (s: readonly string[]) => boolean): Binding =>
+      ({
+        ...batchEvm,
+        buildWithin: async (w: never, h: never) => {
+          const u = (await batchEvm.buildWithin(w, h)) as { requests: unknown[]; complete(s: readonly string[]): unknown };
+          return {
+            ...u,
+            complete: (s: readonly string[]) => {
+              if (!when(s)) return u.complete(s);
+              const p = JSON.parse(JSON.stringify(u.complete(s)));
+              p.payload.channelConfig.salt = salt;
+              p.payload.voucher.channelId = channelId;
+              return p;
+            },
+          };
+        },
+      }) as unknown as Binding;
+    const zero = `0x${"00".repeat(65)}`;
+
+    it("a voucher whose payment would commit to another agreement (EB6's plant) is refused before the signer is called", () =>
       at(E.now, async () => {
         const { hold } = await evmHold();
-        const plants: [string, string][] = [
-          [BV.fixed.Hprime, BV.EB1.channelId],
-          [BV.fixed.Hprime, BV.EB6.plant.matchedChannelId],
+        const plants: [string, string, string, string][] = [
+          [BV.fixed.Hprime, BV.EB1.channelId, "offer-unreadable", "x402/channel-id-mismatch"],
+          [BV.fixed.Hprime, BV.EB6.plant.matchedChannelId, "no-payable-option", ""],
         ];
-        for (const [salt, channelId] of plants) {
-          const planted = {
-            ...batchEvm,
-            buildWithin: async (w: never, h: never) => {
-              const u = (await batchEvm.buildWithin(w, h)) as { requests: unknown[]; complete(s: readonly string[]): unknown };
-              return {
-                ...u,
-                complete: (s: readonly string[]) => {
-                  const p = JSON.parse(JSON.stringify(u.complete(s)));
-                  p.payload.channelConfig.salt = salt;
-                  p.payload.voucher.channelId = channelId;
-                  return p;
-                },
-              };
-            },
-          } as unknown as Binding;
+        for (const [salt, channelId, decline, detail] of plants) {
           const signer = counting(evmAccount, evmAnswer);
-          const out = await within(evmDoc, hold, planted, signer);
-          expect(code(out)).toBe("signed-not-bound");
-          expect(out).not.toHaveProperty("signed");
-          expect(signer.requests.length).toBe(1);
+          const out = await within(evmDoc, hold, plantedEvm(salt, channelId, () => true), signer);
+          expect(code(out)).toBe(decline);
+          if (detail !== "") expect((out as Declined).decline.detail).toBe(detail);
+          expect(signer.requests.length).toBe(0);
         }
+        const signer = counting(evmAccount, evmAnswer);
+        const late = plantedEvm(BV.fixed.Hprime, BV.EB6.plant.matchedChannelId, (s) => s[0] !== zero);
+        const out = await within(evmDoc, hold, late, signer);
+        expect(code(out)).toBe("signed-not-bound");
+        expect(out).not.toHaveProperty("signed");
+        expect(signer.requests.length).toBe(1);
         const matched = { ...(hold.opening as object) } as never;
         expect(await batchEvm.channel.boundWithin({
           ...(matched as object),
@@ -372,6 +383,20 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
     const refused = counting(account, answer);
     expect(code(await within(doc, other, batchSvm, refused))).toBe("signed-not-bound");
     expect(refused.requests.length).toBe(0);
+  });
+
+  // A payment for a channel the buyer never opened is refused, and nothing is signed. On Solana the channel address is
+  // derived from the option's `feePayer` as well as the held channel configuration, so a within challenge naming
+  // another fee payer asks for a voucher or a refund in another channel.
+  it("a within challenge naming another feePayer: no-payable-option, and the signer is never called", async () => {
+    const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
+    const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
+    const option = { ...S.option, extra: { ...(S.option.extra as object), feePayer: BV.ES1.channelPda } } as PaymentRequirements;
+    const other = x402Doc(batchSvm, option);
+    const signer = counting(account, answer);
+    expect(code(await within(other, JSON.parse(JSON.stringify(hold)), batchSvm, signer))).toBe("no-payable-option");
+    expect(code(await within(other, hold, batchSvm, signer, {}, { recentBlockhash: S.blockhash }))).toBe("no-payable-option");
+    expect(signer.requests.length).toBe(0);
   });
 
   // ES6 (the Solana refund): the protocol package's build of `request_close` for a full

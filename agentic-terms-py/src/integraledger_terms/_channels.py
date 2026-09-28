@@ -43,6 +43,10 @@ _MAX_CHALLENGES = 32
 # An opaque of at most this many base64url characters, 8 KiB decoded, is read.
 _MAX_OPAQUE = 10_924
 _B64URL = re.compile(r"[A-Za-z0-9_-]*")
+# For each request kind an in-channel build returns, an answer of the form that kind takes, of zero bytes: 65 bytes in
+# 0x hex for eip712, 64 bytes in base58 for ed25519-raw and solana-message. It completes a build without a signature,
+# so that the channel its payment names can be read before the signer is called.
+_UNSIGNED_ANSWER = {"eip712": "0x" + "00" * 65, "ed25519-raw": "1" * 64, "solana-message": "1" * 64}
 
 T = TypeVar("T")
 
@@ -161,6 +165,26 @@ def _same_channel(ref: object, hold: Mapping[str, Any]) -> bool:
     return isinstance(ref, ChannelRef) and ref.network == hold["network"] and ref.channel == hold["channel"]
 
 
+def _would_be_channel(unsigned: BatchUnsigned, binding: Any) -> ChannelRef | Declined:
+    """The channel an in-channel build's payment would name, read by the binding's channel_ref from the build completed
+    with _UNSIGNED_ANSWER's answers, before anything is signed."""
+    unreadable = _declined("offer-unreadable", "The in-channel payment's channel cannot be read before it is signed.")
+    answers: list[str] = []
+    for request in unsigned.requests:
+        kind = request.get("kind") if isinstance(request, Mapping) else None
+        answer = _UNSIGNED_ANSWER.get(kind) if isinstance(kind, str) else None
+        if answer is None:
+            return unreadable
+        answers.append(answer)
+    completed = _guarded(lambda: unsigned.complete(answers))
+    if isinstance(completed, Refusal):
+        return _declined("offer-unreadable", completed.code)
+    ref = _guarded(lambda: binding.channel_ref(completed))
+    if isinstance(ref, Refusal):
+        return _declined("offer-unreadable", ref.code)
+    return ref if isinstance(ref, ChannelRef) else unreadable
+
+
 async def within(
     doc: object,
     hold: ChannelHold,
@@ -173,8 +197,9 @@ async def within(
     document, or MPP's list of challenges. The ATR bytes, the opening's hash and the opening's channel are re-derived
     from the hold, and the challenge must advertise the held hash. A voucher's
     maxClaimableAmount is the recorded charge plus the option's amount; a refund's is the recorded charge. inputs are
-    the buyer's own chain values a refund's build takes. What was signed must be of the expected kind and belong to the
-    held channel, or it is dropped."""
+    the buyer's own chain values a refund's build takes. Before the signer is called, the channel the built payment
+    would name must be the held one. What was signed must be of the expected kind and belong to the held channel, or
+    it is dropped."""
     if not _has_channel(binding):
         return _declined("pairing-not-supported", "The pairing has no channel.")
     ns = binding.id.split("/")[0]
@@ -247,6 +272,11 @@ async def within(
         return _declined("offer-unreadable", unsigned.code)
     if not isinstance(unsigned, BatchUnsigned):
         return _declined("offer-unreadable", f"{ns}/build-failed")
+    would_be = _would_be_channel(unsigned, binding)
+    if isinstance(would_be, Declined):
+        return would_be
+    if not _same_channel(would_be, hold):
+        return _declined("no-payable-option", "The challenge asks for a payment in a channel this hold did not open.")
     request = _gate.json_form({"kind": "batch", "requests": list(unsigned.requests)})
 
     try:

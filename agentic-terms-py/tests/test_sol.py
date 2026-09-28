@@ -623,6 +623,27 @@ def test_x402_batch_settlement_solana_open_channel_holds_es1s_channel_and_within
     assert refused.requests == []
 
 
+def test_x402_batch_settlement_solana_within_another_fee_payer_signs_nothing() -> None:
+    """A payment for a channel the buyer never opened is refused, and nothing is signed. On Solana the channel address
+    is derived from the option's feePayer as well as the held channel configuration, so a within challenge naming
+    another fee payer asks for a voucher or a refund in another channel."""
+    p = batch_pairing()
+    opener = Recording(BATCH_ACCOUNT, batch_answer)
+    opened = run(lambda c: transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, opener, c, inputs=p.inputs), serving(ABC))
+    assert isinstance(opened, Transacted) and opened.signed is not None, opened
+    hold = open_channel(opened.atr_bytes, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
+    assert not isinstance(hold, Declined), hold
+    other = copy.deepcopy(p.doc)
+    other["accepts"][0]["extra"]["feePayer"] = BV["ES1"]["channelPda"]
+    signer = Recording(BATCH_ACCOUNT, batch_answer)
+    voucher = asyncio.run(within(other, json.loads(json.dumps(hold)), X402_BATCH_SETTLEMENT_SOLANA, signer))
+    refund = asyncio.run(
+        within(other, hold, X402_BATCH_SETTLEMENT_SOLANA, signer, {}, {"recentBlockhash": BS["blockhash"]})
+    )
+    assert code(voucher) == "no-payable-option" and code(refund) == "no-payable-option"
+    assert signer.requests == []
+
+
 class RefundWithin:
     """The batch binding with a build_within that stands in for the protocol package's: it records what the gate hands
     it and completes with the held channel's configuration, without the transaction the package's completion carries."""
