@@ -1,0 +1,27 @@
+{
+ "about": "Simulated transfer envelopes for the Stellar builds' comparison with the option, built with @stellar/stellar-sdk 17.1.0 from x402-exact-stellar.json's V2 simulated envelope by changing the transfer alike in the operation and in the payer's authorization entry (its root invocation and, for from, its address credential). otherAsset is the contract strkey of 32 bytes of 07; otherPayer is the account of the Ed25519 seed of 32 bytes of 08. x402's scheme_exact_stellar: \"Argument 2 (amount): MUST equal requirements.amount exactly\", on the SEP-41 token of requirements.asset; MPP's Stellar charge: a transfer on the contract matching currency; the payer is the account whose key signs. Each expect is the refusal the build returns before anything reaches the signer, with the token contract compared first, then the amount, then from. The TypeScript gate's test/stellar-transfer.test.ts rebuilds every envelope with the SDK and checks it against this file.",
+ "otherAsset": "CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR",
+ "otherPayer": "GAJZR5RMNUNEK7CRXJVEWXZ5XUXWT7FJGILCDDOITF7EC26RPWJ4UVOE",
+ "rows": [
+  {
+   "case": "amount 1000000000000, not the option's 10000000",
+   "simulatedXdr": "AAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgAAAAh0cmFuc2ZlcgAAAAMAAAASAAAAAAAAAABuehzdKbC3j9E69MVZj+/07yqXFm48pvLk+/zNgFBb8QAAABIAAAACungWv48Bz+rKk6wXBRhwcdZ7g8f/Dv6BCOjsRTBXXXcmh5Mz29q+fAAAAAoAAAAAAAAAAAAAAOjUpRAAAAAAAQAAAAEAAAAAAAAAAG56HN0psLeP0Tr0xVmP7/TvKpcWbjym8uT7/M2AUFvxAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYAAAAIdHJhbnNmZXIAAAADAAAAEgAAAAAAAAAAbnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/EAAAASAAAAArp4Fr+PAc/qypOsFwUYcHHWe4PH/w7+gQjo7EUwV113JoeTM9vavnwAAAAKAAAAAAAAAAAAAADo1KUQAAAAAAAAAAAAAAAAAA==",
+   "expect": "stellar/amount-mismatch"
+  },
+  {
+   "case": "the token contract of 07x32, not the option's asset",
+   "simulatedXdr": "AAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAh0cmFuc2ZlcgAAAAMAAAASAAAAAAAAAABuehzdKbC3j9E69MVZj+/07yqXFm48pvLk+/zNgFBb8QAAABIAAAACungWv48Bz+rKk6wXBRhwcdZ7g8f/Dv6BCOjsRTBXXXcmh5Mz29q+fAAAAAoAAAAAAAAAAAAAAAAAmJaAAAAAAQAAAAEAAAAAAAAAAG56HN0psLeP0Tr0xVmP7/TvKpcWbjym8uT7/M2AUFvxAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcAAAAIdHJhbnNmZXIAAAADAAAAEgAAAAAAAAAAbnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/EAAAASAAAAArp4Fr+PAc/qypOsFwUYcHHWe4PH/w7+gQjo7EUwV113JoeTM9vavnwAAAAKAAAAAAAAAAAAAAAAAJiWgAAAAAAAAAAAAAAAAA==",
+   "expect": "stellar/asset-mismatch"
+  },
+  {
+   "case": "the token contract of 07x32 and amount 1000000000000",
+   "simulatedXdr": "AAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwAAAAh0cmFuc2ZlcgAAAAMAAAASAAAAAAAAAABuehzdKbC3j9E69MVZj+/07yqXFm48pvLk+/zNgFBb8QAAABIAAAACungWv48Bz+rKk6wXBRhwcdZ7g8f/Dv6BCOjsRTBXXXcmh5Mz29q+fAAAAAoAAAAAAAAAAAAAAOjUpRAAAAAAAQAAAAEAAAAAAAAAAG56HN0psLeP0Tr0xVmP7/TvKpcWbjym8uT7/M2AUFvxAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcAAAAIdHJhbnNmZXIAAAADAAAAEgAAAAAAAAAAbnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/EAAAASAAAAArp4Fr+PAc/qypOsFwUYcHHWe4PH/w7+gQjo7EUwV113JoeTM9vavnwAAAAKAAAAAAAAAAAAAADo1KUQAAAAAAAAAAAAAAAAAA==",
+   "expect": "stellar/asset-mismatch"
+  },
+  {
+   "case": "from the account of seed 08x32, not the payer",
+   "simulatedXdr": "AAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAEGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgAAAAh0cmFuc2ZlcgAAAAMAAAASAAAAAAAAAAATmPYsbRpFfFG6aktfPb0vafypMhYhjciZfkFr0X2TygAAABIAAAACungWv48Bz+rKk6wXBRhwcdZ7g8f/Dv6BCOjsRTBXXXcmh5Mz29q+fAAAAAoAAAAAAAAAAAAAAAAAmJaAAAAAAQAAAAEAAAAAAAAAABOY9ixtGkV8UbpqS189vS9p/KkyFiGNyJl+QWvRfZPKAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYAAAAIdHJhbnNmZXIAAAADAAAAEgAAAAAAAAAAE5j2LG0aRXxRumpLXz29L2n8qTIWIY3ImX5Ba9F9k8oAAAASAAAAArp4Fr+PAc/qypOsFwUYcHHWe4PH/w7+gQjo7EUwV113JoeTM9vavnwAAAAKAAAAAAAAAAAAAAAAAJiWgAAAAAAAAAAAAAAAAA==",
+   "expect": "stellar/payer-mismatch"
+  }
+ ]
+}

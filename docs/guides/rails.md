@@ -73,6 +73,16 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 | `x402/exact/stellar` | `stellar-auth` | `simulatedXdr` (string: your simulated `transfer` transaction), `currentLedger` (integer) |
 | `mpp/charge/stellar` | `stellar-auth` | `simulatedXdr`, `currentLedger` |
 
+The gate passes your account's address to the build as the payer. Before anything reaches your signer, the build
+compares the `transfer` your simulated transaction carries with what the seller asked for, and declines
+`offer-unreadable` when they differ:
+
+| Detail | The simulated transfer |
+| --- | --- |
+| `stellar/asset-mismatch` | calls a token contract other than the option's `asset` (x402) or the request's `currency` (MPP). |
+| `stellar/amount-mismatch` | moves an amount other than the option's or the request's `amount` exactly. x402's Stellar scheme: argument 2, the amount, *"MUST equal `requirements.amount` exactly"*. |
+| `stellar/payer-mismatch` | is `from` an account other than yours. |
+
 ## XRP Ledger
 
 | Pairing | Request | Inputs |
