@@ -24,6 +24,7 @@ import {
   type Presented,
   type Signature,
   type SigningRequest,
+  type ToApprove,
 } from "../src/index.js";
 import { ABC, ABD, code, counting, H, isDeclined, LINK, serving, vectors } from "./support.js";
 
@@ -90,9 +91,10 @@ function x402Doc(binding: Binding, option: PaymentRequirements, h: string = H): 
   return placed as PaymentRequired;
 }
 
-function unwrap<T extends object>(v: T): Exclude<T, Declined> {
+function unwrap<T extends object>(v: T): Exclude<T, Declined | ToApprove> {
   if (isDeclined(v)) throw new Error(`${v.decline.code}: ${v.decline.detail}`);
-  return v as Exclude<T, Declined>;
+  if ("approve" in v) throw new Error("an agreement payment to approve");
+  return v as Exclude<T, Declined | ToApprove>;
 }
 
 // ── EVM ──────────────────────────────────────────────────────────────────────────────────────────────────────────────

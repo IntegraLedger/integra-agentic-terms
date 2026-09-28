@@ -325,7 +325,7 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
     await t.close();
   });
 
-  it("plant: atr_transact on a pairing with no public proof returns the agreement receipt beside the payment", async () => {
+  it("plant: atr_transact on a pairing with no public proof returns the agreement payment to approve, then the receipt beside the payment", async () => {
     const E = vectors("x402-exact-eip155-erc7710.json");
     const AG = B.fixed.agreement;
     const H: string = row("B1").expect.h;
@@ -357,7 +357,13 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
       },
     };
     const c = connect({ fetch, signer });
-    const m = await call(c, "atr_transact", { pairing, document });
+    const shown = await call(c, "atr_transact", { pairing, document });
+    expect(at(shown, "result.isError")).toBeUndefined();
+    expect(at(shown, "result.structuredContent.approve.option")).toEqual(AG.option);
+    expect(at(shown, "result.structuredContent")).not.toHaveProperty("signed");
+    expect(kinds).toEqual([]);
+    const approved = at(shown, "result.structuredContent.approve");
+    const m = await call(c, "atr_transact", { pairing, document, approved });
     expect(at(m, "result.isError")).toBeUndefined();
     expect(at(m, "result.structuredContent.atrHash")).toBe(H);
     expect(at(m, "result.structuredContent.agreement")).toEqual(AG.receipt);

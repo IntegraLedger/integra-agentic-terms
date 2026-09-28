@@ -85,7 +85,7 @@ describe.each(confirmOnly)("%s (confirm only)", (_id, binding, challenge) => {
   it("the offer's agreement URL reaches the buyer, who pays it before the payment", async () => {
     const confirmed = await confirm(docOf(binding, challenge, AGREEMENT), p.binding, p.account, serving(ABC));
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
-    expect(confirmed).toMatchObject({ agreement: AGREEMENT, request: null, h: H });
+    expect(confirmed).toMatchObject({ chosen: { agreement: AGREEMENT }, request: null, h: H });
   });
 });
 

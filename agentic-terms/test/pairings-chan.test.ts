@@ -291,6 +291,7 @@ describe("x402/batch-settlement/cloudflare", () => {
     const signer = counting(account, never);
     const whole = await transact(doc, offered(batchCloudflare), signer, serving(ABC));
     if (isDeclined(whole)) throw new Error(whole.decline.code);
+    if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(whole.agreement).toEqual(RECEIPT);
     expect(signer.requests.length).toBe(0);
     expect(await check(ABC, done.signed, batchCloudflare)).toEqual({ h: H });

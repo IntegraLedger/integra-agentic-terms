@@ -1,7 +1,8 @@
-"""transact's options are its two keyword arguments, inputs and agreement_signer. An unknown keyword raises before any
-fetch or signer call, as a keyword-only signature does; inputs that are not a mapping, or an agreement signer with no
-sign method, are declined no-payable-option with the namespace's input-malformed detail before any fetch or signer call,
-as the TypeScript gate declines them. The document, the ATR and the signer are buyer.json's."""
+"""transact's options are its four keyword arguments, inputs, agreement_signer, approved and signal. An unknown keyword
+raises before any fetch or signer call, as a keyword-only signature does; inputs that are not a mapping, an agreement
+signer with no sign method, an approved value that is not an AgreementPayment, or a signal that is not an asyncio.Event
+are declined no-payable-option with the namespace's input-malformed detail before any fetch or signer call, as the
+TypeScript gate declines them. The document, the ATR and the signer are buyer.json's."""
 
 import asyncio
 from typing import Any
@@ -55,6 +56,8 @@ def test_inputs_given_positionally_raise() -> None:
         {"inputs": "recentBlockhash"},
         {"inputs": ["recentBlockhash"]},
         {"agreement_signer": {"account": ACCOUNT}},
+        {"approved": {"url": "https://api.seller.example/agreement"}},
+        {"signal": object()},
     ],
 )
 def test_malformed_members_are_declined_before_any_fetch_or_signer_call(options: dict[str, Any]) -> None:
@@ -65,8 +68,11 @@ def test_malformed_members_are_declined_before_any_fetch_or_signer_call(options:
     assert (calls, signer.requests) == (0, [])
 
 
-@pytest.mark.parametrize("options", [{}, {"inputs": {}}, {"inputs": None, "agreement_signer": None}])
-def test_the_two_members_as_given_pay(options: dict[str, Any]) -> None:
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"inputs": {}}, {"inputs": None, "agreement_signer": None, "approved": None, "signal": None}],
+)
+def test_the_members_as_given_pay(options: dict[str, Any]) -> None:
     signer = CountingSigner()
     out, _ = run(signer, **options)
     assert not isinstance(out, Declined) or out.code != "no-payable-option"

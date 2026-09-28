@@ -157,10 +157,13 @@ describe("the agreement exchange on a Workers fetch", () => {
     const r = row("BA1");
     const fetch = workers(seller(r.input["agreement"] as Script[]));
     const s = signer();
-    const out = await drive(transact(D, withAgreement(), s, fetch));
+    const first = await drive(transact(D, withAgreement(), s, fetch));
+    if (isDeclined(first) || !("approve" in first)) throw new Error("the agreement payment is returned for approval");
+    expect(s.requests.length).toBe(0);
+    const out = await drive(transact(D, withAgreement(), s, fetch, { approved: first.approve }));
     if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
     expect(s.requests.length).toBe(r.expect["signCalls"]);
-    expect(fetch.calls.map((c) => c.url)).toEqual([LINK_A, AGREEMENT_URL, AGREEMENT_URL, AGREEMENT_URL]);
+    expect(fetch.calls.map((c) => c.url)).toEqual([LINK_A, AGREEMENT_URL, LINK_A, AGREEMENT_URL, AGREEMENT_URL]);
     expectManual(fetch.calls);
   });
 
@@ -170,7 +173,7 @@ describe("the agreement exchange on a Workers fetch", () => {
   ])("a redirect from the agreement URL before payment is agreement-failed, and nothing is signed (%s)", async (_, answer) => {
     const fetch = workers(seller([answer]));
     const s = signer();
-    expect(code(await drive(agree(H, AGREEMENT_URL, s, fetch, { bytes: A })))).toBe("agreement-failed");
+    expect(code(await drive(agree(A, AGREEMENT_URL, s, fetch)))).toBe("agreement-failed");
     expect(s.requests.length).toBe(0);
     expect(fetch.calls.length).toBe(1);
   });
@@ -181,7 +184,9 @@ describe("the agreement exchange on a Workers fetch", () => {
   ])("a redirect answering the paid request is agreement-failed, and the payment is kept as moved (%s)", async (_, answer) => {
     const fetch = workers(seller([{ status: 402, paymentRequired: "required" }, answer, { status: 200, body: "receipt" }]));
     const s = signer();
-    const out = await drive(agree(H, AGREEMENT_URL, s, fetch, { bytes: A }));
+    const first = await drive(agree(A, AGREEMENT_URL, s, fetch));
+    if (!("approve" in first)) throw new Error("the agreement payment is returned for approval");
+    const out = await drive(agree(A, AGREEMENT_URL, s, fetch, { approved: first.approve }));
     expect(code(out)).toBe("agreement-failed");
     expect((out as Declined).moved?.h).toBe(H);
     expect(s.requests.length).toBe(1);

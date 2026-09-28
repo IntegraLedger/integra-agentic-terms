@@ -60,6 +60,7 @@ describe("mpp/session/hedera: the deposit moves before the gate can bind it", ()
     }));
     const out = await transact(doc, offered(sessionHedera), signer, serving(ABC), { inputs });
     if (isDeclined(out)) throw new Error(out.decline.code);
+    if ("approve" in out) throw new Error("an agreement payment to approve");
     expect(Object.keys(out.signed as object).sort()).toEqual(["challenge", "payload"]);
   });
 });

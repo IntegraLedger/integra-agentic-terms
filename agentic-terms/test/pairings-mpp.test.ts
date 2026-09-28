@@ -30,6 +30,7 @@ import {
   LINK,
   offered,
   serving,
+  transactApproved,
   vectors,
   type Pairing,
 } from "./support.js";
@@ -277,6 +278,7 @@ describe("mpp/charge/tempo/push", () => {
       const signer = counting(p.account, p.answer);
       const whole = await transact(p.doc, p.binding, signer, serving(ABC));
       if (isDeclined(whole)) throw new Error(whole.decline.code);
+      if ("approve" in whole) throw new Error("an agreement payment to approve");
       expect(signer.requests.length).toBe(1);
       expect(whole.signed).toEqual(done.signed);
       expect(whole.landed).toEqual(landed);
@@ -395,8 +397,9 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
       const acct = account(84532, X.fixed);
       const signer = counting(acct, async (r) => (r.kind === "eip712" ? privateKeyToAccount(X.fixed.payerKey).signTypedData(typedDataOf(r)) : answer(r)));
       const stub = seller();
-      const t = await transact(doc, binding, signer, stub);
+      const t = await transactApproved(doc, binding, signer, stub);
       if (isDeclined(t)) throw new Error(`${t.decline.code}: ${t.decline.detail}`);
+      if ("approve" in t) throw new Error("an agreement payment to approve");
       expect(stub.paid).toBe(1);
       expect(t.agreement).toEqual(RECEIPT);
       expect(signer.requests.map((r) => r.kind)).toEqual(["eip712", "evm-call"]);

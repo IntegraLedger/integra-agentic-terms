@@ -10,11 +10,11 @@ outcome: each returns its result or a `Declined`.
 
 | Function | Signature | Returns |
 | --- | --- | --- |
-| `transact` | `async transact(doc, binding, signer, fetch, *, inputs=None, agreement_signer=None)` | `Transacted \| Declined` |
+| `transact` | `async transact(doc, binding, signer, fetch, *, inputs=None, agreement_signer=None, approved=None, signal=None)` | `Transacted \| ToApprove \| Declined` |
 | `confirm` | `async confirm(doc, binding, account, fetch, inputs=None)` | `Confirmed \| Declined` |
 | `finish` | `finish(atr_bytes, chosen, signature, binding)` | `Finished \| Next \| Declined` |
 | `check` | `check(atr_bytes, presented, binding)` | `Checked \| Declined` |
-| `agree` | `async agree(h, url, signer, fetch, *, atr_bytes, inputs=None, ns=None)` | `Agreed \| Declined` |
+| `agree` | `async agree(atr_bytes, url, signer, fetch, *, approved=None, inputs=None, signal=None)` | `ToApprove \| Agreed \| Declined` |
 | `open_channel` | `open_channel(atr_bytes, opened, binding, landed=None)` | `ChannelHold \| Declined` |
 | `within` | `async within(doc, hold, binding, signer, refund=None, inputs=None)` | `Within \| Declined` |
 | `record_charge` | `record_charge(hold, charged_cumulative_amount)` | `ChannelHold \| Declined` |
@@ -28,21 +28,28 @@ decompresses nothing, whatever the client would decode. The agreement URL is ask
 as sent up to 64 KiB.
 
 Each function does what its TypeScript namesake does; the [TypeScript reference](./typescript.md) describes each in
-full.
+full. `approved` is the `AgreementPayment` a previous call returned in `ToApprove.approve`, carried back unchanged.
+
+`signal` is an `asyncio.Event`: setting it ends the agreement exchange as aborting the `AbortSignal` does in
+TypeScript. Before the agreement payment is sent, the call declines `agreement-failed` and nothing was signed or sent;
+after, it declines `agreement-pending` with the payment as `moved`. Cancelling the task instead raises
+`asyncio.CancelledError`, as asyncio does, and a payment already sent is then not returned; the signal keeps it.
 
 ## Results
 
 | Dataclass | Fields |
 | --- | --- |
 | `Transacted` | `signed: dict \| None`, `atr_bytes: bytes`, `h: AtrHash`, `agreement: AgreementReceipt \| None`, `landed: Any` |
-| `Confirmed` | `chosen: Chosen`, `request: dict \| None`, `atr_bytes: bytes`, `h: AtrHash`, `agreement: str \| None` |
+| `Confirmed` | `chosen: Chosen`, `request: dict \| None`, `atr_bytes: bytes`, `h: AtrHash` |
 | `Finished` | `signed: dict`, `h: AtrHash`, `landed: Any` |
 | `Next` | `next: dict`, `h: AtrHash` |
 | `Checked` | `h: AtrHash` |
+| `ToApprove` | `approve: AgreementPayment`, `atr_bytes: bytes`, `h: AtrHash` |
+| `AgreementPayment` | `url: str`, `option: dict`, `required: dict`: the agreement payment to approve. `option` is the x402 option paid, with its `amount`, `asset`, `payTo` and `network`; `required` is the agreement URL's payment request as served. |
 | `Agreed` | `receipt: AgreementReceipt` |
 | `AgreementReceipt` | `atr_hash: AtrHash`, `agreed: Literal[True]`, `network: str`, `transaction: str` |
 | `Within` | `signed: dict`, `hold: ChannelHold` |
-| `Chosen` | `pairing: str`, `choice: dict`, `ref: str` |
+| `Chosen` | `pairing: str`, `choice: dict`, `ref: str`, `agreement: str \| None`: the agreement URL, where the pairing needs one |
 | `Declined` | `code: DeclineCode`, `detail: str`, `moved: Moved \| None` |
 
 `ChannelHold` is a `dict` with the members `pairing`, `network`, `channel`, `h`, `atr`, `opening`, `charged` and

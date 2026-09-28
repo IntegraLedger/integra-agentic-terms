@@ -95,9 +95,9 @@ Before approving a payment: reads the ATR hash the seller advertised, fetches th
 | `inputs` | object, optional | The buyer's own values the build needs. See [rails](../guides/rails.md). |
 | `receipt` | JSON, optional | The agreement's receipt, for a pairing that pays an agreement first. |
 
-Returns `atrHash`, `atr`, `chosen` and `request`. For a pairing that pays an agreement first, returns `agreement` (the
-URL) and no `request` until `receipt` is a recorded agreement for this H; a receipt for another H is declined
-`agreement-failed`. Annotations: read-only, open-world.
+Returns `atrHash`, `atr`, `chosen` and `request`. For a pairing that pays an agreement first, `chosen.agreement` is the
+agreement URL, and there is no `request` until `receipt` is a recorded agreement for this H; a receipt for another H is
+declined `agreement-failed`. Annotations: read-only, open-world.
 
 ### `atr_finish`
 
@@ -154,31 +154,41 @@ read-only, closed-world.
 
 ### `atr_transact`
 
-Offered with a host `signer`. Confirms H and, only on a match, signs the payment with the host's signer, paying any
-agreement first.
+Offered with a host `signer`. Confirms H and, only on a match, signs the payment with the host's signer, paying first
+any agreement the agent approved.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `pairing` | string | The pairing. |
 | `document` | JSON | The seller's payment request. |
 | `inputs` | object, optional | The buyer's own values the build needs. |
+| `approved` | object, optional | The agreement payment the agent approved: `approve` from a previous call, unchanged. |
 
-Returns `atrHash`, `atr`, `signed` (and `landed`), and `agreement`, the receipt, where one was paid; for a pairing with a
-channel, also `mac`, which `atr_channel_open` takes with the opening. Annotations: not
-read-only, not destructive, not idempotent, open-world.
+Returns `atrHash`, `atr`, `signed` (and `landed`), and `agreement`, the receipt, where the pairing needs one; for a
+pairing with a channel, also `mac`, which `atr_channel_open` takes with the opening. Where the pairing needs an agreement
+payment that is not yet recorded and `approved` is absent, returns `atrHash`, `atr` and `approve` instead, and signs
+nothing: `approve.option` is the payment's `amount`, `asset`, `payTo` and `network`, `approve.url` the agreement URL and
+`approve.required` its payment request. Annotations: not read-only, not destructive, not idempotent, open-world.
 
 ### `atr_agree`
 
-Offered with a host `signer` or `agreementSigner`. Pays the agreement URL `atr_confirm` named, for the ATR you
-confirmed.
+Offered with a host `signer` or `agreementSigner`. The agreement payment for the agreement URL in the `chosen` that
+`atr_confirm` returned, for the ATR you confirmed. The URL is read from `chosen`, never from an argument of its own.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `atr` | base64 | The ATR's bytes. |
-| `agreement` | string | The agreement URL. |
+| `chosen` | object | `chosen` from `atr_confirm`, unchanged; its `agreement` is the agreement URL. |
+| `approved` | object, optional | The agreement payment the agent approved: `approve` from a previous call, unchanged. |
 | `inputs` | object, optional | The buyer's own values the agreement payment's build needs. |
 
-Returns `atrHash` and `receipt`. Annotations: not read-only, not destructive, not idempotent, open-world.
+Without `approved`, returns `atrHash` and `approve`, the agreement payment, and signs nothing; where the agreement is
+already recorded, returns `atrHash` and `receipt`. With `approved`, pays that payment with the host's agreement signer,
+or its signer, and returns `atrHash` and `receipt`. A `chosen` with no `agreement` is declined `offer-unreadable`.
+Annotations: not read-only, not destructive, not idempotent, open-world.
+
+A client's `notifications/cancelled` for an `atr_transact` or `atr_agree` call ends its agreement exchange, as the
+library's `signal` does.
 
 ### `atr_channel_within`
 
@@ -206,7 +216,8 @@ says when it applies, and the instructions. Its description:
 > received.
 
 Its thirteen instructions cover, in order: `atr_transact` where offered; `atr_confirm` with the payer account and any
-inputs; the agreement first where `atr_confirm` names one, never signing without its receipt; signing `request`
+inputs; the agreement first where `atr_confirm` names one, approved like any other payment, never signing without its
+receipt; signing `request`
 exactly; `next` for payments signed in steps; `request: null`; declines and `moved`; re-sending a settling payment
 rather than signing a new one; channels, with the hold passed back unchanged; keeping `atr.base64` and `atrHash`
 together; treating every value the seller supplies (`atr.utf8`, and the agreement receipt's `network` and `transaction`)

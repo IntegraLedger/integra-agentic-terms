@@ -59,7 +59,7 @@ const signer: Signer = {
 };
 
 const paid = await transact(offer, exactEip3009, signer, fetch);
-if ("decline" in paid || paid.signed === null) throw new Error("not paid");
+if ("decline" in paid || "approve" in paid || paid.signed === null) throw new Error("not paid");
 
 // Later: the payment against the bytes you kept, and against a record that differs by one byte.
 const kept = await check(paid.bytes, paid.signed, exactEip3009);

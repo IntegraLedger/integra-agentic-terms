@@ -11,7 +11,7 @@ import type { TypedDataDefinition } from "viem";
 import { evmHash, evmTransaction, type MppChallenge } from "@integraledger/lcp/mpp";
 import { exactEip3009, type PaymentRequirements } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { ABC, H, LINK, vectors } from "./support.js";
+import { ABC, H, LINK, transactApproved, vectors } from "./support.js";
 
 const MC = vectors<{ fixed: { realm: string; expires: string } }>("mpp-challenge.json");
 const X = vectors<{
@@ -108,7 +108,7 @@ describe("an EVM transfer the signer completed after the agreement's 200 is retu
           return a;
         },
       };
-      const out = await transact(doc, binding as Binding, signer, seller());
+      const out = await transactApproved(doc, binding as Binding, signer, seller());
       expect(kinds).toEqual(["eip712", "evm-call"]);
       if (answers[0] !== undefined && _id.endsWith("transaction")) {
         expect(`0x${createHash("sha256").update(Buffer.from(answers[0].slice(2), "hex")).digest("hex")}`).toBe(

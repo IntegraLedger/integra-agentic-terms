@@ -98,8 +98,9 @@ Three properties follow, and each pairing states them:
 
 Some payments are not a public proof of H: a card payment, a Stripe charge, a Lightning invoice, a checkout in which the
 buyer signs nothing. For these pairings the seller's offer also names an **agreement URL**: an x402 resource for the same
-H, paid with a pairing whose payment is a public proof, usually for a nominal amount. The gate pays the agreement first,
-waits for its receipt, and only then signs the main payment. The
+H, paid with a pairing whose payment is a public proof, usually for a nominal amount. The agreement payment is a payment
+like any other: the gate returns it for the buyer's agent to approve, pays it once approved, waits for its receipt, and
+only then signs the main payment. The
 [agreement payments](./guides/agreement-payments.md) guide covers the exchange.
 
 If such a pairing's offer names no agreement URL, the gate declines with `agreement-not-offered` and signs nothing.

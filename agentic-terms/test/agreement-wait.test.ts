@@ -9,7 +9,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { TypedDataDefinition } from "viem";
 import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { vectors } from "./support.js";
+import { transactApproved, vectors } from "./support.js";
 
 const B = vectors<{
   fixed: {
@@ -82,7 +82,7 @@ describe("a paid agreement request answered within the seller's bounds is waited
       },
     };
     const fetch = seller();
-    const out = await drive(transact(B.fixed.D, withAgreement(), signer, fetch));
+    const out = await drive(transactApproved(B.fixed.D, withAgreement(), signer, fetch));
     expect(fetch.paid).toBe(1);
     expect(out).not.toHaveProperty("decline");
     expect(out).toMatchObject({ agreement: AG.receipt });

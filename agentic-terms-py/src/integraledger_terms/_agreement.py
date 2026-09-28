@@ -1,10 +1,12 @@
-"""The agreement payment: ask the agreement URL for its challenge, pay it through the buyer piece of the pairing that
-placed it, a pairing whose payment is itself a public proof of the ATR hash, and return the resource's receipt once the
-payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is sent unless what was
-signed carries the hash. Once sent, the same signed payment is sent again after each 202, 5xx or timeout, each paid
-request bounded by min(maxTimeoutSeconds, 120) + 60 + 10 seconds and the whole exchange by the agreement option's
-maxTimeoutSeconds + 180 seconds; no second agreement payment is signed, and every decline after it was sent carries it
-as moved."""
+"""The agreement payment, in two calls. Called without an approved payment, agree asks the agreement URL for its
+challenge and returns the agreement payment for the buyer's agent to approve, signing nothing: the challenge's first
+option, in document order, that the signer can pay with a pairing whose payment is itself a public proof of the ATR
+hash. Called with the payment the agent approved, it signs exactly that payment, sends it, and returns the resource's
+receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is sent
+unless what was signed carries the hash. Once sent, the same signed payment is sent again after each 202, 5xx or
+timeout, each paid request bounded by min(maxTimeoutSeconds, 120) + 60 + 10 seconds and the whole exchange by the paid
+option's maxTimeoutSeconds + 180 seconds; no second agreement payment is signed, and every decline after it was sent
+carries it as moved. Setting the caller's signal ends the exchange at its next step."""
 
 import asyncio
 import base64
@@ -12,17 +14,32 @@ import binascii
 import json
 import re
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Coroutine, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 
 from . import _gate
 from ._core import AtrHash, hash_equals, is_hash
+from ._core import atr_hash as hash_of
 from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
-from ._types import Advertised, AgreementReceipt, Agreed, Binding, Declined, Inputs, Moved, Refusal, Signer
+from .bindings._x402 import MAX_OPTIONS
+from ._types import (
+    Advertised,
+    AgreementPayment,
+    AgreementReceipt,
+    Agreed,
+    Binding,
+    Chosen,
+    Declined,
+    Inputs,
+    Moved,
+    Refusal,
+    Signer,
+    ToApprove,
+)
 
 UNPAID_DEADLINE_S = 10.0
 EXCHANGE_CAP_S = 120
@@ -30,10 +47,13 @@ SETTLE_S = 60
 VERIFY_S = 10
 WINDOW_EXTRA_S = 180
 MAX_ANSWER_BYTES = 65_536
+MAX_SAFE_INTEGER = 2**53 - 1
 RETRY_DEFAULT_S = 2
 RETRY_MIN_S = 1
 
 _DECIMAL = re.compile(r"[0-9]{1,9}")
+
+T = TypeVar("T")
 
 
 def _clock() -> float:
@@ -57,8 +77,42 @@ class _Unanswered:
     """A request that reached no answer: its deadline passed, or the URL could not be reached."""
 
 
+@dataclass(frozen=True, slots=True)
+class _Ended:
+    """The caller's signal ended the step before it finished."""
+
+
 def _failed(detail: str, moved: Moved | None = None) -> Declined:
     return Declined("agreement-failed", detail, moved)
+
+
+def _ended() -> Declined:
+    return _failed("The caller's signal ended the agreement exchange before the payment was sent.")
+
+
+def _is_ended(signal: asyncio.Event | None) -> bool:
+    return signal is not None and signal.is_set()
+
+
+async def _until(signal: asyncio.Event | None, work: Coroutine[Any, Any, T]) -> T | _Ended:
+    """The result of work, or _Ended when the caller's signal is set first; work is then cancelled."""
+    if signal is None:
+        return await work
+    if signal.is_set():
+        work.close()
+        return _Ended()
+    task = asyncio.ensure_future(work)
+    waiter = asyncio.ensure_future(signal.wait())
+    try:
+        await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for pending in (task, waiter):
+            if not pending.done():
+                pending.cancel()
+        await asyncio.gather(task, waiter, return_exceptions=True)
+    if task.done() and not task.cancelled():
+        return task.result()
+    return _Ended()
 
 
 def _server_error(status: int) -> bool:
@@ -212,52 +266,190 @@ def _x402_bindings() -> tuple[Binding, ...]:
     )
 
 
-def _agreement_pairing(required: Mapping[str, Any]) -> tuple[Binding, Advertised, Mapping[str, Any]] | Declined:
-    """The pairing that placed the agreement option, when its payment is itself a public proof, with its read and the
-    option."""
+@dataclass(frozen=True, slots=True)
+class _Selected:
+    """What the gate pays for an agreement: the option, its pairing, its read and the gate's choice."""
+
+    option: dict[str, Any]
+    binding: Binding
+    read: Advertised
+    chosen: Chosen
+
+
+def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selected | Declined:
+    """The option the agreement is paid with, by the main payment's rule: the options in document order, and the first
+    one the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402
+    pairing, in the protocol package's order, whose read accepts the challenge holding only that option."""
     accepts = required.get("accepts")
-    if not isinstance(accepts, Sequence) or isinstance(accepts, str) or not accepts or not isinstance(accepts[0], Mapping):
+    if not isinstance(accepts, Sequence) or isinstance(accepts, (str, bytes)) or not accepts:
         return Declined("offer-unreadable", "x402/no-payable-option")
-    for binding in _x402_bindings():
-        try:
-            read = binding.read(required)
-        except Exception:
+    if len(accepts) > MAX_OPTIONS:
+        return Declined("offer-unreadable", "x402/option-malformed")
+    now = _gate._now()
+    unreadable: str | None = None
+    unpayable: str | None = None
+    for option in accepts:
+        if not isinstance(option, Mapping):
             continue
-        if isinstance(read, Advertised):
-            if getattr(binding, "public_proof", False) is not True:
-                return Declined("pairing-not-supported", f"The agreement pairing {binding.id} is not itself a public proof.")
-            return binding, read, accepts[0]
-    return Declined("pairing-not-supported", "The agreement option names no pairing the gate serves.")
+        only = {**required, "accepts": [option]}
+        found: tuple[Binding, Advertised] | None = None
+        for binding in _x402_bindings():
+            read = binding.read(only)
+            if isinstance(read, Advertised):
+                found = (binding, read)
+                break
+            if read.code != "x402/no-payable-option" and unreadable is None:
+                unreadable = read.code
+        if found is None or getattr(found[0], "public_proof", False) is not True:
+            continue
+        piece = _gate._piece(found[0])
+        if piece is None:
+            continue
+        chosen = piece.choose(found[1], account, inputs, now, _gate._ref(), only)
+        if isinstance(chosen, Refusal):
+            unpayable = unpayable if unpayable is not None else chosen.code
+            continue
+        return _Selected(option=dict(option), binding=found[0], read=found[1], chosen=chosen)
+    if unpayable is None and unreadable is not None:
+        return Declined("offer-unreadable", unreadable)
+    return Declined("no-payable-option", unpayable if unpayable is not None else "x402/no-payable-option")
 
 
 def _bounds(option: Mapping[str, Any]) -> tuple[int, int] | None:
-    """The paid request's deadline and the whole exchange's, in seconds, from the option's maxTimeoutSeconds."""
+    """The paid request's deadline and the whole exchange's, in seconds, from the option's maxTimeoutSeconds: a JSON
+    number with an integral value from 1 to 2^53 - 1, whether written 60 or 60.0."""
     t = option.get("maxTimeoutSeconds")
-    if isinstance(t, bool) or not isinstance(t, int) or t <= 0 or t > 2**53 - 1:
+    if isinstance(t, bool):
+        return None
+    if isinstance(t, float):
+        if not t.is_integer():
+            return None
+        t = int(t)
+    if not isinstance(t, int) or t <= 0 or t > MAX_SAFE_INTEGER:
         return None
     return min(t, EXCHANGE_CAP_S) + SETTLE_S + VERIFY_S, t + WINDOW_EXTRA_S
 
 
+def _paying(
+    required: Mapping[str, Any], h: AtrHash, account: str, inputs: Inputs
+) -> tuple[_Selected, tuple[int, int]] | Declined:
+    """The option chosen from required for h, with its bounds, once the challenge is found to advertise h."""
+    selected = _select(required, account, inputs)
+    if isinstance(selected, Declined):
+        return selected
+    limits = _bounds(selected.option)
+    if limits is None:
+        return Declined("offer-unreadable", "x402/option-malformed")
+    if not hash_equals(selected.read.h, h):
+        return Declined("hash-mismatch", "The agreement challenge advertises another ATR hash.")
+    return selected, limits
+
+
 async def agree(
-    h: AtrHash,
+    atr_bytes: bytes,
     url: str,
     signer: Signer,
     fetch: httpx.AsyncClient,
     *,
-    atr_bytes: bytes,
+    approved: AgreementPayment | None = None,
     inputs: Inputs | None = None,
-    ns: str | None = None,
-) -> Agreed | Declined:
-    """Pay the agreement for h at url with signer, and return its receipt once recorded. atr_bytes are the ATR the
-    gate compared, for a pairing whose build reads them; inputs are the buyer's own chain values; ns is the namespace
-    of the pairing whose offer named the URL, which a refused URL's detail carries with the protocol package's code."""
+    signal: asyncio.Event | None = None,
+) -> ToApprove | Agreed | Declined:
+    """Without approved: ask the agreement URL for its challenge and return the agreement payment to approve, signing
+    nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
+    signer, send it to url, and return the receipt once recorded. atr_bytes are the ATR the gate compared, whose hash
+    the agreement payment carries; inputs are the buyer's own chain values; setting signal ends the exchange."""
+    return await exchange(atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, signal=signal, ns=None)
+
+
+async def exchange(
+    atr_bytes: bytes,
+    url: str,
+    signer: Signer,
+    fetch: httpx.AsyncClient,
+    *,
+    approved: AgreementPayment | None,
+    inputs: Inputs | None,
+    signal: asyncio.Event | None,
+    ns: str | None,
+) -> ToApprove | Agreed | Declined:
+    """agree, where ns is the namespace of the pairing whose offer named the URL: a refused URL's detail carries it
+    with the protocol package's code."""
     if not is_https_link(url):
         if ns is None:
             return Declined("link-not-https", "The agreement URL is not an https URL.")
         fault = "link-not-https" if is_other_scheme_link(url) else "legal-context-malformed"
         return Declined("link-not-https", f"{ns}/{fault}")
+    if (approved is not None and not isinstance(approved, AgreementPayment)) or (
+        signal is not None and not isinstance(signal, asyncio.Event)
+    ):
+        return Declined("no-payable-option", f"{ns if ns is not None else 'x402'}/input-malformed")
+    given: Inputs = inputs if isinstance(inputs, Mapping) else {}
+    if _is_ended(signal):
+        return _ended()
+    h = hash_of(atr_bytes)
+    if approved is None:
+        return await _offer(atr_bytes, h, url, signer, fetch, given, signal)
+    if approved.url != url:
+        return _failed("The approved agreement payment names another agreement URL.")
+    if not isinstance(approved.option, Mapping) or not isinstance(approved.required, Mapping):
+        return Declined("no-payable-option", f"{ns if ns is not None else 'x402'}/input-malformed")
 
-    unpaid = await _get(fetch, url, None, UNPAID_DEADLINE_S)
+    found = _paying({**approved.required, "accepts": [approved.option]}, h, signer.account, given)
+    if isinstance(found, Declined):
+        return found
+    selected, (request_s, exchange_s) = found
+    paid = await _gate.pay(selected.binding, selected.chosen, signer, atr_bytes)
+    if isinstance(paid, Declined):
+        return paid
+    if paid is None:
+        return Declined("offer-unreadable", "The agreement payment gave nothing to sign.")
+    if _is_ended(signal):
+        return _ended()
+    payment = _to_base64(paid.signed)
+    moved = Moved(paid.signed, atr_bytes, h)
+    pending = Declined("agreement-pending", "The agreement payment was sent and is not yet recorded.", moved)
+    stopped = Declined(
+        "agreement-pending", "The caller's signal ended the exchange after the agreement payment was sent.", moved
+    )
+
+    end = _clock() + exchange_s
+    while True:
+        remaining = end - _clock()
+        if remaining <= 0:
+            return pending
+        answer = await _until(signal, _get(fetch, url, payment, min(request_s, remaining)))
+        if isinstance(answer, _Ended) or _is_ended(signal):
+            return stopped
+        if isinstance(answer, Declined):
+            return replace(answer, moved=moved)
+        wait = float(RETRY_DEFAULT_S)
+        if isinstance(answer, _Answer) and not _server_error(answer.status):
+            if answer.status == 200:
+                receipt = _receipt(answer.body, h)
+                return replace(receipt, moved=moved) if isinstance(receipt, Declined) else receipt
+            if answer.status != 202:
+                return _failed(f"The agreement URL answered status {answer.status} to the payment.", moved)
+            wait = float(_retry_seconds(answer.retry_after))
+        slept = await _until(signal, _sleep(max(0.0, min(wait, end - _clock()))))
+        if isinstance(slept, _Ended) or _is_ended(signal):
+            return stopped
+
+
+async def _offer(
+    atr_bytes: bytes,
+    h: AtrHash,
+    url: str,
+    signer: Signer,
+    fetch: httpx.AsyncClient,
+    inputs: Inputs,
+    signal: asyncio.Event | None,
+) -> ToApprove | Agreed | Declined:
+    """The unpaid request: the agreement payment to approve, the receipt of an agreement already recorded, or a
+    decline."""
+    unpaid = await _until(signal, _get(fetch, url, None, UNPAID_DEADLINE_S))
+    if isinstance(unpaid, _Ended) or _is_ended(signal):
+        return _ended()
     if isinstance(unpaid, Declined):
         return unpaid
     if isinstance(unpaid, _Unanswered):
@@ -272,40 +464,9 @@ async def agree(
     required = None if unpaid.payment_required is None else _from_base64_json(unpaid.payment_required)
     if not isinstance(required, Mapping):
         return _failed("The agreement URL answered 402 without a readable PAYMENT-REQUIRED.")
-    found = _agreement_pairing(required)
+    found = _paying(required, h, signer.account, inputs)
     if isinstance(found, Declined):
         return found
-    binding, read, option = found
-    limits = _bounds(option)
-    if limits is None:
-        return Declined("offer-unreadable", "x402/option-malformed")
-    if not hash_equals(read.h, h):
-        return Declined("hash-mismatch", "The agreement challenge advertises another ATR hash.")
-
-    paid = await _gate.pay(binding, read, required, signer, inputs if isinstance(inputs, Mapping) else {}, atr_bytes)
-    if isinstance(paid, Declined):
-        return paid
-    if paid is None:
-        return Declined("offer-unreadable", "The agreement payment gave nothing to sign.")
-    payment = _to_base64(paid.signed)
-    moved = Moved(paid.signed, atr_bytes, h)
-    pending = Declined("agreement-pending", "The agreement payment was sent and is not yet recorded.", moved)
-
-    request_s, exchange_s = limits
-    end = _clock() + exchange_s
-    while True:
-        remaining = end - _clock()
-        if remaining <= 0:
-            return pending
-        answer = await _get(fetch, url, payment, min(request_s, remaining))
-        if isinstance(answer, Declined):
-            return replace(answer, moved=moved)
-        wait = float(RETRY_DEFAULT_S)
-        if isinstance(answer, _Answer) and not _server_error(answer.status):
-            if answer.status == 200:
-                receipt = _receipt(answer.body, h)
-                return replace(receipt, moved=moved) if isinstance(receipt, Declined) else receipt
-            if answer.status != 202:
-                return _failed(f"The agreement URL answered status {answer.status} to the payment.", moved)
-            wait = float(_retry_seconds(answer.retry_after))
-        await _sleep(max(0.0, min(wait, end - _clock())))
+    selected, _limits = found
+    approve = AgreementPayment(url=url, option=selected.option, required=dict(required))
+    return ToApprove(approve=approve, atr_bytes=atr_bytes, h=h)

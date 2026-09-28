@@ -16,6 +16,7 @@ import {
   recordCharge,
   transact,
   within,
+  type AgreementPayment,
   type Binding,
   type ChannelHold,
   type Chosen,
@@ -26,7 +27,7 @@ import {
   type Signature,
   type Signer,
 } from "@integraledger/terms";
-import { BINDINGS as LCP_BINDINGS, hash, hashEquals, type Json } from "@integraledger/lcp";
+import { BINDINGS as LCP_BINDINGS, hashEquals, type Json } from "@integraledger/lcp";
 import { macOf, seal, unseal, verifies, type HoldJson } from "./hold.js";
 import { VERSION } from "./version.js";
 
@@ -38,18 +39,23 @@ const DESCRIPTIONS = {
     "Before approving a payment: reads the ATR hash the seller advertised, fetches the ATR from the seller's link and " +
     "confirms its SHA-256 matches. On a match returns the ATR's exact bytes, `chosen`, and the signing request that " +
     "carries the hash; sign exactly that request, then call atr_finish with `chosen` and the signature. On a mismatch " +
-    "returns an error and nothing to sign. Where the result names an `agreement` URL, the signing request is returned " +
-    "only when you pass that agreement's `receipt` for this ATR hash.",
+    "returns an error and nothing to sign. Where `chosen.agreement` names an agreement URL, the signing request is " +
+    "returned only when you pass that agreement's `receipt` for this ATR hash.",
   atr_finish:
     "Rebuilds the payment from `chosen` and the ATR bytes, joins your wallet's signature, and confirms the ATR hash is " +
     "inside what was signed. Send only the `signed` payment it returns.",
   atr_check: "Confirms that a payment carries, inside what was signed, the SHA-256 of the given ATR bytes.",
   atr_transact:
     "Confirms the ATR hash and, only on a match, signs the payment carrying it with this host's signer. Returns the " +
-    "payment to send and the ATR's exact bytes to keep.",
+    "payment to send and the ATR's exact bytes to keep. Where the pairing needs an agreement payment first, returns it " +
+    "as `approve` and signs nothing: its `option` holds the amount, asset, payee (`payTo`) and network it pays. To " +
+    "approve it, call atr_transact again with the same arguments and `approved` set to `approve`, unchanged.",
   atr_agree:
-    "Pays the agreement URL that atr_confirm named, with this host's signer, for the ATR you confirmed: the agreement " +
-    "payment carries the ATR hash. Returns the agreement's receipt once it is recorded; pass it to atr_confirm.",
+    "The agreement payment for the agreement URL in the `chosen` that atr_confirm returned, for the ATR you confirmed. " +
+    "Without `approved`, returns the payment as `approve` and signs nothing: its `option` holds the amount, asset, " +
+    "payee (`payTo`) and network it pays, and it carries the ATR hash. To approve it, call atr_agree again with " +
+    "`approved` set to `approve`, unchanged: this host's signer then pays it. Returns the agreement's receipt once it " +
+    "is recorded; pass it to atr_confirm.",
   atr_channel_open:
     "Keeps a channel you opened: takes the signed opening payment and the `mac` returned beside it, both exactly as " +
     "returned, and the ATR bytes it was confirmed against; returns the channel `hold` to keep and pass to the other " +
@@ -180,6 +186,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
   const pairing = z.enum(ids);
   const atr = z.base64();
   const inputs = z.record(z.string(), JSON_VALUE).optional();
+  const approved = z.record(z.string(), JSON_VALUE).optional();
   const bindingOf = (id: string): Binding => byId.get(id)!;
   const { fetch, signer, agreementSigner } = options;
   const payer = agreementSigner ?? signer;
@@ -197,14 +204,14 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       const out = await confirm(a.document, bindingOf(a.pairing), a.account, fetch, (a.inputs ?? {}) as Inputs);
       if ("decline" in out) return declinedResult(out);
       const confirmed = { atrHash: out.h, atr: atrOf(out.bytes), chosen: out.chosen };
-      if (out.agreement === undefined) return result({ ...confirmed, request: jsonOf(out.request) });
-      if (a.receipt === undefined) return result({ ...confirmed, agreement: out.agreement });
+      if (out.chosen.agreement === undefined) return result({ ...confirmed, request: jsonOf(out.request) });
+      if (a.receipt === undefined) return result(confirmed);
       if (!isReceiptFor(a.receipt, out.h)) {
         return declinedResult({
           decline: { code: "agreement-failed", detail: "The agreement receipt is not a recorded agreement for this ATR hash." },
         });
       }
-      return result({ ...confirmed, request: jsonOf(out.request), agreement: out.agreement });
+      return result({ ...confirmed, request: jsonOf(out.request) });
     },
   );
 
@@ -242,15 +249,18 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       "atr_transact",
       {
         description: DESCRIPTIONS.atr_transact,
-        inputSchema: z.object({ pairing, document: JSON_VALUE, inputs }),
+        inputSchema: z.object({ pairing, document: JSON_VALUE, inputs, approved }),
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       },
-      async (a) => {
+      async (a, ctx) => {
         const out = await transact(a.document, bindingOf(a.pairing), signer, fetch, {
           inputs: (a.inputs ?? {}) as Inputs,
           agreementSigner,
+          approved: a.approved as AgreementPayment | undefined,
+          signal: ctx.mcpReq.signal,
         });
         if ("decline" in out) return declinedResult(out);
+        if ("approve" in out) return result({ atrHash: out.h, atr: atrOf(out.bytes), approve: jsonOf(out.approve) });
         const agreement = out.agreement === undefined ? {} : { agreement: jsonOf(out.agreement) };
         return result({ atrHash: out.h, atr: atrOf(out.bytes), ...(await signedOf(out, bindingOf(a.pairing))), ...agreement });
       },
@@ -262,13 +272,23 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       "atr_agree",
       {
         description: DESCRIPTIONS.atr_agree,
-        inputSchema: z.object({ atr, agreement: z.string(), inputs }),
+        inputSchema: z.object({ atr, chosen: z.record(z.string(), JSON_VALUE), approved, inputs }),
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       },
-      async (a) => {
-        const bytes = bytesOf(a.atr);
-        const out = await agree(await hash(bytes), a.agreement, payer, fetch, { bytes, inputs: (a.inputs ?? {}) as Inputs });
+      async (a, ctx) => {
+        const url = a.chosen["agreement"];
+        if (typeof url !== "string") {
+          return declinedResult({
+            decline: { code: "offer-unreadable", detail: "The chosen payment names no agreement URL." },
+          });
+        }
+        const out = await agree(bytesOf(a.atr), url, payer, fetch, {
+          approved: a.approved as AgreementPayment | undefined,
+          inputs: (a.inputs ?? {}) as Inputs,
+          signal: ctx.mcpReq.signal,
+        });
         if ("decline" in out) return declinedResult(out);
+        if ("approve" in out) return result({ atrHash: out.h, approve: jsonOf(out.approve) });
         return result({ atrHash: out.receipt.atrHash, receipt: jsonOf(out.receipt) });
       },
     );

@@ -64,7 +64,7 @@ def test_mpp_card_stripe_the_agreement_url_reaches_the_buyer(binding: Binding, c
     doc: Any = doc_of(c, "mpp/carrier-occupied", AGREEMENT)
     confirmed = run(lambda client: confirm(doc, binding, EVM_ACCOUNT, client), serving(ABC))
     assert isinstance(confirmed, Confirmed), confirmed
-    assert (confirmed.agreement, confirmed.request, confirmed.h) == (AGREEMENT, None, H)
+    assert (confirmed.chosen.agreement, confirmed.request, confirmed.h) == (AGREEMENT, None, H)
 
 
 def test_mpp_card_stripe_placed_carriers_are_the_vectors() -> None:

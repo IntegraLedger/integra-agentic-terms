@@ -102,6 +102,7 @@ const signer: Signer = {
 
 const result = await transact(offer, exactEip3009, signer, fetch);
 if ("decline" in result) throw new Error(`${result.decline.code}: ${result.decline.detail}`);
+if ("approve" in result) throw new Error("this pairing pays no agreement first");
 
 const payment = result.signed as Eip3009Payment;
 console.log("H           ", result.h);
@@ -159,19 +160,30 @@ Every function returns a value, never throws for a protocol outcome: either its 
 
 ### Pay in one call: `transact`
 
-`transact(doc, binding, signer, fetch, options?)` runs the whole order: compare, pay the agreement first where the
-pairing needs one, sign, finish. Its result is:
+`transact(doc, binding, signer, fetch, options?)` runs the whole order: compare, pay the agreement your agent approved
+where the pairing needs one, sign, finish. Its result is:
 
 | Member | What it is |
 | --- | --- |
 | `signed` | The payment to send, in the protocol's own form. `null` when the pairing gives the buyer nothing to sign. |
 | `bytes` | The ATR's exact bytes: your copy of the record. |
 | `h` | Their SHA-256. |
-| `agreement` | The agreement's receipt, where an agreement was paid first. |
+| `agreement` | The agreement's receipt, where the pairing needs an agreement payment. |
 | `landed` | A landed receipt to keep beside the payment, for the few pairings that return one. |
 
-`options` takes `inputs` (the buyer's own values a build needs, such as a recent blockhash) and `agreementSigner`
-(the wallet that pays the agreement, where it is not `signer`). Any other member is declined before any fetch.
+Where the pairing needs an agreement payment that is not yet recorded, the result is instead
+`{ approve, bytes, h }`, and nothing has been signed: see [Pay the agreement first](#pay-the-agreement-first).
+
+`options` takes:
+
+| Member | What it is |
+| --- | --- |
+| `inputs` | The buyer's own values a build needs, such as a recent blockhash. |
+| `agreementSigner` | The wallet that pays the agreement, where it is not `signer`. |
+| `approved` | The agreement payment your agent approved, exactly as a previous call returned it in `approve`. |
+| `signal` | An `AbortSignal` that ends the agreement exchange. |
+
+Any other member, or a member of the wrong kind, is declined before any fetch.
 
 ### Sign elsewhere: `confirm`, then `finish`
 
@@ -240,8 +252,16 @@ A pairing signed in two steps (a channel funding, then its first voucher) makes 
 
 Some payments are not a public proof of H: a card charge, a Stripe payment, a Lightning invoice, a checkout in which
 the buyer signs nothing. For those pairings the seller's offer also names an **agreement URL**, an x402 resource for the
-same H whose payment is a public proof. `transact` pays it first, and signs the main payment only after the agreement
-URL answers with its receipt:
+same H whose payment is a public proof. The agreement payment is a payment like any other, so your agent approves it
+before anything is signed:
+
+1. `transact` fetches the agreement URL's payment request and returns `{ approve, bytes, h }`, signing nothing.
+   `approve.option` is the option it would pay: its `amount`, `asset`, `payTo` and `network`. `approve.url` is the
+   agreement URL, and `approve.required` the payment request as served.
+2. Your agent approves it as it approves any payment. To pay it, call `transact` again with the same arguments and
+   `{ approved: approve }`.
+3. The second call signs exactly that payment, sends it, and signs the main payment only after the agreement URL
+   answers with its receipt:
 
 ```json
 {
@@ -252,11 +272,16 @@ URL answers with its receipt:
 }
 ```
 
+- The option paid is the first, in document order, that your signer can pay with a pairing whose payment is itself a
+  public proof: the same rule as for the main payment's options.
 - The agreement URL's `402` must advertise the same H, or nothing is signed (`hash-mismatch`).
 - Once the agreement payment is sent, the gate sends the same payment again after each `202`, `5xx` or timeout, within
-  the agreement option's `maxTimeoutSeconds` plus 180 seconds. It never signs a second agreement payment.
+  the paid option's `maxTimeoutSeconds` plus 180 seconds. It never signs a second agreement payment. `signal` ends the
+  exchange sooner.
+- Where the agreement is already recorded, the first call goes straight on to the main payment.
 - A pairing that needs an agreement and whose offer names none is declined with `agreement-not-offered`.
-- `agree(h, url, signer, fetch, { bytes, inputs })` runs the exchange on its own, for an agent that drives each step.
+- `agree(bytes, url, signer, fetch, { approved, inputs, signal })` runs the exchange on its own, in the same two calls,
+  for an agent that drives each step.
 
 ### Channels and sessions
 
@@ -315,7 +340,7 @@ const signer: Signer = {
 const opened = await transact(offer, batchEvm, signer, fetch, {
   inputs: { payerAuthorizer: authorizer.address, deposit: "100000" },
 });
-if ("decline" in opened || opened.signed === null) throw new Error("the channel did not open");
+if ("decline" in opened || "approve" in opened || opened.signed === null) throw new Error("the channel did not open");
 let hold = await openChannel(opened.bytes, opened.signed, batchEvm);
 if ("decline" in hold) throw new Error(hold.decline.code);
 console.log("channel ", hold.channel);
@@ -356,9 +381,9 @@ it again rather than signing a new payment.
 
 | Code | Meaning |
 | --- | --- |
-| `pairing-not-supported` | The binding names no pairing the gate serves; `chosen` or a hold belongs to another pairing; the pairing has no channel; or the agreement URL's option is not paid with a public-proof pairing. |
+| `pairing-not-supported` | The binding names no pairing the gate serves; `chosen` or a hold belongs to another pairing; or the pairing has no channel. |
 | `offer-unreadable` | The seller's document, the chosen option or a build could not be read, or a recorded charge is out of range. `detail` carries the reason. |
-| `no-payable-option` | No option is payable by this account, an input the build needs is missing or malformed, `transact`'s options are malformed, or a later channel challenge asks for a payment in a channel the hold did not open. |
+| `no-payable-option` | No option is payable by this account (for the agreement, with a public-proof pairing), an input the build needs is missing or malformed, the options of `transact` or `agree` are malformed, or a later channel challenge asks for a payment in a channel the hold did not open. |
 | `link-not-https` | The ATR link or the agreement URL is not an `https` URL. Nothing was fetched. |
 | `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure), or answered `200` with a `Content-Encoding` other than `identity`. |
 | `atr-too-large` | The ATR is larger than 1 MiB (1,048,576 bytes). |
@@ -367,7 +392,7 @@ it again rather than signing a new payment.
 | `signed-not-bound` | What was signed does not carry the hash of the compared bytes. The payment is not returned. |
 | `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
 | `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
-| `agreement-failed` | The agreement URL could not be reached, answered `200` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H. |
+| `agreement-failed` | The agreement URL could not be reached, answered `200` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. |
 
 ## API reference
 
@@ -377,11 +402,11 @@ Everything below is exported from `@integraledger/terms`.
 
 | Export | Signature | What it does |
 | --- | --- | --- |
-| `transact` | `(doc, binding, signer, fetch, options?) => Promise<{ signed, bytes, h, agreement?, landed? } \| Declined>` | Compare, pay the agreement first where needed, sign, finish. |
-| `confirm` | `(doc, binding, account, fetch, inputs?) => Promise<{ chosen, request, bytes, h, agreement? } \| Declined>` | Read, fetch, compare, and build the signing request with H. `request` is `null` when there is nothing to sign. |
+| `transact` | `(doc, binding, signer, fetch, options?) => Promise<{ signed, bytes, h, agreement?, landed? } \| ToApprove \| Declined>` | Compare, pay the approved agreement first where needed, sign, finish. |
+| `confirm` | `(doc, binding, account, fetch, inputs?) => Promise<{ chosen, request, bytes, h } \| Declined>` | Read, fetch, compare, and build the signing request with H. `request` is `null` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
 | `finish` | `(bytes, chosen, signature, binding) => Promise<{ signed, h, landed? } \| { next, h } \| Declined>` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when what was signed carries H. |
 | `check` | `(bytes, presented, binding) => Promise<{ h } \| Declined>` | Confirm a held payment carries the hash of the kept bytes. |
-| `agree` | `(h, url, signer, fetch, { bytes, inputs?, ns? }) => Promise<{ receipt } \| Declined>` | Pay an agreement URL for H and return its receipt. |
+| `agree` | `(bytes, url, signer, fetch, options?) => Promise<ToApprove \| { receipt } \| Declined>` | Without `options.approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt. |
 | `openChannel` | `(bytes, opened, binding, landed?) => Promise<ChannelHold \| Declined>` | Hold a channel opened for the compared ATR. |
 | `within` | `(doc, hold, binding, signer, refund?, inputs?) => Promise<{ signed, hold } \| Declined>` | Sign a later voucher, or a refund with `refund`, in a held channel. |
 | `recordCharge` | `(hold, chargedCumulativeAmount) => ChannelHold \| Declined` | Record the seller's cumulative charge, between the last recorded and the most signed. |
@@ -396,9 +421,12 @@ Everything below is exported from `@integraledger/terms`.
 | `Signature` | The signer's answer, as JSON. Byte strings are `0x` hex. |
 | `Fetch` | WHATWG `fetch`, or anything with its call shape. |
 | `Inputs` | The buyer's own values a build needs: `{ [name]: Json }`. |
-| `TransactOptions` | `{ inputs?, agreementSigner? }`. |
-| `Chosen` | What the gate chose to pay, as plain JSON: `{ pairing, choice, ref }`. |
+| `TransactOptions` | `{ inputs?, agreementSigner?, approved?, signal? }`. |
+| `AgreeOptions` | `{ approved?, inputs?, signal? }`. |
+| `Chosen` | What the gate chose to pay, as plain JSON: `{ pairing, choice, ref, agreement? }`. |
 | `Presented` | A payment in its protocol's form. |
+| `AgreementPayment` | The agreement payment to approve: `{ url, option, required }`. |
+| `ToApprove` | `{ approve: AgreementPayment; bytes; h }`. |
 | `AgreementReceipt` | `{ atrHash, agreed: true, network, transaction }`. |
 | `ChannelHold` | `{ pairing, network, channel, h, atr, opening, charged, signedMax }`, all JSON. |
 | `Declined` | `{ decline: Reason; moved?: { signed, bytes, h } }`. |
@@ -498,6 +526,8 @@ What the gate guarantees, in the code:
 - **What was signed is read back.** `finish` returns a payment only when the binding reads, from what was signed, the
   hash of the compared bytes. For a pairing whose payment is not a public proof, the payment is returned only after the
   agreement's receipt for that hash.
+- **Every payment is shown before it is signed.** The agreement payment is returned for your agent's approval, with its
+  amount, asset, payee and network, and is signed only when a second call carries it back.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB read. A declared or streamed length over the bound cancels the body.
 - **Exact bytes.** The ATR is hashed as received and returned as received. It is never parsed. Every request asks for
@@ -509,7 +539,10 @@ What the gate guarantees, in the code:
 What it does not do:
 
 - It does not read or judge the ATR's content.
-- It does not check amount, payee, asset, timing or payer against the ATR. A discrepancy is between the parties.
+- It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit to the
+  agreement payment. A discrepancy is between the parties; what to approve is your agent's decision.
+- It does not authenticate the agreement's receipt. The public proof is the transaction the receipt names, on its
+  network.
 - It carries no business or legal logic.
 - It does not store the ATR, talk to a facilitator, or settle a payment.
 

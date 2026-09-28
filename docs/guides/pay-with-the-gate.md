@@ -25,7 +25,8 @@ others from the document before you pass it.
 
 ## One call: `transact`
 
-`transact` compares, pays the agreement first where the pairing needs one, calls your signer, and finishes:
+`transact` compares, pays the agreement your agent approved where the pairing needs one, calls your signer, and
+finishes:
 
 ```ts no-run
 import { transact } from "@integraledger/terms";
@@ -38,11 +39,14 @@ declare const signer: Signer;
 const result = await transact(offer, exactEip3009, signer, globalThis.fetch, { inputs: {} });
 if ("decline" in result) {
   console.error(result.decline.code, result.decline.detail);
+} else if ("approve" in result) {
+  // The pairing needs an agreement payment first, and nothing was signed. result.approve.option is its amount, asset,
+  // payTo and network. Once your agent approves it, call transact again with { approved: result.approve }.
 } else {
   // result.signed: the payment to send (null when the pairing has nothing for the buyer to sign)
   // result.bytes:  the ATR's exact bytes, your copy of the record
   // result.h:      their SHA-256
-  // result.agreement: the agreement's receipt, when an agreement was paid first
+  // result.agreement: the agreement's receipt, where the pairing needs one
   // result.landed: a landed receipt to keep beside the payment, for the few pairings that return one
 }
 ```
@@ -50,13 +54,17 @@ if ("decline" in result) {
 The signer is called only after the comparison matched, and only for this pairing's requests. On any decline before
 it, the signer is never called.
 
-`transact`'s options take two members, both optional:
+`transact`'s options take four members, all optional:
 
 - `inputs`: the buyer's own values the build needs.
 - `agreementSigner`: the signer that pays the agreement, where it differs from the one that pays the resource (for
   example a card payment whose agreement is paid from an EVM wallet). Without it, `signer` pays both.
+- `approved`: the agreement payment your agent approved, exactly as a previous call returned it in `approve`. See
+  [agreement payments](./agreement-payments.md).
+- `signal`: an `AbortSignal` that ends the agreement exchange.
 
-Any other member is declined with `no-payable-option` and the detail `<protocol>/input-malformed`, before any fetch.
+Any other member, or a member of the wrong kind, is declined with `no-payable-option` and the detail
+`<protocol>/input-malformed`, before any fetch.
 
 ## Two calls: `confirm`, then `finish`
 
@@ -202,7 +210,7 @@ The Python gate has the same functions, with Python names and dataclass results:
 
 | TypeScript | Python |
 | --- | --- |
-| `transact(doc, binding, signer, fetch, { inputs, agreementSigner })` | `await transact(doc, binding, signer, client, inputs=…, agreement_signer=…)` |
+| `transact(doc, binding, signer, fetch, { inputs, agreementSigner, approved, signal })` | `await transact(doc, binding, signer, client, inputs=…, agreement_signer=…, approved=…, signal=…)` |
 | `confirm(doc, binding, account, fetch, inputs)` | `await confirm(doc, binding, account, client, inputs)` |
 | `finish(bytes, chosen, signature, binding)` | `finish(atr_bytes, chosen, signature, binding)` |
 | `check(bytes, presented, binding)` | `check(atr_bytes, presented, binding)` |

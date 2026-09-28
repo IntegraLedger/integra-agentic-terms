@@ -1,4 +1,4 @@
-// `transact`'s options object holds only `inputs` and `agreementSigner`. An options object
+// `transact`'s options object holds only `inputs`, `agreementSigner`, `approved` and `signal`. An options object
 // holding any other key, or one that is not an object, is refused before any fetch or signer call, so a buyer's inputs
 // are never silently dropped. The decline is the gate's closed `no-payable-option` with the namespace's
 // `input-malformed` detail, the form the gate gives a malformed input. The document, the ATR and the signer are buyer.json's.
@@ -43,6 +43,8 @@ describe("transact's options object", () => {
     ["a string", "inputs"],
     ["inputs that are not an object", { inputs: "recentBlockhash" }],
     ["an agreement signer with no sign function", { agreementSigner: { account: B.fixed.account } }],
+    ["an approved payment that is not an object", { approved: "yes" }],
+    ["a signal that is not an AbortSignal", { signal: { aborted: false } }],
   ])("%s is refused before any fetch or signer call", async (_, options) => {
     const { fetch, signer } = fixture();
     const out = await transact(D, exactEip3009, signer, fetch, options as never);
@@ -54,7 +56,8 @@ describe("transact's options object", () => {
     ["absent", undefined],
     ["empty", {}],
     ["inputs only", { inputs: {} }],
-    ["both members, each undefined", { inputs: undefined, agreementSigner: undefined }],
+    ["every member undefined", { inputs: undefined, agreementSigner: undefined, approved: undefined, signal: undefined }],
+    ["a signal that is not aborted", { signal: new AbortController().signal }],
   ])("%s: the payment is made", async (_, options) => {
     const { fetch, signer } = fixture();
     const out = await transact(D, exactEip3009, signer, fetch, options as never);

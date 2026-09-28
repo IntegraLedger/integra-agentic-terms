@@ -1,5 +1,5 @@
 // The buyer pays the agreement URL and waits for its 200 receipt before it starts the full payment. The gate's `confirm`
-// returns that URL as `agreement` for a pairing whose `publicProof` is false, and each tool maps the gate's result to
+// carries that URL in `chosen.agreement` for a pairing whose `publicProof` is false, and each tool maps the gate's result to
 // `structuredContent`. The bin serves no `atr_transact`, so `atr_confirm` then `atr_finish` is its only path to a
 // payment; the agreement URL must reach the agent there, or the agent signs the full payment with no agreement. The
 // pairing is `x402/exact/eip155/erc7710` (`publicProof` false); its option and the agreement URL are the lcp vector
@@ -32,6 +32,6 @@ describe("atr_confirm carries the agreement URL of a pairing with no public proo
     const m = await c.request("tools/call", { name: "atr_confirm", arguments: { pairing, document, account: B.fixed.account }, _meta: M });
     await c.close();
     expect(at(m, "result.isError")).toBeUndefined();
-    expect(at(m, "result.structuredContent.agreement")).toBe(AGREEMENT_URL);
+    expect(at(m, "result.structuredContent.chosen.agreement")).toBe(AGREEMENT_URL);
   });
 });

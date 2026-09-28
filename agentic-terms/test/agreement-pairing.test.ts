@@ -7,7 +7,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { TypedDataDefinition } from "viem";
 import { exactEip3009, exactPermit2, type PaymentRequired, type PaymentRequirements } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { vectors } from "./support.js";
+import { transactApproved, vectors } from "./support.js";
 
 const B = vectors<{
   fixed: { A: string; D: PaymentRequired; account: string; payerKey: `0x${string}`; now: number; agreement: { url: string } };
@@ -60,7 +60,7 @@ describe("an agreement placed by another public-proof x402 pairing is paid by th
         return key.signTypedData(r.typedData as unknown as TypedDataDefinition);
       },
     };
-    const out = await transact(B.fixed.D, withAgreement(), signer, seller());
+    const out = await transactApproved(B.fixed.D, withAgreement(), signer, seller());
     expect(out).not.toHaveProperty("decline");
     expect(out).toMatchObject({ agreement: RECEIPT, h: H });
     expect(handed.length).toBe(2);

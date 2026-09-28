@@ -52,9 +52,13 @@ class Declined:
 
 @dataclass(frozen=True, slots=True)
 class Chosen:
+    """What the gate chose to pay, so finish can rebuild the same request. agreement is the agreement URL the seller's
+    offer names, for a pairing whose payment is not itself a public proof of the ATR hash."""
+
     pairing: str
     choice: dict[str, Any]
     ref: str
+    agreement: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +70,6 @@ class Confirmed:
     request: dict[str, Any] | None
     atr_bytes: bytes
     h: AtrHash
-    agreement: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +95,27 @@ class Step:
     """A piece's answer for a payment signed in steps: the request the signer is handed next."""
 
     next: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementPayment:
+    """The agreement payment, for the buyer's agent to approve before anything is signed: the agreement URL; option, the
+    option of the agreement URL's payment request that the gate pays, whose amount, asset, payTo and network are what
+    the payment moves; and required, that payment request as the agreement URL served it."""
+
+    url: str
+    option: dict[str, Any]
+    required: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ToApprove:
+    """An agreement payment the agent approves before it is signed, with the ATR bytes the gate compared and their
+    hash."""
+
+    approve: AgreementPayment
+    atr_bytes: bytes
+    h: AtrHash
 
 
 @dataclass(frozen=True, slots=True)

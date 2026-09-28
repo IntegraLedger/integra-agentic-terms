@@ -254,6 +254,7 @@ describe("buyer rows", () => {
     const signer = counting();
     const whole = await transact(D, binding, signer, serving(A));
     if (isDeclined(whole)) throw new Error(whole.decline.code);
+    if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(signer.requests.length).toBe(1);
     expect((whole.signed as Eip3009Payment).payload.signature).toBe(r.expect.signature);
     expect(whole.bytes).toEqual(A);
@@ -264,6 +265,7 @@ describe("buyer rows", () => {
     const r = row("B7");
     const whole = await transact(D, binding, counting(), serving(A));
     if (isDeclined(whole)) throw new Error(whole.decline.code);
+    if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(await check(A, whole.signed, binding)).toEqual({ h: r.expect[0].h });
     expect(code(await check(C, whole.signed, binding))).toBe(r.expect[1].decline);
   });
@@ -275,6 +277,7 @@ describe("buyer rows", () => {
     for (let i = 0; i < r.input.runs; i++) {
       const out = await transact(doc, binding, counting(), serving(A));
       if (isDeclined(out)) throw new Error(out.decline.code);
+      if ("approve" in out) throw new Error("an agreement payment to approve");
       const info = x402(out.signed).extensions?.["payment-identifier"]?.info as { id?: string };
       expect(info.id).toMatch(new RegExp(r.expect.paymentIdentifierPattern));
       ids.push(info.id!);
@@ -285,6 +288,7 @@ describe("buyer rows", () => {
 
     const plain = await transact(D, binding, counting(), serving(A));
     if (isDeclined(plain)) throw new Error(plain.decline.code);
+    if ("approve" in plain) throw new Error("an agreement payment to approve");
     expect(x402(plain.signed).extensions).not.toHaveProperty("payment-identifier");
   });
 
@@ -505,6 +509,7 @@ describe("what a seller serves never throws", () => {
   it("finish and check decline what they cannot bind, without throwing", async () => {
     const whole = await transact(D, binding, counting(), serving(A));
     if (isDeclined(whole)) throw new Error(whole.decline.code);
+    if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(code(await check(A, null, binding))).toBe("signed-not-bound");
     expect(code(await check(A, { ...x402(whole.signed), x402Version: 1 }, binding))).toBe("signed-not-bound");
     expect(code(await check(new Uint8Array(1_048_577), whole.signed, binding))).toBe("atr-too-large");
