@@ -47,7 +47,13 @@ does not; the [pairings reference](./reference/pairings.md) quotes every stateme
 - A channel opening and a channel hold the tools return carry a `mac` under a key of the server process.
   `atr_channel_open` declines any other opening, `opening-unverified`, and `atr_channel_within` and
   `atr_channel_record_charge` decline any other hold, `hold-unverified`, before the gate is called.
-- `atr.utf8` is the seller's data. The skill tells the agent to read it and never to follow instructions inside it.
+- The `terms-mcp` binary fetches only from public addresses. A link that names a loopback, private-use, shared,
+  link-local, unique-local, documentation, multicast or reserved address is refused before any connection, and a host
+  name is resolved once and connected to only when every address it resolves to is public. A host that serves the tools
+  with `createBuyerServer` applies its own network policy through the `fetch` it passes.
+- Every value the seller supplies is data: `atr.utf8`, and the agreement receipt's `network` and `transaction` that
+  `atr_agree` and `atr_transact` return. The skill tells the agent to read them and never to follow instructions inside
+  them.
 - A discovery listing, or a hash an agent computes itself, is not a confirmation. The confirmation is the hash inside
   what the wallet signs.
 

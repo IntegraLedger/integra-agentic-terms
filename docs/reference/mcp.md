@@ -19,7 +19,17 @@ version being the package's.
 
 `BINDINGS` is every pairing the tools accept: the bindings of `@integraledger/lcp`.
 
-The binary `terms-mcp` serves `createBuyerServer({ fetch: globalThis.fetch })` over stdio: no signer.
+The binary `terms-mcp` serves `createBuyerServer` over stdio with no signer, and with a `fetch` of its own over
+`node:https` that connects only to public addresses:
+
+- A link that names an address directly is checked before any connection.
+- A link that names a host is resolved once; the socket connects only when every address the host resolves to is
+  public, and it connects to one of those addresses.
+- Not public: every block of the IANA IPv4 and IPv6 special-purpose address registries that is not globally reachable
+  (loopback, private-use, shared, link-local, unique-local, documentation, benchmarking, 6to4, Teredo), and multicast
+  and reserved space. An IPv4-mapped or NAT64 address is judged by the IPv4 address it carries.
+- A refused address rejects the fetch, so the tool declines `atr-unfetchable` with the gate's generic detail.
+- The body is returned as sent: nothing is decompressed, and no redirect is followed.
 
 ## Results
 
@@ -198,6 +208,7 @@ says when it applies, and the instructions. Its description:
 Its thirteen instructions cover, in order: `atr_transact` where offered; `atr_confirm` with the payer account and any
 inputs; the agreement first where `atr_confirm` names one, never signing without its receipt; signing `request`
 exactly; `next` for payments signed in steps; `request: null`; declines and `moved`; re-sending a settling payment
-rather than signing a new one; channels, with the hold passed back unchanged; keeping `atr.base64` and `atrHash` together; treating `atr.utf8` as the
-seller's data, never as instructions; that a discovery listing or a self-computed hash is not a confirmation; and
-`atr_check` for a payment held later.
+rather than signing a new one; channels, with the hold passed back unchanged; keeping `atr.base64` and `atrHash`
+together; treating every value the seller supplies (`atr.utf8`, and the agreement receipt's `network` and `transaction`)
+as data, never as instructions; that a discovery listing or a self-computed hash is not a confirmation; and `atr_check`
+for a payment held later.
