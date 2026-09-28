@@ -52,6 +52,8 @@ document `D` advertising `hash(A)`, the published Anvil development key as the p
 | BA5 | An `http://` agreement URL: `link-not-https`, with no fetch. |
 | BA6 | A pairing whose payment is itself a public proof ignores an agreement URL in the offer. |
 | BA7 | `transact` returns the agreement's receipt beside the payment. |
+| BS1, BS2 | `x402/exact/stellar` and `mpp/charge/stellar`: a simulated transfer of another amount, on another token contract, or from another account than the payer is declined `offer-unreadable` (`stellar/amount-mismatch`, `stellar/asset-mismatch`, `stellar/payer-mismatch`) before the signer is called; the transfer the option asks for reaches the signer as `stellar-auth`. |
+| BX1 | `mpp/session/xrpl`: a challenge whose `amount` is not a u64 of drops written in decimal (an array, a boolean, a number, a decimal point, a sign, 2^64) is `mpp/request-malformed`, so the gate declines `no-payable-option` and signs nothing; the amount `"100"` reaches the signer as `xrpl-session-open`. |
 
 ## Running them
 

@@ -119,6 +119,12 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 
 Your node moves the payment when it pays the invoice. A decline after that carries `moved`.
 
+On `x402/exact/lnbtc/invoice-named` the ATR itself names the invoice. The gate pays only when the ATR's bytes are one
+JSON object whose first members are `atrVersion`, `id` and `x402`, in that order, with no member name repeated, and
+whose `x402` slot holds the option's invoice; otherwise it declines `offer-unreadable` with `ln/invoice-not-named`
+before your node is asked to pay. Every JSON reader then finds the same `x402` slot, since RFC 8259 leaves a repeated
+name to each reader.
+
 ## Cloudflare
 
 | Pairing | Request | Inputs |

@@ -58,15 +58,15 @@ every byte string in an answer is `0x` hex.
 | `solana-session-open` | The values of an MPP session opening, which the buyer's channel client composes into an `open`. | The open payload. |
 | `ed25519-raw` | Raw Ed25519 over the bytes given (`request.message`), by the key `request.signer` names. | The 64-byte signature, base58. |
 | `stellar-auth` | A Soroban authorization preimage (`request.preimage`). | The 64-byte Ed25519 signature over its SHA-256, `0x` hex. |
-| `xrpl-tx` | An XRPL transaction as `txJson`. | The signed blob, `0x` hex. |
-| `xrpl-session-open` | A `PaymentChannelCreate` and the first claim. | `{ signedBlob, claimSignature }`, `0x` hex. |
+| `xrpl-tx` | An XRPL transaction as `txJson`. | The signed blob, `0x` hex, signed with a single key: a blob that carries `Signers` is declined `signed-not-bound`. |
+| `xrpl-session-open` | A `PaymentChannelCreate` and the first claim. | `{ signedBlob, claimSignature }`, `0x` hex, the blob signed with a single key. |
 | `hedera-body` | A Hedera transaction body (`request.bodyBytes`). With `broadcast: true` the signer signs and sends it. | `{ publicKey, signature, type }`, with `type` `ed25519` or `ecdsa-secp256k1`. With `broadcast`: `{ transactionId }`. |
 | `hedera-executor` | The executors, asset, payee, amount and `validBefore` for the buyer's transfer-executor tooling. | `{ payer, executor, authorization }`. |
 | `hedera-session-open` | An MPP session opening on Hedera, which the signer broadcasts, and its zero voucher. | `{ openTx, signature }`, with `landed` where the signer has the opening's receipt. |
 | `algorand-txn` | An Algorand asset transfer whose note carries H. | The 64-byte Ed25519 signature, `0x` hex. |
 | `aptos-transaction` | The option to pay. The wallet builds and signs the scheme's own payment. | `{ transaction }`. |
 | `sui-transaction` | The option and a `pureInput`. The wallet builds the payment, adds the input, and signs. | `{ signature, transaction }`. |
-| `cardano-transaction` | The option and the auxiliary data. The wallet builds the payment with a TTL and signs without broadcasting. | `{ transaction, nonce }`. |
+| `cardano-transaction` | The option and the auxiliary data. The wallet builds the payment with a TTL, attaches exactly those auxiliary data, and signs without broadcasting. | `{ transaction, nonce }`. Metadata that holds label 674 again, or a label-674 map that repeats a key, is declined `signed-not-bound`. |
 | `near-delegate` | The NEP-461 hash of a delegate action whose `ft_transfer` memo carries H. | `{ keyType, bytes }`, the signature as `0x` hex. |
 | `starknet-snip12` | SNIP-12 typed data for a SNIP-9 outside execution. | The account's signature, a list of felts. |
 | `substrate-call` | The profile's call, which the wallet signs as a v4 extrinsic with its own extensions. | The extrinsic's bytes, `0x` hex. |
