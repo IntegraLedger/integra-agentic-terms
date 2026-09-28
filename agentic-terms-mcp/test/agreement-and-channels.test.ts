@@ -122,19 +122,70 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     expect(fetch.paid).toBe(1);
   });
 
-  it("atr_agree takes the agreement URL only from chosen: a chosen with none is declined, and nothing is fetched", async () => {
-    let fetched = 0;
-    const fetch = (async () => {
-      fetched++;
-      return new Response(null, { status: 404 });
+  // `chosen` carries a `mac`, the server process's HMAC-SHA-256 over its other members, so `atr_agree` takes only the
+  // agreement URL `atr_confirm` returned. A `chosen` with a member changed, added or removed is declined
+  // `chosen-unverified` before anything is fetched or signed.
+  it.each([
+    ["chosen.agreement changed", (c: Record<string, unknown>) => ({ ...c, agreement: "https://pay.elsewhere.example/agreement" })],
+    ["chosen.agreement removed", (c: Record<string, unknown>) => ({ ...c, agreement: undefined })],
+    ["a member added", (c: Record<string, unknown>) => ({ ...c, extra: 1 })],
+    ["the mac removed", (c: Record<string, unknown>) => ({ ...c, mac: undefined })],
+    ["the mac changed", (c: Record<string, unknown>) => ({ ...c, mac: `0x${"00".repeat(32)}` })],
+    ["a chosen built by hand", (c: Record<string, unknown>) => ({ pairing: c["pairing"], choice: {}, ref: "r", agreement: AG.url })],
+  ])("atr_agree declines %s: chosen-unverified, with 0 requests and 0 signer calls", async (_, edit) => {
+    const fetch = seller();
+    let requests = 0;
+    const counted = (async (url: string, init: { headers?: Record<string, string> }) => {
+      requests++;
+      return fetch(url, init as never);
     }) as unknown as Fetch;
     const agreementSigner = recording(B.fixed.account, () => S);
-    const c = connect({ fetch, agreementSigner });
-    const atr = Buffer.from(A).toString("base64");
-    const m = await call(c, "atr_agree", { atr, chosen: { pairing, choice: {}, ref: "r" } });
-    const loose = await call(c, "atr_agree", { atr, agreement: AG.url });
+    const c = connect({ fetch: counted, agreementSigner });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
+    expect(chosen["agreement"]).toBe(AG.url);
+    expect(chosen["mac"]).toMatch(/^0x[0-9a-f]{64}$/);
+    const before = requests;
+    const edited = JSON.parse(JSON.stringify(edit(chosen)));
+    const m = await call(c, "atr_agree", { atr: Buffer.from(A).toString("base64"), chosen: edited });
     await c.close();
     expect(at(m, "result.isError")).toBe(true);
+    expect(at(m, "result.structuredContent.decline")).toEqual({
+      code: "chosen-unverified",
+      detail: "The chosen payment is not one this server process returned, unchanged. Pass chosen exactly as atr_confirm returned it.",
+    });
+    expect(requests - before).toBe(0);
+    expect(agreementSigner.requests.length).toBe(0);
+  });
+
+  it("atr_agree takes chosen exactly as returned, in any member order", async () => {
+    const fetch = seller();
+    const agreementSigner = recording(B.fixed.account, () => S);
+    const c = connect({ fetch, agreementSigner });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
+    const reordered = Object.fromEntries(Object.entries(chosen).reverse());
+    const m = await call(c, "atr_agree", { atr: Buffer.from(A).toString("base64"), chosen: reordered });
+    await c.close();
+    expect(at(m, "result.isError")).toBeUndefined();
+    expect(at(m, "result.structuredContent.approve.url")).toBe(AG.url);
+  });
+
+  it("atr_agree with a verified chosen that names no agreement URL: offer-unreadable, and nothing is fetched", async () => {
+    let requests = 0;
+    const served = (async () => {
+      requests++;
+      return new Response(new Uint8Array(A), { status: 200 });
+    }) as unknown as Fetch;
+    const agreementSigner = recording(B.fixed.account, () => S);
+    const c = connect({ fetch: served, agreementSigner });
+    const confirmed = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: B.fixed.D, account: B.fixed.account });
+    const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
+    expect(chosen).not.toHaveProperty("agreement");
+    const before = requests;
+    const m = await call(c, "atr_agree", { atr: Buffer.from(A).toString("base64"), chosen });
+    const loose = await call(c, "atr_agree", { atr: Buffer.from(A).toString("base64"), agreement: AG.url });
+    await c.close();
     expect(at(m, "result.structuredContent.decline")).toEqual({
       code: "offer-unreadable",
       detail: "The chosen payment names no agreement URL.",
@@ -142,8 +193,24 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     // A free `agreement` argument with no `chosen` fails the tool's input schema, as the SDK validates it.
     expect(at(loose, "result.isError")).toBe(true);
     expect(String(at(loose, "result.content.0.text"))).toContain("chosen");
-    expect(fetched).toBe(0);
+    expect(requests - before).toBe(0);
     expect(agreementSigner.requests.length).toBe(0);
+  });
+
+  it("atr_finish takes the sealed chosen as returned", async () => {
+    const c = connect({ fetch: seller() });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receipt });
+    const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
+    expect(chosen["mac"]).toMatch(/^0x[0-9a-f]{64}$/);
+    const m = await call(c, "atr_finish", {
+      pairing,
+      atr: Buffer.from(A).toString("base64"),
+      chosen,
+      signature: { delegationManager: E.fixed.option.payTo, permissionContext: "0x00", delegator: E.fixed.payer },
+    });
+    await c.close();
+    expect(at(m, "result.isError")).toBeUndefined();
+    expect(at(m, "result.structuredContent.atrHash")).toBe(H);
   });
 
   it("a cancelled atr_agree call ends the agreement exchange: the payment is not sent again", async () => {

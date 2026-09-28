@@ -100,7 +100,8 @@ If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, the paymen
 and an agreement payment carrying it must be recorded first. The agreement payment is a payment like any other, and the
 agent approves it as it approves any payment:
 
-- where the host offers `atr_agree`, call it with `atr.base64` and `chosen`, unchanged. It returns `approve`, the
+- where the host offers `atr_agree`, call it with `atr.base64` and `chosen`, exactly as returned, `mac` included (a
+  changed `chosen` is declined `chosen-unverified`, and nothing is fetched or signed). It returns `approve`, the
   agreement payment, and signs nothing: `approve.option` is its `amount`, `asset`, `payTo` and `network`. To approve
   it, call `atr_agree` again with `approved` set to `approve`, unchanged; it returns the `receipt`;
 - otherwise, request `chosen.agreement`. It answers with an x402 payment request for the same H; review it and pay it

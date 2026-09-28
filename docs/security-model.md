@@ -48,6 +48,9 @@ does not; the [pairings reference](./reference/pairings.md) quotes every stateme
 - A channel opening and a channel hold the tools return carry a `mac` under a key of the server process.
   `atr_channel_open` declines any other opening, `opening-unverified`, and `atr_channel_within` and
   `atr_channel_record_charge` decline any other hold, `hold-unverified`, before the gate is called.
+- The `chosen` that `atr_confirm` returns carries a `mac` under the same key. `atr_agree` pays only the agreement URL in
+  a `chosen` whose `mac` verifies, and declines any other `chosen`, `chosen-unverified`, before anything is fetched or
+  signed.
 - The `terms-mcp` binary fetches only from public addresses. A link that names a loopback, private-use, shared,
   link-local, unique-local, documentation, multicast or reserved address is refused before any connection, and a host
   name is resolved once and connected to only when every address it resolves to is public. A host that serves the tools

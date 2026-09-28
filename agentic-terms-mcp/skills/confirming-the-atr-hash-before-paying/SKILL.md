@@ -22,7 +22,8 @@ is for you and your principal to judge.
    `input-missing` names that case.
 3. If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, this payment does not itself carry the hash in
    public, so an agreement payment carrying it must be recorded first. It is a payment like any other, and you approve
-   it as you would any payment. If this host offers `atr_agree`, call it with `atr.base64` and `chosen`, unchanged: it
+   it as you would any payment. If this host offers `atr_agree`, call it with `atr.base64` and `chosen`, exactly as
+   `atr_confirm` returned it, `mac` included; a changed `chosen` is declined `chosen-unverified` and nothing is paid. It
    returns `approve`, whose `option` is the agreement payment's `amount`, `asset`, payee (`payTo`) and `network`, and
    signs nothing. To approve it, call `atr_agree` again with the same arguments and `approved` set to `approve`,
    unchanged; it returns the agreement's `receipt`. Otherwise request `chosen.agreement` yourself: it answers with an

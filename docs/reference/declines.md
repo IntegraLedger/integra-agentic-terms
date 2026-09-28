@@ -38,12 +38,13 @@ log `detail`.
 | `agreement-pending` | The agreement URL answered `202` before the gate paid (another agreement payment for this ATR is settling); the agreement payment was sent and not recorded within the paid option's `maxTimeoutSeconds` plus 180 seconds; or the caller's `signal` ended the exchange after the agreement payment was sent. | For the agreement only |
 | `agreement-failed` | The agreement URL could not be reached; answered a status other than `200`, `202` or `402`; answered `402` without a readable `PAYMENT-REQUIRED`; answered `200` with a `Content-Encoding` other than `identity`; or answered `200` with something other than a receipt for this H, a receipt over 64 KiB included. The approved agreement payment names another agreement URL. The caller's `signal` ended the exchange before the agreement payment was sent. | For the agreement only, when it failed after payment |
 
-The MCP server adds two codes of its own:
+The MCP server adds three codes of its own:
 
 | Code | Returned when | Signer called? |
 | --- | --- | --- |
 | `hold-unverified` | A channel hold passed to `atr_channel_record_charge` or `atr_channel_within` is not one this server process returned, unchanged: its `mac` does not verify. See [channel holds](./mcp.md#channel-holds). | No |
 | `opening-unverified` | A channel opening passed to `atr_channel_open` is not one this server process returned, unchanged: the `mac` beside it does not verify. See [channel holds](./mcp.md#channel-holds). | No |
+| `chosen-unverified` | The `chosen` passed to `atr_agree` is not one `atr_confirm` returned in this server process, unchanged: its `mac` does not verify. Nothing is fetched. See [`atr_agree`](./mcp.md#atr_agree). | No |
 
 ## `moved`
 

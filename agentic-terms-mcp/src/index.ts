@@ -2,8 +2,8 @@
  * The buyer gate's operations as MCP tools: `atr_confirm`, `atr_finish`, `atr_check`, `atr_channel_open` and
  * `atr_channel_record_charge`; where the host wires its own signer, `atr_transact` and `atr_channel_within`; and where
  * it wires a signer or an agreement signer, `atr_agree`. Each tool call is one call of the gate; this package adds
- * transport and words, and seals each channel hold and channel opening it returns so that one passed back is used only
- * unchanged.
+ * transport and words, and seals each `chosen`, channel hold and channel opening it returns so that one passed back is
+ * used only unchanged.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
@@ -39,8 +39,9 @@ const DESCRIPTIONS = {
     "Before approving a payment: reads the ATR hash the seller advertised, fetches the ATR from the seller's link and " +
     "confirms its SHA-256 matches. On a match returns the ATR's exact bytes, `chosen`, and the signing request that " +
     "carries the hash; sign exactly that request, then call atr_finish with `chosen` and the signature. On a mismatch " +
-    "returns an error and nothing to sign. Where `chosen.agreement` names an agreement URL, the signing request is " +
-    "returned only when you pass that agreement's `receipt` for this ATR hash.",
+    "returns an error and nothing to sign. `chosen` is opaque: pass it back exactly as returned, `mac` included. Where " +
+    "`chosen.agreement` names an agreement URL, the signing request is returned only when you pass that agreement's " +
+    "`receipt` for this ATR hash.",
   atr_finish:
     "Rebuilds the payment from `chosen` and the ATR bytes, joins your wallet's signature, and confirms the ATR hash is " +
     "inside what was signed. Send only the `signed` payment it returns.",
@@ -51,7 +52,8 @@ const DESCRIPTIONS = {
     "as `approve` and signs nothing: its `option` holds the amount, asset, payee (`payTo`) and network it pays. To " +
     "approve it, call atr_transact again with the same arguments and `approved` set to `approve`, unchanged.",
   atr_agree:
-    "The agreement payment for the agreement URL in the `chosen` that atr_confirm returned, for the ATR you confirmed. " +
+    "The agreement payment for the agreement URL in the `chosen` that atr_confirm returned, for the ATR you confirmed; " +
+    "pass `chosen` exactly as returned, since a changed `chosen` is declined. " +
     "Without `approved`, returns the payment as `approve` and signs nothing: its `option` holds the amount, asset, " +
     "payee (`payTo`) and network it pays, and it carries the ATR hash. To approve it, call atr_agree again with " +
     "`approved` set to `approve`, unchanged: this host's signer then pays it. Returns the agreement's receipt once it " +
@@ -147,6 +149,31 @@ const openingUnverified = (): Result =>
     true,
   );
 
+/** The decline for a `chosen` whose `mac` does not verify: a changed `chosen`, or one another server process returned. */
+const chosenUnverified = (): Result =>
+  result(
+    {
+      decline: {
+        code: "chosen-unverified",
+        detail:
+          "The chosen payment is not one this server process returned, unchanged. Pass chosen exactly as atr_confirm returned it.",
+      },
+    },
+    true,
+  );
+
+/** `chosen` with its `mac`: this process's HMAC-SHA-256 of every other member. */
+async function sealChosen(chosen: Chosen): Promise<HoldJson> {
+  const members = jsonOf(chosen) as HoldJson;
+  return { ...members, mac: await macOf("chosen", members) };
+}
+
+/** `chosen`'s members without `mac` when `mac` is this process's HMAC-SHA-256 of them, else undefined. */
+async function unsealChosen(chosen: HoldJson): Promise<HoldJson | undefined> {
+  const { mac, ...members } = chosen;
+  return (await verifies("chosen", members, mac)) ? members : undefined;
+}
+
 /** The bytes of a standard base64 string. */
 const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
 
@@ -203,7 +230,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
     async (a) => {
       const out = await confirm(a.document, bindingOf(a.pairing), a.account, fetch, (a.inputs ?? {}) as Inputs);
       if ("decline" in out) return declinedResult(out);
-      const confirmed = { atrHash: out.h, atr: atrOf(out.bytes), chosen: out.chosen };
+      const confirmed = { atrHash: out.h, atr: atrOf(out.bytes), chosen: await sealChosen(out.chosen) };
       if (out.chosen.agreement === undefined) return result({ ...confirmed, request: jsonOf(out.request) });
       if (a.receipt === undefined) return result(confirmed);
       if (!isReceiptFor(a.receipt, out.h)) {
@@ -223,7 +250,8 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
-      const out = await finish(bytesOf(a.atr), a.chosen as unknown as Chosen, a.signature as Signature, bindingOf(a.pairing));
+      const { mac: _mac, ...chosen } = a.chosen;
+      const out = await finish(bytesOf(a.atr), chosen as unknown as Chosen, a.signature as Signature, bindingOf(a.pairing));
       if ("decline" in out) return declinedResult(out);
       if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next) });
       return result({ atrHash: out.h, ...(await signedOf(out, bindingOf(a.pairing))) });
@@ -276,7 +304,9 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       },
       async (a, ctx) => {
-        const url = a.chosen["agreement"];
+        const chosen = await unsealChosen(a.chosen);
+        if (chosen === undefined) return chosenUnverified();
+        const url = chosen["agreement"];
         if (typeof url !== "string") {
           return declinedResult({
             decline: { code: "offer-unreadable", detail: "The chosen payment names no agreement URL." },

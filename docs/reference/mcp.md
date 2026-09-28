@@ -95,8 +95,9 @@ Before approving a payment: reads the ATR hash the seller advertised, fetches th
 | `inputs` | object, optional | The buyer's own values the build needs. See [rails](../guides/rails.md). |
 | `receipt` | JSON, optional | The agreement's receipt, for a pairing that pays an agreement first. |
 
-Returns `atrHash`, `atr`, `chosen` and `request`. For a pairing that pays an agreement first, `chosen.agreement` is the
-agreement URL, and there is no `request` until `receipt` is a recorded agreement for this H; a receipt for another H is
+Returns `atrHash`, `atr`, `chosen` and `request`. `chosen` carries `mac`, the server process's HMAC-SHA-256 of its
+other members, under the key the [channel holds](#channel-holds) use: pass `chosen` back exactly as returned. For a
+pairing that pays an agreement first, `chosen.agreement` is the agreement URL, and there is no `request` until `receipt` is a recorded agreement for this H; a receipt for another H is
 declined `agreement-failed`. Annotations: read-only, open-world.
 
 ### `atr_finish`
@@ -108,7 +109,7 @@ signed.
 | --- | --- | --- |
 | `pairing` | string | The pairing. |
 | `atr` | base64 | The ATR's bytes, `atr.base64` from `atr_confirm`. |
-| `chosen` | object | `chosen` from `atr_confirm`, unchanged. |
+| `chosen` | object | `chosen` from `atr_confirm`, unchanged. Its `mac` is not read here: `finish` rebuilds the payment from `chosen` and trusts nothing it did not rebuild. |
 | `signature` | JSON | The wallet's answer; a list, in order, for a payment signed in steps. |
 
 Returns `atrHash` and `signed` (and `landed`, where there is one), or `atrHash` and `next`. For a pairing with a channel,
@@ -173,18 +174,21 @@ nothing: `approve.option` is the payment's `amount`, `asset`, `payTo` and `netwo
 ### `atr_agree`
 
 Offered with a host `signer` or `agreementSigner`. The agreement payment for the agreement URL in the `chosen` that
-`atr_confirm` returned, for the ATR you confirmed. The URL is read from `chosen`, never from an argument of its own.
+`atr_confirm` returned, for the ATR you confirmed. The URL is read from `chosen`, never from an argument of its own, and
+`chosen` is used only when its `mac` verifies.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `atr` | base64 | The ATR's bytes. |
-| `chosen` | object | `chosen` from `atr_confirm`, unchanged; its `agreement` is the agreement URL. |
+| `chosen` | object | `chosen` from `atr_confirm`, exactly as returned, `mac` included; its `agreement` is the agreement URL. |
 | `approved` | object, optional | The agreement payment the agent approved: `approve` from a previous call, unchanged. |
 | `inputs` | object, optional | The buyer's own values the agreement payment's build needs. |
 
 Without `approved`, returns `atrHash` and `approve`, the agreement payment, and signs nothing; where the agreement is
 already recorded, returns `atrHash` and `receipt`. With `approved`, pays that payment with the host's agreement signer,
-or its signer, and returns `atrHash` and `receipt`. A `chosen` with no `agreement` is declined `offer-unreadable`.
+or its signer, and returns `atrHash` and `receipt`. A `chosen` whose `mac` does not verify (one with a member changed,
+added or removed, or one another server process returned) is declined `chosen-unverified` before anything is fetched or
+signed; a verified `chosen` with no `agreement` is declined `offer-unreadable`.
 Annotations: not read-only, not destructive, not idempotent, open-world.
 
 A client's `notifications/cancelled` for an `atr_transact` or `atr_agree` call ends its agreement exchange, as the

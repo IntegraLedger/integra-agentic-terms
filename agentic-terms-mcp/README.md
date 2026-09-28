@@ -205,7 +205,9 @@ When `atr_confirm` returns `chosen.agreement`, it returns no `request` until the
 | `atr_channel_within` | `pairing`, `hold` (exactly as returned), `document`, `refund?`, `inputs?` | `atrHash`, `signed` and the updated `hold` | not read-only, not idempotent, open-world |
 
 `atr_agree` is offered when the host wires a signer or an agreement signer. It reads the agreement URL from `chosen`,
-never from an argument of its own. The agreement payment is a payment like any other: `approve.option` shows its
+never from an argument of its own. `chosen` carries a `mac` under the server process's key, as the channel holds do, and
+`atr_agree` declines a `chosen` whose `mac` does not verify with `chosen-unverified`, before anything is fetched or
+signed. The agreement payment is a payment like any other: `approve.option` shows its
 `amount`, `asset`, `payTo` and `network`, and it is signed only when the agent calls again with `approved` set to
 `approve`, unchanged. A client's `notifications/cancelled` for a call ends its agreement exchange.
 
