@@ -127,7 +127,10 @@ describe("the agreement exchange", () => {
     const fetch = recording((_, init) =>
       init.headers?.["PAYMENT-SIGNATURE"] === undefined ? unpaid402() : new Response(receipt(), { status: 200 }),
     );
-    expect(await agree(H, AGREEMENT_URL, counting(), fetch, { bytes: A })).toEqual({ receipt: AG.receipt });
+    const signer = counting();
+    const first = await agree(A, AGREEMENT_URL, signer, fetch);
+    if (!("approve" in first)) throw new Error("the agreement payment is returned for approval");
+    expect(await agree(A, AGREEMENT_URL, signer, fetch, { approved: first.approve })).toEqual({ receipt: AG.receipt });
     expect(fetch.calls.length).toBe(2);
     expect(fetch.calls[0]!.init.headers).toEqual({ "Accept-Encoding": "identity" });
     expect(fetch.calls[1]!.init.headers?.["Accept-Encoding"]).toBe("identity");
@@ -138,7 +141,7 @@ describe("the agreement exchange", () => {
     const { seen, body } = observed(gzipSync(receipt()));
     const fetch = recording(() => ({ status: 200, headers: new Headers({ "content-encoding": coding }), body }) as unknown as Response);
     const signer = counting();
-    const out = await agree(H, AGREEMENT_URL, signer, fetch, { bytes: A });
+    const out = await agree(A, AGREEMENT_URL, signer, fetch);
     expect(decline(out)).toEqual({ code: "agreement-failed", detail: AGREEMENT_DETAIL });
     expect(out).not.toHaveProperty("moved");
     expect(seen.pulled).toBe(0);
@@ -154,7 +157,9 @@ describe("the agreement exchange", () => {
         : ({ status: 200, headers: new Headers({ "content-encoding": "gzip" }), body } as unknown as Response),
     );
     const signer = counting();
-    const out = await agree(H, AGREEMENT_URL, signer, fetch, { bytes: A });
+    const first = await agree(A, AGREEMENT_URL, signer, fetch);
+    if (!("approve" in first)) throw new Error("the agreement payment is returned for approval");
+    const out = await agree(A, AGREEMENT_URL, signer, fetch, { approved: first.approve });
     expect(decline(out)).toEqual({ code: "agreement-failed", detail: AGREEMENT_DETAIL });
     const moved = (out as Declined).moved!;
     expect(base64Json(moved.signed)).toBe(fetch.calls[1]!.init.headers?.["PAYMENT-SIGNATURE"]);

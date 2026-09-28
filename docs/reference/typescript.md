@@ -202,7 +202,7 @@ amount signed in the channel.
 | Largest ATR fetched, hashed or checked | 1,048,576 bytes |
 | ATR fetch deadline, over headers and body | 10 seconds |
 | ATR fetch | one `GET`, `redirect: "manual"`, a redirect answered is `atr-unfetchable`, `https` only |
-| Content coding, every request | `Accept-Encoding: identity`; a `200` with any other `Content-Encoding` is declined unread (`atr-unfetchable` for the ATR, `agreement-failed` for the agreement URL) |
+| Content coding, every request | `Accept-Encoding: identity`; a `200` with any other `Content-Encoding` is declined unread (`atr-unfetchable` for the ATR), and so is a `200` or a `402` from the agreement URL (`agreement-failed`) |
 | Signer calls for one payment | at most 2 |
 | Agreement URL, unpaid request | 10 seconds |
 | Agreement URL, each paid request | `min(maxTimeoutSeconds, 120) + 70` seconds |

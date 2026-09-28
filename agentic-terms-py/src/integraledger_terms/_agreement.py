@@ -52,6 +52,8 @@ RETRY_DEFAULT_S = 2
 RETRY_MIN_S = 1
 
 _DECIMAL = re.compile(r"[0-9]{1,9}")
+# The answers whose content the exchange reads: a receipt, and a payment request.
+_READ_STATUSES = (200, 402)
 
 T = TypeVar("T")
 
@@ -149,8 +151,9 @@ async def _get(
     fetch: httpx.AsyncClient, url: str, signature: str | None, seconds: float
 ) -> _Answer | _Unanswered | Declined:
     """One GET of the agreement URL, asking for the identity coding, with no redirect and a deadline of seconds over
-    headers and body. A 200 whose Content-Encoding names any coding is agreement-failed with its body unread; a 200
-    body is read as sent, up to 64 KiB, and nothing is decoded; any other body is left unread."""
+    headers and body. A 200 or a 402, the answers the exchange reads, whose Content-Encoding names any coding is
+    agreement-failed with its body unread; a 200 body is read as sent, up to 64 KiB, and nothing is decoded; any other
+    body is left unread."""
     headers = dict(_gate.IDENTITY) if signature is None else {**_gate.IDENTITY, "PAYMENT-SIGNATURE": signature}
     too_large = _failed("The agreement receipt is larger than 64 KiB.")
     try:
@@ -162,10 +165,12 @@ async def _get(
                     retry_after=response.headers.get("retry-after"),
                     body=None,
                 )
+                if response.status_code in _READ_STATUSES and not _gate.is_identity(
+                    response.headers.get("content-encoding")
+                ):
+                    return _failed("The agreement URL served a content coding other than identity.")
                 if response.status_code != 200:
                     return answer
-                if not _gate.is_identity(response.headers.get("content-encoding")):
-                    return _failed("The agreement URL served a content coding other than identity.")
                 declared = response.headers.get("content-length")
                 if declared is not None and declared.strip().isdigit() and int(declared) > MAX_ANSWER_BYTES:
                     return too_large

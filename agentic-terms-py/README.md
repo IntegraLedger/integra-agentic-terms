@@ -418,7 +418,7 @@ signing a new payment.
 | `signed-not-bound` | What was signed does not carry the hash of the compared bytes. The payment is not returned. |
 | `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
 | `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
-| `agreement-failed` | The agreement URL could not be reached, answered `200` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. |
+| `agreement-failed` | The agreement URL could not be reached, answered `200` or `402` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. |
 
 ## API reference
 

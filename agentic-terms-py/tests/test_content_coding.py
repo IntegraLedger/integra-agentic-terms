@@ -17,7 +17,7 @@ import httpx
 import pytest
 
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
-from integraledger_terms import Confirmed, Declined, _gate, agree, confirm, transact
+from integraledger_terms import Agreed, Confirmed, Declined, ToApprove, _gate, agree, confirm, transact
 
 from support import A, ACCOUNT, BUYER, D, HASH_A, NOW, Chunks, CountingSigner, EthAccountSigner, Link
 
@@ -128,6 +128,15 @@ def test_gzip_bytes_served_with_no_coding_are_hashed_as_sent() -> None:
     assert isinstance(out, Declined) and out.code == "hash-mismatch"
 
 
+async def approved(client: httpx.AsyncClient) -> ToApprove | Agreed | Declined:
+    """agree in its two calls: the agreement payment to approve, then that payment, approved unchanged."""
+    signer = EthAccountSigner()
+    first = await agree(A, URL, signer, client)
+    if not isinstance(first, ToApprove):
+        return first
+    return await agree(A, URL, signer, client, approved=first.approve)
+
+
 # ── The agreement exchange ───────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -136,7 +145,7 @@ def test_the_agreement_exchange_asks_for_the_identity_coding_unpaid_and_paid() -
         return unpaid_402() if "payment-signature" not in request.headers else httpx.Response(200, content=RECEIPT)
 
     seller = Recording(answer)
-    out = seller.run(lambda c: agree(HASH_A, URL, EthAccountSigner(), c, atr_bytes=A))
+    out = seller.run(approved)
     assert not isinstance(out, Declined)
     assert [r.headers["accept-encoding"] for r in seller.requests] == ["identity", "identity"]
     assert "payment-signature" in seller.requests[1].headers
@@ -147,7 +156,7 @@ def test_an_unpaid_200_naming_a_coding_is_agreement_failed_unread_and_nothing_is
     body = Served(gzip(RECEIPT))
     seller = Recording(lambda request: httpx.Response(200, headers={"content-encoding": coding}, stream=body))
     signer = CountingSigner()
-    out = seller.run(lambda c: agree(HASH_A, URL, signer, c, atr_bytes=A))
+    out = seller.run(lambda c: agree(A, URL, signer, c))
     assert out == Declined("agreement-failed", AGREEMENT_DETAIL)
     assert body.sent == 0 and body.closed
     assert signer.requests == []
@@ -162,7 +171,7 @@ def test_a_paid_200_naming_a_coding_is_agreement_failed_with_the_sent_payment_ke
         return httpx.Response(200, headers={"content-encoding": "gzip"}, stream=body)
 
     seller = Recording(answer)
-    out = seller.run(lambda c: agree(HASH_A, URL, EthAccountSigner(), c, atr_bytes=A))
+    out = seller.run(approved)
     assert isinstance(out, Declined) and (out.code, out.detail) == ("agreement-failed", AGREEMENT_DETAIL)
     assert out.moved is not None and out.moved.h == HASH_A and out.moved.atr_bytes == A
     sent = seller.requests[1].headers["payment-signature"]
@@ -176,7 +185,7 @@ def test_a_layered_gzip_body_is_declined_unread_and_never_inflated() -> None:
     seller = Recording(
         lambda request: httpx.Response(200, headers={"content-encoding": "gzip, gzip, gzip"}, stream=body)
     )
-    out = seller.run(lambda c: agree(HASH_A, URL, CountingSigner(), c, atr_bytes=A))
+    out = seller.run(lambda c: agree(A, URL, CountingSigner(), c))
     assert out == Declined("agreement-failed", AGREEMENT_DETAIL)
     assert body.sent == 0
 
@@ -184,7 +193,7 @@ def test_a_layered_gzip_body_is_declined_unread_and_never_inflated() -> None:
 def test_a_layered_gzip_body_served_with_no_coding_is_read_as_its_own_bytes() -> None:
     body = Served(LAYERED)
     seller = Recording(lambda request: httpx.Response(200, stream=body))
-    out = seller.run(lambda c: agree(HASH_A, URL, CountingSigner(), c, atr_bytes=A))
+    out = seller.run(lambda c: agree(A, URL, CountingSigner(), c))
     assert out == Declined("agreement-failed", "The agreement URL answered 200 without a JSON receipt.")
     assert body.sent == len(LAYERED)
 
@@ -192,7 +201,7 @@ def test_a_layered_gzip_body_served_with_no_coding_is_read_as_its_own_bytes() ->
 def test_the_receipt_read_stops_at_64_kib_of_bytes_as_sent() -> None:
     stream = Chunks(100 * MAX_ANSWER_BYTES, size=4096)
     seller = Recording(lambda request: httpx.Response(200, stream=stream))
-    out = seller.run(lambda c: agree(HASH_A, URL, CountingSigner(), c, atr_bytes=A))
+    out = seller.run(lambda c: agree(A, URL, CountingSigner(), c))
     assert out == Declined("agreement-failed", "The agreement receipt is larger than 64 KiB.")
     assert MAX_ANSWER_BYTES < stream.sent <= MAX_ANSWER_BYTES + 4096
     assert stream.closed

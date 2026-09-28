@@ -15,13 +15,13 @@ import {
   hashEquals,
   isHttpsLink,
   isOtherSchemeLink,
-  isRefusal,
   parseJson,
   type AtrHash,
   type Refusal,
 } from "@integraledger/lcp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { IDENTITY, isIdentity, newRef, pay, pieceOf, redirected } from "./gate.js";
+import { isRefusal } from "./pairings/common.js";
 import type {
   AgreeOptions,
   AgreementPayment,
@@ -46,6 +46,8 @@ const VERIFY_S = 10;
 const WINDOW_EXTRA_S = 180;
 const MAX_ANSWER_BYTES = 65_536;
 const MAX_OPTIONS = 32;
+/** The answers whose content the exchange reads: a receipt, and a payment request. */
+const READ_STATUSES: readonly number[] = [200, 402];
 const RETRY_DEFAULT_S = 2;
 const RETRY_MIN_S = 1;
 const DECIMAL = /^[0-9]{1,9}$/;
@@ -124,8 +126,8 @@ function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
 /**
  * One GET of the agreement URL, asking for the identity coding, with no redirect followed and a deadline of `ms` over
  * headers and body; the caller's signal ends it as the deadline does. A redirect is `agreement-failed`, and so is a 200
- * whose `Content-Encoding` names any coding. A 200 body is read as sent, up to 64 KiB; any other body is cancelled
- * unread.
+ * or a 402, the answers the exchange reads, whose `Content-Encoding` names any coding. A 200 body is read as sent, up to
+ * 64 KiB; any other body is cancelled unread.
  */
 async function get(
   fetch: Fetch,
@@ -164,10 +166,10 @@ async function get(
       retryAfter: response.headers.get("retry-after"),
       body: null,
     };
-    if (response.status !== 200) return answer;
-    if (!isIdentity(response.headers.get("content-encoding"))) {
+    if (READ_STATUSES.includes(response.status) && !isIdentity(response.headers.get("content-encoding"))) {
       return failed("The agreement URL served a content coding other than identity.");
     }
+    if (response.status !== 200) return answer;
     const declared = response.headers.get("content-length")?.trim();
     if (declared !== undefined && /^[0-9]+$/.test(declared) && Number(declared) > MAX_ANSWER_BYTES) {
       return failed("The agreement receipt is larger than 64 KiB.");
