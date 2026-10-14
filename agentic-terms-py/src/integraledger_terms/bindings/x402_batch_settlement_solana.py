@@ -70,15 +70,20 @@ def _js_number(value: object) -> float | None:
 
 
 def pairs(option: Mapping[str, Any]) -> bool:
-    """The pairing's filter: scheme batch-settlement on a solana network, base58 keys for asset, payTo and
-    extra.feePayer, a known extra.tokenProgram, extra.withdrawDelay in 900-2 592 000 and not below maxTimeoutSeconds,
-    extra.paymentFlow absent or authorization, and extra.memo of at most 256 UTF-8 bytes when present."""
+    """The pairing's filter: scheme batch-settlement on a solana network, base58 keys for asset, payTo,
+    extra.feePayer and extra.receiverAuthorizer, extra.voucherSigner absent or client, a known extra.tokenProgram,
+    extra.withdrawDelay in 900-2 592 000 and not below maxTimeoutSeconds, extra.paymentFlow absent or authorization,
+    and extra.memo of at most 256 UTF-8 bytes when present."""
     if not is_object(option) or option.get("scheme") != SCHEME or not is_object(option.get("extra")):
         return False
     extra = option["extra"]
     if not is_solana_network(option.get("network")):
         return False
     if not is_key(option.get("asset")) or not is_key(option.get("payTo")) or not is_key(extra.get("feePayer")):
+        return False
+    if not is_key(extra.get("receiverAuthorizer")):
+        return False
+    if "voucherSigner" in extra and extra["voucherSigner"] != "client":
         return False
     if extra.get("tokenProgram") not in (TOKEN, TOKEN_2022):
         return False

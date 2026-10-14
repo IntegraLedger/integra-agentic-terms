@@ -40,6 +40,7 @@ from integraledger_terms.bindings._codec import b58_encode
 from integraledger_terms.pieces.x402_batch_settlement_solana import PIECE as X402_BATCH_SETTLEMENT_SOLANA_PIECE
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._mpp_checks import decode_object, decode_string_map
+from integraledger_terms.bindings.x402_batch_settlement_solana import pairs as batch_pairs
 from integraledger_terms.bindings.mpp_session_solana import session_salt
 from mpp_docs import b64u, issued, place_carrier, placed_doc
 from support import hexb, load, serving
@@ -526,6 +527,19 @@ def test_the_solana_builds_answer_a_choice_that_is_not_an_object_with_not_v2() -
         for call in (exact.build, upto.build, batch.build, batch.build_within):
             assert call(value, H) == Refusal("x402/not-v2"), (call, value)
 
+
+
+def test_x402_batch_settlement_solana_the_option_names_a_receiver_authorizer_and_client_vouchers() -> None:
+    """The filter takes an option whose extra.receiverAuthorizer is a base58 key and whose extra.voucherSigner is
+    absent or client, as @integraledger/lcp's pairingOf names x402/batch-settlement/solana."""
+    option = BS["option"]
+    extra = option["extra"]
+    assert batch_pairs(option) and batch_pairs({**option, "extra": {**extra, "voucherSigner": "client"}})
+    without = {k: v for k, v in extra.items() if k != "receiverAuthorizer"}
+    others: list[Any] = [without, {**extra, "receiverAuthorizer": "not-a-key"}, {**extra, "receiverAuthorizer": None}]
+    others += [{**extra, "voucherSigner": v} for v in ("server", None, "")]
+    for other in others:
+        assert not batch_pairs({**option, "extra": other}), other
 
 def batch_presented(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {"x402Version": 2, "accepted": BV["ES4"]["accepted"], "payload": dict(payload)}
