@@ -83,7 +83,7 @@ every byte string in an answer is `0x` hex.
 | --- | --- | --- |
 | `tap-field` | The `lcp-hash` field for a Visa Trusted Agent Protocol `agent-payer-auth` message signature. | `{ signatureInput, signature, lcpHash }`, `lcpHash` being every `lcp-hash` field line sent, in order. |
 | `vi-checkout-mandate` | A Mastercard Verifiable Intent checkout mandate. | `{ l2 }` from the user's wallet (immediate), or `{ l1, l2, l3b }` from the agent (autonomous). |
-| `ap2-checkout-mandate` | The claims of a closed AP2 checkout mandate. | The mandate as issued, an SD-JWT string. |
+| `ap2-checkout-mandate` | The claims of a closed AP2 checkout mandate. | The mandate as issued, an SD-JWT string, or AP2's chained presentation: the open mandate's SD-JWT and the closed mandate's, joined by `~~`. The closed mandate is the one read. |
 | `ucp-checkout` | A UCP checkout for the buyer's AP2 mandate issuer. | The checkout mandate as issued, an SD-JWT string. |
 | `acp-allowance` | An ACP `delegate_payment` allowance. | The `delegate_payment` request the agent signed, as an object. |
 | `batch` | Several requests, signed in order (a channel's opening and first voucher, an in-channel voucher). | A list of answers, in the same order. |

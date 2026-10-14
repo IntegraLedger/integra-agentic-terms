@@ -160,10 +160,6 @@ const card = {
   sellerReference: { binding: sellerReference, doc: tapDoc, account: BUYER, answer: never } as Pairing,
 };
 
-/** Whether the gate hands `choose` the document: the card pieces build from it. */
-const probe = await confirm(tapDoc, visaTap, BUYER, serving(ABC));
-const gatePassesDoc = !(isDeclined(probe) && probe.decline.detail === "card/document-missing");
-
 describe("card: the pieces over the vectors' requests and answers", () => {
   const read: Read = { h: H, link: LINK };
   const piece = (id: string): BuyerPiece => PIECES.get(id)!;
@@ -232,15 +228,17 @@ describe("card: the pieces over the vectors' requests and answers", () => {
     }
   });
 
-  it("B10: an http link is offer-unreadable, card/link-not-https, with no fetch", async () => {
-    await httpLink(card.tap, tapHttp, "card/link-not-https");
-    await httpLink(card.sellerReference, tapHttp, "card/link-not-https");
-    await httpLink(card.immediate, cjHttp, "card/link-not-https");
-    await httpLink(card.autonomous, cjHttp, "card/link-not-https");
+  it("B10: an http link is offer-unreadable, card/legal-context-malformed (card.json's agreed refusal), with no fetch", async () => {
+    const row = CARD.agreedRefusals.rows.find((r: V) => r.case === "read with a legalContext whose link is not https");
+    expect(row.expect).toBe("card/legal-context-malformed");
+    await httpLink(card.tap, tapHttp, row.expect);
+    await httpLink(card.sellerReference, tapHttp, row.expect);
+    await httpLink(card.immediate, cjHttp, row.expect);
+    await httpLink(card.autonomous, cjHttp, row.expect);
   });
 });
 
-describe.skipIf(!gatePassesDoc)("card: through the gate", () => {
+describe("card: through the gate", () => {
   for (const p of [card.tap, card.immediate, card.autonomous, card.sellerReference]) {
     it(`${p.binding.id} B16: an account that names no buyer is no-payable-option, with no fetch`, () =>
       unpayable(p, UNNAMED));
@@ -287,9 +285,10 @@ describe("ap2/checkout-mandate", () => {
     expect(signed).toEqual({ checkout_mandate: AP2.built.M, checkout_jwt: J });
     expect(await checkoutMandate.bound(signed as never)).toBe(AP2.V5.expectBound);
   });
-  it("B10: an http link is offer-unreadable, ap2/link-not-https, with no fetch", async () => {
+  it("B10: an http link is offer-unreadable, ap2/legal-context-malformed (the read-http-link row), with no fetch", async () => {
     const row = AP2.implementation.find((r: V) => r.name === "read-http-link");
-    await httpLink(p, row.input.doc, "ap2/link-not-https");
+    expect(row.expect).toEqual({ refused: true, code: "ap2/legal-context-malformed" });
+    await httpLink(p, row.input.doc, row.expect.code);
   });
   it("B16: an account that names no buyer is no-payable-option, with no fetch", () => unpayable(p, UNNAMED));
 });
@@ -441,8 +440,11 @@ describe("ack/payment-request", () => {
     const chosen = await confirmsOnly(p, ABC, ACK.fixed.H);
     expect(chosen.choice).toEqual({ option: O });
   });
-  it("B10: an http link is offer-unreadable, ack/link-not-https, with no fetch", () =>
-    httpLink(p, ackHttp, "ack/link-not-https"));
+  it("B10: an http link is offer-unreadable, ack/legal-context-malformed (ack-payment-request.json's agreed refusal), with no fetch", async () => {
+    const row = ACK.agreedRefusals.rows.find((r: V) => r.case === "read of a well-formed legalContext with an http link");
+    expect(row.expect).toEqual({ refused: true, code: "ack/legal-context-malformed" });
+    await httpLink(p, ackHttp, row.expect.code);
+  });
   it("B16: an account on another network, or of another namespace, is no-payable-option, with no fetch", () =>
     unpayable(p, [`eip155:1:${BUYER.split(":")[2]}`, "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:x", ...UNNAMED]));
 });

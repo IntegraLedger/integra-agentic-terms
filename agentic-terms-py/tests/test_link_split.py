@@ -1,7 +1,8 @@
-"""The link beside the hash takes the agreement URL's split at every reading: link-not-https only for a string of at
-most 2048 characters that parses as an absolute URL whose scheme is not https, and legal-context-malformed for every
-other value the https-link rule refuses. Expected values are core-vectors.json's links rows (refusedAs), and each
-document is its vector file's with the link replaced."""
+"""The link beside the hash takes the agreement URL's split at the x402, UCP and MPP readings: link-not-https only for a
+string of at most 2048 characters that parses as an absolute URL whose scheme is not https, and legal-context-malformed
+for every other value the https-link rule refuses. Card's, ACK's and AP2's readings give legal-context-malformed for
+every value the rule refuses. Expected values are core-vectors.json's links rows (refusedAs, and the rule its about
+states), and each document is its vector file's with the link replaced."""
 
 import base64
 import json
@@ -65,7 +66,7 @@ def test_each_reading_splits_the_link(row: dict[str, Any]) -> None:
 
     ch = CARD["fixed"]["H"]
     values = _replaced(CARD["C1"]["advertise"]["expect"], CARD["fixed"]["link"], link)
-    assert _outcome(CARD_VISA_TAP.read(values), ch) == expect("card", ch)
+    assert _outcome(CARD_VISA_TAP.read(values), ch) == ((ch, link) if fault == "accepted" else "card/legal-context-malformed")
 
     uh = UCP["V2"]["advertise"]["h"]
     checkout = _replaced(UCP["V2"]["expectCheckout"], UCP["V2"]["advertise"]["link"], link)
@@ -86,7 +87,9 @@ def _b64u(text: str) -> str:
     return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
 
 
-def test_an_https_link_over_2048_characters_is_malformed_at_every_reading() -> None:
+def test_an_https_link_over_2048_characters_is_too_large_or_malformed() -> None:
+    """ACP, UCP and AP2 read a link over 2048 characters as too large, as acp-checkout.json's agreed refusal for it and
+    @integraledger/lcp's UCP and AP2 reads answer; the other readings give legal-context-malformed."""
     from integraledger_terms import ACK_PAYMENT_REQUEST, ACP_CHECKOUT_DELEGATED, AP2_CHECKOUT_MANDATE
 
     assert len(LONG) == 2049
@@ -103,4 +106,9 @@ def test_an_https_link_over_2048_characters_is_malformed_at_every_reading() -> N
     got["ap2"] = AP2_CHECKOUT_MANDATE.read(jws)
     lc = _replaced(ACK["K1"]["expect"]["legalContext"], ACK["K1"]["advertise"]["link"], LONG)
     got["ack"] = ACK_PAYMENT_REQUEST.read({**ACK["K2"]["body"], "legalContext": lc})
-    assert {k: getattr(v, "code", v) for k, v in got.items()} == {k: f"{k}/legal-context-malformed" for k in got}
+    row = next(r for r in ACP["agreedRefusals"]["rows"] if r["case"] == "read of a legal_context link over 2048 characters")
+    assert row["expect"] == {"refused": True, "code": "acp/too-large"}
+    too_large = {"acp", "ucp", "ap2"}
+    assert {k: getattr(v, "code", v) for k, v in got.items()} == {
+        k: f"{k}/too-large" if k in too_large else f"{k}/legal-context-malformed" for k in got
+    }

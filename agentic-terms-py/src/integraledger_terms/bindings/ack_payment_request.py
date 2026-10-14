@@ -15,7 +15,6 @@ from ._lcp import (
     AgreementFault,
     agreement_in,
     from_lcp_string,
-    is_hash_with_non_https_link,
     is_list,
     is_object,
     legal_context_info,
@@ -71,7 +70,7 @@ class AckPaymentRequest:
         lc = doc["legalContext"]
         decoded = legal_context_info(lc)
         if decoded is None:
-            return Refusal("ack/link-not-https" if is_hash_with_non_https_link(lc) else "ack/legal-context-malformed")
+            return Refusal("ack/legal-context-malformed")
         h, link = decoded
         if js_length(link) > MAX_LINK:
             return Refusal("ack/legal-context-malformed")
@@ -79,7 +78,7 @@ class AckPaymentRequest:
             return Refusal("ack/legal-context-conflict")
         agreement = agreement_in(lc)
         if isinstance(agreement, AgreementFault):
-            return Refusal(f"ack/{agreement.fault}")
+            return Refusal("ack/legal-context-malformed")
         options = payload.get("paymentOptions")
         if not is_list(options):
             return Refusal("ack/token-malformed")

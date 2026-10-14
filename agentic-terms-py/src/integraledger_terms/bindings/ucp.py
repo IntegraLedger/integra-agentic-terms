@@ -2,8 +2,9 @@
 ucp/booking/unsigned: read, build with complete, and bound.
 
 The ATR hash and link ride as one links[] entry of type legal_context in the checkout response. The ap2-mandate
-pairings read the hash from the checkout inside the buyer's checkout mandate, after AP2's checkout_hash check; the
-unsigned pairings have nothing signed to read. Nothing here takes a key, signs or verifies a signature.
+pairings read the hash from the checkout JWT presented beside the buyer's checkout mandate, after AP2's checkout_hash
+check, the mandate presented alone or last in AP2's chain; the unsigned pairings have nothing signed to read. Nothing
+here takes a key, signs or verifies a signature.
 """
 
 import re
@@ -55,7 +56,7 @@ def legal_context_link(c: object) -> tuple[AtrHash, str] | Refusal:
     if not is_https_link(url):
         return Refusal("ucp/link-not-https" if is_other_scheme_link(url) else "ucp/legal-context-malformed")
     if js_length(url) > MAX_LINK:
-        return Refusal("ucp/legal-context-malformed")
+        return Refusal("ucp/too-large")
     return h, url
 
 

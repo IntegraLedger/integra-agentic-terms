@@ -11,6 +11,9 @@ from typing import Any
 
 import ed25519
 import pytest
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from breadth import (
     ABC,
     offered,
@@ -160,8 +163,10 @@ def test_ack_payment_request_b6_confirm_only_option_on_the_account_network() -> 
 
 
 def test_ack_payment_request_b10_http_link() -> None:
+    row = next(r for r in ACK["agreedRefusals"]["rows"] if r["case"] == "read of a well-formed legalContext with an http link")
+    assert row["expect"] == {"refused": True, "code": "ack/legal-context-malformed"}
     lc = {**ACK_BODY["legalContext"], "legalContextUrl": ACK["fixed"]["L"].replace("https://", "http://")}
-    http_link(ACK_PAIRING, {**ACK_BODY, "legalContext": lc}, "ack/link-not-https")
+    http_link(ACK_PAIRING, {**ACK_BODY, "legalContext": lc}, row["expect"]["code"])
 
 
 def test_ack_payment_request_b16_other_network_or_namespace() -> None:
@@ -339,11 +344,13 @@ def test_card_account_not_caip10_is_no_payable_option() -> None:
 
 
 def test_card_b10_http_link() -> None:
+    row = next(r for r in CARD["agreedRefusals"]["rows"] if r["case"] == "read with a legalContext whose link is not https")
+    assert row["expect"] == "card/legal-context-malformed"
     tap_http = {"legalContext": _http_link_of(TAP_DOC["legalContext"])}
-    http_link(CARD_TAP, tap_http, "card/link-not-https")
-    http_link(CARD_SELLER, tap_http, "card/link-not-https")
-    http_link(CARD_IMMEDIATE, _cj_http(), "card/link-not-https")
-    http_link(CARD_AUTONOMOUS, _cj_http(), "card/link-not-https")
+    http_link(CARD_TAP, tap_http, row["expect"])
+    http_link(CARD_SELLER, tap_http, row["expect"])
+    http_link(CARD_IMMEDIATE, _cj_http(), row["expect"])
+    http_link(CARD_AUTONOMOUS, _cj_http(), row["expect"])
 
 @pytest.mark.parametrize("p", CARD_PAIRINGS, ids=lambda p: p.binding.id)
 def test_card_b16_unnamed_buyer(p: Pairing) -> None:
@@ -380,6 +387,83 @@ def test_card_c7_l2_bound_to_another_l1_or_a_kid_not_the_delegated_keys_is_refus
     other = base64.urlsafe_b64encode(json.dumps({**header, "kid": "agent-2"}, separators=(",", ":")).encode()).rstrip(b"=")
     other_kid = f"{other.decode()}.{payload}.{sig}~{disclosure}~"
     assert CARD_MASTERCARD_VI_AUTONOMOUS.bound({"l1": l1, "l2": l2, "l3b": other_kid}) == Refusal("card/vi-kid-mismatch")
+
+
+def _recipe_sign(name: str, signing_input: str) -> str:
+    """ES256 under a key of card.json's VI recipe, SHA-256(name) mod n on P-256: "lcp-test/user" is USER's private key
+    and "lcp-test/agent" AGENT's."""
+    n = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+    key = ec.derive_private_key(int.from_bytes(hashlib.sha256(name.encode("ascii")).digest(), "big") % n, ec.SECP256R1())
+    r, s = decode_dss_signature(key.sign(signing_input.encode("ascii"), ec.ECDSA(hashes.SHA256())))
+    return f"{signing_input}.{_b64u_bytes(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}"
+
+
+def _b64u_bytes(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _vi_resigned(user: Any = None, agent: Any = None) -> dict[str, str]:
+    """C7's presented chain with L1's cnf.jwk set to user and the cnf.jwk of L2's open checkout mandate to agent, where
+    given, and every sd_hash re-pointed: L2 signed again under USER and L3b under AGENT, so the chain differs from
+    C7's only in the keys it names."""
+    presented = CARD["C7"]["bound"]["presented"]
+
+    def parts(layer: str) -> list[str]:
+        return layer.split("~")[0].split(".")
+
+    def decoded(segment: str) -> Any:
+        return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+
+    def enc(value: Any) -> str:
+        return _b64u_bytes(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+
+    l1_payload = decoded(parts(presented["l1"])[1])
+    if user is not None:
+        l1_payload["cnf"]["jwk"] = user
+    l1_head, _, l1_sig = presented["l1"][:-1].split(".")
+    l1 = f"{l1_head}.{enc(l1_payload)}.{l1_sig}~"
+    l2_payload = decoded(parts(presented["l2"])[1])
+    discs = presented["l2"].split("~")[1:-1]
+    if agent is not None:
+        opened = next(d for d in discs if decoded(d)[1].get("vct") == "mandate.checkout.open.1")
+        salt, value = decoded(opened)
+        swapped = enc([salt, {**value, "cnf": {"jwk": agent}}])
+        old, new = disclosure_digest(opened), disclosure_digest(swapped)
+        l2_payload["_sd"] = [new if d == old else d for d in l2_payload["_sd"]]
+        l2_payload["delegate_payload"] = [{"...": new if e["..."] == old else e["..."]} for e in l2_payload["delegate_payload"]]
+        discs = [swapped if d == opened else d for d in discs]
+    l2_payload["sd_hash"] = disclosure_digest(l1)
+    l2 = _recipe_sign("lcp-test/user", f"{parts(presented['l2'])[0]}.{enc(l2_payload)}") + "~" + "".join(f"{d}~" for d in discs)
+    l3_payload = {**decoded(parts(presented["l3b"])[1]), "sd_hash": disclosure_digest(l2)}
+    rest = presented["l3b"][presented["l3b"].index("~") :]
+    l3b = _recipe_sign("lcp-test/agent", f"{parts(presented['l3b'])[0]}.{enc(l3_payload)}") + rest
+    return {"l1": l1, "l2": l2, "l3b": l3b}
+
+
+def test_card_vi_autonomous_a_key_coordinate_not_32_bytes_is_key_malformed() -> None:
+    # RFC 7518 section 6.2.1.2-3: x and y are the full 32-byte P-256 coordinates, base64url-encoded, and RFC 7515
+    # section 2 omits the padding. A chain re-signed under the recipe keys as given is bound to H, so each refused chain
+    # differs in its key alone; an L1 or L2 cnf.jwk whose x or y is not unpadded base64url of 32 bytes is
+    # card/vi-key-malformed, card.json's agreed refusal for it.
+    user, agent = CARD["fixed"]["USER"], CARD["fixed"]["AGENT"]
+    for name, jwk in (("lcp-test/user", user), ("lcp-test/agent", agent)):
+        n = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+        d = int.from_bytes(hashlib.sha256(name.encode("ascii")).digest(), "big") % n
+        public = ec.derive_private_key(d, ec.SECP256R1()).public_key().public_numbers()
+        assert (_b64u_bytes(public.x.to_bytes(32, "big")), _b64u_bytes(public.y.to_bytes(32, "big"))) == (jwk["x"], jwk["y"])
+    bound = CARD_MASTERCARD_VI_AUTONOMOUS.bound
+    h = CARD["C7"]["bound"]["expect"]
+    assert bound(_vi_resigned(user=user)) == h
+    assert bound(_vi_resigned(agent=agent)) == h
+    x, y = base64.urlsafe_b64decode(user["x"] + "="), base64.urlsafe_b64decode(user["y"] + "=")
+    for keys in (
+        {"user": {**user, "x": user["x"] + "="}},
+        {"user": {**user, "y": user["y"] + "="}},
+        {"user": {**user, "x": _b64u_bytes(b"\0" + x)}},
+        {"user": {**user, "y": _b64u_bytes(y[1:])}},
+        {"agent": {**agent, "x": agent["x"] + "="}},
+    ):
+        assert bound(_vi_resigned(**keys)) == Refusal("card/vi-key-malformed"), keys
 
 
 def test_card_seller_reference_b6_confirm_only() -> None:
@@ -471,7 +555,8 @@ def test_ap2_checkout_mandate_b6_the_vectors_mandate_completes_a_payment_bound_t
 
 def test_ap2_checkout_mandate_b10_http_link() -> None:
     row = next(r for r in AP2["implementation"] if r["name"] == "read-http-link")
-    http_link(AP2_PAIRING, row["input"]["doc"], "ap2/link-not-https")
+    assert row["expect"] == {"refused": True, "code": "ap2/legal-context-malformed"}
+    http_link(AP2_PAIRING, row["input"]["doc"], row["expect"]["code"])
 
 
 def test_ap2_checkout_mandate_b16_unnamed_buyer() -> None:
@@ -520,6 +605,36 @@ def test_ap2_checkout_mandate_v6_the_published_example() -> None:
     assert AP2_CHECKOUT_MANDATE.bound(presented) == refusal(v6["expectBound"])
 
 
+def test_ap2_checkout_mandate_v7_the_published_chained_presentation() -> None:
+    v6, v7 = AP2["V6"], AP2["V7"]
+    token: str = v7["token"]
+    assert len(token.encode("utf-8")) == v7["tokenBytes"]
+    assert hashlib.sha256(token.encode("utf-8")).hexdigest() == v7["tokenSha256"]
+    hops = token.split("~~")
+    assert len(hops) == v7["expectHops"]
+    opened, last = hops
+    assert hashlib.sha256(last.encode("utf-8")).hexdigest() == v7["expectLastHopSha256"]
+    assert last == v6["token"]
+    # The closed hop's sd_hash covers the open hop with its trailing "~", which the chain's "~~" holds.
+    closed = json.loads(base64.urlsafe_b64decode(last.split(".")[1] + "=" * (-len(last.split(".")[1]) % 4)))
+    assert closed["sd_hash"] == v7["expectSdHash"] == disclosure_digest(f"{opened}~")
+    mandate = read_mandate(token)
+    assert not isinstance(mandate, Refusal)
+    assert mandate.checkout_hash == v7["expectCheckoutHash"] and mandate.checkout_jwt == v6["checkoutJwt"]
+    assert checkout_jwt_of(token) == v6["checkoutJwt"]
+    presented = {"checkout_mandate": token, "checkout_jwt": v6["checkoutJwt"]}
+    payload = checkout_binding(presented)
+    assert isinstance(payload, dict) and payload["id"] == v6["expectCheckoutId"]
+    assert AP2_CHECKOUT_MANDATE.bound(presented) == refusal(v7["expectBound"])
+
+
+def test_ap2_checkout_mandate_a_chain_over_1_mib_is_too_large_and_a_non_string_is_malformed() -> None:
+    big = f"{AP2_M[:-1]}~~{AP2_M}" + "A" * (1_048_577 - 2 * len(AP2_M))
+    assert len(big) > 1_048_576
+    assert read_mandate(big) == Refusal("ap2/too-large")
+    assert read_mandate(["a", "b"]) == Refusal("ap2/mandate-malformed")
+
+
 def test_ap2_checkout_mandate_plant_a_reissued_checkout_is_not_the_committed_one() -> None:
     reissued = AP2["plant"]["checkoutJwt"]
     for mandate in (AP2_M, AP2["V5"]["withoutDisclosure"]["mandate"]):
@@ -545,8 +660,9 @@ def test_ap2_checkout_mandate_implementation_rows(row: dict[str, Any]) -> None:
 
 
 def test_ap2_checkout_mandate_a_non_https_link_gives_one_code_on_read_and_bound() -> None:
-    # A well-formed legal context whose link is not https: the pairing's refusal codes list link-not-https, and read
-    # and bound give it for the same checkout JWT (RFC 9901 section 4 builds the closed mandate's disclosure).
+    # A well-formed legal context whose link is not https: read gives ap2-checkout-mandate.json's read-http-link code,
+    # and bound gives the same code for the same checkout JWT (RFC 9901 section 4 builds the closed mandate's
+    # disclosure).
     def b64u(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -565,8 +681,10 @@ def test_ap2_checkout_mandate_a_non_https_link_gives_one_code_on_read_and_bound(
     claims = {"vct": "mandate.checkout.1", "checkout_hash": sha256_b64u(j), "_sd": [sha256_b64u(d)], "_sd_alg": "sha-256"}
     sd_header = b64u(compact({"alg": "ES256", "typ": "dc+sd-jwt"}))
     m = f"{sd_header}.{b64u(compact(claims))}.{signature}~{d}~"
-    assert AP2_CHECKOUT_MANDATE.read(j) == Refusal("ap2/link-not-https")
-    assert AP2_CHECKOUT_MANDATE.bound({"checkout_mandate": m, "checkout_jwt": j}) == Refusal("ap2/link-not-https")
+    expect = refusal(next(r for r in AP2["implementation"] if r["name"] == "read-http-link")["expect"])
+    assert expect == Refusal("ap2/legal-context-malformed")
+    assert AP2_CHECKOUT_MANDATE.read(j) == expect
+    assert AP2_CHECKOUT_MANDATE.bound({"checkout_mandate": m, "checkout_jwt": j}) == expect
 
 
 # ── UCP ──
@@ -822,6 +940,15 @@ def test_acp_v4_build_complete_and_bound() -> None:
     assert given.complete({"allowance": given.allowance}) == refusal(v4["changedSessionId"]["expect"])
 
 
+def test_acp_build_writes_max_amount_19900_0_as_the_number_19900() -> None:
+    # JSON's number 19900.0 is the number 19900 (RFC 8259 section 6), and JSON.stringify writes it 19900, so the
+    # allowance holds V4's expected allowance, written the same.
+    v4 = ACP["V4"]
+    assert v4["choice"]["max_amount"] == 19900
+    unsigned: Any = ACP_CHECKOUT_DELEGATED.build({**v4["choice"], "max_amount": 19900.0}, v4["h"])
+    assert json.dumps(unsigned.allowance) == json.dumps(v4["expectAllowance"])
+
+
 def test_acp_v5_undelegated_reads_and_neither_builds_nor_bounds() -> None:
     v5 = ACP["V5"]
     r = ACP_CHECKOUT_UNDELEGATED.read(v5["session"])
@@ -852,4 +979,5 @@ def test_acp_agreed_refusals(row: dict[str, Any]) -> None:
     elif isinstance(expect, dict) and "h" in expect:
         assert got == advertised(expect)
     else:
-        assert got == expect
+        # The JSON a signer is handed, so a number written 19900.0 is not the 19900 the row holds.
+        assert json.dumps(got) == json.dumps(expect)

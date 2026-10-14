@@ -13,6 +13,7 @@ from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
 from ._jose import (
     MIB,
+    SdJwt,
     SdJwtCodes,
     b64u_encode,
     decode_json_segment,
@@ -22,10 +23,11 @@ from ._jose import (
     text_encode,
     within_depth,
 )
-from ._lcp import AgreementFault, agreement_in, is_hash_with_non_https_link, is_object, legal_context_info
+from ._lcp import AgreementFault, agreement_in, is_object, legal_context_info
 
 ID = "ap2/checkout-mandate"
 CHECKOUT_VCT = "mandate.checkout.1"
+MAX_HOPS = 2
 MAX_ID = 256
 MAX_LINK = 2048
 _CHECKOUT_HASH = re.compile(r"[A-Za-z0-9_-]{43}")
@@ -65,10 +67,34 @@ class MandateContent:
     checkout_jwt: str | None
 
 
+def _closed_hop(m: object) -> SdJwt | Refusal:
+    """The SD-JWT that holds the closed Checkout Mandate. A presentation without ~~ is that SD-JWT. AP2's chained
+    presentation joins the open mandate's SD-JWT and the closed mandate's with ~~, in the compact serialization of the
+    Delegate SD-JWT draft: every hop before the last is an SD-JWT written without its trailing ~, and the hop after it
+    stands in its Key Binding JWT's place. A chain has at most two hops, as AP2's checkout chain does. Every hop must
+    read as an SD-JWT presentation; only the last is returned. No hop's signature, cnf key, sd_hash or issuer_jwt_hash
+    is verified."""
+    if not isinstance(m, str):
+        return Refusal("ap2/mandate-malformed")
+    if js_length(m) > MIB:
+        return Refusal("ap2/too-large")
+    hops = m.split("~~", MAX_HOPS)
+    if len(hops) > MAX_HOPS:
+        return Refusal("ap2/mandate-malformed")
+    for hop in hops[:-1]:
+        opened = read_sd_jwt(f"{hop}~", MANDATE_CODES)
+        if isinstance(opened, Refusal):
+            return opened
+    return read_sd_jwt(hops[-1], MANDATE_CODES)
+
+
 def read_mandate(m: object) -> MandateContent | Refusal:
-    """The closed Checkout Mandate inside an SD-JWT: exactly one resolved object whose vct is mandate.checkout.1, its
-    checkout_hash, and its checkout_jwt when disclosed."""
-    sd = read_sd_jwt(m, MANDATE_CODES)
+    """The closed Checkout Mandate in a presentation, one SD-JWT or AP2's chain of the open and closed mandates joined
+    by ~~ (at most these two hops, each an SD-JWT): exactly one resolved object of the last SD-JWT whose vct is
+    mandate.checkout.1, its checkout_hash, and its checkout_jwt when disclosed. No signature is verified, nor the open
+    mandate's cnf delegation to the closed mandate's signer, nor the closed mandate's sd_hash or issuer_jwt_hash link
+    to the open one; the open mandate's constraints are not read."""
+    sd = _closed_hop(m)
     if isinstance(sd, Refusal):
         return sd
     found: list[dict[str, Any]] = []
@@ -139,9 +165,9 @@ def _read_checkout(doc: object) -> tuple[AtrHash, str, dict[str, Any]] | Refusal
     lc = payload["legalContext"]
     decoded = legal_context_info(lc)
     if decoded is None:
-        return Refusal("ap2/link-not-https" if is_hash_with_non_https_link(lc) else "ap2/legal-context-malformed")
-    if js_length(decoded[1]) > MAX_LINK:
         return Refusal("ap2/legal-context-malformed")
+    if js_length(decoded[1]) > MAX_LINK:
+        return Refusal("ap2/too-large")
     assert isinstance(doc, str)
     return decoded[0], decoded[1], {"checkoutJwt": doc, "payload": payload, "checkout": checkout}
 
@@ -170,7 +196,7 @@ class Ap2CheckoutMandate:
         h, link, offer = r
         agreement = agreement_in(offer["payload"].get("legalContext"))
         if isinstance(agreement, AgreementFault):
-            return Refusal(f"ap2/{agreement.fault}")
+            return Refusal("ap2/legal-context-malformed")
         return Advertised(h=h, link=link, offer=offer, agreement=agreement if isinstance(agreement, str) else None)
 
     def build(self, choice: Json, h: AtrHash) -> Ap2Unsigned | Refusal:
@@ -189,7 +215,8 @@ class Ap2CheckoutMandate:
         )
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash in the checkout the buyer's mandate commits to, lowercase. No signature is verified."""
+        """The hash in the checkout the buyer's closed mandate commits to, lowercase, the mandate presented alone or last
+        in AP2's chain. No signature, cnf delegation or link between hops is verified."""
         payload = checkout_binding(presented)
         if isinstance(payload, Refusal):
             return payload
@@ -198,7 +225,7 @@ class Ap2CheckoutMandate:
         lc = payload["legalContext"]
         decoded = legal_context_info(lc)
         if decoded is None:
-            return Refusal("ap2/link-not-https" if is_hash_with_non_https_link(lc) else "ap2/legal-context-malformed")
-        if js_length(decoded[1]) > MAX_LINK:
             return Refusal("ap2/legal-context-malformed")
+        if js_length(decoded[1]) > MAX_LINK:
+            return Refusal("ap2/too-large")
         return decoded[0]

@@ -61,6 +61,13 @@ def _no_constant(name: str) -> Any:
     raise ValueError(name)
 
 
+def _js_integer(text: str) -> int | float:
+    """An integer literal as JSON.parse reads it, whatever its digits: infinity when it is outside the double range,
+    and the integer otherwise."""
+    value = float(text)
+    return value if math.isinf(value) else int(text)
+
+
 class _Unparsed:
     """The text is not JSON."""
 
@@ -97,7 +104,7 @@ def _json_parse(text: str) -> Any:
     """JSON.parse of text within the nesting cap, with objects as dicts in ECMAScript property order; UNPARSED when
     it is not JSON."""
     try:
-        return json.loads(text, object_pairs_hook=_js_object, parse_constant=_no_constant)
+        return json.loads(text, object_pairs_hook=_js_object, parse_int=_js_integer, parse_constant=_no_constant)
     except ValueError:
         return UNPARSED
 
@@ -118,7 +125,7 @@ def member_names(text: str) -> list[str]:
     def record(pairs: list[tuple[str, Any]]) -> None:
         names[:] = [k for k, _ in pairs]
 
-    json.loads(text, object_pairs_hook=record, parse_constant=_no_constant)
+    json.loads(text, object_pairs_hook=record, parse_int=_js_integer, parse_constant=_no_constant)
     return names
 
 
@@ -305,10 +312,6 @@ def jws_segments(text: object) -> tuple[str, str, str] | None:
     return parts[0], parts[1], parts[2]
 
 
-def is_json_object(value: object) -> bool:
-    return isinstance(value, Mapping)
-
-
 def is_json_array(value: object) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
 
@@ -370,34 +373,38 @@ class _Fail:
 
 
 _Outcome = Any
-_Step = Generator[tuple[Any, int], _Outcome, _Outcome]
+_Step = Generator[tuple[Any, int, int], _Outcome, _Outcome]
 
 
 class _Resolver:
     """Resolves disclosures into a payload by digest, one nesting level per generator frame, so the depth of the
-    payload never reaches the interpreter's stack."""
+    payload never reaches the interpreter's stack. A disclosed value takes the place of the element or member that
+    references it, and the resolved payload, itself level 1, nests at most MAX_JSON_DEPTH levels."""
 
     def __init__(self, by_digest: dict[str, _Disclosure], codes: SdJwtCodes) -> None:
         self.by_digest = by_digest
         self.codes = codes
         self.referenced: set[str] = set()
+        self.listed_undisclosed: set[str] = set()
 
     def run(self, value: Any) -> _Outcome:
-        frames: list[_Step] = [self.resolve(value, 0)]
+        frames: list[_Step] = [self.resolve(value, 0, 1)]
         sent: _Outcome = None
         while frames:
             try:
-                child, level = frames[-1].send(sent)
+                child, level, depth = frames[-1].send(sent)
             except StopIteration as done:
                 frames.pop()
                 sent = done.value
                 continue
-            frames.append(self.resolve(child, level))
+            frames.append(self.resolve(child, level, depth))
             sent = None
         return sent
 
-    def resolve(self, value: Any, level: int) -> _Step:
+    def resolve(self, value: Any, level: int, depth: int) -> _Step:
         codes = self.codes
+        if isinstance(value, (list, dict)) and depth > MAX_JSON_DEPTH:
+            return _Fail(codes.too_large)
         if isinstance(value, list):
             out: list[Any] = []
             for element in value:
@@ -414,9 +421,9 @@ class _Resolver:
                     found.used = True
                     if level + 1 > RESOLUTION_DEPTH:
                         return _Fail(codes.too_large)
-                    r = yield (found.value, level + 1)
+                    r = yield (found.value, level + 1, depth + 1)
                 else:
-                    r = yield (element, level)
+                    r = yield (element, level, depth + 1)
                 if isinstance(r, _Fail):
                     return r
                 out.append(r)
@@ -428,7 +435,7 @@ class _Resolver:
         for key, member in value.items():
             if key == "_sd":
                 continue
-            r = yield (member, level)
+            r = yield (member, level, depth + 1)
             if isinstance(r, _Fail):
                 return r
             obj[key] = r
@@ -441,7 +448,12 @@ class _Resolver:
             if not isinstance(digest, str):
                 return _Fail(codes.malformed)
             found = self.by_digest.get(digest)
-            if found is None or found.name is None:
+            if found is None:
+                if digest in self.listed_undisclosed:
+                    return _Fail(codes.malformed)
+                self.listed_undisclosed.add(digest)
+                continue
+            if found.name is None:
                 continue
             if digest in self.referenced:
                 return _Fail(codes.malformed)
@@ -452,7 +464,7 @@ class _Resolver:
             found.used = True
             if level + 1 > RESOLUTION_DEPTH:
                 return _Fail(codes.too_large)
-            r = yield (found.value, level + 1)
+            r = yield (found.value, level + 1, depth + 1)
             if isinstance(r, _Fail):
                 return r
             obj[name] = r
@@ -461,7 +473,9 @@ class _Resolver:
 
 def read_sd_jwt(token: object, codes: SdJwtCodes, bounds: SdJwtBounds = DEFAULT_BOUNDS) -> SdJwt | Refusal:
     """Reads an SD-JWT presentation and resolves its disclosures: every disclosure must be referenced and no digest
-    referenced twice; a digest in an object's _sd that does not name a three-element disclosure is ignored there. No
+    referenced twice; a digest in an object's _sd that does not name a three-element disclosure is ignored there, and
+    one that names no disclosure may be listed in an _sd once (RFC 9901 section 7.1 step 4). A resolved payload that,
+    with each disclosed value where its reference sits, nests more than MAX_JSON_DEPTH levels is too_large. No
     signature is verified."""
     malformed = Refusal(codes.malformed)
     if not isinstance(token, str):

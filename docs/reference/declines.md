@@ -86,4 +86,3 @@ the gate itself writes:
 | `ln/preimage-malformed` | The Lightning node's answer is not a 64-digit hex preimage. |
 | `ln/request-hash-mismatch` | x402's request hash, recomputed from your `request` input, is not the option's `extra.requestHash` or the invoice's description hash. |
 | `ln/request-binding-malformed`, `ln/request-resource-mismatch`, `ln/request-server-mismatch`, `ln/request-profile-mismatch`, `ln/invoice-malformed` | Your `request` input, or the option's invoice, does not match the Lightning option it is for. |
-| `card/document-missing` | A card pairing's build found no seller document. |

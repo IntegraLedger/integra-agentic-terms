@@ -1,7 +1,8 @@
 """The buyer pieces of the card pairings. The build input is the seller's document itself (the shown JSON for TAP and
 the plain checkout, the checkout_jwt for Verifiable Intent), kept in Chosen as {"doc": ...}. The TAP field goes to the
 agent's RFC 9421 signer, which answers {"signatureInput", "signature", "lcpHash"}, lcpHash being every lcp-hash field
-line it sent, in order, which bound reads. The checkout mandate goes to the user's wallet, which answers {"l2"}."""
+line it sent, in order, which bound reads. The checkout mandate goes to the wallet (L2, answering {"l2"}) or the agent
+(L3b, answering {"l1", "l2", "l3b"})."""
 
 from collections.abc import Mapping, Sequence
 from typing import Any

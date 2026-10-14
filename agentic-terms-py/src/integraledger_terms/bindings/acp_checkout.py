@@ -110,7 +110,7 @@ def _read(doc: object) -> Advertised | Refusal:
     if decoded is None:
         return Refusal("acp/link-not-https" if is_hash_with_non_https_link(lc) else "acp/legal-context-malformed")
     if js_length(decoded[1]) > MAX_LINK:
-        return Refusal("acp/legal-context-malformed")
+        return Refusal("acp/too-large")
     if not hash_equals(decoded[0], h):
         return Refusal("acp/legal-context-conflict")
     agreement = agreement_in(lc)
@@ -173,9 +173,10 @@ class AcpCheckoutDelegated:
             or not is_rfc3339_date_time(expires_at)
         ):
             return Refusal("acp/choice-malformed")
+        assert isinstance(max_amount, (int, float))
         built = {
             "reason": "one_time",
-            "max_amount": max_amount,
+            "max_amount": int(max_amount),
             "currency": currency,
             "checkout_session_id": nh,
             "merchant_id": merchant_id,

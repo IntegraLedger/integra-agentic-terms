@@ -17,7 +17,6 @@ const NS = "card";
 function chooseDoc(_read: Read, account: string, _inputs: Inputs, _now: number, _ref: string, doc?: unknown) {
   const unnamed = unnamedBuyer(account, NS);
   if (unnamed !== undefined) return unnamed;
-  if (doc === undefined) return refuse("card/document-missing");
   return { doc: doc as Json };
 }
 

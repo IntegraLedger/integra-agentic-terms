@@ -40,7 +40,6 @@ from ._jose import (
 from ._lcp import (
     AgreementFault,
     agreement_in,
-    is_hash_with_non_https_link,
     is_list,
     is_object,
     legal_context_info,
@@ -82,7 +81,7 @@ def _legal_context_of(o: Mapping[str, Any]) -> tuple[AtrHash, str] | Refusal:
     lc = o.get("legalContext")
     decoded = legal_context_info(lc)
     if decoded is None:
-        return Refusal("card/link-not-https" if is_hash_with_non_https_link(lc) else "card/legal-context-malformed")
+        return Refusal("card/legal-context-malformed")
     if js_length(decoded[1]) > MAX_LINK:
         return Refusal("card/legal-context-malformed")
     return decoded
@@ -94,7 +93,7 @@ def _with_agreement(o: Mapping[str, Any], r: tuple[AtrHash, str] | Refusal) -> A
         return r
     agreement = agreement_in(o.get("legalContext"))
     if isinstance(agreement, AgreementFault):
-        return Refusal(f"card/{agreement.fault}")
+        return Refusal("card/legal-context-malformed")
     return Advertised(h=r[0], link=r[1], offer={}, agreement=agreement if isinstance(agreement, str) else None)
 
 

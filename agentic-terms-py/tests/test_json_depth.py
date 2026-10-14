@@ -1,12 +1,14 @@
 """One JSON nesting cap of 64 levels for every read of JSON text by a binding: core-vectors.json's jsonDepth rows,
 binding reads of text nested 64 and 65 levels deep, and the ACP, UCP and ACK reads, which measure a document as
-JSON.stringify writes it, the document being level 1. The binding codes are those @integraledger/lcp's same reads give
+JSON.stringify writes it, the document being level 1. core-vectors.json's jsonNumbers rows: an integer literal of any
+length reads as JSON.parse reads it. The binding codes are those @integraledger/lcp's same reads give
 for the same inputs: its ACK and AP2 read, usdcRequestHash, atrNamesInvoice, and jsonBytes, which measures a value
 nested past 64 levels as over every size limit and writes an integer past the double range, which JSON.parse reads as
 Infinity, as null."""
 
 import base64
 import json
+import math
 from typing import Any
 
 import pytest
@@ -21,7 +23,7 @@ from integraledger_terms import (
     Binding,
     Refusal,
 )
-from integraledger_terms.bindings._jose import MAX_JSON_DEPTH, UNPARSED, json_within_depth, parse_json
+from integraledger_terms.bindings._jose import MAX_JSON_DEPTH, UNPARSED, json_bytes, json_within_depth, parse_json
 from integraledger_terms.bindings.lightning import atr_names_invoice
 from integraledger_terms.bindings.mpp_charge_usdc import usdc_request_hash
 
@@ -56,6 +58,16 @@ def test_json_depth_rows() -> None:
     for row in rows:
         assert json_within_depth(row["text"]) is row["accept"], row["name"]
         assert (parse_json(row["text"]) is not UNPARSED) is row["accept"], row["name"]
+
+
+def test_json_numbers_rows() -> None:
+    rows = CORE["jsonNumbers"]["rows"]
+    assert [len(r["text"]) - len('{"n":}') for r in rows] == [4301, 400]
+    for row in rows:
+        assert json_within_depth(row["text"]) is True, row["name"]
+        value = parse_json(row["text"])
+        assert value == {"n": math.inf}, row["name"]
+        assert json_bytes(value) == len(row["stringified"].encode("utf-8")), row["name"]
 
 
 def test_ack_token_payload_nested_past_64_is_token_malformed() -> None:
