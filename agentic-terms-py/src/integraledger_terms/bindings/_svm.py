@@ -327,6 +327,13 @@ def is_point(data: bytes) -> bool:
     return vx2 == u or vx2 == (-u) % _P
 
 
+def is_curve_key(value: object) -> bool:
+    """A base58 public key whose 32 bytes are a point on the Ed25519 curve, by the rule find_pda applies to a
+    candidate: a key that can sign, which a program-derived address is not."""
+    data = key_bytes(value)
+    return data is not None and is_point(data)
+
+
 @dataclass(frozen=True, slots=True)
 class Pda:
     address: str

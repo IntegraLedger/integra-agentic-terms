@@ -569,6 +569,20 @@ def test_x402_batch_settlement_solana_b6_es2s_opening_and_es3s_voucher_the_signe
     assert BATCH_BINDING.channel_ref(signed) == ChannelRef(**BV["ES4"]["expectRef"])
 
 
+def test_x402_batch_settlement_solana_es2_the_opening_build_is_its_build_message_byte_for_byte() -> None:
+    """build's open transaction message for ES2's choice is, byte for byte, the message whose SHA-256 is ES2's
+    buildMessageSha256: ES2's instructions compiled with the account order of @solana/kit 8.4.0, the compiler of the
+    x402 steward SDK's open transaction (x402-foundation/x402 751590a2,
+    typescript/packages/mechanisms/svm/src/payment-channels/open.ts L501-516). ES2's own wire holds the same
+    instructions with each class of account keys in byte order."""
+    doc = x402_doc(with_memo(BS["option"]), BV["fixed"]["resource"])
+    unsigned = BATCH_BINDING.build(batch_choice(doc), H)
+    assert not isinstance(unsigned, Refusal), unsigned
+    message = unsigned.requests[0]["message"]
+    assert isinstance(message, bytes) and len(message) == BV["ES2"]["messageLength"]
+    assert hashlib.sha256(message).hexdigest() == BV["ES2"]["buildMessageSha256"]
+
+
 def test_x402_batch_settlement_solana_b10_b16_refusals() -> None:
     refusals(batch_pairing(), [EVM_ACCOUNT, f"{MAINNET}:{BS['payer']}"])
 
@@ -696,6 +710,52 @@ def test_x402_batch_settlement_solana_agreed_refusals_with_an_h() -> None:
         assert BATCH_BINDING.build(copy.deepcopy(choice), row["h"]) == Refusal(row["expect"]), row["case"]
 
 
+def test_x402_batch_settlement_solana_agreed_refusals_a_channel_config_the_program_refuses() -> None:
+    """The file holds x402/batch-settlement/solana agreedRefusals rows that carry configMembers. Each member set
+    replaces those members of ES4's config in ES2's opening as ES4 presents it, and in build_within of the advertised
+    option with maxClaimableAmount 1000, and each name in the row's calls refuses it with the row's code. The
+    payment-channels program's open refuses a grace_period of 0 and takes it as a u32, and refuses an authorized signer
+    off the Ed25519 curve (solana-foundation/payment-channels 0c07d5751c8972abf6a219570a3f39a72f46f879, the revision
+    x402 751590a2 pins, program/payment_channels/src/instructions/open.rs L85, L116, L267-269 and L271-273); each row's
+    payerAuthorizer is ES10's y = 2 bytes, no point by ES10, or ES1's channel PDA. The delays 1 and 2^32 - 1 are
+    read, and each opening's channel is ES1's: the delay is no seed of the channel PDA. The Python binding has no
+    reference: a row's reference is run by the TypeScript package's tests."""
+    rows = [r for r in BV["agreedRefusals"]["rows"] if "configMembers" in r and r.get("pairing") == BATCH_BINDING.id]
+    assert rows, "no x402/batch-settlement/solana agreedRefusals row carries configMembers"
+    y2 = next(r for r in BV["ES10"]["rows"] if r["case"] == "y = 2")
+    assert y2["point"] is False
+    off_curve = {b58_encode(bytes.fromhex(y2["bytesHex"])), BV["ES1"]["channelPda"]}
+    accepted = BV["ES4"]["accepted"]
+    required = {"x402Version": 2, "resource": BV["fixed"]["resource"], "accepts": [accepted]}
+
+    def runs(members: Mapping[str, Any]) -> dict[str, Callable[[], Any]]:
+        config = {**BV["ES4"]["config"], **members}
+        opening = batch_presented(
+            {"type": "deposit", "channelConfig": config, "voucher": ES4_VOUCHER,
+             "deposit": {"amount": BS["deposit"], "transaction": BV["ES2"]["wireBase64"]}}
+        )  # fmt: skip
+        w = {"required": required, "accepted": accepted, "channelConfig": config, "maxClaimableAmount": 1000}
+        return {
+            "bound": lambda: BATCH_BINDING.bound(opening),
+            "channel.ref": lambda: BATCH_BINDING.channel_ref(opening),
+            "buildWithin": lambda: BATCH_BINDING.build_within(w, H),
+        }
+
+    for row in rows:
+        for members in row["configMembers"]:
+            assert "payerAuthorizer" not in members or members["payerAuthorizer"] in off_curve, members
+            calls = runs(members)
+            assert set(row["calls"]) <= set(calls) | {"reference"}, row["case"]
+            for name in row["calls"]:
+                if name != "reference":
+                    assert calls[name]() == Refusal(row["expect"]), (name, members)
+    for delay in (1, 2**32 - 1):
+        calls = runs({"withdrawDelay": delay})
+        assert calls["bound"]() == BV["ES4"]["expectBound"], delay
+        assert calls["channel.ref"]() == ChannelRef(**BV["ES4"]["expectRef"]), delay
+        assert not isinstance(calls["buildWithin"](), Refusal), delay
+
+
 def test_x402_batch_settlement_solana_es10_the_ed25519_point_rule() -> None:
     """The file holds ES10's rows: is_point, the rule a program-derived address candidate meets, gives each row's
     point value for its 32 bytes."""
@@ -773,6 +833,10 @@ def test_x402_batch_settlement_solana_agreed_refusals_on_the_buyer_half() -> Non
     assert unsigned.complete(["0x" + "11" * 64, good[1]]) == Refusal(input_malformed)
     for key, value in (("deposit", 0), ("deposit", 2**64), ("openSlot", 2**64), ("salt", -1), ("tokenProgram", "x")):
         assert BATCH_BINDING.build({**choice, key: value}, H) == Refusal(input_malformed), key
+    # ES1's channel PDA, a key off the Ed25519 curve, as the payer authorizer: the program's open refuses it as the
+    # authorized signer (solana-foundation/payment-channels 0c07d5751c8972abf6a219570a3f39a72f46f879,
+    # program/payment_channels/src/instructions/open.rs L271-273).
+    assert BATCH_BINDING.build({**choice, "payerAuthorizer": BV["ES1"]["channelPda"]}, H) == Refusal(input_malformed)
 
 
 def test_x402_batch_settlement_solana_open_channel_holds_es1s_channel_and_within_signs_es3s_voucher() -> None:

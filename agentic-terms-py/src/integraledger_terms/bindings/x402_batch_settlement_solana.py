@@ -19,6 +19,7 @@ from ._lcp import is_list, is_object, normal_hash, safe_int, to_lcp_string
 from ._svm import (
     TOKEN,
     TOKEN_2022,
+    U32_LIMIT,
     Carrier,
     ChannelBuildInput,
     ChannelOpen,
@@ -31,6 +32,7 @@ from ._svm import (
     channel_voucher_message,
     decode_svm_tx,
     integer_of,
+    is_curve_key,
     is_key,
     is_solana_network,
     key_string,
@@ -100,7 +102,13 @@ class _Config:
 
 
 def _config(value: object) -> _Config | None:
-    """A channelConfig with its members in their rail forms, or None."""
+    """A channelConfig as the payment-channels program's open takes it (solana-foundation/payment-channels
+    0c07d5751c8972abf6a219570a3f39a72f46f879, the revision x402 751590a2 pins, instructions/open.rs), with its members
+    in their rail forms, or None: its keys, with a payerAuthorizer that is a point on the Ed25519 curve, since open
+    refuses an authorized signer off it; a decimal u64 salt; an openSlot that is a safe integer of at least 0; and a
+    withdrawDelay that is a positive integer below 2^32, since grace_period is a u32 that open refuses as 0. It does
+    not compare the payer with the option's extra.feePayer, which open also requires to differ: that comparison is the
+    facilitator's."""
     if not is_object(value):
         return None
 
@@ -108,13 +116,15 @@ def _config(value: object) -> _Config | None:
         return isinstance(v, str) and _U64_DECIMAL.fullmatch(v) is not None and int(v) < U64_LIMIT
 
     open_slot = safe_int(value.get("openSlot"))
+    delay = safe_int(value.get("withdrawDelay"))
     if not (
         is_key(value.get("payer"))
-        and is_key(value.get("payerAuthorizer"))
+        and is_curve_key(value.get("payerAuthorizer"))
         and is_key(value.get("receiver"))
         and ("receiverAuthorizer" not in value or is_key(value["receiverAuthorizer"]))
         and is_key(value.get("token"))
-        and safe_int(value.get("withdrawDelay")) is not None
+        and delay is not None
+        and 1 <= delay < U32_LIMIT
         and u64(value.get("salt"))
         and open_slot is not None
         and open_slot >= 0
@@ -167,7 +177,8 @@ class X402BatchSettlementSolana:
     def build(self, choice: Json, h: AtrHash) -> BatchUnsigned | Refusal:
         """The opening: the open transaction, then the first voucher, each for the payer or its authorizer to sign. The
         transaction ends with two v3 Memo instructions: extra.memo, then x402's binding memo for
-        extra.receiverAuthorizer."""
+        extra.receiverAuthorizer. A payerAuthorizer that is not a point on the Ed25519 curve, which the program's open
+        refuses as the authorized signer, is svm/input-malformed."""
         if not is_object(choice):
             return Refusal("x402/not-v2")
         required, accepted = choice.get("required"), choice.get("accepted")
@@ -198,6 +209,8 @@ class X402BatchSettlementSolana:
         salt: Any = choice.get("salt")
         open_slot: Any = choice.get("openSlot")
         blockhash: Any = choice.get("recentBlockhash")
+        if not is_curve_key(authorizer):
+            return Refusal("svm/input-malformed")
         channel = channel_pda(payer, fee_payer, accepted["asset"], authorizer, salt, open_slot)
         if isinstance(channel, Refusal):
             return channel
@@ -400,7 +413,8 @@ class X402BatchSettlementSolana:
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The channel PDA from the payment's config, which must equal its voucher's id and its channel
-        instruction's account."""
+        instruction's account. A config that is not one, such as one whose payerAuthorizer is not a point on the
+        Ed25519 curve or whose withdrawDelay is not a positive integer below 2^32, is x402/payload-malformed."""
         x = payload_of(presented, pairs)
         if isinstance(x, Refusal):
             return x
