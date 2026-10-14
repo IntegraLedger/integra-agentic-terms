@@ -2,14 +2,17 @@
 string with no base.
 
 Leading and trailing C0 controls and spaces are stripped and ASCII tabs and newlines removed. The scheme is an ASCII
-letter, then letters, digits, "+", "-" or ".", then ":", lower-cased. For http, ws, wss and ftp the slashes and
+letter, then letters, digits, "+", "-" or ".", then ":", lower-cased. For http, https, ws, wss and ftp the slashes and
 backslashes after the scheme are skipped and the authority runs to the next "/", "\\", "?" or "#"; its host, after any
-userinfo, must be non-empty. A bracketed host is an IPv6 address with no zone. Any other host is percent-decoded as UTF-8 and must
-hold no forbidden domain code point; an ASCII label is lower-cased, a non-ASCII label is converted as IDNA 2003 does;
-a host whose last label is a number must be an IPv4 address in the parser's forms (decimal, 0x hex or 0-led octal
-parts, at most four). A port is digits up to 65535. For file, a host may be empty. For any other scheme, an authority
-after "//" holds an opaque host with no forbidden host code point, and without "//" the rest is an opaque path that
-always parses.
+userinfo, must be non-empty. For file, an authority follows two slashes or backslashes and runs to the same characters;
+all of it is the host, with no userinfo or port, and it may be empty or a Windows drive letter (an ASCII letter, then
+":" or "|"), which the parser reads as the path's first segment. For any other scheme, an authority after "//" holds an
+opaque host with no forbidden host code point, and without "//" the rest is an opaque path that always parses. In every
+authority, a host after userinfo or before a port must be non-empty. A bracketed host is an IPv6 address with no zone.
+Any other host of http, https, ws, wss, ftp or file is percent-decoded as UTF-8 and must hold no forbidden domain code
+point; an ASCII label is lower-cased, a non-ASCII label is converted as IDNA 2003 does; a host whose last label is a
+number must be an IPv4 address in the parser's forms (decimal, 0x hex or 0-led octal parts, at most four). A port is
+digits up to 65535.
 """
 
 import ipaddress
@@ -21,6 +24,7 @@ _SPECIAL = frozenset({"http", "https", "ws", "wss", "ftp", "file"})
 _FORBIDDEN_HOST = frozenset("\x00\t\n\r #/:<>?@[\\]^|")
 _FORBIDDEN_DOMAIN = _FORBIDDEN_HOST | frozenset(chr(c) for c in range(0x20)) | frozenset("%\x7f")
 _IPV4_PART = re.compile(r"0[xX][0-9a-fA-F]*|0[0-7]*|[1-9][0-9]*")
+_WINDOWS_DRIVE_LETTER = re.compile(r"[A-Za-z][:|]")
 
 
 def _ipv4_number(part: str) -> int | None:
@@ -74,30 +78,44 @@ def _is_domain(host: str) -> bool:
     return not _ends_in_a_number(ascii_host) or _is_ipv4(ascii_host)
 
 
-def _authority_parses(authority: str, special: bool, file: bool) -> bool:
-    host_port = authority.rpartition("@")[2]
+def _is_ipv6(text: str) -> bool:
+    if "%" in text:
+        return False
+    try:
+        ipaddress.IPv6Address(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _authority_parses(authority: str, special: bool) -> bool:
+    _, at, host_port = authority.rpartition("@")
     if host_port.startswith("["):
         end = host_port.find("]")
-        if end < 0 or "%" in host_port[:end]:
-            return False
-        try:
-            ipaddress.IPv6Address(host_port[1:end])
-        except ValueError:
+        if end < 0 or not _is_ipv6(host_port[1:end]):
             return False
         host, rest = host_port[: end + 1], host_port[end + 1 :]
         if rest and not rest.startswith(":"):
             return False
-        port = rest[1:]
+        colon, port = rest[:1], rest[1:]
     else:
-        host, _, port = host_port.partition(":")
+        host, colon, port = host_port.partition(":")
+    if host == "" and (at or colon):
+        return False
     if port and (not (port.isascii() and port.isdigit()) or int(port) > 65_535):
         return False
     if host.startswith("["):
         return True
     if not special:
         return not any(c in _FORBIDDEN_HOST for c in host)
-    if host == "":
-        return file
+    return host != "" and _is_domain(host)
+
+
+def _file_host_parses(host: str) -> bool:
+    if host == "" or _WINDOWS_DRIVE_LETTER.fullmatch(host) is not None:
+        return True
+    if host.startswith("["):
+        return host.endswith("]") and _is_ipv6(host[1:-1])
     return _is_domain(host)
 
 
@@ -114,13 +132,13 @@ def url_scheme(value: str) -> str | None:
     if special and scheme != "file":
         rest = rest.lstrip("/\\")
         authority = re.split(r"[/\\?#]", rest, maxsplit=1)[0]
-        return scheme if _authority_parses(authority, True, False) else None
+        return scheme if _authority_parses(authority, True) else None
     if scheme == "file":
         if rest[:2] not in ("//", "\\\\", "/\\", "\\/"):
             return scheme
-        authority = re.split(r"[/\\?#]", rest[2:], maxsplit=1)[0]
-        return scheme if _authority_parses(authority, True, True) else None
+        host = re.split(r"[/\\?#]", rest[2:], maxsplit=1)[0]
+        return scheme if _file_host_parses(host) else None
     if rest.startswith("//"):
         authority = re.split(r"[/?#]", rest[2:], maxsplit=1)[0]
-        return scheme if _authority_parses(authority, False, False) else None
+        return scheme if _authority_parses(authority, False) else None
     return scheme

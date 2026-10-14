@@ -2,7 +2,8 @@
 string of at most 2048 characters that parses as an absolute URL whose scheme is not https, and legal-context-malformed
 for every other value the https-link rule refuses. Card's, ACK's and AP2's readings give legal-context-malformed for
 every value the rule refuses. Expected values are core-vectors.json's links rows (refusedAs, and the rule its about
-states), and each document is its vector file's with the link replaced."""
+states), and each document is its vector file's with the link replaced; for the links of other schemes below, whether
+the WHATWG URL Standard's basic URL parser reads them."""
 
 import base64
 import json
@@ -75,6 +76,28 @@ def test_each_reading_splits_the_link(row: dict[str, Any]) -> None:
     nh = NI["fixed"]["H"]
     challenge = {**NI["place"]["expect"], "opaque": _opaque(nh, link)}
     assert _outcome(MPP_CHARGE_NEARINTENTS.read([challenge]), nh) == expect("mpp", nh)
+
+
+# The WHATWG URL Standard's basic URL parser reads a file URL's whole authority as its host, with no user information
+# or port, and a Windows drive letter there as the path's first segment; in every authority it fails an empty host
+# after user information or before a port.
+@pytest.mark.parametrize(
+    ("link", "fault"),
+    [
+        ("file://atr.seller.example:443/x", "legal-context-malformed"),
+        ("file://user@atr.seller.example/x", "legal-context-malformed"),
+        ("file://C|/x", "link-not-https"),
+        ("file:///x", "link-not-https"),
+        ("foo://:443/x", "legal-context-malformed"),
+        ("foo://user@/x", "legal-context-malformed"),
+        ("foo://atr.seller.example:443/x", "link-not-https"),
+    ],
+)
+def test_a_link_of_another_scheme_is_one_the_whatwg_parser_reads(link: str, fault: str) -> None:
+    h = X["H"]
+    info = {"type": "sha256", "value": h, "legalContextUrl": link}
+    assert is_hash_with_non_https_link(info) is (fault == "link-not-https")
+    assert _outcome(legal_context_of({"legalContext": {"info": info}}), h) == f"x402/{fault}"
 
 
 ACP = load("acp-checkout.json")
