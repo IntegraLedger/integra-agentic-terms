@@ -265,26 +265,34 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
         );
         expect(signer.requests.length).toBe(0);
       }));
-    // A hold's `atr` is read as padded standard base64 in its canonical form only (RFC 4648 sections 3.5 and 4). Over
-    // the 2-byte ATR "ab", spelled "YWI=", the spellings "YWJ=" (a pad bit set), "YWI" (no padding) and "YW\nI=" (a line
-    // break) are unreadable before any signer call; the canonical spelling signs.
-    it("a hold whose ATR is not canonical base64: signed-not-bound, the held ATR unreadable, 0 signer calls", () =>
-      at(E.now, async () => {
-        const ab = new TextEncoder().encode("ab");
-        const doc = x402Doc(batchEvm, E.option, `0x${createHash("sha256").update(ab).digest("hex")}`);
-        const opened = unwrap(await transact(doc, batchEvm, counting(evmAccount, evmAnswer), serving(ab), { inputs: evmInputs }));
-        const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchEvm));
-        expect(hold.atr).toBe("YWI=");
-        for (const atr of ["YWJ=", "YWI", "YW\nI="]) {
+    // A hold's `atr` is read as padded standard base64 in its canonical form only (RFC 4648 sections 3.5 and 4), as the
+    // protocol package reads a rail's base64. Each other spelling of the held bytes is unreadable before any signer call,
+    // and none throws: bits set past the last byte ("QR==" for "A", "YWJ=" for "ab"), padding missing or one too many,
+    // whitespace, the URL-safe alphabet ("Pz8-" for "??>") and a character outside Latin-1. The canonical spelling signs.
+    it.each([
+      ["A", "QQ==", ["QR==", "QQ=", "QQ"]],
+      ["ab", "YWI=", ["YWJ=", "YWI", "YWI==", "YW\nI=", "YW I=", "YWI=\t", " YWI="]],
+      ["??>", "Pz8+", ["Pz8-", "Pz8+=", "Pz8\u0100"]],
+    ] as [string, string, string[]][])(
+      "the ATR %j held in a spelling other than %s: signed-not-bound, the held ATR unreadable, 0 signer calls",
+      (text, canonical, others) =>
+        at(E.now, async () => {
+          const atr = new TextEncoder().encode(text);
+          const doc = x402Doc(batchEvm, E.option, `0x${createHash("sha256").update(atr).digest("hex")}`);
+          const opened = unwrap(await transact(doc, batchEvm, counting(evmAccount, evmAnswer), serving(atr), { inputs: evmInputs }));
+          const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchEvm));
+          expect(hold.atr).toBe(canonical);
+          for (const other of others) {
+            const signer = counting(evmAccount, evmAnswer);
+            const out = await within(doc, { ...hold, atr: other }, batchEvm, signer);
+            expect(isDeclined(out) && out.decline, other).toEqual({ code: "signed-not-bound", detail: "The held ATR is unreadable." });
+            expect(signer.requests.length).toBe(0);
+          }
           const signer = counting(evmAccount, evmAnswer);
-          const out = await within(doc, { ...hold, atr }, batchEvm, signer);
-          expect(isDeclined(out) && out.decline, atr).toEqual({ code: "signed-not-bound", detail: "The held ATR is unreadable." });
-          expect(signer.requests.length).toBe(0);
-        }
-        const signer = counting(evmAccount, evmAnswer);
-        unwrap(await within(doc, hold, batchEvm, signer));
-        expect(signer.requests.length).toBe(1);
-      }));
+          unwrap(await within(doc, hold, batchEvm, signer));
+          expect(signer.requests.length).toBe(1);
+        }),
+    );
     it("a hold whose opening was edited to EB6's plant (salt H′, channel id matched): signed-not-bound, 0 signer calls", () =>
       at(E.now, async () => {
         const { hold } = await evmHold();

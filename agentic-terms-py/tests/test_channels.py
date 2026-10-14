@@ -245,16 +245,48 @@ def test_a_hold_whose_atr_bytes_were_edited() -> None:
     assert s.requests == []
 
 
-@pytest.mark.parametrize("atr", ["YWJ=", "YWI", "YW\nI="], ids=["a pad bit set", "no padding", "a line break"])
-def test_a_hold_whose_atr_is_not_canonical_base64_is_unreadable(atr: str) -> None:
-    # A hold's atr is read as padded standard base64 in its canonical form only (RFC 4648 sections 3.5 and 4). Over the
-    # 2-byte ATR "ab", spelled "YWI=", another spelling is unreadable before any signer call; the canonical one signs.
-    ab = b"ab"
-    doc = doc_for("0x" + hashlib.sha256(ab).hexdigest())
-    opened = run(lambda c: transact(doc, BINDING, signer(), c, inputs=INPUTS), serving(ab))
+@pytest.mark.parametrize(
+    ("atr_bytes", "canonical", "atr"),
+    [
+        (b"A", "QQ==", "QR=="),
+        (b"ab", "YWI=", "YWJ="),
+        (b"A", "QQ==", "QQ="),
+        (b"A", "QQ==", "QQ"),
+        (b"ab", "YWI=", "YWI"),
+        (b"ab", "YWI=", "YWI=="),
+        (b"ab", "YWI=", "YW\nI="),
+        (b"ab", "YWI=", "YW I="),
+        (b"ab", "YWI=", "YWI=\t"),
+        (b"ab", "YWI=", " YWI="),
+        (b"??>", "Pz8+", "Pz8-"),
+        (b"??>", "Pz8+", "Pz8+="),
+        (b"??>", "Pz8+", "Pz8\u0100"),
+    ],
+    ids=[
+        "a bit set past one byte",
+        "a bit set past two bytes",
+        "a pad missing",
+        "no padding after one byte",
+        "no padding after two bytes",
+        "a pad too many",
+        "a line break",
+        "a space",
+        "a trailing tab",
+        "a leading space",
+        "the URL-safe alphabet",
+        "a pad after a full group",
+        "a character outside Latin-1",
+    ],
+)
+def test_a_hold_whose_atr_is_not_canonical_base64_is_unreadable(atr_bytes: bytes, canonical: str, atr: str) -> None:
+    # A hold's atr is read as padded standard base64 in its canonical form only (RFC 4648 sections 3.5 and 4), as the
+    # protocol package reads a rail's base64. Another spelling of the held bytes is unreadable before any signer call,
+    # and none raises; the canonical one signs.
+    doc = doc_for("0x" + hashlib.sha256(atr_bytes).hexdigest())
+    opened = run(lambda c: transact(doc, BINDING, signer(), c, inputs=INPUTS), serving(atr_bytes))
     assert isinstance(opened, Transacted) and opened.signed is not None, opened
     hold = unwrap(open_channel(opened.atr_bytes, opened.signed, BINDING))
-    assert hold["atr"] == "YWI="
+    assert hold["atr"] == canonical
     s = signer()
     assert run_within({**hold, "atr": atr}, doc=doc, s=s) == Declined("signed-not-bound", "The held ATR is unreadable.")
     assert s.requests == []
