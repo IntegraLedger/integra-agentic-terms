@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from integraledger_terms import MPP_CHARGE_USDC_STACKS, Refusal
+from integraledger_terms import MPP_CHARGE_USDC_STACKS, AtrHash, Refusal
 
 from breadth import H, LINK, Pairing, build_and_sign, plant
 from mpp_docs import issued, placed_doc
@@ -85,6 +85,102 @@ def test_mpp_charge_usdc_stacks_truncated_or_extended_transaction_is_malformed()
     # SIP-005: a transaction is exactly its encoding, so bytes read short, or bytes after the encoding, are not one.
     for wire in (WIRE[:-1], WIRE + b"\x00"):
         assert MPP_CHARGE_USDC_STACKS.bound(credential(wire)) == Refusal("mpp/stacks-tx-malformed")
+
+
+# ── Clarity values and a Stacks node's depth bound ───────────────────────────────────────────────────────────────
+# A Stacks node reads a transaction's Clarity values to 16 levels, the outermost counting 1 (stacks-core's
+# UNSANITIZED_DEPTH_CHECK). The transactions below are M4's with one value replaced, left with M4's signature, which
+# bound does not verify. Each expected answer is @integraledger/lcp's chargeUsdcStacks.bound over the same bytes with
+# @stacks/transactions 7.6.0.
+
+PREFIX, FT_CONDITION, CALL = WIRE[:111], WIRE[115:186], WIRE[186:]
+ARGUMENTS_AT = 41  # the call's type, contract address, contract name, function name and argument count
+UINT = b"\x01" + (0xA1A2A3A4A5A6A7A8).to_bytes(16, "big")
+CONTAINERS = {
+    "some": b"\x0a",
+    "ok": b"\x07",
+    "err": b"\x08",
+    "list": b"\x0b\x00\x00\x00\x01",
+    "tuple": b"\x0c\x00\x00\x00\x01\x01a",
+}
+MALFORMED = Refusal("mpp/stacks-tx-malformed")
+NOT_H = Refusal("mpp/stacks-memo-not-h")
+
+
+def levels(n: int, container: bytes, inner: bytes = UINT) -> bytes:
+    """inner as the one value of n - 1 nested containers, so that it sits at level n."""
+    return container * (n - 1) + inner
+
+
+def transaction(conditions: list[bytes], payload: bytes) -> bytes:
+    return PREFIX + len(conditions).to_bytes(4, "big") + b"".join(conditions) + payload
+
+
+def first_argument(value: bytes) -> bytes:
+    """M4's transfer with value as its first argument in place of the uint amount."""
+    assert CALL[ARGUMENTS_AT : ARGUMENTS_AT + 17] == b"\x01" + int(F["amount"]).to_bytes(16, "big")
+    return transaction([FT_CONDITION], CALL[:ARGUMENTS_AT] + value + CALL[ARGUMENTS_AT + 17 :])
+
+
+def nft_asset_value(value: bytes) -> bytes:
+    """M4's transfer under one non-fungible post-condition (the sender does not send the token's nft) on value."""
+    condition = b"\x02\x02" + FT_CONDITION[2:44] + b"\x05usdcx\x03nft" + value + b"\x11"
+    return transaction([condition], CALL)
+
+
+def bind(wire: bytes) -> AtrHash | Refusal:
+    return MPP_CHARGE_USDC_STACKS.bound(credential(wire))
+
+
+def test_mpp_charge_usdc_stacks_clarity_value_past_16_levels_is_malformed() -> None:
+    assert bind(first_argument(UINT)) == bind(nft_asset_value(UINT)) == M4["expectBound"]
+    for name, container in CONTAINERS.items():
+        for build in (first_argument, nft_asset_value):
+            assert (name, bind(build(levels(16, container)))) == (name, M4["expectBound"])
+            assert (name, bind(build(levels(17, container)))) == (name, MALFORMED)
+    mixed = b"".join(CONTAINERS.values()) * 3
+    assert bind(first_argument(mixed + UINT)) == M4["expectBound"]
+    assert bind(first_argument(mixed + CONTAINERS["some"] + UINT)) == MALFORMED
+    assert bind(first_argument(levels(1000, CONTAINERS["some"]))) == MALFORMED
+
+
+def test_mpp_charge_usdc_stacks_depth_reads_every_element_and_member() -> None:
+    lists, empty = CONTAINERS["list"], b"\x0b\x00\x00\x00\x00"
+    assert bind(first_argument(levels(16, lists, empty))) == M4["expectBound"]
+    assert bind(first_argument(levels(17, lists, empty))) == MALFORMED
+    three = b"\x0b\x00\x00\x00\x03" + UINT * 3
+    assert bind(first_argument(levels(15, lists, three))) == M4["expectBound"]
+    assert bind(first_argument(levels(16, lists, three))) == MALFORMED
+
+    def pair(a: bytes) -> bytes:
+        """A tuple of two members: a, then a uint."""
+        return b"\x0c\x00\x00\x00\x02\x01a" + a + b"\x01b" + UINT
+
+    assert bind(first_argument(pair(levels(15, CONTAINERS["some"])))) == M4["expectBound"]
+    assert bind(first_argument(pair(levels(16, CONTAINERS["some"])))) == MALFORMED
+
+
+def test_mpp_charge_usdc_stacks_payload_recipient_past_16_levels_is_malformed() -> None:
+    # A token transfer, a coinbase to a recipient and a Nakamoto coinbase are not the transfer call, so a recipient
+    # within the bound answers memo-not-h. @stacks/transactions holds a Nakamoto coinbase's recipient as the value
+    # inside its (some ...), and the levels count from that value.
+    principal = FT_CONDITION[2:23]
+    some = CONTAINERS["some"]
+
+    def token_transfer(recipient: bytes) -> bytes:
+        return transaction([], b"\x00" + recipient + int(F["amount"]).to_bytes(8, "big") + bytes(34))
+
+    def coinbase(recipient: bytes) -> bytes:
+        return transaction([], b"\x05" + bytes(32) + recipient)
+
+    def nakamoto_coinbase(recipient: bytes) -> bytes:
+        return transaction([], b"\x08" + bytes(32) + recipient + bytes(80))
+
+    assert bind(token_transfer(b"\x05" + principal)) == bind(coinbase(b"\x05" + principal)) == NOT_H
+    assert bind(nakamoto_coinbase(b"\x09")) == bind(nakamoto_coinbase(some + b"\x05" + principal)) == NOT_H
+    for build, outer in ((token_transfer, b""), (coinbase, b""), (nakamoto_coinbase, some)):
+        assert (build.__name__, bind(build(outer + levels(16, some)))) == (build.__name__, NOT_H)
+        assert (build.__name__, bind(build(outer + levels(17, some)))) == (build.__name__, MALFORMED)
 
 
 def test_mpp_charge_usdc_stacks_canonical_rows() -> None:

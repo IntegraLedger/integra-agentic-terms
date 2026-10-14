@@ -1,6 +1,9 @@
 """The Stacks transaction the buyer half reads: a signed transaction's consensus bytes decoded field by field (version,
 chain id, authorization with its spending conditions, anchor and post-condition modes, post-conditions, payload and
-Clarity values), to find a contract call's function name and the bytes of its fourth argument.
+Clarity values), to find a contract call's function name and the bytes of its fourth argument. Every Clarity value the
+transaction carries nests at most 16 levels, the outermost counting 1, the depth a Stacks node reads; a deeper one is
+malformed. A Nakamoto coinbase's recipient counts from the value inside its (some ...), as @stacks/transactions 7.6.0
+holds it.
 
 A read past the end gives what bytes remain: an integer read short is not a number, a length that is not a number
 reads nothing, and every later read past the end reads nothing. Enumerations, signature and coinbase lengths, Clarity
@@ -41,6 +44,9 @@ _NONE = 9
 _SOME = 10
 _MAX_NAME = 128
 _MAX_BODY = 100_000
+# The deepest a Clarity value nests, the outermost value counting 1: a Stacks node reads a transaction's Clarity values
+# with this bound (stacks-core's UNSANITIZED_DEPTH_CHECK).
+_MAX_DEPTH = 16
 _P = 2**256 - 2**32 - 977
 # The characters of a Clarity name in the root collation's primary order; a letter's two cases share a weight, and the
 # lower case sorts first when the weights are equal.
@@ -192,9 +198,11 @@ class _Frame:
     names: list[str] = field(default_factory=list)
 
 
-def clarity_value(r: _Reader) -> bytes | None:
-    """One Clarity value, read with an explicit stack; tuple member names are checked once the value is read. For
-    (some <buffer>) it returns the value's serialization from the bytes read, and None for any other value."""
+def clarity_value(r: _Reader, level: int = 1) -> bytes | None:
+    """One Clarity value, read with an explicit stack; tuple member names are checked once the value is read. The value
+    counts level, and each value inside an optional, a response, a list or a tuple one more than its container; a value
+    past _MAX_DEPTH is malformed. For (some <buffer>) it returns the value's serialization from the bytes read, and None
+    for any other value."""
     stack = [_Frame(1)]
     names: list[str] = []
     kinds: list[int] = []
@@ -208,6 +216,8 @@ def clarity_value(r: _Reader) -> bytes | None:
             stack.pop()
             continue
         frame.pending -= 1
+        if level + len(stack) - 1 > _MAX_DEPTH:
+            raise Malformed
         if frame.named:
             name = _lp_string(r)
             names.append(name)
@@ -294,7 +304,9 @@ def _payload(r: _Reader) -> Call | None:
         if kind == 8 and r.peek() not in (_NONE, _SOME):
             raise Malformed
         if kind != 4:
-            clarity_value(r)
+            # @stacks/transactions 7.6.0 holds a Nakamoto coinbase's recipient as the value inside its (some ...), and
+            # its levels count from that value.
+            clarity_value(r, 0 if kind == 8 else 1)
         if kind == 8 and len(r.read(80)) != 80:
             raise Malformed
     elif kind == 6:

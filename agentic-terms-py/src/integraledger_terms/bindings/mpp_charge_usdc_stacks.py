@@ -98,8 +98,9 @@ class MppChargeUsdcStacks:
         return StacksUnsigned(request=request, _challenge=choice["challenge"], _source=source)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        """H from the echoed challenge, once its transaction decodes and calls transfer with (some H) as its fourth
-        argument. Nothing but that argument is read, and no signature is verified here."""
+        """H from the echoed challenge, once its transaction decodes, carries no Clarity value nested more than 16
+        levels, and calls transfer with (some H) as its fourth argument. Nothing but that argument is read, and no
+        signature is verified here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
