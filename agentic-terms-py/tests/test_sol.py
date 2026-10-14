@@ -463,6 +463,8 @@ def test_x402_batch_settlement_solana_b6_es2s_opening_and_es3s_voucher_the_signe
         tx, voucher = request["requests"]
         assert tx["kind"] == "solana-message" and voucher["kind"] == "ed25519-raw"
         assert len(hexb(tx["message"])) == BV["ES2"]["messageLength"]
+        wire = base64.b64decode(BV["ES2"]["wireBase64"])
+        assert decompile(hexb(tx["message"])) == decompile(wire[1 + 64 * wire[0] :])
         assert BV["ES2"]["openInstructionData"] in hexb(tx["message"]).hex()
         assert BV["fixed"]["L"].encode().hex() in hexb(tx["message"]).hex()
         assert hexb(voucher["message"]).hex() == BV["ES3"]["message"]
@@ -1089,14 +1091,16 @@ def test_mpp_session_solana_sv1_to_sv3_and_the_channel_members() -> None:
     assert MPP_SESSION_SOLANA.bound(credential(placed, plant_open)) == Refusal(SV["plants"]["solana"]["expect"])
 
 
-def test_x402_batch_settlement_solana_es6_a_full_refunds_request_close_built_by_build_within() -> None:
-    # ES6: a full refund's request_close is built by build_within: the Compute Budget prefix (200 000 units, 1
-    # microlamport), request_close (05) with the payer (read-only signer) and the channel (writable), then one Memo v3
-    # with extra.memo when the option carries one; the payload is {type: refund, channelConfig, transaction}.
+def test_x402_batch_settlement_solana_es6_a_full_refund_carries_the_voucher_and_on_the_retry_request_close() -> None:
+    # ES6: build_within with refund {} carries the voucher for maxClaimableAmount, signed by the payer authorizer, with
+    # expiresAt 0 and no amount. With recentBlockhash it also carries the payer-signed request_close, signed first: the
+    # Compute Budget prefix (200 000 units, 1 microlamport), request_close (05) with the payer (read-only signer) and the
+    # channel (writable), then one Memo v3 with extra.memo when the option carries one.
     s6 = BV["ES6"]
     with_memo: dict[str, Any] = BV["ES4"]["accepted"]
     without_memo = {**with_memo, "extra": {k: v for k, v in with_memo["extra"].items() if k != "memo"}}
     svm = BV["fixed"]["svm"]
+    seed = bytes.fromhex(svm["payerSeed"])
 
     def build(accepted: Mapping[str, Any], **extra: Any) -> Any:
         w = {
@@ -1105,33 +1109,61 @@ def test_x402_batch_settlement_solana_es6_a_full_refunds_request_close_built_by_
             "channelConfig": BV["ES4"]["config"],
             "maxClaimableAmount": 1000,
             "refund": {},
-            "recentBlockhash": svm["blockhash"],
             **extra,
         }
         binding: Any = X402_BATCH_SETTLEMENT_SOLANA
-        return binding.build_within({k: v for k, v in w.items() if v is not None}, H)
+        return binding.build_within(w, H)
+
+    def voucher(signature: bytes) -> dict[str, Any]:
+        return {"channelId": BV["ES1"]["channelPda"], "maxClaimableAmount": "1000", "expiresAt": 0,
+                "signature": b58_encode(signature)}  # fmt: skip
 
     u = build(with_memo)
     assert not isinstance(u, Refusal), u
-    assert len(u.requests) == 1 and u.requests[0]["kind"] == "solana-message"
+    assert [(r["kind"], r.get("signer")) for r in u.requests] == [("ed25519-raw", svm["payer"])]
+    assert u.requests[0]["message"].hex() == BV["ES3"]["message"]
+    voucher_sig = sign(seed, u.requests[0]["message"])
+    p = u.complete([b58_encode(voucher_sig)])
+    assert not isinstance(p, Refusal), p
+    assert sorted(p["payload"]) == s6["cooperative"]["payloadMembers"]
+    assert p["payload"]["type"] == "refund" and p["payload"]["channelConfig"] == BV["ES4"]["config"]
+    assert p["payload"]["voucher"] == voucher(voucher_sig)
+    assert BATCH_BINDING.channel_kind(p) == s6["cooperative"]["expectKind"]
+
+    u = build(with_memo, recentBlockhash=svm["blockhash"])
+    assert not isinstance(u, Refusal), u
+    assert [r["kind"] for r in u.requests] == ["solana-message", "ed25519-raw"]
     message = u.requests[0]["message"]
     wire = base64.b64decode(BV["ES4"]["closeWireBase64"])
     assert decompile(message) == decompile(wire[1 + 64 * wire[0] :])
-    sig = sign(bytes.fromhex(svm["payerSeed"]), message)
-    p = u.complete([b58_encode(sig)])
+    assert u.requests[1]["message"].hex() == BV["ES3"]["message"] and u.requests[1]["signer"] == svm["payer"]
+    tx_sig, voucher_sig = sign(seed, message), sign(seed, u.requests[1]["message"])
+    p = u.complete([b58_encode(tx_sig), b58_encode(voucher_sig)])
     assert not isinstance(p, Refusal), p
-    assert sorted(p["payload"]) == ["channelConfig", "transaction", "type"]
+    assert sorted(p["payload"]) == s6["withMemo"]["payloadMembers"]
     assert p["payload"]["type"] == "refund" and p["payload"]["channelConfig"] == BV["ES4"]["config"]
+    assert p["payload"]["voucher"] == voucher(voucher_sig)
     signed = base64.b64decode(p["payload"]["transaction"])
-    assert signed[0] == 2 and signed[1:65] == bytes(64) and signed[65:129] == sig and signed[129:] == message
+    assert signed[0] == 2 and signed[1:65] == bytes(64) and signed[65:129] == tx_sig and signed[129:] == message
     assert BATCH_BINDING.channel_kind(p) == s6["withMemo"]["expectKind"]
     assert BATCH_BINDING.channel_ref(p) == ChannelRef(**BV["ES4"]["expectRef"])
 
-    v = build(without_memo)
+    v = build(without_memo, recentBlockhash=svm["blockhash"])
     assert not isinstance(v, Refusal), v
     d = decompile(v.requests[0]["message"])
     assert (d["feePayer"], d["blockhash"]) == (svm["feePayer"], svm["blockhash"])
     assert d["instructions"] == s6["withoutMemo"]["instructions"]
 
     assert build(with_memo, refund={"amount": 5}) == Refusal(s6["refundWithAmount"]["expect"])
-    assert build(with_memo, recentBlockhash=None) == Refusal(s6["noBlockhash"]["expect"])
+    lone = {**with_memo, "extra": {**with_memo["extra"], "memo": s6["loneSurrogateMemo"]["memo"]}}
+    assert build(lone, recentBlockhash=svm["blockhash"]) == Refusal(s6["loneSurrogateMemo"]["expect"])
+
+
+def test_x402_batch_settlement_solana_es8_the_opening_carries_one_binding_memo_and_one_other() -> None:
+    """ES8: bound reads each row's wire as deposit.transaction under ES4's option and config, and gives H for exactly
+    one binding memo beside one memo carrying L, in either order, and svm/memo-count for any other count."""
+    rows = BV["ES8"]["rows"]
+    assert rows, "the vector file holds no ES8 rows"
+    for row in rows:
+        got = BATCH_BINDING.bound(batch_deposit(row["wireBase64"]))
+        assert (got.code if isinstance(got, Refusal) else got) == row["expect"], row["case"]
