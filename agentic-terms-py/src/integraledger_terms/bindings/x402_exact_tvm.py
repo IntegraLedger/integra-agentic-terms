@@ -40,7 +40,6 @@ SEND_MODE = 3
 _NETWORK = re.compile(r"tvm:(-?(?:0|[1-9][0-9]{0,15}))")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 _MAX_SAFE_INTEGER = 2**53 - 1
-_BOM = b"\xef\xbb\xbf"
 
 
 def lcp_comment(h: AtrHash) -> Cell | Refusal:
@@ -91,7 +90,8 @@ def root_of(boc: object) -> Cell | Refusal:
 
 
 def _comment_hash(c: Cell) -> AtrHash | None:
-    """The hash in an ordinary text comment cell holding an LCP string and no references, or None."""
+    """The hash in an ordinary text comment cell holding an LCP string and no references, or None. The text is
+    strict UTF-8 and a leading byte-order mark is a character, so a comment that begins with one holds no hash."""
     if c.exotic or c.refs or c.length < 32 or (c.length - 32) % 8 != 0:
         return None
     s = c.slice()
@@ -99,7 +99,7 @@ def _comment_hash(c: Cell) -> AtrHash | None:
         return None
     data = s.buf((c.length - 32) // 8)
     try:
-        text = (data[len(_BOM) :] if data.startswith(_BOM) else data).decode("utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError:
         return None
     return from_lcp_string(text)

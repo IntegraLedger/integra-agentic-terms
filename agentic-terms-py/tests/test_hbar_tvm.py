@@ -189,6 +189,21 @@ def test_x402_exact_tvm_v2_cells_and_v3_bound() -> None:
         assert BINDING.bound(presented(row["settlementBoc"], row["accepted"])) == Refusal(row["expect"]), row["case"]
 
 
+def test_x402_exact_tvm_v3_a_comment_that_begins_with_a_byte_order_mark_holds_no_lcp_string() -> None:
+    # The V3 refusals whose comment, which the option's forwardPayload holds too, is the 32-bit zero op and then a
+    # byte-order mark (EF BB BF). lcp reads a comment as strict UTF-8 with the mark kept as a character, so it holds no
+    # LCP string. Expected values are the rows'.
+    def led_by_the_mark(option: Any) -> bool:
+        extra = option.get("extra") if isinstance(option, dict) else None
+        cell = root_of(extra.get("forwardPayload")) if isinstance(extra, dict) else None
+        return isinstance(cell, Cell) and cell.length >= 56 and cell.value >> (cell.length - 56) == 0xEFBBBF
+
+    rows = [r for r in V["V3"]["refusals"] if led_by_the_mark(r.get("accepted"))]
+    assert len(rows) >= 1
+    for row in rows:
+        assert BINDING.bound(presented(row["settlementBoc"], row["accepted"])) == Refusal(row["expect"]), row["case"]
+
+
 def test_x402_exact_tvm_bound_reads_no_amount_or_timeout_from_the_echoed_option() -> None:
     # As lcp's exactTvm does: bound reads the echoed option's scheme, network, asset, payTo and extra, and neither its
     # amount nor its maxTimeoutSeconds, which read and build require. Expected values are V3's and lcp's codes.
