@@ -117,7 +117,7 @@ class X402ExactStellar:
         payload = presented.get("payload")
         if not is_object(payload):
             return Refusal("x402/payload-malformed")
-        signed = _stellar.read_signed_transfer(payload.get("transaction"), accepted["network"])
+        signed = _stellar.read_signed_transfer(payload.get("transaction"), accepted["network"], False)
         if isinstance(signed, Refusal):
             return signed
         payment = signed.payment

@@ -188,10 +188,22 @@ def preimage_of(network: str, entry: xdr.Entry, c: xdr.Credentials, expiration: 
     return head + (c.address.raw if c.v2 else b"") + entry.invocation
 
 
-def _parse(data: bytes, network: str) -> _Parsed | Refusal:
+def _carries(call: xdr.Call, entry: xdr.Entry) -> bool:
+    """True when the entry's root invocation is the operation's call, byte for byte, with no sub-invocations."""
+    root = entry.root
+    return root.call is not None and root.subs == 0 and root.call.raw == call.raw
+
+
+def _parse(data: bytes, network: str, landed: bool) -> _Parsed | Refusal:
     """The envelope's one transfer operation and the one address-credential entry whose address is its from. The
     payment's contract, to and amount are read from the entry's root invocation, the invocation the payer signs, which
-    must itself be one transfer(from, to, amount) with no sub-invocations."""
+    must itself be one transfer(from, to, amount) with no sub-invocations.
+
+    With landed, the transaction is one the ledger recorded, and the entry read is the first address-credential entry
+    of from whose root invocation is the operation's transfer, byte for byte, with no sub-invocations. The host tries
+    the entries in order, skips one whose address or root invocation does not match, and authenticates the first that
+    matches, so other entries of from may ride unused. With no such entry, from must have exactly one entry, as
+    without landed."""
     try:
         env = xdr.envelope(data)
     except xdr.NotOneTransfer:
@@ -210,9 +222,10 @@ def _parse(data: bytes, network: str) -> _Parsed | Refusal:
         and (who := _strkey_of(e.credentials.address)) is not None
         and who[0] == source[0]
     ]
-    if len(matches) != 1:
+    used = next(((e, c) for e, c in matches if _carries(call, e)), None) if landed else None
+    if used is None and len(matches) != 1:
         return Refusal("stellar/no-address-auth")
-    entry, c = matches[0]
+    entry, c = used or matches[0]
     assert c is not None
     root = entry.root
     if root.call is None or root.subs != 0:
@@ -244,14 +257,16 @@ class SignedTransfer:
     agrees: bool
 
 
-def read_signed_transfer(text: object, network: object) -> SignedTransfer | Refusal:
+def read_signed_transfer(text: object, network: object, landed: bool) -> SignedTransfer | Refusal:
     """The payment the payer's entry signs, and whether the operation invokes exactly that: decode_stellar_tx's input
-    checks, without refusing an operation that differs from the signed invocation."""
+    checks, without refusing an operation that differs from the signed invocation. With landed (a transaction the
+    ledger recorded), the entry is the first entry of from that carries the operation's transfer; without it (before
+    anything lands), from must have exactly one entry."""
     data = _bytes_of(text, network)
     if isinstance(data, Refusal):
         return data
     assert isinstance(network, str)
-    parsed = _parse(data, network)
+    parsed = _parse(data, network, landed)
     return parsed if isinstance(parsed, Refusal) else SignedTransfer(parsed.payment, parsed.agrees)
 
 
@@ -260,7 +275,7 @@ def decode_stellar_tx(text: object, network: object) -> Payment | Refusal:
     entry whose address is from and the SHA-256 of that entry's preimage. The entry's root invocation must be that same
     transfer, byte for byte, with no sub-invocations; the payment's contract, to and amount are the signed
     invocation's."""
-    p = read_signed_transfer(text, network)
+    p = read_signed_transfer(text, network, False)
     if isinstance(p, Refusal):
         return p
     return p.payment if p.agrees else Refusal("stellar/not-one-transfer")
@@ -326,7 +341,7 @@ def signing_for(text: object, network: object, expiration: object, zero_source: 
     if isinstance(data, Refusal):
         return data
     assert isinstance(network, str)
-    parsed = _parse(data, network)
+    parsed = _parse(data, network, False)
     if isinstance(parsed, Refusal):
         return parsed
     if isinstance(expiration, bool) or not isinstance(expiration, int) or not 0 <= expiration <= 0xFFFFFFFF:

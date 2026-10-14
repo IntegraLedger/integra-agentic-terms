@@ -135,6 +135,40 @@ def test_x402_exact_stellar_v4_refusals() -> None:
         assert out == Refusal(row["expect"]), row["case"]
 
 
+def envelope_of(row: dict[str, Any]) -> str:
+    """A V5 row's envelope: written out, or the name of the section whose envelope it is."""
+    named = T.get(row["envelope"])
+    envelope = named["envelope"] if isinstance(named, dict) else row["envelope"]
+    assert isinstance(envelope, str)
+    return envelope
+
+
+def test_x402_exact_stellar_v5_a_landed_read_takes_the_payer_entry_that_carries_the_transfer() -> None:
+    """V5's rows whose named transaction succeeded with an envelope. The Soroban host authenticates the payer's first
+    address-credential entry whose root invocation is the operation's transfer and skips the others (V5's about,
+    soroban-env-host's require_auth_enforcing), so the landed read takes that entry, and a row settles exactly when it
+    is the ref's: its preimage digest and to id. The rows hold one whose envelope carries two entries of the payer,
+    which a read before landing refuses stellar/no-address-auth (agreedRefusals)."""
+    ref = T["V5"]["ref"]
+    rows = [row for row in T["V5"]["rows"] if row["status"] == "SUCCESS" and "envelope" in row]
+    assert any(row["expect"]["state"] == "settled" for row in rows), "V5 holds no settled row with an envelope"
+    two_entries = 0
+    for row in rows:
+        envelope = envelope_of(row)
+        signed = _stellar.read_signed_transfer(envelope, ref["network"], True)
+        used = (
+            isinstance(signed, _stellar.SignedTransfer)
+            and signed.agrees
+            and signed.payment.auth.preimage_hash == ref["authDigest"]
+            and str(signed.payment.to_id) == ref["toId"]
+        )
+        assert used is (row["expect"]["state"] == "settled"), row["case"]
+        if _stellar.read_signed_transfer(envelope, ref["network"], False) == Refusal("stellar/no-address-auth"):
+            assert used, row["case"]
+            two_entries += 1
+    assert two_entries > 0, "V5 holds no settled row whose envelope carries two entries of the payer"
+
+
 def test_x402_exact_stellar_v3v2_address_credentials_v2() -> None:
     row = T["V3v2"]
     doc = STELLAR.doc

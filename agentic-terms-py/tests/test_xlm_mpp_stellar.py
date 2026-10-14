@@ -104,6 +104,30 @@ def test_mpp_charge_stellar_v3_bound_plant_and_refusals() -> None:
     assert MPP_CHARGE_STELLAR.bound(credential({"type": "other"})) == Refusal("mpp/credential-type")
 
 
+def test_mpp_charge_stellar_a_landed_transaction_is_read_by_the_payer_entry_that_carries_the_transfer() -> None:
+    """A hash credential presents a transaction that landed: its payer entry is the payer's first address-credential
+    entry whose root invocation is the operation's transfer, and another entry of the payer rides unused, as the
+    Soroban host authenticates them (x402-exact-stellar.json V5). V5's settled envelopes that carry two entries of the
+    payer bind H under the sourceAccount section's challenge, which pays the same muxed recipient; in a transaction
+    credential, before it lands, the same envelope is stellar/no-address-auth (x402-exact-stellar.json
+    agreedRefusals)."""
+    challenge = V["sourceAccount"]["challenge"]
+    network = X["fixed"]["network"]
+    rows = [
+        row
+        for row in X["V5"]["rows"]
+        if row["expect"]["state"] == "settled"
+        and isinstance(row.get("envelope"), str)
+        and _stellar.read_signed_transfer(row["envelope"], network, False) == Refusal("stellar/no-address-auth")
+    ]
+    assert rows, "x402-exact-stellar.json V5 holds no settled envelope with two entries of the payer"
+    for row in rows:
+        pushed = {"type": "hash", "hash": X["V5"]["ref"]["transaction"], "transaction": row["envelope"]}
+        assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == F["H"], row["case"]
+        sent = {"type": "transaction", "transaction": row["envelope"]}
+        assert MPP_CHARGE_STELLAR.bound(credential(sent, challenge)) == Refusal("stellar/no-address-auth"), row["case"]
+
+
 def test_mpp_charge_stellar_occupied_and_option_malformed() -> None:
     occupied = issued("stellar", "charge", json.dumps(V["occupied"]["request"]), F["realm"], F["expires"])
     assert doc_of(occupied) == Refusal(V["occupied"]["expect"])

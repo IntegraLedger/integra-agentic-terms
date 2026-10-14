@@ -93,7 +93,10 @@ class MppChargeStellar:
         """H from the echoed challenge, once the to of the invocation the payer's entry signs is the request's muxed
         recipient whose id is H's first 8 bytes, and the operation invokes exactly that. The challenge's network and
         its request's recipient, an account or its muxed form, are read as pairings_of reads them, else
-        stellar/option-malformed. The authorization's signature is not verified here."""
+        stellar/option-malformed. For a transaction credential, not yet submitted, the operation carries exactly one
+        address-credential entry of the payer. For a hash credential, whose transaction landed, the entry is the
+        payer's first address-credential entry whose root invocation is the operation's transfer, byte for byte; other
+        entries of the payer are not read. The authorization's signature is not verified here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
@@ -108,7 +111,7 @@ class MppChargeStellar:
         xdr = _presented_xdr(e.payload)
         if isinstance(xdr, Refusal):
             return xdr
-        signed = _stellar.read_signed_transfer(xdr, network)
+        signed = _stellar.read_signed_transfer(xdr, network, e.payload.get("type") == "hash")
         if isinstance(signed, Refusal):
             return signed
         payment = signed.payment
