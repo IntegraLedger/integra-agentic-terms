@@ -179,6 +179,19 @@ def test_x402_exact_tron_lcp_trc20_memo_agreed_refusals_measure_the_transaction_
         assert BINDING.bound(presented(row["transaction"])) == Refusal(row["expect"]), row["case"]
 
 
+def test_x402_exact_tron_lcp_trc20_memo_agreed_refusals_with_a_memo_that_begins_with_a_byte_order_mark() -> None:
+    # The agreedRefusals rows whose transaction's memo begins with a byte-order mark (EF BB BF). lcp reads the memo as
+    # strict UTF-8 with the mark kept as a character, so it holds no LCP string. Expected values are the rows'.
+    def led_by_the_mark(transaction: object) -> bool:
+        decoded = decode_tron_tx(transaction)
+        return not isinstance(decoded, Refusal) and decoded[0].data.startswith(b"\xef\xbb\xbf")
+
+    rows = [r for r in T["agreedRefusals"]["rows"] if led_by_the_mark(r.get("transaction"))]
+    assert len(rows) >= 1
+    for row in rows:
+        assert BINDING.bound(presented(row["transaction"])) == Refusal(row["expect"]), row["case"]
+
+
 def test_x402_exact_tron_lcp_trc20_memo_a_transaction_is_measured_in_utf16_code_units() -> None:
     # As lcp's decodeTronTx measures it, by String length: U+10000 is one code point and two UTF-16 code units, so
     # 8,191 hex characters and U+10000 are past the 8,192 bound, and 8,190 and U+10000 are at it and not hex.

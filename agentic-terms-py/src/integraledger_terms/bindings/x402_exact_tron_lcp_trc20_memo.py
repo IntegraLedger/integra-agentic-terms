@@ -33,7 +33,6 @@ _NETWORK = re.compile(r"tron:(0|[1-9][0-9]{0,15})")
 _BLOCK_ID = re.compile(r"0x[0-9a-fA-F]{64}")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 _MAX_SAFE_INTEGER = 2**53 - 1
-_BOM = b"\xef\xbb\xbf"
 
 
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
@@ -64,9 +63,10 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
 
 
 def _memo_hash(data: bytes) -> AtrHash | None:
-    """The hash of a memo holding an LCP string in strict UTF-8; a leading byte-order mark is dropped."""
+    """The hash of a memo holding an LCP string in strict UTF-8. A leading byte-order mark is a character, so a memo
+    that begins with one holds no hash."""
     try:
-        text = (data[len(_BOM) :] if data.startswith(_BOM) else data).decode("utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError:
         return None
     return from_lcp_string(text)
