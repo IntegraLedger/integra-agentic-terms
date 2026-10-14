@@ -23,7 +23,7 @@ Most MCP clients take a configuration like this:
 ```
 
 `npx` runs the package's `terms-mcp` binary, which serves the tools over stdio with no signer. It needs Node.js
-`>=26.10.0`. Its `serverInfo` name is `integraledger-terms`.
+`>=26.11.1`. Its `serverInfo` name is `integraledger-terms`.
 
 ## Install the skill
 

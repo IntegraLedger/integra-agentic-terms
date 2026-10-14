@@ -44,7 +44,7 @@ record's content: what the record says is for you and your principal to judge.
 npm install @integraledger/terms @integraledger/lcp
 ```
 
-- Node.js `>=26.10.0`. ESM only.
+- Node.js `>=26.11.1`. ESM only.
 - `@integraledger/lcp` is a peer dependency of this package (`~0.4.0`): install it beside it, so your application and
   the gate share one copy, and import from it the bindings you pass in.
 - Chain libraries (`@solana/kit`, `@stellar/stellar-sdk` and others) are optional peers of `@integraledger/lcp`,
@@ -561,7 +561,7 @@ the same files, so both languages compute the same hashes, build the same reques
 
 ## Requirements
 
-- Node.js `>=26.10.0`.
+- Node.js `>=26.11.1`.
 - An HTTP client with WHATWG `fetch`'s call shape (Node's global `fetch` is one).
 - Cloudflare Workers, with or without the `nodejs_compat` flag: pass the Worker's own `fetch`, and install
   `@integraledger/lcp`'s optional peer dependencies before bundling. See

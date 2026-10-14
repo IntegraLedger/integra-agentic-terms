@@ -7,7 +7,7 @@ submit it.
 
 You need:
 
-- Node.js 26.10 (`.node-version`);
+- Node.js 26.11.1 (`.node-version`);
 - pnpm 12.11.2 (the `packageManager` field of `package.json`);
 - [uv](https://docs.astral.sh/uv/), for the Python package.
 

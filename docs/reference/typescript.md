@@ -4,7 +4,7 @@ description: Every export of @integraledger/terms, with its signature and what i
 ---
 
 Everything on this page is exported from `@integraledger/terms`. The package is ESM only and needs Node.js
-`>=26.10.0`. Bindings, one per pairing, are exported by `@integraledger/lcp`; the
+`>=26.11.1`. Bindings, one per pairing, are exported by `@integraledger/lcp`; the
 [pairings reference](./pairings.md) names each one.
 
 No function throws for a protocol outcome. Each returns its result or a `Declined`.
