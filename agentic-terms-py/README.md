@@ -474,9 +474,9 @@ passes such a link to its `fetch`.
 | `AtrHash`, `Json`, `Inputs`, `Signature` | Aliases: `str`, `Mapping[str, Any]`, `Mapping[str, Any]`, `Any`. |
 | `MAX_ATR_BYTES` | `1048576`. |
 
-A signer receives each request with every byte string as `0x` and lower-case hex, and answers with byte strings in the
-same form. The [signers guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/signers.md)
-lists every request kind and the answer it takes.
+A signer receives each request with every byte string as `0x` and lower-case hex, and answers with byte strings in
+the form the [signers guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/signers.md)
+names for its kind: `0x` hex for most kinds. The guide lists every request kind and the answer it takes.
 
 ## Supported pairings
 

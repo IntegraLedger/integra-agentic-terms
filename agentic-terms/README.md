@@ -421,7 +421,7 @@ Everything below is exported from `@integraledger/terms`.
 | `Binding` | A pairing's binding from `@integraledger/lcp`. |
 | `Signer` | `{ account: string; sign(request: SigningRequest): Promise<Signature> }`. `account` is CAIP-10. |
 | `SigningRequest` | What a signer is handed: one kind per signing scheme, such as `eip712`, `solana-message`, `xrpl-tx`, `bolt11-pay` or `batch`. |
-| `Signature` | The signer's answer, as JSON. Byte strings are `0x` hex. |
+| `Signature` | The signer's answer, as JSON, in the form the [signers guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/signers.md) names for its kind. |
 | `Fetch` | WHATWG `fetch`, or anything with its call shape. |
 | `Inputs` | The buyer's own values a build needs: `{ [name]: Json }`. |
 | `TransactOptions` | `{ inputs?, agreementSigner?, approved?, signal? }`. |

@@ -182,7 +182,7 @@ amount signed in the channel.
 | `Fetch` | `(url: string, init: { method: "GET"; redirect: "manual"; signal: AbortSignal; headers?: Record<string, string> }) => Promise<Response>`. A `3xx` answer, or one of type `opaqueredirect`, is a redirect, which the gate never follows. Every request the gate makes carries `Accept-Encoding: identity`. |
 | `Signer` | `{ readonly account: string; sign(request: SigningRequest): Promise<Signature> }`. `account` is CAIP-10. |
 | `SigningRequest` | What a signer is handed: the union of every request kind. See [signers](../guides/signers.md). |
-| `Signature` | The signer's answer, as JSON. Byte strings are `0x` hex; a list, in order, for `batch`. |
+| `Signature` | The signer's answer, as JSON, in the form [signers](../guides/signers.md) names for its kind; a list, in order, for `batch`. |
 | `Inputs` | `{ readonly [k: string]: Json }`: the buyer's own values a build needs. |
 | `TransactOptions` | `{ inputs?: Inputs; agreementSigner?: Signer; approved?: AgreementPayment; signal?: AbortSignal }`. |
 | `AgreeOptions` | `{ approved?: AgreementPayment; inputs?: Inputs; signal?: AbortSignal }`. |
