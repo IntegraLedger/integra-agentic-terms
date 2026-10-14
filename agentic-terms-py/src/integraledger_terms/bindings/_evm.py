@@ -2,9 +2,9 @@
 escrow's deployments, MetaMask's reference DelegationManager, 32-byte ABI words, EIP-3009 and Permit2 typed data, the
 escrow's salt commitment and payment hash, and a strict decoder of a permission context's delegations.
 
-eip3009_typed_data, permit2_typed_data (all but the Witness its caller builds), bind_salt, payment_hash and
-decode_permission_context return a Refusal for a malformed value, and bytes_of answers a value that is not strict hex
-with None; the word writers, as_hash and the other helpers take values their callers have already checked."""
+eip3009_typed_data, permit2_typed_data, bind_salt, payment_hash and decode_permission_context return a Refusal for a
+malformed value, and bytes_of answers a value that is not strict hex with None; the word writers, as_hash and the other
+helpers take values their callers have already checked."""
 
 import re
 from collections.abc import Mapping, Sequence
@@ -176,6 +176,23 @@ class Witness:
     value: Mapping[str, Any]
 
 
+def _is_field(f: object) -> bool:
+    """True for a mapping with a str name and a str type."""
+    return isinstance(f, Mapping) and isinstance(f.get("name"), str) and isinstance(f.get("type"), str)
+
+
+def _is_witness(w: object) -> bool:
+    """True for a Witness whose type is a str, whose fields is a list or tuple of mappings with a str name and type,
+    and whose value is a mapping."""
+    return (
+        isinstance(w, Witness)
+        and isinstance(w.type, str)
+        and isinstance(w.value, Mapping)
+        and isinstance(w.fields, (list, tuple))
+        and all(_is_field(f) for f in w.fields)
+    )
+
+
 def permit2_typed_data(
     chain_id: int,
     permitted: Mapping[str, Any] | list[Mapping[str, Any]],
@@ -186,7 +203,11 @@ def permit2_typed_data(
     witness: Witness | None = None,
 ) -> dict[str, Any] | Refusal:
     """Permit2's typed data under its domain (name "Permit2", no version). No witness gives PermitTransferFrom; a
-    witness gives PermitWitnessTransferFrom, or PermitBatchWitnessTransferFrom when permitted is a list."""
+    witness gives PermitWitnessTransferFrom, or PermitBatchWitnessTransferFrom when permitted is a list. An empty
+    permitted list, one of more than 32 entries, and a list with no witness are refused evm/field-malformed. So is a
+    witness that is not a Witness; whose type is not a str of an upper-case letter followed by up to 63 letters and
+    digits, or is TokenPermissions or starts with Permit; whose fields is not a list or tuple of mappings with a str
+    name and type; or whose value is not a mapping."""
     if isinstance(chain_id, bool) or not isinstance(chain_id, int) or not 0 < chain_id <= 2**53 - 1:
         return Refusal("evm/network-malformed")
     if not is_address(verifying_contract) or not is_address(spender):
@@ -232,7 +253,8 @@ def permit2_typed_data(
             "message": {"permitted": message_permitted, "spender": spender, "nonce": nonce, "deadline": deadline},
         }
     if (
-        _WITNESS_TYPE_NAME.fullmatch(witness.type) is None
+        not _is_witness(witness)
+        or _WITNESS_TYPE_NAME.fullmatch(witness.type) is None
         or witness.type == "TokenPermissions"
         or witness.type.startswith("Permit")
     ):

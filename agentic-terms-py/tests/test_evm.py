@@ -4,6 +4,7 @@ the payer is the published Anvil key #0 the files name."""
 
 import copy
 import hashlib
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -346,6 +347,67 @@ def test_payment_hash_answers_a_payment_info_that_is_not_one() -> None:
     infos: list[Any] = [None, 42, "x", True, [None], {}]
     for info in infos:
         assert _evm.payment_hash(84532, AC_EIP3009["EV3"]["escrow"], info) == Refusal("evm/field-malformed")
+
+
+def test_permit2_typed_data_answers_a_malformed_witness() -> None:
+    """The well-formed witness is x402-exact-eip155-permit2.json's: the Witness struct of EV1's witnessTypeString, with
+    the value {to: payTo, validAfter: "0"}, over EV1's spender, nonce and deadline. Each malformed witness is
+    evm/field-malformed, the code @integraledger/lcp's permit2TypedData gives the same witness: one that is not a
+    Witness, a type that is not a str or breaks the type name rule, fields that are not a list of mappings with a str
+    name and type, and a value that is not a mapping."""
+    ev1, option = PERMIT2["EV1"], PERMIT2["fixed"]["option"]
+    struct = re.fullmatch(r".*\)Witness\(([^)]*)\)", ev1["witnessTypeString"])
+    assert struct is not None
+    fields = [{"name": name, "type": kind} for kind, name in (member.split(" ") for member in struct[1].split(","))]
+    value = {"to": option["payTo"], "validAfter": "0"}
+    assert fields == [{"name": "to", "type": "address"}, {"name": "validAfter", "type": "uint256"}]
+
+    def typed(given: Any) -> dict[str, Any] | Refusal:
+        chain_id = int(option["network"].removeprefix("eip155:"))
+        permitted = {"token": option["asset"], "amount": int(option["amount"])}
+        return _evm.permit2_typed_data(chain_id, permitted, ev1["expectSpender"], int(ev1["expectNonceDecimal"]),
+                                       int(ev1["expectDeadline"]), witness=given)  # fmt: skip
+
+    def witness(kind: Any, members: Any, of: Any) -> _evm.Witness:
+        return _evm.Witness(kind, members, of)
+
+    well = witness("Witness", fields, value)
+    good = typed(well)
+    assert not isinstance(good, Refusal)
+    assert good["primaryType"] == "PermitWitnessTransferFrom"
+    assert good["types"]["Witness"] == fields and good["message"]["witness"] == value
+    assert not isinstance(typed(witness("W" + "a" * 63, fields, value)), Refusal)
+
+    class Named:
+        def __str__(self) -> str:
+            return "Witness"
+
+    malformed: list[tuple[str, Any]] = [
+        ("a witness of 0x1234", "0x1234"),
+        ("a witness of 1", 1),
+        ("a witness that is a list", [well]),
+        ("a mapping of a witness's members", {"type": "Witness", "fields": fields, "value": value}),
+        ("a type that is a list", witness(["Witness"], fields, value)),
+        ("a type whose str is Witness", witness(Named(), fields, value)),
+        ("a type that is a number", witness(1, fields, value)),
+        ("a type of TokenPermissions", witness("TokenPermissions", fields, value)),
+        ("a type that starts with Permit", witness("PermitWitness", fields, value)),
+        ("a type that starts lower-case", witness("witness", fields, value)),
+        ("a type of 65 characters", witness("W" + "a" * 64, fields, value)),
+        ("fields of None", witness("Witness", None, value)),
+        ("fields that are a string", witness("Witness", "to", value)),
+        ("fields that are a mapping", witness("Witness", {"name": "to", "type": "address"}, value)),
+        ("a field of None", witness("Witness", [None], value)),
+        ("a field that is a number", witness("Witness", [1], value)),
+        ("a field that is a list", witness("Witness", [["address", "to"]], value)),
+        ("a field whose name is not a str", witness("Witness", [{"name": 1, "type": "address"}], value)),
+        ("a field with no type", witness("Witness", [{"name": "to"}], value)),
+        ("a value of None", witness("Witness", fields, None)),
+        ("a value that is a string", witness("Witness", fields, "0x1234")),
+        ("a value that is a list", witness("Witness", fields, [value])),
+    ]
+    for name, bad in malformed:
+        assert typed(bad) == Refusal("evm/field-malformed"), name
 
 
 # ── The files' agreedRefusals rows, each with the input it carries.
