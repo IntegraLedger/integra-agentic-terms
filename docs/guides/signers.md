@@ -36,8 +36,8 @@ the union of every kind.
 
 **Byte strings.** In TypeScript, the request is exactly as the binding built it: byte strings are `Uint8Array`, and a
 few integers are `bigint`. In Python, every byte string in the request is `0x` and lower-case hex. In both languages,
-an answer's byte strings take the form its row names: `0x` hex for most kinds, and base58 or hex digits without `0x`
-where the row says so.
+an answer's byte strings are `0x` hex, except where the row names another form: base58, base64, or hex digits without
+`0x`.
 
 ### EVM and Tempo
 
@@ -66,15 +66,15 @@ where the row says so.
 | `hedera-executor` | The executors, asset, payee, amount and `validBefore` for the buyer's transfer-executor tooling. | `{ payer, executor, authorization }`. |
 | `hedera-session-open` | An MPP session opening on Hedera, which the signer broadcasts, and its zero voucher. | `{ openTx, signature }`, with `landed` where the signer has the opening's receipt. |
 | `algorand-txn` | An Algorand asset transfer whose note carries H. | The 64-byte Ed25519 signature, `0x` hex. |
-| `aptos-transaction` | The option to pay. The wallet builds and signs the scheme's own payment. | `{ transaction }`. |
-| `sui-transaction` | The option and a `pureInput`. The wallet builds the payment, adds the input, and signs. | `{ signature, transaction }`. |
-| `cardano-transaction` | The option and the auxiliary data. The wallet builds the payment with a TTL, attaches exactly those auxiliary data, and signs without broadcasting. | `{ transaction, nonce }`. Metadata that holds label 674 again, or a label-674 map that repeats a key, is declined `signed-not-bound`. |
+| `aptos-transaction` | The option to pay. The wallet builds and signs the scheme's own payment. | `{ transaction }`, base64: the transaction's BCS bytes, or x402's reference form. |
+| `sui-transaction` | The option and a `pureInput`. The wallet builds the payment, adds the input, and signs. | `{ signature, transaction }`, each base64, as Sui serializes them. |
+| `cardano-transaction` | The option and the auxiliary data. The wallet builds the payment with a TTL, attaches exactly those auxiliary data, and signs without broadcasting. | `{ transaction, nonce }`, the transaction as base64. Metadata that holds label 674 again, or a label-674 map that repeats a key, is declined `signed-not-bound`. |
 | `near-delegate` | The NEP-461 hash of a delegate action whose `ft_transfer` memo carries H. | `{ keyType, bytes }`, the signature as `0x` hex. |
 | `starknet-snip12` | SNIP-12 typed data for a SNIP-9 outside execution. | The account's signature, a list of felts. |
 | `substrate-call` | The profile's call, which the wallet signs as a v4 extrinsic with its own extensions. | The extrinsic's bytes, `0x` hex. |
 | `tron-txid` | The id of a TRC-20 transfer whose memo carries H. | The 65-byte secp256k1 signature `r ‖ s ‖ v`, `0x` hex. |
 | `ton-w5` | The representation hash of a W5 wallet request. | The 64-byte Ed25519 signature, `0x` hex. |
-| `casper-eip712` | CEP-3009 typed data whose nonce is H. | `{ publicKey, signature }`, each hex with its one-byte algorithm tag. |
+| `casper-eip712` | CEP-3009 typed data whose nonce is H. | `{ publicKey, signature }`, each hex digits without `0x`, led by its one-byte algorithm tag (`01` or `02`). |
 | `ccd-transfer` | A Concordium transfer whose memo carries H, which the wallet assembles. | The sender-signed V1 sponsored transaction in x402's wire form: with `@concordium/web-sdk`, `JSON.parse(Transaction.toJSONString(tx))`. |
 | `stacks-contract-call` | A SIP-010 `transfer` whose memo is H. | The signed transaction's bytes, `0x` hex. |
 | `bolt11-pay` | A BOLT11 invoice. Your Lightning node pays exactly this invoice. | The payment preimage: 64 lower-case hex digits, no `0x`. |

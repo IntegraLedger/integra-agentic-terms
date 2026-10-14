@@ -103,7 +103,8 @@ export interface TempoCalls {
 /**
  * The signer's answer, as JSON. Each kind's form is its buyer piece's: a signature for the kinds whose payment takes one
  * signature, an object for the kinds whose payment takes several values, and a list, in order, for `batch`. Byte strings
- * are `0x` hex for most kinds, and base58 or hex digits without `0x` where the signers guide names that form.
+ * are `0x` hex, except where the signers guide names another form for the kind: base58, base64, or hex digits without
+ * `0x`.
  */
 export type Signature = Json;
 
