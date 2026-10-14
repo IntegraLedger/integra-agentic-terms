@@ -9,7 +9,9 @@ import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import type { hashTypedData } from "viem";
 import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
+import { hash } from "@integraledger/lcp";
 import { agree, check, confirm, finish, transact, type Fetch, type Signer, type SigningRequest } from "../src/index.js";
+import { pay } from "../src/gate.js";
 import { isDeclined } from "./support.js";
 
 const B = JSON.parse(readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"));
@@ -123,13 +125,74 @@ describe("inputs and payments the other entry points are given", () => {
     expect([fetches, signs]).toEqual([0, 0]);
   });
 
-  // @integraledger/lcp's hash rejects a value that is not a Uint8Array with TypeError, and the gate passes it on.
-  it("an ATR that is not bytes: finish, check and agree reject with TypeError, and nothing is fetched or signed", async () => {
+  // @integraledger/lcp's hash rejects a value that is not a Uint8Array with TypeError, and the gate passes it on: a
+  // caller's ATR of another type is a programming error, raised, never declined, with no check of the gate's own.
+  it.each([
+    ["a string", "abc"],
+    ["an array of byte values", [0x61, 0x62, 0x63]],
+    ["an ArrayBuffer", new ArrayBuffer(3)],
+    ["a Uint16Array", new Uint16Array(3)],
+    ["an object with a length", { length: 3 }],
+  ])("an ATR that is %s: finish, check, pay and agree reject with the protocol package's TypeError, and nothing is fetched or signed", async (_, atr) => {
     const { fetch, signer } = fixture();
+    const rejection = (run: Promise<unknown>): Promise<unknown> => run.then(() => undefined, (e: unknown) => e);
+    const expected = await rejection(hash(atr as never));
+    expect(expected).toBeInstanceOf(TypeError);
     const chosen = { pairing: exactEip3009.id, choice: {}, ref: "r" };
-    await expect(finish("abc" as never, chosen, null, exactEip3009)).rejects.toThrow(TypeError);
-    await expect(check("abc" as never, {}, exactEip3009)).rejects.toThrow(TypeError);
-    await expect(agree("abc" as never, B.fixed.agreement.url, signer, fetch)).rejects.toThrow(TypeError);
+    for (const run of [
+      finish(atr as never, chosen, null, exactEip3009),
+      check(atr as never, {}, exactEip3009),
+      pay(exactEip3009, chosen, signer, atr as never),
+      agree(atr as never, B.fixed.agreement.url, signer, fetch),
+    ]) {
+      const thrown = await rejection(run);
+      expect(thrown).toBeInstanceOf(TypeError);
+      expect((thrown as TypeError).message).toBe((expected as TypeError).message);
+    }
     expect([fetch.calls, signer.calls]).toEqual([0, 0]);
+  });
+});
+
+describe("agree's options object", () => {
+  // `agree`'s options object holds only `approved`, `inputs` and `signal`, the signal an AbortSignal. Any other key, a
+  // signal of another kind, or options that are not an object, are declined as `transact` declines them, before any
+  // fetch or signer call. The agreement URL answers 402 with buyer.json's agreement payment request.
+  function agreementUrl(): Fetch & { calls: number } {
+    const header = Buffer.from(JSON.stringify(B.fixed.agreement.required)).toString("base64");
+    const fetch = (async () => {
+      fetch.calls++;
+      return new Response(null, { status: 402, headers: { "payment-required": header } });
+    }) as unknown as Fetch & { calls: number };
+    fetch.calls = 0;
+    return fetch;
+  }
+
+  it.each([
+    ["an unknown key only", { extra: true }],
+    ["inputs beside a key that is transact's alone", { inputs: {}, agreementSigner: {} }],
+    ["a signal that is not an AbortSignal", { signal: { aborted: false } }],
+    ["a signal that is a string", { signal: "stop" }],
+    ["null", null],
+    ["an array", []],
+    ["a string", "inputs"],
+  ])("%s is declined before any fetch or signer call", async (_, options) => {
+    const { signer } = fixture();
+    const fetch = agreementUrl();
+    const out = await agree(A, B.fixed.agreement.url, signer, fetch, options as never);
+    expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
+    expect([fetch.calls, signer.calls]).toEqual([0, 0]);
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["empty", {}],
+    ["every member undefined", { approved: undefined, inputs: undefined, signal: undefined }],
+    ["a signal that is not aborted", { signal: new AbortController().signal }],
+  ])("%s: the agreement payment is returned to approve, and nothing is signed", async (_, options) => {
+    const { signer } = fixture();
+    const fetch = agreementUrl();
+    const out = await agree(A, B.fixed.agreement.url, signer, fetch, options as never);
+    expect("approve" in out).toBe(true);
+    expect([fetch.calls, signer.calls]).toEqual([1, 0]);
   });
 });

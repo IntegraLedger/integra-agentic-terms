@@ -9,12 +9,14 @@ signer, whose account is not a string the same way. The document, the ATR and th
 import asyncio
 import base64
 import json
+import re
 from typing import Any
 
 import httpx
 import pytest
 
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
+from integraledger_terms._core import atr_hash
 from integraledger_terms import AgreementPayment, Chosen, Declined, _gate, agree, check, confirm, finish, transact
 from support import ACCOUNT, BUYER, NOW, A, CountingSigner, D, Link, serving
 
@@ -158,21 +160,50 @@ def test_a_signer_whose_account_is_not_a_string_is_declined_before_any_fetch_or_
     assert (link.calls, signer.requests) == (0, [])
 
 
-def test_an_atr_that_is_not_bytes_raises_type_error() -> None:
-    # hashlib refuses a str with TypeError, as @integraledger/lcp's hash rejects a value that is not a Uint8Array: finish,
-    # check and agree raise it, and nothing is fetched or signed.
+@pytest.mark.parametrize("atr", ["abc", [0x61, 0x62, 0x63], {"length": 3}], ids=["a str", "a list of byte values", "a dict"])
+def test_an_atr_that_is_not_bytes_raises_type_error(atr: Any) -> None:
+    # hashlib refuses a value that is not bytes with TypeError, as @integraledger/lcp's hash rejects a value that is not
+    # a Uint8Array: finish, check, pay and agree raise the hash's own TypeError, with no check of the gate's own, and
+    # nothing is fetched or signed. A caller's ATR of another type is a programming error, never a decline.
+    with pytest.raises(TypeError) as expected:
+        atr_hash(atr)
     link = serving(A)
     signer = CountingSigner()
     chosen = Chosen(pairing=BINDING.id, choice={}, ref="r")
-    with pytest.raises(TypeError):
-        finish("abc", chosen, None, BINDING)  # type: ignore[arg-type]
-    with pytest.raises(TypeError):
-        check("abc", {}, BINDING)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match=re.escape(str(expected.value))):
+        finish(atr, chosen, None, BINDING)
+    with pytest.raises(TypeError, match=re.escape(str(expected.value))):
+        check(atr, {}, BINDING)
 
-    async def go() -> Any:
+    async def go(paying: bool) -> Any:
         async with link.client() as client:
-            return await agree("abc", AGREEMENT["url"], signer, client)  # type: ignore[arg-type]
+            if paying:
+                return await _gate.pay(BINDING, chosen, signer, atr)
+            return await agree(atr, AGREEMENT["url"], signer, client)
 
-    with pytest.raises(TypeError):
-        asyncio.run(go())
+    for paying in (True, False):
+        with pytest.raises(TypeError, match=re.escape(str(expected.value))):
+            asyncio.run(go(paying))
     assert (link.calls, signer.requests) == (0, [])
+
+
+def test_agree_declines_a_signal_that_is_not_an_event_and_raises_on_an_unknown_keyword() -> None:
+    # agree's options are its three keyword arguments, approved, inputs and signal. A signal that is not an
+    # asyncio.Event is declined no-payable-option with x402/input-malformed, as the TypeScript gate declines a signal that
+    # is not an AbortSignal; an unknown keyword raises TypeError, as a keyword-only signature does, where the TypeScript
+    # gate declines an unknown key the same way. Neither fetches or signs.
+    header = base64.b64encode(json.dumps(AGREEMENT["required"]).encode("utf-8")).decode("ascii")
+    link = Link(lambda request: httpx.Response(402, headers={"payment-required": header}))
+    signer = CountingSigner()
+
+    async def go(**options: Any) -> Any:
+        async with link.client() as client:
+            return await agree(A, AGREEMENT["url"], signer, client, **options)
+
+    for signal in (object(), "stop", asyncio.Lock()):
+        assert asyncio.run(go(signal=signal)) == Declined("no-payable-option", "x402/input-malformed")
+    with pytest.raises(TypeError):
+        asyncio.run(go(agreement_signer=signer))
+    assert (link.calls, signer.requests) == (0, [])
+    assert not isinstance(asyncio.run(go(signal=asyncio.Event())), Declined)
+    assert (link.calls, signer.requests) == (1, [])
