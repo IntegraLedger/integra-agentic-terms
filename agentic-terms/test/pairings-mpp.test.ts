@@ -238,6 +238,23 @@ describe("mpp/charge/tempo/memo and push with splits", () => {
         expect(fetch.calls).toBe(0);
       }),
   );
+  // The Tempo charge draft (draft-tempo-charge-00, L223-318): splits, where present, holds at least one entry. A
+  // splits member present as null is no list of entries.
+  it.each(rows)("%#: a splits member present as null is no-payable-option mpp/splits-malformed, with no fetch and no signer call", (binding, broadcast) =>
+    at(f.now, async () => {
+      const R = JSON.parse(S.splits.request);
+      if (broadcast) delete R.methodDetails.supportedModes;
+      const doc = docOf(binding, issued("tempo", JSON.stringify({ ...R, methodDetails: { ...R.methodDetails, splits: null } })));
+      const fetch = serving(ABC);
+      const signer = counting(account(42431, f), async () => {
+        throw new Error("the signer was called");
+      });
+      expect(await transact(doc, binding, signer, fetch)).toEqual({
+        decline: { code: "no-payable-option", detail: "mpp/splits-malformed" },
+      });
+      expect(fetch.calls).toBe(0);
+      expect(signer.requests.length).toBe(0);
+    }));
 });
 
 describe("mpp/charge/tempo/push", () => {

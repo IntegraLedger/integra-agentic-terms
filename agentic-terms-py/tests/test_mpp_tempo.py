@@ -135,6 +135,27 @@ def test_mpp_charge_tempo_splits_refusals_before_any_fetch(row: dict[str, Any]) 
     assert link.calls == 0
 
 
+@pytest.mark.parametrize(("binding", "broadcast"), [(MPP_CHARGE_TEMPO_MEMO, False), (MPP_CHARGE_TEMPO_PUSH, True)], ids=["memo", "push"])
+def test_mpp_charge_tempo_a_splits_member_present_as_null_is_refused_before_any_fetch(binding: Binding, broadcast: bool) -> None:
+    """The Tempo charge draft (draft-tempo-charge-00, L223-318): splits, where present, holds at least one entry. A
+    splits member present as null is no list of entries."""
+    request = json.loads(SPLITS["request"])
+    if broadcast:
+        del request["methodDetails"]["supportedModes"]
+    request["methodDetails"] = {**request["methodDetails"], "splits": None}
+    doc: Any = doc_of(json.dumps(request))
+    link = serving(ABC)
+
+    def never(request: Any) -> Any:
+        raise AssertionError("the signer was called")
+
+    signer = Recording(account(MEMO["fixed"]), never)
+    out = run(lambda c: transact(doc, binding, signer, c), link)
+    assert (code(out), getattr(out, "detail", None)) == ("no-payable-option", "mpp/splits-malformed")
+    assert link.calls == 0
+    assert signer.requests == []
+
+
 MV13 = PUSH["MV13"]
 
 

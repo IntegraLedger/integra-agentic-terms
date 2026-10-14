@@ -32,13 +32,14 @@ class Split:
 
 
 def tempo_splits(c: Mapping[str, Any]) -> list[Split] | Refusal:
-    """A Tempo challenge's methodDetails.splits: none, or 1 to 10 entries, each with a recipient address, an amount
-    above zero and an optional 32-byte memo."""
+    """A Tempo challenge's methodDetails.splits: absent, or 1 to 10 entries, each with a recipient address, an amount
+    above zero and an optional 32-byte memo. A splits member present as anything else, null included, is
+    mpp/splits-malformed."""
     request = request_of(c) or {}
     details = request.get("methodDetails")
-    splits = details.get("splits") if isinstance(details, Mapping) else None
-    if splits is None:
+    if not isinstance(details, Mapping) or "splits" not in details:
         return []
+    splits = details["splits"]
     if not is_list(splits) or not 1 <= len(splits) <= _MAX_SPLITS:
         return Refusal("mpp/splits-malformed")
     out: list[Split] = []
