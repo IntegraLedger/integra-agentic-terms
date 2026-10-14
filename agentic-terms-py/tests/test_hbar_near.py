@@ -2,6 +2,7 @@
 Expected values are x402-exact-near.json's."""
 
 import base64
+import dataclasses
 import hashlib
 from typing import Any
 
@@ -182,6 +183,24 @@ def test_x402_exact_near_strings_are_utf8() -> None:
     decoded = decode_signed_delegate(utf8)
     assert decoded is not None and decoded[0].sender_id == "payer-é.testnet"
     assert encode_signed_delegate(*decoded) == utf8
+
+
+def test_x402_exact_near_key_type_written_as_a_float() -> None:
+    # V2.keyTypeWritten: keyType written 0.0, which Python's json reads as a float, is keyType 0, and the binding's
+    # complete and the gate's piece both give V2's signed delegate action.
+    key_type = N["V2"]["keyTypeWritten"]["keyType"]
+    assert isinstance(key_type, float)
+    unsigned = X402_EXACT_NEAR.build(near_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    signed = unsigned.complete({"keyType": key_type, "bytes": ed25519.sign(SEED, unsigned.request["hash"])})
+    assert not isinstance(signed, Refusal)
+    assert signed["payload"]["signedDelegateAction"] == N["V2"]["expectSignedDelegateAction"]
+
+    def answer(request: Any) -> Any:
+        return {**near_answer(request), "keyType": key_type}
+
+    signed, _ = build_and_sign(dataclasses.replace(NEAR, answer=answer), lambda request: None)
+    assert signed["payload"]["signedDelegateAction"] == N["V2"]["expectSignedDelegateAction"]
 
 
 def test_x402_exact_near_agreed_refusals_count_utf16_code_units() -> None:

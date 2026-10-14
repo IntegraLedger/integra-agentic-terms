@@ -133,13 +133,13 @@ class NearUnsigned:
     _accepted: Mapping[str, Any]
 
     def complete(self, signature: object) -> dict[str, Any] | Refusal:
-        """Takes {keyType: 0 for Ed25519 or 1 for secp256k1, bytes: its 64- or 65-byte signature}."""
+        """Takes {keyType: 0 for Ed25519 or 1 for secp256k1, bytes: its 64- or 65-byte signature}. keyType is a JSON
+        number: an integral float reads as its integer."""
         if not is_object(signature) or not isinstance(signature.get("bytes"), bytes):
             return Refusal("x402/signature-malformed")
-        key_type, data = signature.get("keyType"), signature["bytes"]
-        if not ((key_type == 0 and len(data) == 64) or (key_type == 1 and len(data) == 65)) or isinstance(key_type, bool):
+        key_type, data = safe_int(signature.get("keyType")), signature["bytes"]
+        if key_type is None or (key_type, len(data)) not in ((0, 64), (1, 65)):
             return Refusal("x402/signature-malformed")
-        assert isinstance(key_type, int)
         sda = base64.b64encode(encode_signed_delegate(self._delegate, key_type, data)).decode("ascii")
         return payment_with(self._required, self._accepted, {"signedDelegateAction": sda})
 
