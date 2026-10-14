@@ -35,6 +35,7 @@ from ._evm import (
     payment_hash,
     permit2_typed_data,
 )
+from ._jose import js_length
 from ._lcp import chain_id_of, is_address, is_list, is_object, legal_context_info, normal_hash, safe_int, uint256_of
 from ._x402 import LEGAL_CONTEXT, MAX_OPTIONS, MAX_SIGNATURE_BYTES, is_offered, is_v2, payment_with, read_for
 
@@ -266,12 +267,12 @@ def _is_signature(value: object, min_bytes: int) -> bool:
 
 
 def _strings(obj: object, keys: tuple[str, ...]) -> Mapping[str, Any] | None:
-    """The object when each named member is a string of at most 256 characters, or None."""
+    """The object when each named member is a string of at most 256 UTF-16 code units, or None."""
     if not is_object(obj):
         return None
     for key in keys:
         value = obj.get(key)
-        if not isinstance(value, str) or len(value) > MAX_MEMBER:
+        if not isinstance(value, str) or js_length(value) > MAX_MEMBER:
             return None
     return obj
 

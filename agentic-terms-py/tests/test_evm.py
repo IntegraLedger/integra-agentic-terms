@@ -269,6 +269,39 @@ def test_ev2_upto_without_facilitator_is_refused() -> None:
     assert X402_UPTO_EIP155_PERMIT2.bound(presented) == expect
 
 
+def test_payment_members_are_bounded_in_utf16_code_units() -> None:
+    """U+10000 is one code point and two UTF-16 code units: 129 of them are 258 units, over the 256 a payment member
+    holds, and the payment is x402/payload-malformed; 128 of them are 256 units, and bound reads the payment.
+    @integraledger/lcp's bound counts a member's length as JavaScript's String length does, and answers each case so."""
+    over, at_bound = "\U00010000" * 129, "\U00010000" * 128
+    malformed = Refusal("x402/payload-malformed")
+
+    exact = completed(X402_EXACT_EIP155_PERMIT2, PERMIT2["fixed"])
+    for key in ("from", "deadline"):
+        changed = copy.deepcopy(exact)
+        changed["payload"]["permit2Authorization"][key] = over
+        assert X402_EXACT_EIP155_PERMIT2.bound(changed) == malformed
+    for member, key in (("permitted", "token"), ("witness", "to")):
+        changed = copy.deepcopy(exact)
+        changed["payload"]["permit2Authorization"][member][key] = over
+        assert X402_EXACT_EIP155_PERMIT2.bound(changed) == malformed
+    changed = copy.deepcopy(exact)
+    changed["payload"]["permit2Authorization"]["from"] = at_bound
+    assert X402_EXACT_EIP155_PERMIT2.bound(changed) == PERMIT2["EV1"]["expectBound"]
+
+    upto = completed(X402_UPTO_EIP155_PERMIT2, UPTO["fixed"])
+    upto["payload"]["permit2Authorization"]["witness"]["facilitator"] = over
+    assert X402_UPTO_EIP155_PERMIT2.bound(upto) == malformed
+
+    capture = completed(X402_AUTH_CAPTURE_EIP155_EIP3009, AC_EIP3009["fixed"])
+    capture["payload"]["authorization"]["to"] = over
+    assert X402_AUTH_CAPTURE_EIP155_EIP3009.bound(capture) == malformed
+
+    delegated = delegation_payment(ERC7710["EV7"]["otherManager"], leaf_context(int(H, 16)), ERC7710["fixed"])
+    delegated["payload"]["delegator"] = over
+    assert X402_EXACT_EIP155_ERC7710.bound(delegated) == malformed
+
+
 # ── EV3 and EV4 (auth-capture).
 
 
