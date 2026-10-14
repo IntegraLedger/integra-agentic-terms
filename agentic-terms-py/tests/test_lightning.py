@@ -111,6 +111,34 @@ def test_bolt11_l4_request_hash_in_h_and_h_in_m() -> None:
     assert invoice_h(b, "h") == "0x" + e["descriptionHash"]
 
 
+# BIP-173's checksum, to write an invoice whose human-readable part differs from a vector's.
+CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+def bech32_with_hrp(invoice: str, hrp: str) -> str:
+    """The invoice's data words under another human-readable part, with BIP-173's checksum for it."""
+    data = [CHARSET.index(c) for c in invoice[invoice.rfind("1") + 1 : -6]]
+    chk = 1
+    for v in [ord(c) >> 5 for c in hrp] + [0] + [ord(c) & 31 for c in hrp] + data + [0] * 6:
+        top = chk >> 25
+        chk = ((chk & 0x1FFFFFF) << 5) ^ v
+        for i, g in enumerate((0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3)):
+            chk ^= g if (top >> i) & 1 else 0
+    chk ^= 1
+    return hrp + "1" + "".join(CHARSET[d] for d in data) + "".join(CHARSET[(chk >> 5 * (5 - i)) & 31] for i in range(6))
+
+
+@pytest.mark.parametrize("digits", [4300, 4301, 7831])
+def test_bolt11_an_amount_past_ints_digit_limit_decodes(digits: int) -> None:
+    """BOLT 11's amount is a decimal integer then a multiplier, of any length: 1 followed by digits - 1 zeros of
+    nanobitcoin (n, 100 millisatoshi each) is 10 ** (digits + 1) millisatoshi. The rest is L4's; 7,831 digits make an
+    invoice of 8,192 characters, the most the decoder reads."""
+    invoice = bech32_with_hrp(V["L4"]["invoice"], "lnbc1" + "0" * (digits - 1) + "n")
+    b, l4 = decoded(invoice), decoded(V["L4"]["invoice"])
+    assert b.amount_msat == 10 ** (digits + 1)
+    assert dataclasses.replace(b, amount_msat=l4.amount_msat) == l4
+
+
 def test_x402_exact_lnbtc_l5_read_build_complete_and_bound() -> None:
     o = F["O"]
     doc = x402_doc(o, F["resource"], F["H"], F["link"])

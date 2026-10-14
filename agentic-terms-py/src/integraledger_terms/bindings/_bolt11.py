@@ -1,7 +1,9 @@
-"""BOLT11 invoices: the Bech32 checksum (BIP 173), the human-readable prefix's currency and amount, and the tagged
-fields, read without BOLT11's length limit up to 8 KiB. The signature is not verified."""
+"""BOLT11 invoices: the Bech32 checksum (BIP 173), the human-readable prefix's currency and amount, the amount an
+integer of any length, and the tagged fields, read without BOLT11's length limit up to 8 KiB. The signature is not
+verified."""
 
 import re
+import sys
 from dataclasses import dataclass
 from typing import Literal
 
@@ -21,6 +23,8 @@ _CURRENCIES: tuple[Currency, ...] = ("bcrt", "tbs", "tb", "bc")
 _AMOUNT = re.compile(r"([0-9]+)([munp]?)")
 # Tagged field types, as the Bech32 value of their letter.
 FIELD = {"p": 1, "s": 16, "h": 23, "m": 27, "x": 6, "d": 13}
+# The most decimal digits int() reads at once under every limit sys.set_int_max_str_digits() accepts.
+_INT_DIGITS = sys.int_info.str_digits_check_threshold
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +80,15 @@ def _to_bytes(words: list[int]) -> bytes:
     return bytes(out)
 
 
+def _decimal(digits: str) -> int:
+    """A string of ASCII decimal digits as the integer it writes, of any length: read in parts int() always takes."""
+    n = 0
+    for i in range(0, len(digits), _INT_DIGITS):
+        part = digits[i : i + _INT_DIGITS]
+        n = n * 10 ** len(part) + int(part)
+    return n
+
+
 def _currency_and_amount(hrp: str) -> tuple[Currency, int | None] | None:
     """The currency and the amount in millisatoshi from the human-readable part, ln + currency + [amount]."""
     if not hrp.startswith("ln"):
@@ -90,7 +103,7 @@ def _currency_and_amount(hrp: str) -> tuple[Currency, int | None] | None:
         a = _AMOUNT.fullmatch(amount)
         if a is None:
             continue
-        n = int(a.group(1))
+        n = _decimal(a.group(1))
         unit = a.group(2)
         if unit == "":
             return currency, n * 100_000_000_000
