@@ -374,6 +374,20 @@ def test_agreed_refusals_an_evm_channel_config_the_deposit_refuses() -> None:
             assert not isinstance(calls["buildWithin"](), Refusal), (form, members)
 
 
+def test_agreed_refusals_an_evm_bound_reads_the_channel_config_before_the_deposit() -> None:
+    """The rows with configMembers: bound of the opening with each member set and no deposit authorization gives the
+    row's refusal, not x402/deposit-authorization, as @integraledger/lcp's bound reads the channelConfig before the
+    deposit."""
+    for row in evm_rows("configMembers"):
+        for members in row["configMembers"]:
+            presented = copy.deepcopy(EVM_OPENINGS["eip3009"])
+            config = presented["payload"]["channelConfig"] | members
+            presented["payload"]["channelConfig"] = config
+            presented["payload"]["voucher"]["channelId"] = eip712_channel_id(config)
+            del presented["payload"]["deposit"]["authorization"]
+            assert X402_BATCH_SETTLEMENT_EIP155.bound(presented) == Refusal(row["expect"]), members
+
+
 def test_agreed_refusals_an_evm_build_with_a_zero_member() -> None:
     """The rows with zeroMembers: build of EB2 and EB3's choice with each named member the zero address, from in the
     choice, or payTo or asset in fixed.evm.option, gives the row's refusal: the channel contract's deposit refuses
