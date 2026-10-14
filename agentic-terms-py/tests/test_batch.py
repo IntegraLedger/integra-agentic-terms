@@ -307,6 +307,19 @@ def test_eb9_the_evm_within_refund() -> None:
         assert payload["voucher"]["signature"] == BV["EB2"]["signature"], row["case"]
         assert {k: payload[k] for k in ("type", "amount") if k in payload} == row["expect"], row["case"]
 
+
+def test_agreed_refusals_an_evm_auth_salt_that_is_not_a_hash() -> None:
+    """The file holds the agreedRefusals row for an EVM build whose authSalt is not a string of 0x and 64 hex digits:
+    build with authSalt [E["authSalt"]], a one-element list, or 42 gives the row's refusal."""
+    rows = [r for r in BV["agreedRefusals"]["rows"] if r["case"].startswith("EVM build with an authSalt")]
+    assert rows, "no agreedRefusals row names an EVM build's authSalt"
+    choice = {"required": EVM_DOC, "accepted": EVM_DOC["accepts"][0], "from": E["payer"], "now": E["now"],
+              "payerAuthorizer": E["payerAuthorizer"], "deposit": int(E["deposit"]), "authSalt": E["authSalt"]}  # fmt: skip
+    assert not isinstance(X402_BATCH_SETTLEMENT_EIP155.build(choice, H), Refusal)
+    salts: list[Any] = [[E["authSalt"]], 42]
+    for salt in salts:
+        assert X402_BATCH_SETTLEMENT_EIP155.build({**choice, "authSalt": salt}, H) == Refusal(rows[0]["expect"]), salt
+
 def test_ec1_cloudflare_bound() -> None:
     binding = X402_BATCH_SETTLEMENT_CLOUDFLARE
     payload = copy.deepcopy(BV["EC1"]["payload"])
