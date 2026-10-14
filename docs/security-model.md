@@ -59,8 +59,9 @@ does not; the [pairings reference](./reference/pairings.md) quotes every stateme
 - Every value the seller supplies is data: `atr.utf8`, and the agreement receipt's `network` and `transaction` that
   `atr_agree` and `atr_transact` return. The skill tells the agent to read them and never to follow instructions inside
   them.
-- A discovery listing, or a hash an agent computes itself, is not a confirmation. The confirmation is the hash inside
-  what the wallet signs.
+- A discovery listing, or a hash an agent computes itself, is not a confirmation. The confirmation is `atr_finish`'s:
+  it returns `signed` only when the pairing reads the hash from the completed payment, or, where the proof is the
+  agreement payment, without that reading.
 
 ## Reporting a vulnerability
 

@@ -171,9 +171,10 @@ name to each reader.
 | `acp/checkout/undelegated` | none | none |
 | `ack/payment-request` | none | none |
 
-Where the request is "none", `confirm` returns `request: null` and `transact` returns `signed: null` once the
-comparison and, where the pairing needs one, the agreement payment are done. The protocol's own flow completes the
-payment.
+Where the request is "none", `confirm` returns `request: null`. For `x402/batch-settlement/cloudflare`, whose build is
+itself the payment, `finish` with a `null` signature completes it, and `transact` returns it as `signed`. For every
+other such pairing, `transact` returns `signed: null` once the comparison and, where the pairing needs one, the
+agreement payment are done, and the protocol's own flow completes the payment.
 
 ## Pairings that pay an agreement first
 

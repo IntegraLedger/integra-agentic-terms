@@ -296,7 +296,8 @@ export async function openChannel(
  * On x402's batch channels, the channel the built payment would name must be the held one before the signer is called.
  * On MPP's sessions, a channel the challenge names must be the held one and a legal context, where present, must name
  * the held hash, before the signer is called, and the voucher is built from the held opening. In both, the signed
- * payment must then be of the expected kind and name the held channel, or it is dropped.
+ * payment must then be of the expected kind, commit to the held hash where the pairing's voucher carries one, and
+ * name the held channel, or it is dropped.
  */
 export async function within(
   doc: unknown,

@@ -3,10 +3,10 @@ challenge and returns the agreement payment for the buyer's agent to approve, si
 option, in document order, that the signer can pay with a pairing whose payment is itself a public proof of the ATR
 hash. Called with the payment the agent approved, it signs exactly that payment, sends it, and returns the resource's
 receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is sent
-unless what was signed carries the hash. Once sent, the same signed payment is sent again after each 202, 5xx or
-timeout, each paid request bounded by min(maxTimeoutSeconds, 120) + 60 + 10 seconds and the whole exchange by the paid
-option's maxTimeoutSeconds + 180 seconds; no second agreement payment is signed, and every decline after it was sent
-carries it as moved. Setting the caller's signal ends the exchange at its next step."""
+unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again after
+each 202, 5xx or timeout, each paid request bounded by min(maxTimeoutSeconds, 120) + 60 + 10 seconds and the whole
+exchange by the paid option's maxTimeoutSeconds + 180 seconds; no second agreement payment is signed, and every decline
+after it was sent carries it as moved. Setting the caller's signal ends the exchange at its next step."""
 
 import asyncio
 import base64

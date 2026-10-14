@@ -32,7 +32,8 @@ wish.
 Examples of what we treat as vulnerabilities:
 
 - the signer is called before the served bytes are compared with the advertised hash, or after they fail to match;
-- `finish`, `transact` or a tool returns a payment whose signed contents do not carry the hash of the compared bytes;
+- `finish`, `transact` or a tool returns a payment from which the pairing reads a hash other than that of the compared
+  bytes, or reads none where the proof is not the agreement payment;
 - the ATR fetch exceeds its bounds (one `https` request, no redirect, 10 seconds, 1 MiB);
 - the TypeScript and Python gates accept different payments for the same inputs.
 
