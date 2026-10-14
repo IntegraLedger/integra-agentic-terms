@@ -16,7 +16,7 @@ from typing import Any
 
 from .._types import Refusal
 from . import _codec
-from ._codec import b64u_decode, b64u_encode, es_number
+from ._codec import b64u_decode, b64u_encode, es_number, js_json
 
 MAX_JSON_DEPTH = 64
 RESOLUTION_DEPTH = 16
@@ -193,22 +193,9 @@ def _deeper_than_the_cap(text: str) -> Any:
 
 
 def _string_bytes(text: str) -> int:
-    n = 2
-    for c in text:
-        o = ord(c)
-        if c in '"\\' or c in "\b\f\n\r\t":
-            n += 2
-        elif o < 0x20 or 0xD800 <= o <= 0xDFFF:
-            n += 6
-        elif o < 0x80:
-            n += 1
-        elif o < 0x800:
-            n += 2
-        elif o < 0x10000:
-            n += 3
-        else:
-            n += 4
-    return n
+    """The UTF-8 length of the JSON string js_json writes for text, as JSON.stringify writes it: a surrogate pair is the
+    one character it forms, and a lone surrogate its \\uXXXX escape."""
+    return len(js_json(text).encode("utf-8"))
 
 
 def _number_bytes(value: int | float) -> int:

@@ -124,8 +124,8 @@ def _server_error(status: int) -> bool:
 
 def _to_base64(value: object) -> str:
     """Standard base64 of the UTF-8 bytes of the JSON text JSON.stringify writes for value, each lone surrogate
-    escaped."""
-    return base64.b64encode(js_json(value).encode("utf-8")).decode("ascii")
+    escaped and each number that is not finite written as null, as JSON.stringify writes them."""
+    return base64.b64encode(js_json(value, null_non_finite=True).encode("utf-8")).decode("ascii")
 
 
 def _from_base64_json(header: str) -> object | None:

@@ -917,6 +917,31 @@ def test_a_lone_surrogate_the_challenge_echoes_is_sent_escaped_as_json_stringify
     assert json.loads(text)["resource"]["description"] == "\ud800"
 
 
+def test_a_number_outside_the_double_range_the_challenge_echoes_is_sent_as_null() -> None:
+    # A seller's challenge whose resource carries an integer of 401 digits: JSON.parse reads it as Infinity, and
+    # JSON.stringify writes a number that is not finite as null (ECMA-262 SerializeJSONProperty; Node's
+    # JSON.stringify(JSON.parse("1" + "0".repeat(400))) is "null"). The signer is called once, the paid request's
+    # PAYMENT-SIGNATURE carries null, and the agreement is recorded.
+    required = {**AG["required"], "resource": {**AG["required"]["resource"], "size": 10**400}}
+    header = base64.b64encode(json.dumps(required).encode("utf-8")).decode("ascii")
+    assert '"size": 1' + "0" * 400 + "}" in base64.b64decode(header).decode("ascii")
+    paid: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if "payment-signature" not in request.headers:
+            return httpx.Response(402, headers={"payment-required": header})
+        paid.append(request.headers["payment-signature"])
+        return httpx.Response(200, json=AG["receipt"])
+
+    signer = RecordingSigner()
+    out = run(Link(handle), lambda c: approve_and_agree(signer, c))
+    assert isinstance(out, Agreed), out
+    assert len(signer.requests) == 1 and len(paid) == 1
+    text = base64.b64decode(paid[0]).decode("utf-8")
+    assert '"size":null' in text
+    assert json.loads(text)["resource"]["size"] is None
+
+
 @pytest.mark.parametrize(
     ("declared", "over"),
     [

@@ -180,6 +180,19 @@ def test_json_forms() -> None:
     assert json_bytes([1.5, 1e21, None, True]) == len("[1.5,1e+21,null,true]")
 
 
+def test_json_bytes_measures_a_surrogate_pair_as_the_character_it_forms() -> None:
+    """Node 26.10.0, Buffer.byteLength(JSON.stringify(s), "utf8"): the code units D83D DE00 are written as the one
+    character U+1F600, so the string measures 6, "a" D83D DE00 "b" measures 8, and an object whose one member is named
+    "k" D83D DE00 with the value "x" measures 13; DE00 D83D, two lone surrogates, are two \\uXXXX escapes, 14, and a
+    lone D800 measures 8."""
+    high, low = chr(0xD83D), chr(0xDE00)
+    assert json_bytes(high + low) == 6
+    assert json_bytes("a" + high + low + "b") == 8
+    assert json_bytes({"k" + high + low: "x"}) == 13
+    assert json_bytes(low + high) == 14
+    assert json_bytes(chr(0xD800)) == 8
+
+
 def test_an_integer_literal_reads_as_json_parse_reads_it() -> None:
     """JSON.parse on Node 26.10.0 reads an integer literal of 4,301 or 400 digits as Infinity, and one of 309 digits,
     inside the double range, as a number."""

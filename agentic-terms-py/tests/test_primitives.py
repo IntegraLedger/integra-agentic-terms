@@ -96,6 +96,18 @@ def test_an_integer_outside_the_double_range_is_not_finite(value: int) -> None:
     assert canonical_or_none({"a": value}) is None
 
 
+def test_a_number_that_is_not_finite_is_written_null_when_asked() -> None:
+    # Node: JSON.stringify([Infinity, -Infinity, NaN, JSON.parse("1" + "0".repeat(400))]) is "[null,null,null,null]",
+    # and JSON.stringify({a: {b: [JSON.parse("-1" + "0".repeat(400))]}, c: 1.5}) is '{"a":{"b":[null]},"c":1.5}'
+    # (ECMA-262 SerializeJSONProperty). Without null_non_finite each raises ValueError.
+    values = [float("inf"), float("-inf"), float("nan"), 10**400]
+    assert js_json(values, null_non_finite=True) == "[null,null,null,null]"
+    assert js_json({"a": {"b": [-(10**400)]}, "c": 1.5}, null_non_finite=True) == '{"a":{"b":[null]},"c":1.5}'
+    for value in values:
+        with pytest.raises(ValueError):
+            js_json([value])
+
+
 def test_an_integer_inside_the_double_range_is_the_double_json_parse_reads() -> None:
     # Node: JSON.stringify(JSON.parse(text)) for the integer 2^1024 - 2^970 - 1, and for 2^53 + 1.
     assert es_number(2**1024 - 2**970 - 1) == "1.7976931348623157e+308"

@@ -157,8 +157,10 @@ def _string(text: str) -> str:
     return _SURROGATES.sub(_surrogate, json.dumps(text, ensure_ascii=False))
 
 
-def js_json(value: Any, depth: int = 0) -> str:
-    """The text JSON.stringify writes for plain JSON data: compact, members in their order, non-ASCII kept."""
+def js_json(value: Any, depth: int = 0, *, null_non_finite: bool = False) -> str:
+    """The text JSON.stringify writes for plain JSON data: compact, members in their order, non-ASCII kept. A number
+    that is not finite (es_number) raises ValueError, or, with null_non_finite, is written null, as JSON.stringify
+    writes it (ECMA-262 SerializeJSONProperty)."""
     if depth > MAX_JSON_DEPTH:
         raise ValueError("too deep")
     if value is None or isinstance(value, bool):
@@ -166,11 +168,17 @@ def js_json(value: Any, depth: int = 0) -> str:
     if isinstance(value, str):
         return _string(value)
     if isinstance(value, (int, float)):
-        return es_number(value)
+        try:
+            return es_number(value)
+        except ValueError:
+            if null_non_finite:
+                return "null"
+            raise
     if isinstance(value, (list, tuple)):
-        return "[" + ",".join(js_json(v, depth + 1) for v in value) + "]"
+        return "[" + ",".join(js_json(v, depth + 1, null_non_finite=null_non_finite) for v in value) + "]"
     if isinstance(value, dict):
-        return "{" + ",".join(_string(k) + ":" + js_json(v, depth + 1) for k, v in value.items()) + "}"
+        members = (_string(k) + ":" + js_json(v, depth + 1, null_non_finite=null_non_finite) for k, v in value.items())
+        return "{" + ",".join(members) + "}"
     raise TypeError("not JSON data")
 
 

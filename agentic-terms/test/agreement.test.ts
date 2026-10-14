@@ -421,6 +421,27 @@ describe("agreement rows", () => {
     expect(JSON.parse(text).resource.description).toBe("\ud800");
   });
 
+  // A seller's challenge whose resource carries an integer of 401 digits: JSON.parse reads it as Infinity, and
+  // JSON.stringify writes a number that is not finite as null (ECMA-262 SerializeJSONProperty). The signer is called
+  // once, the paid request's PAYMENT-SIGNATURE carries null, and the agreement is recorded.
+  it("a number outside the double range the challenge echoes is sent as null, and the agreement is recorded", async () => {
+    const text402 = JSON.stringify({ ...AG.required, resource: { ...AG.required.resource, size: 0 } });
+    const header = Buffer.from(text402.replace('"size":0', `"size":1${"0".repeat(400)}`)).toString("base64");
+    const paid: string[] = [];
+    const fetch = (async (_url: string, init: Parameters<Fetch>[1]) => {
+      const signature = init.headers?.["PAYMENT-SIGNATURE"];
+      if (signature === undefined) return new Response(null, { status: 402, headers: { "payment-required": header } });
+      paid.push(signature);
+      return new Response(JSON.stringify(AG.receipt), { status: 200 });
+    }) as Fetch;
+    const signer = counting();
+    expect(await approveAndAgree(signer, fetch)).toEqual({ receipt: AG.receipt });
+    expect([signer.requests.length, paid.length]).toEqual([1, 1]);
+    const text = Buffer.from(paid[0]!, "base64").toString("utf8");
+    expect(text).toContain('"size":null');
+    expect(JSON.parse(text).resource.size).toBeNull();
+  });
+
   // Number() of a declared length of 5000 digits is Infinity: the agreement URL's 200 is larger than 64 KiB.
   it("a receipt whose declared length has 5000 digits is larger than 64 KiB", async () => {
     const declared = "1" + "0".repeat(4999);
