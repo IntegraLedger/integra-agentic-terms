@@ -146,7 +146,8 @@ class X402ExactAlgorand:
         option names a fee payer. The suggested parameters' genesis id is written as each transaction's gen, a msgpack
         string, so one holding a lone surrogate, which UTF-8 cannot encode, is avm/option-malformed, and so is one whose
         UTF-8 is longer than 200 bytes and begins with the byte-order mark, which algosdk's decoder drops: each entry
-        is read back as carrier reads it, so build writes no string bound refuses."""
+        it writes is read back with _algorand.unpack, the msgpack read carrier makes before it reads the transaction,
+        so build writes no string bound refuses."""
         if not is_object(choice):
             return Refusal("avm/option-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
