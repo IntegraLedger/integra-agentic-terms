@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
-from ._codec import js_json_length
+from ._jose import json_bytes
 from ._lcp import from_legal_context, is_object, normal_hash, safe_int, uint256_of
 from ._x402 import LEGAL_CONTEXT, OptionFilter, chosen, payment_with, presented_with, read_for
 
@@ -29,7 +29,8 @@ _U128 = 1 << 128
 _U256_LIMIT = 1 << 256
 _MAX_SAFE_INTEGER = 2**53 - 1
 MAX_SIGNATURE_FELTS = 32
-MAX_TYPED_DATA_CHARS = 16_384
+# The presented typed data as JSON: at most 16 KiB of UTF-8, nested at most 64 levels (json_bytes).
+MAX_TYPED_DATA_BYTES = 16_384
 _FELT_TEXT = re.compile(r"0x[0-9a-fA-F]{1,64}")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
@@ -252,7 +253,10 @@ class X402ExactStarknet:
             return Refusal("starknet/felt-malformed")
         oe = payload.get("outsideExecution")
         td = oe.get("typedData") if is_object(oe) else None
-        if not is_object(td) or js_json_length(td, MAX_TYPED_DATA_CHARS) is None:
+        if not is_object(td):
+            return Refusal("starknet/typed-data-malformed")
+        size = json_bytes(td)
+        if size is None or size > MAX_TYPED_DATA_BYTES:
             return Refusal("starknet/typed-data-malformed")
         domain, message = td.get("domain"), td.get("message")
         if td.get("primaryType") != "OutsideExecution" or not is_object(domain) or not is_object(message):

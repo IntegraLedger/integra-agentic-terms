@@ -197,6 +197,42 @@ def test_starknet_s4_bound() -> None:
     assert X402_EXACT_STARKNET.bound(short) == SN["S4"]["expectBound"]
 
 
+def test_starknet_bound_measures_the_typed_data_as_json_within_16_kib_and_64_levels() -> None:
+    """The protocol package's bound measures the presented typed data as the UTF-8 bytes of its JSON text, at most
+    16,384, and refuses it past 64 levels of nesting, the typed data counting 1, or when JSON cannot write it: each is
+    starknet/typed-data-malformed."""
+    p = sn_pay()
+    malformed = Refusal("starknet/typed-data-malformed")
+
+    def with_x(x: Any) -> dict[str, Any]:
+        q = copy.deepcopy(p)
+        q["payload"]["outsideExecution"]["typedData"]["x"] = x
+        return q
+
+    def levels(n: int) -> Any:
+        """An empty list inside n - 1 objects, n levels in all."""
+        x: Any = []
+        for _ in range(n - 1):
+            x = {"1": x}
+        return x
+
+    assert X402_EXACT_STARKNET.bound(with_x(levels(63))) == SN["S4"]["expectBound"]
+    for n in (64, 1000):
+        assert X402_EXACT_STARKNET.bound(with_x(levels(n))) == malformed
+    # The typed data padded by a string x: its JSON text grows by the member's bytes, ,"x":"…".
+    td = p["payload"]["outsideExecution"]["typedData"]
+    room = 16_384 - len(json.dumps(td, separators=(",", ":")).encode()) - len(',"x":""')
+    assert X402_EXACT_STARKNET.bound(with_x("a" * room)) == SN["S4"]["expectBound"]
+    assert X402_EXACT_STARKNET.bound(with_x("a" * (room + 1))) == malformed
+    # U+00E9 is one UTF-16 code unit and two UTF-8 bytes: 16,384 code units, 16,385 bytes.
+    assert X402_EXACT_STARKNET.bound(with_x("a" * (room - 2) + "\u00e9")) == SN["S4"]["expectBound"]
+    assert X402_EXACT_STARKNET.bound(with_x("a" * (room - 1) + "\u00e9")) == malformed
+    cycle: dict[str, Any] = {}
+    cycle["self"] = cycle
+    for x in (cycle, b"\x00", {1, 2}):
+        assert X402_EXACT_STARKNET.bound(with_x(x)) == malformed
+
+
 def test_starknet_agreed_refusals() -> None:
     """The buyer-side rows: an option the filter refuses (through build), the payer as fee payer, the signature
     lengths, and bound's domain checks. The status row is the seller's."""
