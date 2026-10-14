@@ -15,6 +15,11 @@ from typing import Any
 ADDRESS_LENGTH = 58
 # msgpack arrays and maps nest at most MAX_DEPTH levels, the outermost container being level 1.
 MAX_DEPTH = 32
+# The longest msgpack string, in bytes, that algosdk 3.8.0's decoder, algorand-msgpack 1.1.0, reads with its own UTF-8
+# reader, which keeps a leading byte-order mark; a longer one, a map key or a value, it reads with a TextDecoder that
+# drops a leading mark (algorand-msgpack 1.1.0, src/utils/utf8.ts:160-177).
+TEXT_DECODER_THRESHOLD = 200
+BYTE_ORDER_MARK = b"\xef\xbb\xbf"
 # The bytes a signature and its key add to a transaction's encoded length.
 SIGNATURE_OVERHEAD = 75
 TRANSACTION_TYPES = frozenset({"pay", "keyreg", "acfg", "axfer", "afrz", "appl", "stpf", "hb"})
@@ -22,7 +27,8 @@ _BASE32 = re.compile(r"[A-Z2-7]*")
 
 
 class Malformed(Exception):
-    """The bytes are not a msgpack value, or not a signed transaction."""
+    """The bytes are not a msgpack value, a string in them is not text algosdk reads as its bytes spell, or they are
+    not a signed transaction."""
 
 
 def sha512_256(data: bytes) -> bytes:
@@ -110,8 +116,15 @@ class _Reader:
 
 
 def _text(data: bytes) -> str:
-    """UTF-8, with each ill-formed sequence replaced by U+FFFD."""
-    return data.decode("utf-8", errors="replace")
+    """A msgpack string, a map key or a value, read as the text its bytes spell: well-formed UTF-8 (RFC 3629), a
+    leading byte-order mark kept. Raises Malformed for bytes that are not well-formed UTF-8, and for a string longer
+    than TEXT_DECODER_THRESHOLD bytes that begins with the mark, which algosdk's decoder reads without it."""
+    if len(data) > TEXT_DECODER_THRESHOLD and data.startswith(BYTE_ORDER_MARK):
+        raise Malformed
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise Malformed from None
 
 
 def _container(depth: int) -> None:

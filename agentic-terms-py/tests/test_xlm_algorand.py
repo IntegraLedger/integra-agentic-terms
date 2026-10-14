@@ -4,6 +4,7 @@ values are the vector file's; the payer signs with the Ed25519 seed the file nam
 import base64
 import copy
 import hashlib
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -14,7 +15,7 @@ from integraledger_terms.bindings.x402_exact_algorand import AvmUnsigned, check
 
 import ed25519
 from breadth import H, Pairing, build_and_sign, plant, x402_doc
-from support import hexb, load
+from support import hexb, load, msgpack_strings
 from xlm_support import EVM_ACCOUNT, b10, b16
 
 A = load("x402-exact-algorand.json")
@@ -120,11 +121,14 @@ TXN_MEMBERS = ("hb", "sp", "spmsg")
 
 def carries_another_signature_or_a_proof(row: dict[str, Any]) -> bool:
     """Whether the row's payment entry, read as msgpack, carries msig, lsig or pqsig, or a transaction with hb, sp or
-    spmsg."""
+    spmsg. An entry that is not a msgpack value _algorand reads carries neither."""
     group, index = row["paymentGroup"], row["paymentIndex"]
     if not 0 <= index < len(group):
         return False
-    signed = _algorand.unpack(base64.b64decode(group[index]))
+    try:
+        signed = _algorand.unpack(base64.b64decode(group[index]))
+    except _algorand.Malformed:
+        return False
     txn = signed.get("txn")
     return any(k in signed for k in SIGNED_MEMBERS) or (isinstance(txn, dict) and any(k in txn for k in TXN_MEMBERS))
 
@@ -273,6 +277,108 @@ def test_x402_exact_algorand_timestamp_extensions_as_algosdk_decodes_them(length
     extension = bytes([0xC7, length, 0xFF]) + bytes(length)
     got = bound_of_entry(bytes([data[0] + 1]) + data[1:] + bytes([0xA2]) + b"zz" + extension)
     assert got == (A["V3"]["expectBound"] if decodes else Refusal("avm/txn-malformed"))
+
+
+def msgpack_str(data: bytes) -> bytes:
+    """data as one msgpack string: a fixstr up to 31 bytes, else a str 8."""
+    return (bytes([0xA0 | len(data)]) if len(data) < 32 else bytes([0xD9, len(data)])) + data
+
+
+def once(data: bytes, old: bytes, new: bytes) -> bytes:
+    assert data.count(old) == 1, old.hex()
+    return data.replace(old, new)
+
+
+# V2's payment entry as the file writes it, {sig, txn}, whose last member is txn, a fixmap of 11 members whose last is
+# xaid; and "gen": "testnet-v1.0" in it.
+V2_BYTES = base64.b64decode(V2_GROUP[V2_INDEX])
+TXN_HEAD, GEN = bytes.fromhex("a374786e8b"), bytes.fromhex("a367656eac746573746e65742d76312e30")
+# Five places for a msgpack string in V2's payment entry, edited by hand (the msgpack specification's formats): the key
+# and the value of a member appended to the entry's map, the key of a member appended to the transaction's map, an
+# element of an array appended to it, and gen's value.
+ENTRY_PLACES: dict[str, Callable[[bytes], bytes]] = {
+    "the entry's key": lambda s: b"\x83" + V2_BYTES[1:] + s + b"\x05",
+    "the entry's value": lambda s: b"\x83" + V2_BYTES[1:] + b"\xa2zz" + s,
+    "the transaction's key": lambda s: once(V2_BYTES, TXN_HEAD, b"\xa3txn\x8c") + s + b"\x05",
+    "an array in the transaction": lambda s: once(V2_BYTES, TXN_HEAD, b"\xa3txn\x8c") + b"\xa2zz\x91" + s,
+    "gen": lambda s: once(V2_BYTES, GEN, b"\xa3gen" + s),
+}
+MARK = b"\xef\xbb\xbf"
+# Strings RFC 3629 section 4's syntax refuses, each after an x (an overlong t, the surrogate U+D800, U+110000 above
+# U+10FFFF, a two-byte lead the string's end cuts short, a continuation byte with no lead), C1 and 200 x (a str 8 of
+# 201 bytes), and the byte-order mark EF BB BF and 198 x (201 bytes), which algosdk 3.8.0's decoder, algorand-msgpack
+# 1.1.0, reads without the mark (src/utils/utf8.ts:160-177).
+NOT_AS_SPELLED = ["78c1b4", "78eda080", "78f4908080", "78c3", "7880", "c1" + "78" * 200, "efbbbf" + "78" * 198]
+# Strings of the boundary code points the syntax takes, each after an x; the mark and 197 x (200 bytes), which that
+# decoder reads with its mark; and x, the mark and 197 x (201 bytes), which the mark does not begin.
+AS_SPELLED = ["78c280", "78dfbf", "78e0a080", "78ed9fbf", "78ee8080", "78efbbbf", "78f0908080", "78f48fbfbf",
+              "efbbbf" + "78" * 197, "78efbbbf" + "78" * 197]  # fmt: skip
+
+
+@pytest.mark.parametrize("place", ENTRY_PLACES)
+def test_x402_exact_algorand_a_string_algosdk_reads_as_other_text_is_malformed_wherever_it_sits(place: str) -> None:
+    """bound refuses a payment entry holding a msgpack string that is not well-formed UTF-8, or that is longer than 200
+    bytes and begins with the byte-order mark, and reads H from one whose strings are text as spelled. Expected values
+    are lcp's: exactAvm.bound's answers for these strings, in these places."""
+    at = ENTRY_PLACES[place]
+    for text in NOT_AS_SPELLED:
+        assert bound_of_entry(at(msgpack_str(bytes.fromhex(text)))) == Refusal("avm/txn-malformed"), text[:16]
+    for text in AS_SPELLED:
+        assert bound_of_entry(at(msgpack_str(bytes.fromhex(text)))) == A["V3"]["expectBound"], text[:16]
+
+
+@pytest.mark.parametrize(
+    ("header", "text", "read"),
+    [
+        pytest.param("d9c8", MARK + b"x" * 197, "\ufeff" + "x" * 197, id="the mark and 197 x, str 8"),
+        pytest.param("da00c8", MARK + b"x" * 197, "\ufeff" + "x" * 197, id="the mark and 197 x, str 16"),
+        pytest.param("d9c9", MARK + b"x" * 198, None, id="the mark and 198 x, str 8"),
+        pytest.param("da00c9", MARK + b"x" * 198, None, id="the mark and 198 x, str 16"),
+        pytest.param("db000000c9", MARK + b"x" * 198, None, id="the mark and 198 x, str 32"),
+        pytest.param("da012c", MARK + b"x" * 297, None, id="the mark and 297 x, str 16"),
+        pytest.param("d9c9", b"x" + MARK + b"x" * 197, "x\ufeff" + "x" * 197, id="x, the mark and 197 x, str 8"),
+        pytest.param("d9c9", b"x" * 201, "x" * 201, id="201 x, str 8"),
+    ],
+)
+def test_x402_exact_algorand_a_string_is_judged_by_its_length_in_bytes(
+    header: str, text: bytes, read: str | None
+) -> None:
+    """A string's length in bytes decides, whatever its format: one longer than 200 bytes that begins with the
+    byte-order mark is Malformed, and every other well-formed string is read with its mark. Expected values are lcp's
+    msgpackWithinCaps, which algosdk 3.8.0's decoder reads only after it admits the bytes."""
+    data = bytes.fromhex(header) + text
+    if read is None:
+        with pytest.raises(_algorand.Malformed):
+            _algorand.unpack(data)
+    else:
+        assert _algorand.unpack(data) == read
+
+
+def holds_a_string_algosdk_reads_as_other_text(row: dict[str, Any]) -> bool:
+    """Whether the row's payment entry holds a msgpack string that Python's strict UTF-8 codec refuses (RFC 3629), or
+    one longer than 200 bytes that begins with the byte-order mark EF BB BF, read with support.msgpack_strings."""
+    group, index = row["paymentGroup"], row["paymentIndex"]
+    if not 0 <= index < len(group):
+        return False
+
+    def other_text(text: bytes) -> bool:
+        try:
+            text.decode("utf-8")
+        except UnicodeDecodeError:
+            return True
+        return len(text) > 200 and text.startswith(MARK)
+
+    return any(other_text(s) for s in msgpack_strings(base64.b64decode(group[index])) or [])
+
+
+def test_x402_exact_algorand_v3_entries_holding_a_string_algosdk_reads_as_other_text() -> None:
+    """The V3.refusals rows whose payment entry holds a msgpack string that is not well-formed UTF-8, or that is longer
+    than 200 bytes and begins with the byte-order mark: bound gives each row's refusal."""
+    rows = [row for row in A["V3"]["refusals"] if holds_a_string_algosdk_reads_as_other_text(row)]
+    assert rows, "x402-exact-algorand.json holds no V3.refusals row whose payment entry holds such a string"
+    for row in rows:
+        payload = {"paymentIndex": row["paymentIndex"], "paymentGroup": row["paymentGroup"]}
+        assert X402_EXACT_ALGORAND.bound(presented(payload)) == Refusal(row["expect"]), row["case"]
 
 
 def test_x402_exact_algorand_v3_presented_options_are_bound_without_their_amount_or_timeout() -> None:

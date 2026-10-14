@@ -4,7 +4,7 @@ say, and each row says whether the caps admit its input."""
 import base64
 from typing import Any
 
-from support import load
+from support import load, msgpack_strings
 
 from integraledger_terms import Refusal
 from integraledger_terms.bindings import _algorand, _stellar, _stellar_xdr, _xrpl, _xrpl_codec
@@ -26,6 +26,25 @@ def test_xrpl_caps() -> None:
 def test_msgpack_caps() -> None:
     assert _algorand.MAX_DEPTH == V["msgpack"]["maxDepth"]
     for row in V["msgpack"]["rows"]:
+        try:
+            _algorand.unpack(bytes.fromhex(row["hex"]))
+            accepted = True
+        except _algorand.Malformed:
+            accepted = False
+        assert accepted is row["accept"], row["name"]
+
+
+def test_msgpack_string_rows() -> None:
+    """The msgpack rows that are one value holding a string with a byte outside ASCII, read with
+    support.msgpack_strings: _algorand reads each as the row's accept says, a string that is not well-formed UTF-8 or
+    that is longer than 200 bytes and begins with the byte-order mark refused."""
+    rows = [
+        row
+        for row in V["msgpack"]["rows"]
+        if any(max(s, default=0) >= 0x80 for s in msgpack_strings(bytes.fromhex(row["hex"])) or [])
+    ]
+    assert rows, "decoder-caps.json holds no msgpack row with a string outside ASCII"
+    for row in rows:
         try:
             _algorand.unpack(bytes.fromhex(row["hex"]))
             accepted = True

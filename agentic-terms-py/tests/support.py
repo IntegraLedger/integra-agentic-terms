@@ -211,3 +211,53 @@ class StubBinding:
             return self.bound_answer
         answer: AtrHash | Refusal = self.inner.bound(presented)
         return answer
+
+
+# msgpack formats by their first byte (the msgpack specification): values of a fixed size after it; bin and str, a
+# length and then its bytes; ext, a length, a type byte and the bytes; array 16/32 and map 16/32, a count of elements or
+# of key-value pairs.
+_MSGPACK_FIXED = {0xCA: 4, 0xCB: 8, 0xCC: 1, 0xCD: 2, 0xCE: 4, 0xCF: 8, 0xD0: 1, 0xD1: 2, 0xD2: 4, 0xD3: 8,
+                  0xD4: 2, 0xD5: 3, 0xD6: 5, 0xD7: 9, 0xD8: 17}  # fmt: skip
+_MSGPACK_SIZED = {0xC4: 1, 0xC5: 2, 0xC6: 4, 0xD9: 1, 0xDA: 2, 0xDB: 4, 0xC7: 1, 0xC8: 2, 0xC9: 4}
+_MSGPACK_COUNTED = {0xDC: (2, 1), 0xDD: (4, 1), 0xDE: (2, 2), 0xDF: (4, 2)}
+_MSGPACK_STR = (0xD9, 0xDA, 0xDB)
+
+
+def msgpack_strings(data: bytes) -> list[bytes] | None:
+    """The bytes of every string in data (fixstr, str 8, str 16 or str 32; a map key or a value, at any depth), read
+    from the msgpack specification's formats; None unless data is exactly one msgpack value whose every declared length
+    and count fits in its bytes."""
+    strings: list[bytes] = []
+    at, values = 0, 1
+    while values:
+        if at >= len(data):
+            return None
+        b, at, values = data[at], at + 1, values - 1
+        if b <= 0x7F or b >= 0xE0 or b in (0xC0, 0xC2, 0xC3):
+            continue
+        if b <= 0x9F:
+            values += (b & 0x0F) * (2 if b <= 0x8F else 1)
+            continue
+        if b <= 0xBF:
+            length = b & 0x1F
+        elif b in _MSGPACK_FIXED:
+            length = _MSGPACK_FIXED[b]
+        elif b in _MSGPACK_SIZED or b in _MSGPACK_COUNTED:
+            width, per = _MSGPACK_COUNTED.get(b, (_MSGPACK_SIZED.get(b, 0), 0))
+            if at + width > len(data):
+                return None
+            length, at = int.from_bytes(data[at : at + width], "big"), at + width
+            if per:
+                values += per * length
+                if values > len(data) - at:
+                    return None
+                continue
+            length += 1 if b in (0xC7, 0xC8, 0xC9) else 0
+        else:
+            return None
+        if at + length > len(data):
+            return None
+        if b <= 0xBF or b in _MSGPACK_STR:
+            strings.append(data[at : at + length])
+        at += length
+    return strings if at == len(data) else None
