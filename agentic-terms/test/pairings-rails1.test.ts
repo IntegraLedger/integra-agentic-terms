@@ -5,6 +5,7 @@ import { createPrivateKey, createPublicKey, createHash, sign, verify } from "nod
 import { describe, expect, it } from "vitest";
 import type { Json } from "@integraledger/lcp";
 import { exactAvm } from "@integraledger/lcp/avm";
+import { msgpackRawDecode } from "algosdk";
 import { exactHedera, exactHederaExecutor } from "@integraledger/lcp/hedera";
 import { decodeSvmTx } from "@integraledger/lcp/svm";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
@@ -454,6 +455,9 @@ describe("x402/exact/algorand", () => {
   const A = vectors<{
     fixed: { O: Option; payer: string; resource: { url: string }; params: Record<string, string>; signature: string };
     V2: { expectBytesToSign: string; expectPaymentGroup: string[]; expectPaymentIndex: number };
+    V3: {
+      refusals: { case: string; paymentGroup: string[]; paymentIndex: number; expect?: string }[];
+    };
   }>("x402-exact-algorand.json");
   const f = A.fixed;
   // The payer key is Ed25519 seed 01×32, as the Algorand vectors name it.
@@ -480,6 +484,30 @@ describe("x402/exact/algorand", () => {
     });
   });
   refusals(p, [EVM_ACCOUNT, `algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k:${f.payer}`]);
+
+  // The V3.refusals rows whose payment entry, read as msgpack by algosdk, carries msig, lsig or pqsig, or a
+  // transaction with hb, sp or spmsg.
+  const signedShapes = A.V3.refusals.filter((r) => {
+    const entry = r.paymentGroup[r.paymentIndex];
+    if (entry === undefined) return false;
+    let signed: Record<string, unknown>;
+    try {
+      signed = msgpackRawDecode(Buffer.from(entry, "base64")) as Record<string, unknown>;
+    } catch {
+      return false;
+    }
+    const txn = signed["txn"] as Record<string, unknown> | undefined;
+    return ["msig", "lsig", "pqsig"].some((k) => k in signed) || ["hb", "sp", "spmsg"].some((k) => txn !== undefined && k in txn);
+  });
+  it("V3.refusals: the file holds SignedTxn rows carrying another signature or a proof member", () =>
+    expect(signedShapes.length).toBeGreaterThan(0));
+  for (const r of signedShapes) {
+    it(`V3.refusals: ${r.case}`, async () => {
+      const payload = { paymentIndex: r.paymentIndex, paymentGroup: r.paymentGroup };
+      const presented = { x402Version: 2, resource: f.resource, accepted: f.O, payload };
+      expect(await exactAvm.bound(presented)).toEqual({ refused: true, code: r.expect });
+    });
+  }
 });
 
 // ── the answer's form ────────────────────────────────────────────────────────────────────────────────────────────

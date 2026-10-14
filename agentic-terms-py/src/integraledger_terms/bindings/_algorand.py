@@ -163,13 +163,24 @@ def _unpack(r: _Reader, depth: int) -> Any:
     raise Malformed
 
 
+class _Map(dict[Any, Any]):
+    """A decoded msgpack map. two_kinds is True when an integer key and a float key of equal value were both written:
+    the dict holds one entry for them, where a reader that keeps integers and floats apart holds two."""
+
+    two_kinds = False
+
+
 def _map(r: _Reader, count: int, depth: int) -> dict[Any, Any]:
     _container(depth)
-    out: dict[Any, Any] = {}
+    out = _Map()
+    floats: dict[Any, bool] = {}
     for _ in range(count):
         key = _unpack(r, depth + 1)
         if isinstance(key, bool) or not isinstance(key, (str, int, float, bytes)):
             raise Malformed
+        if key in floats and floats[key] != isinstance(key, float):
+            out.two_kinds = True
+        floats.setdefault(key, isinstance(key, float))
         out[key] = _unpack(r, depth + 1)
     return out
 
@@ -299,14 +310,65 @@ def group_id(transactions: Sequence[Transaction]) -> bytes:
 # ── reading a signed transaction ─────────────────────────────────────────────────────────────────────────────────
 
 # A schema is a kind: "u64", "str", "bytes", "addr", "bool", ("fixed", n), ("opt", schema), ("list", schema),
-# ("map", {key: schema}), or "any" for a value not checked here.
+# ("map", {key: schema}), ("u64map", schema) for a map whose keys are u64 and whose values are of schema's kind, or
+# ("then", schema, read) for a value of schema's kind that read, called with it, does not refuse.
 Schema = Any
 
+_SAFE = 2**53 - 1
 _OPT_U64 = ("opt", "u64")
 _OPT_ADDR = ("opt", "addr")
 _OPT_FIXED32 = ("opt", ("fixed", 32))
 _COUNTS = ("opt", ("map", {"nui": "u64", "nbs": "u64"}))
 _BOX = ("map", {"i": "u64", "n": "bytes"})
+
+
+def _multisig(value: dict[Any, Any]) -> None:
+    """A multisignature's version and threshold are safe integers."""
+    if value.get("v", 0) > _SAFE or value.get("thr", 0) > _SAFE:
+        raise Malformed
+
+
+def _pqsig(value: dict[Any, Any]) -> None:
+    """A post-quantum signature's scheme is 2 bytes, and its salt at most 255."""
+    if len(value.get("sch", b"")) != 2 or value.get("slt", 0) > 255:
+        raise Malformed
+
+
+def _logic(value: dict[Any, Any]) -> None:
+    """A logic signature's program is not empty, and not every byte of it is printable ASCII or a line feed."""
+    program = value.get("l", b"")
+    if all(b == 0x0A or 0x20 <= b <= 0x7E for b in program):
+        raise Malformed
+
+
+_MULTISIG = ("then", ("map", {
+    "v": "u64", "thr": "u64", "subsig": ("list", ("map", {"pk": ("fixed", 32), "s": ("opt", ("fixed", 64))})),
+}), _multisig)  # fmt: skip
+_PQSIG = ("then", ("map", {"sch": "bytes", "slt": "u64", "pk": "bytes", "sig": "bytes"}), _pqsig)
+_LSIG = ("then", ("map", {
+    "l": "bytes", "arg": ("list", "bytes"), "sig": ("opt", ("fixed", 64)), "msig": ("opt", _MULTISIG),
+    "lmsig": ("opt", _MULTISIG), "pqsig": ("opt", _PQSIG),
+}), _logic)  # fmt: skip
+_HEARTBEAT = ("map", {
+    "a": "addr", "prf": ("map", {
+        "s": ("fixed", 64), "p": ("fixed", 32), "p2": ("fixed", 32), "p1s": ("fixed", 64), "p2s": ("fixed", 64),
+    }), "sd": "bytes", "vid": ("fixed", 32), "kd": "u64", "c": "bool",
+})  # fmt: skip
+_MERKLE_PROOF = ("map", {"pth": ("list", "bytes"), "hsh": ("map", {"t": "u64"}), "td": "u64"})
+_REVEAL = ("map", {
+    "s": ("map", {
+        "s": ("map", {
+            "sig": "bytes", "idx": "u64", "prf": _MERKLE_PROOF, "vkey": ("map", {"k": ("fixed", 0x701)}),
+        }),
+        "l": "u64",
+    }),
+    "p": ("map", {"p": ("map", {"cmt": ("fixed", 64), "lf": "u64"}), "w": "u64"}),
+})  # fmt: skip
+_STATE_PROOF = ("map", {
+    "c": "bytes", "w": "u64", "S": _MERKLE_PROOF, "P": _MERKLE_PROOF, "v": "u64", "r": ("u64map", _REVEAL),
+    "pr": ("list", "u64"),
+})  # fmt: skip
+_STATE_PROOF_MESSAGE = ("map", {"b": "bytes", "v": "bytes", "P": "u64", "f": "u64", "l": "u64"})
 
 # The transaction fields and their kinds; a key not named here is not read.
 TXN_SCHEMA: dict[str, Schema] = {
@@ -330,8 +392,15 @@ TXN_SCHEMA: dict[str, Schema] = {
         "b": ("opt", _BOX),
     }))),
     "apap": ("opt", "bytes"), "apsu": ("opt", "bytes"), "apls": _COUNTS, "apgs": _COUNTS, "apep": _OPT_U64,
-    "aprv": _OPT_U64, "sptype": _OPT_U64, "sp": "any", "spmsg": "any", "hb": "any",
+    "aprv": _OPT_U64, "sptype": _OPT_U64, "sp": ("opt", _STATE_PROOF), "spmsg": ("opt", _STATE_PROOF_MESSAGE),
+    "hb": ("opt", _HEARTBEAT),
 }  # fmt: skip
+
+# A SignedTxn's members and their kinds.
+SIGNED_SCHEMA: Schema = ("map", {
+    "txn": ("map", TXN_SCHEMA), "sig": ("opt", ("fixed", 64)), "msig": ("opt", _MULTISIG), "lsig": ("opt", _LSIG),
+    "pqsig": ("opt", _PQSIG), "sgnr": _OPT_ADDR,
+})  # fmt: skip
 
 
 def _is_uint64(value: Any) -> bool:
@@ -344,11 +413,13 @@ def _is_uint64(value: Any) -> bool:
 
 def _check(value: Any, schema: Schema) -> None:
     """Raises Malformed when value is not of the schema's kind."""
-    if schema == "any":
-        return
     if isinstance(schema, tuple) and schema[0] == "opt":
         if value is not None:
             _check(value, schema[1])
+        return
+    if isinstance(schema, tuple) and schema[0] == "then":
+        _check(value, schema[1])
+        schema[2](value)
         return
     ok = (
         (schema == "u64" and _is_uint64(value))
@@ -359,6 +430,13 @@ def _check(value: Any, schema: Schema) -> None:
         or (isinstance(schema, tuple) and schema[0] == "fixed" and isinstance(value, bytes) and len(value) == schema[1])
         or (isinstance(schema, tuple) and schema[0] == "list" and isinstance(value, list))
         or (isinstance(schema, tuple) and schema[0] == "map" and isinstance(value, dict))
+        or (
+            isinstance(schema, tuple)
+            and schema[0] == "u64map"
+            and isinstance(value, dict)
+            and not (isinstance(value, _Map) and value.two_kinds)
+            and all(_is_uint64(k) for k in value)
+        )
     )
     if not ok:
         raise Malformed
@@ -369,6 +447,9 @@ def _check(value: Any, schema: Schema) -> None:
         for key, inner in schema[1].items():
             if key in value:
                 _check(value[key], inner)
+    elif isinstance(schema, tuple) and schema[0] == "u64map":
+        for item in value.values():
+            _check(item, schema[1])
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,24 +459,15 @@ class SignedRead:
 
 
 def read_signed(data: bytes) -> SignedRead:
-    """The type and note of a msgpack SignedTxn: at most one of sig, msig, lsig and pqsig, and a transaction whose
-    fields are of their schema's kinds. The multisig, logic-signature and state-proof values are not read. Raises
-    Malformed for anything that does not decode as one."""
+    """The type and note of a msgpack SignedTxn whose members are of SIGNED_SCHEMA's kinds, as algosdk 3.8.0's
+    decodeSignedTransaction reads them, with at most one of sig, msig, lsig and pqsig. The signatures are not
+    verified. Raises Malformed for anything that does not decode as one."""
     top = unpack(data)
-    if not isinstance(top, dict):
-        raise Malformed
-    sig = top.get("sig")
-    if sig is not None and not (isinstance(sig, bytes) and len(sig) == 64):
-        raise Malformed
+    _check(top, SIGNED_SCHEMA)
     if sum(top.get(k) is not None for k in ("sig", "msig", "lsig", "pqsig")) > 1:
         raise Malformed
-    sgnr = top.get("sgnr")
-    if sgnr is not None and not (isinstance(sgnr, bytes) and len(sgnr) == 32):
-        raise Malformed
     txn = top.get("txn")
-    _check(txn, ("map", TXN_SCHEMA))
-    assert isinstance(txn, dict)
-    if txn.get("type") not in TRANSACTION_TYPES:
+    if not isinstance(txn, dict) or txn.get("type") not in TRANSACTION_TYPES:
         raise Malformed
     note = txn.get("note", b"")
     return SignedRead(kind=txn["type"], note=note if isinstance(note, bytes) else b"")
