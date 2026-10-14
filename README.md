@@ -71,7 +71,7 @@ published at [agenticterms.integraledger.com](https://agenticterms.integraledger
 
 ## Building and testing
 
-You need Node.js 26.10 (`.node-version`), pnpm 11.27.1 (the `packageManager` field) and, for the Python package,
+You need Node.js 26.10 (`.node-version`), pnpm 12.11.2 (the `packageManager` field) and, for the Python package,
 [uv](https://docs.astral.sh/uv/). These are the commands CI runs:
 
 ```sh
