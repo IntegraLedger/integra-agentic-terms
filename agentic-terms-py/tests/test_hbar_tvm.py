@@ -290,9 +290,28 @@ def test_x402_exact_tvm_a_bag_not_in_canonical_base64_is_malformed_before_its_si
     assert root_of("") == Refusal("tvm/boc-malformed")
 
 
-def test_x402_exact_tvm_an_exotic_cell_in_the_settlement_is_boc_malformed() -> None:
+# An exotic cell is refused only where the read parses it, with the code of the check that reads it; one that no read
+# parses, such as a state init's code, is carried as given. Expected values are tvm_exotic.json's, from lcp's
+# exactTvm.bound over BoCs @ton/core 0.63.1 built.
+def test_x402_exact_tvm_an_exotic_cell_is_refused_by_the_check_that_parses_it() -> None:
     rows = json.loads((Path(__file__).parent / "tvm_exotic.json").read_text())["rows"]
-    assert [r["expect"] for r in rows[1:]] == ["tvm/boc-malformed"] * 3
-    for row in rows:
+    read = [r for r in rows if "settlementBoc" in r]
+    codes = {"tvm/boc-malformed", "tvm/not-w5-signed", "tvm/actions", "tvm/not-jetton-transfer", "tvm/payload-not-lcp"}
+    assert {r["expect"] for r in read} == codes | {F["H"]}
+    for row in read:
         out = BINDING.bound(presented(row["settlementBoc"]))
         assert (out if isinstance(out, str) else out.code) == row["expect"], row["case"]
+    carried = [r for r in read if "stateInit" in r]
+    assert len(carried) >= 3
+    for row in carried:
+        init = root_of(row["stateInit"])
+        assert isinstance(init, Cell) and init.hash.hex() == row["stateInitHash"], row["case"]
+        unsigned = BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"])
+        assert not isinstance(unsigned, Refusal), row["case"]
+        signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
+        assert not isinstance(signed, Refusal)
+        assert signed["payload"]["settlementBoc"] == row["settlementBoc"], row["case"]
+    refused = [r for r in rows if "settlementBoc" not in r]
+    assert len(refused) >= 1
+    for row in refused:
+        assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]

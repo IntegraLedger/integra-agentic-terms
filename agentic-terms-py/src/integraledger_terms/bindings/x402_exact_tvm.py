@@ -92,8 +92,8 @@ def root_of(boc: object) -> Cell | Refusal:
 
 
 def _comment_hash(c: Cell) -> AtrHash | None:
-    """The hash in a text comment cell holding an LCP string and no references, or None."""
-    if c.refs or c.length < 32 or (c.length - 32) % 8 != 0:
+    """The hash in an ordinary text comment cell holding an LCP string and no references, or None."""
+    if c.exotic or c.refs or c.length < 32 or (c.length - 32) % 8 != 0:
         return None
     s = c.slice()
     if s.uint(32) != 0:
@@ -124,7 +124,10 @@ def _jetton_payload(body: Cell) -> Cell | None | Refusal:
 
 
 def _send_message(actions: Cell) -> Cell | Refusal:
-    """The outgoing message of an action list holding exactly one action_send_msg behind an empty prev."""
+    """The outgoing message of an action list holding exactly one action_send_msg behind an empty prev. An exotic
+    action list is tvm/boc-malformed."""
+    if actions.exotic:
+        return Refusal("tvm/boc-malformed")
     if actions.length != 40 or len(actions.refs) != 2:
         return Refusal("tvm/actions")
     prev = actions.refs[0]

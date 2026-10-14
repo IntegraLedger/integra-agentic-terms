@@ -1,5 +1,5 @@
 {
- "about": "The settlement BoC of this pairing's B6 row (x402-exact-tvm.json's fixed inputs), and that BoC with one cell replaced by a library cell (TVM's exotic cell type 2, then 32 bytes of 0x01), built with @ton/core 0.63.1 as @integraledger/lcp's tvm test builds it. Each row's expect is @integraledger/lcp's exactTvm.bound for the row's BoC with the fixed placed option: the bound hash, or the refusal code.",
+ "about": "The settlement BoC of this pairing's B6 row (x402-exact-tvm.json's fixed inputs); that BoC with one cell replaced by a library cell (TVM's exotic cell type 2, then 32 bytes of 0x01), or with its comment cell's exotic bit set; and the settlement built with a state init whose code, which no read parses, is a library cell, a pruned branch (type 1, level 1) or a Merkle proof (type 3) of a cell over that pruned branch, with that state init; and the signed request in a message whose state init's libraries dictionary or extra currencies hold a library cell, which no read parses. Built with @ton/core 0.63.1 as @integraledger/lcp's tvm test builds them, signed with the fixed seed. Each row's expect is @integraledger/lcp's exactTvm.bound for the row's BoC with the fixed placed option: the bound hash, or the refusal code. A state init's stateInitHash is its representation hash, the address an undeployed wallet derives from it. A row with a stateInit and no settlementBoc expects exactTvm.build's refusal for that state init.",
  "rows": [
   {
    "case": "the signed settlement",
@@ -7,9 +7,14 @@
    "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
   },
   {
-   "case": "the transfer's comment replaced by a library cell",
-   "settlementBoc": "te6cckECBwEAASAAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMEAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBghCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBPB2EBg==",
+   "case": "the settlement message replaced by a library cell",
+   "settlementBoc": "te6cckEBAQEAIwAIQgIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAe6OmP8=",
    "expect": "tvm/boc-malformed"
+  },
+  {
+   "case": "the signed request replaced by a library cell",
+   "settlementBoc": "te6cckEBAgEAVgABYEIADtENNxn3kUIAFNc7yAew3UEFynQJ0dvfenH1I4gDsi+AAAAAAAAAAAAAAAAAAQEIQgIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAaGHSiE=",
+   "expect": "tvm/not-w5-signed"
   },
   {
    "case": "the action list replaced by a library cell",
@@ -17,9 +22,70 @@
    "expect": "tvm/boc-malformed"
   },
   {
+   "case": "the action list's prev replaced by a library cell",
+   "settlementBoc": "te6cckECBwEAAXEAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMECEICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBgCiAAAAAGxjcDpzaGEyNTY6MHhiYTc4MTZiZjhmMDFjZmVhNDE0MTQwZGU1ZGFlMjIyM2IwMDM2MWEzOTYxNzdhOWNiNDEwZmY2MWYyMDAxNWFkVzdBww==",
+   "expect": "tvm/actions"
+  },
+  {
+   "case": "the outgoing message replaced by a library cell",
+   "settlementBoc": "te6cckEBBQEAtQABYEIADtENNxn3kUIAFNc7yAew3UEFynQJ0dvfenH1I4gDsi+AAAAAAAAAAAAAAAAAAQEBoXNpbnR///8RarE7vAAAAAWZIPP+AGU2U43mAfjsaje+4nhm8OhSvY/YhUPSfyJY4EizAfVKK5gCHoEsiHyhC0CjReCANAplzQr9+N2Hxg1BoAICCg7DyG0DAwQAAAhCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBDxfCmg==",
+   "expect": "tvm/not-jetton-transfer"
+  },
+  {
+   "case": "the Jetton transfer body replaced by a library cell",
+   "settlementBoc": "te6cckEBBgEA7AABYEIADtENNxn3kUIAFNc7yAew3UEFynQJ0dvfenH1I4gDsi+AAAAAAAAAAAAAAAAAAQEBoXNpbnR///8RarE7vAAAAAWZIPP+AGU2U43mAfjsaje+4nhm8OhSvY/YhUPSfyJY4EizAfVKK5gCHoEsiHyhC0CjReCANAplzQr9+N2Hxg1BoAICCg7DyG0DAwQAAAFoYgAIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiKAX14QAAAAAAAAAAAAAAAAAAQUIQgIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAdyXiIQ=",
+   "expect": "tvm/not-jetton-transfer"
+  },
+  {
+   "case": "the transfer's comment replaced by a library cell",
+   "settlementBoc": "te6cckECBwEAASAAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMEAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBghCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBPB2EBg==",
+   "expect": "tvm/payload-not-lcp"
+  },
+  {
    "case": "the comment replaced by a library cell under nine ordinary cells",
    "settlementBoc": "te6cckECEAEAATsAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMEAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBgEABwEACAEACQEACgEACwEADAEADQEADgEADwhCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB0mabHw==",
+   "expect": "tvm/payload-not-lcp"
+  },
+  {
+   "case": "the comment cell marked exotic, whose first byte names no exotic cell type",
+   "settlementBoc": "te6cckECBwEAAVAAAWBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaACAgoOw8htAwMEAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEFAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBgiiAAAAAGxjcDpzaGEyNTY6MHhiYTc4MTZiZjhmMDFjZmVhNDE0MTQwZGU1ZGFlMjIyM2IwMDM2MWEzOTYxNzdhOWNiNDEwZmY2MWYyMDAxNWFkVfwqzA==",
    "expect": "tvm/boc-malformed"
+  },
+  {
+   "case": "a state init whose code is a library cell",
+   "stateInit": "te6cckEBAwEAUwACATQBAghCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAFGAAAAAP///iMVEce66BPjK/qltlp5dLrllM4TfjsoJDfm6RADaB7euIFf3/tc=",
+   "stateInitHash": "4103943c6085d37e0ce5a1316db4ca1ba02d39fb7ca3f2b33a1915948a5221d6",
+   "settlementBoc": "te6cckECCgEAAaUAAmFCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAPAAQQCATQCAwhCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAFGAAAAAP///iMVEce66BPjK/qltlp5dLrllM4TfjsoJDfm6RADaB7euIAGhc2ludH///xFqsTu8AAAABZkg8/4AZTZTjeYB+OxqN77ieGbw6FK9j9iFQ9J/IljgSLMB9UormAIegSyIfKELQKNF4IA0CmXNCv343YfGDUGgBQIKDsPIbQMGBwAAAWhiAAiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIoBfXhAAAAAAAAAAAAAAAAAABCAFhD4p+pQAAAAAAAAAAInEIASSGdK7ZfK2JuZDbKWkvRZ4xU3VTkFB/1FHUh9Z4S5/aAwkAogAAAABsY3A6c2hhMjU2OjB4YmE3ODE2YmY4ZjAxY2ZlYTQxNDE0MGRlNWRhZTIyMjNiMDAzNjFhMzk2MTc3YTljYjQxMGZmNjFmMjAwMTVhZP1kwjw=",
+   "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  },
+  {
+   "case": "a state init whose code is a pruned branch of V2b's code",
+   "stateInit": "te6cckEBAwEAVgAiATQBAihIAQEnCQb9FxucQ/N6NTBZpz+8AuBWgYjsMBhq+EbK79CbjAAAAFGAAAAAP///iMVEce66BPjK/qltlp5dLrllM4TfjsoJDfm6RADaB7euIADaB74=",
+   "stateInitHash": "d6fe0314764b45274426577775941c333f92a770217ce70e1b6054c690d581ba",
+   "settlementBoc": "te6cckECCgEAAagAImFCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAPAAQQiATQCAyhIAQEnCQb9FxucQ/N6NTBZpz+8AuBWgYjsMBhq+EbK79CbjAAAAFGAAAAAP///iMVEce66BPjK/qltlp5dLrllM4TfjsoJDfm6RADaB7euIAGhc2ludH///xFqsTu8AAAABZkg8/4AZTZTjeYB+OxqN77ieGbw6FK9j9iFQ9J/IljgSLMB9UormAIegSyIfKELQKNF4IA0CmXNCv343YfGDUGgBQIKDsPIbQMGBwAAAWhiAAiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIoBfXhAAAAAAAAAAAAAAAAAABCAFhD4p+pQAAAAAAAAAAInEIASSGdK7ZfK2JuZDbKWkvRZ4xU3VTkFB/1FHUh9Z4S5/aAwkAogAAAABsY3A6c2hhMjU2OjB4YmE3ODE2YmY4ZjAxY2ZlYTQxNDE0MGRlNWRhZTIyMjNiMDAzNjFhMzk2MTc3YTljYjQxMGZmNjFmMjAwMTVhZOZTYeI=",
+   "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  },
+  {
+   "case": "a state init whose code is a Merkle proof of a cell over that pruned branch",
+   "stateInit": "te6cckEBBQEAgAACATQBBAlGAyulVdyC0Y5FZ9AtcEPci9QkceT64AOzOPv7J4odAtTdAAECIQIAAyhIAQEnCQb9FxucQ/N6NTBZpz+8AuBWgYjsMBhq+EbK79CbjAAAAFGAAAAAP///iMVEce66BPjK/qltlp5dLrllM4TfjsoJDfm6RADaB7euICm0aQQ=",
+   "stateInitHash": "8ef383488a9cf0c4dc70952aa6dfd6a55e5ac2c69e075c93ccb69ce54e75331b",
+   "settlementBoc": "te6cckECDAEAAdIAAmFCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAPAAQYCATQCBQlGAyulVdyC0Y5FZ9AtcEPci9QkceT64AOzOPv7J4odAtTdAAEDIQIABChIAQEnCQb9FxucQ/N6NTBZpz+8AuBWgYjsMBhq+EbK79CbjAAAAFGAAAAAP///iMVEce66BPjK/qltlp5dLrllM4TfjsoJDfm6RADaB7euIAGhc2ludH///xFqsTu8AAAABZkg8/4AZTZTjeYB+OxqN77ieGbw6FK9j9iFQ9J/IljgSLMB9UormAIegSyIfKELQKNF4IA0CmXNCv343YfGDUGgBwIKDsPIbQMICQAAAWhiAAiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIoBfXhAAAAAAAAAAAAAAAAAABCgFhD4p+pQAAAAAAAAAAInEIASSGdK7ZfK2JuZDbKWkvRZ4xU3VTkFB/1FHUh9Z4S5/aAwsAogAAAABsY3A6c2hhMjU2OjB4YmE3ODE2YmY4ZjAxY2ZlYTQxNDE0MGRlNWRhZTIyMjNiMDAzNjFhMzk2MTc3YTljYjQxMGZmNjFmMjAwMTVhZOB3dww=",
+   "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  },
+  {
+   "case": "a state init that is itself a library cell",
+   "stateInit": "te6cckEBAQEAIwAIQgIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAe6OmP8=",
+   "expect": "x402/option-malformed"
+  },
+  {
+   "case": "the signed request in a message whose state init's libraries fork to a library cell",
+   "settlementBoc": "te6cckECDgEAAboAAmFCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAPAAQgDATwCAwQACN6tvu8AUYAAAAA///+IxURx7roE+Mr+qW2Wnl0uuWUzhN+OygkN+bpEANoHt64gAgEgBQYIQgIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQED//gHAASrzQGhc2ludH///xFqsTu8AAAABZkg8/4AZTZTjeYB+OxqN77ieGbw6FK9j9iFQ9J/IljgSLMB9UormAIegSyIfKELQKNF4IA0CmXNCv343YfGDUGgCQIKDsPIbQMKCwAAAWhiAAiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIoBfXhAAAAAAAAAAAAAAAAAABDAFhD4p+pQAAAAAAAAAAInEIASSGdK7ZfK2JuZDbKWkvRZ4xU3VTkFB/1FHUh9Z4S5/aAw0AogAAAABsY3A6c2hhMjU2OjB4YmE3ODE2YmY4ZjAxY2ZlYTQxNDE0MGRlNWRhZTIyMjNiMDAzNjFhMzk2MTc3YTljYjQxMGZmNjFmMjAwMTVhZJc6wLw=",
+   "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  },
+  {
+   "case": "the signed request in a message whose extra currencies are a library cell",
+   "settlementBoc": "te6cckECCAEAAXQAAmBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvhAAAAAAAAAAAAAAAAAEBAghCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaADAgoOw8htAwQFAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEGAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBwCiAAAAAGxjcDpzaGEyNTY6MHhiYTc4MTZiZjhmMDFjZmVhNDE0MTQwZGU1ZGFlMjIyM2IwMDM2MWEzOTYxNzdhOWNiNDEwZmY2MWYyMDAxNWFkilSILg==",
+   "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
   }
  ]
 }

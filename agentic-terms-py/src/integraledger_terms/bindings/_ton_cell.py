@@ -1,5 +1,6 @@
-"""The TON cell layer: ordinary cells with their representation hash and depth, a bit builder and a slice, bags of
-cells read and written with CRC-32C, and the check that a HashmapE parses. Exotic cells are not read."""
+"""The TON cell layer: cells with their level, hashes and depths, a bit builder and a slice, bags of cells read and
+written with CRC-32C, and the check that a HashmapE parses. An exotic cell is held as the bag gives it, and a slice of
+one is Malformed, so each read refuses one where it parses it."""
 
 import hashlib
 import math
@@ -57,24 +58,133 @@ def padded(value: int, length: int) -> bytes:
     return value.to_bytes(math.ceil(length / 8), "big") if length else b""
 
 
+_PRUNED_BRANCH, _LIBRARY, _MERKLE_PROOF, _MERKLE_UPDATE = 1, 2, 3, 4
+
+
+def _below(mask: int, level: int) -> int:
+    """The level mask's bits below level."""
+    return mask & ((1 << level) - 1)
+
+
+def _hash_index(mask: int) -> int:
+    return bin(mask).count("1")
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class Cell:
-    """An ordinary cell: up to 1023 bits (value, most significant first, and length) and up to four references."""
+    """A cell: up to 1023 bits (value, most significant first, and length) and up to four references. An exotic cell
+    is TVM's pruned branch, library, Merkle proof or Merkle update, its type in its first 8 bits, read as @ton/core
+    reads one; one that is not in its type's form is Malformed. The level mask, and the hashes and depths at levels 0
+    to 3, follow TVM's cell rules (ton-blockchain/ton crypto/vm/cells/DataCell.cpp); hash and depth are the
+    representation's, at level 3."""
 
     value: int
     length: int
     refs: tuple["Cell", ...] = ()
+    exotic: bool = False
     hash: bytes = field(init=False)
     depth: int = field(init=False)
+    level_mask: int = field(init=False)
+    hashes: tuple[bytes, ...] = field(init=False)
+    depths: tuple[int, ...] = field(init=False)
 
     def __post_init__(self) -> None:
-        if not 0 <= self.length <= MAX_BITS or len(self.refs) > MAX_REFS or not 0 <= self.value < (1 << self.length):
+        if not 0 <= self.length or not 0 <= self.value < (1 << self.length):
             raise Malformed
-        depth = max((r.depth for r in self.refs), default=-1) + 1
-        repr_ = bytes([len(self.refs), self.descriptor2()]) + padded(self.value, self.length)
-        repr_ += b"".join(r.depth.to_bytes(2, "big") for r in self.refs) + b"".join(r.hash for r in self.refs)
-        object.__setattr__(self, "depth", depth)
-        object.__setattr__(self, "hash", hashlib.sha256(repr_).digest())
+        kind = 0
+        pruned: list[tuple[bytes, int]] = []
+        if not self.exotic:
+            if self.length > MAX_BITS or len(self.refs) > MAX_REFS:
+                raise Malformed
+            mask = 0
+            for r in self.refs:
+                mask |= r.level_mask
+        else:
+            if self.length < 8:
+                raise Malformed
+            kind = self.value >> (self.length - 8)
+            mask = self._exotic_mask(kind, pruned)
+        merkle = kind in (_MERKLE_PROOF, _MERKLE_UPDATE)
+        # A pruned branch computes only its own level's hash; its lower levels' hashes and depths are its data.
+        offset = _hash_index(mask) if kind == _PRUNED_BRANCH else 0
+        hashes: list[bytes] = []
+        depths: list[int] = []
+        hash_i = 0
+        for level in range(mask.bit_length() + 1):
+            if level != 0 and not (mask >> (level - 1)) & 1:
+                continue
+            if hash_i < offset:
+                hash_i += 1
+                continue
+            data = padded(self.value, self.length) if hash_i == offset else hashes[hash_i - offset - 1]
+            child = min(level + 1, 3) if merkle else level
+            depth = max((r.depths[child] for r in self.refs), default=-1) + 1
+            d1 = len(self.refs) + (8 if self.exotic else 0) + 32 * _below(mask, level)
+            repr_ = bytes([d1, self.descriptor2()]) + data
+            repr_ += b"".join(r.depths[child].to_bytes(2, "big") for r in self.refs)
+            repr_ += b"".join(r.hashes[child] for r in self.refs)
+            hashes.append(hashlib.sha256(repr_).digest())
+            depths.append(depth)
+            hash_i += 1
+        at = [_hash_index(_below(mask, level)) for level in range(4)]
+        if kind == _PRUNED_BRANCH:
+            own = _hash_index(mask)
+            by_level = [pruned[i] if i != own else (hashes[0], depths[0]) for i in at]
+        else:
+            by_level = [(hashes[i], depths[i]) for i in at]
+        object.__setattr__(self, "level_mask", mask)
+        object.__setattr__(self, "hashes", tuple(h for h, _ in by_level))
+        object.__setattr__(self, "depths", tuple(d for _, d in by_level))
+        object.__setattr__(self, "hash", by_level[3][0])
+        object.__setattr__(self, "depth", by_level[3][1])
+
+    def _exotic_mask(self, kind: int, pruned: list[tuple[bytes, int]]) -> int:
+        """The level mask of an exotic cell in its type's form, after checking that form; a pruned branch's hashes and
+        depths are appended to pruned. Malformed for any other form or type."""
+        bits, refs = self.length, self.refs
+        if kind == _PRUNED_BRANCH:
+            if refs:
+                raise Malformed
+            if bits == 8 + 256 + 16:
+                mask, at = 1, 8
+            else:
+                mask, at = (self.value >> (bits - 16)) & 0xFF, 16
+                level = mask.bit_length()
+                if not 1 <= level <= 3 or bits != 16 + (_hash_index(_below(mask, level - 1)) + 1) * (256 + 16):
+                    raise Malformed
+            level = mask.bit_length()
+            if at + level * (256 + 16) > bits:
+                raise Malformed
+            rest = self.value & ((1 << (bits - at)) - 1)
+            body = (rest >> (bits - at - level * (256 + 16))).to_bytes(level * (32 + 2), "big")
+            for i in range(level):
+                at_depth = 32 * level + 2 * i
+                pruned.append((body[32 * i : 32 * i + 32], int.from_bytes(body[at_depth : at_depth + 2], "big")))
+            return mask
+        if kind == _LIBRARY:
+            if bits != 8 + 256:
+                raise Malformed
+            return 0
+        if kind == _MERKLE_PROOF:
+            if bits != 8 + 256 + 16 or len(refs) != 1:
+                raise Malformed
+            body = padded(self.value, bits)
+            if body[1:33] != refs[0].hashes[0] or int.from_bytes(body[33:35], "big") != refs[0].depths[0]:
+                raise Malformed
+            return refs[0].level_mask >> 1
+        if kind == _MERKLE_UPDATE:
+            if bits != 8 + 2 * (256 + 16) or len(refs) != 2:
+                raise Malformed
+            body = padded(self.value, bits)
+            for i, r in enumerate(refs):
+                depth = int.from_bytes(body[65 + 2 * i : 67 + 2 * i], "big")
+                if body[1 + 32 * i : 33 + 32 * i] != r.hashes[0] or depth != r.depths[0]:
+                    raise Malformed
+            return (refs[0].level_mask | refs[1].level_mask) >> 1
+        raise Malformed
+
+    def descriptor1(self) -> int:
+        return len(self.refs) + (8 if self.exotic else 0) + 32 * self.level_mask
 
     def descriptor2(self) -> int:
         return math.ceil(self.length / 8) + self.length // 8
@@ -83,6 +193,9 @@ class Cell:
         return self.hash == other.hash
 
     def slice(self) -> "Slice":
+        """A slice of an ordinary cell; an exotic cell is not parsed (Malformed)."""
+        if self.exotic:
+            raise Malformed
         return Slice(self)
 
 
@@ -206,7 +319,8 @@ def _label_length_bits(n: int) -> int:
 
 def _hashmap(s: Slice, n: int, value: Callable[[Slice], object]) -> None:
     """Parses one Hashmap node of key length n: its label (hml_short, hml_long or hml_same), then the value at a
-    leaf or the two children at a fork. A label longer than the key is malformed."""
+    leaf or the two children at a fork, each child that is an ordinary cell. A label longer than the key is
+    malformed."""
     if not s.bit():
         length = 0
         while s.bit():
@@ -223,15 +337,16 @@ def _hashmap(s: Slice, n: int, value: Callable[[Slice], object]) -> None:
     if n - length == 0:
         value(s)
         return
-    left, right = s.ref(), s.ref()
-    _hashmap(left.slice(), n - length - 1, value)
-    _hashmap(right.slice(), n - length - 1, value)
+    for child in (s.ref(), s.ref()):
+        if not child.exotic:
+            _hashmap(child.slice(), n - length - 1, value)
 
 
 def load_dict(s: Slice, key_bits: int, value: Callable[[Slice], object]) -> Cell | None:
-    """A HashmapE: the root reference when one is present, after checking that the whole map parses."""
+    """A HashmapE: the root reference when one is present, after checking that the map's ordinary cells parse. An
+    exotic cell in the map is not parsed, as @ton/core's Dictionary reads one."""
     root = s.maybe_ref()
-    if root is not None:
+    if root is not None and not root.exotic:
         _hashmap(root.slice(), key_bits, value)
     return root
 
@@ -259,8 +374,8 @@ def _hashes_count(level_mask: int) -> int:
 
 
 def parse_boc(src: bytes) -> list[Cell]:
-    """The root cells of a bag of cells in any of its three magics. Raises Malformed for anything else, for a failed
-    CRC-32C, and for an exotic cell."""
+    """The root cells of a bag of cells in any of its three magics, an exotic cell among them as an exotic Cell. Raises
+    Malformed for anything else, for a failed CRC-32C, and for a cell that is not in its type's form."""
     r = _Bytes(src)
     magic = r.uint(4)
     if magic in (_BOC_MAGIC_IDX, _BOC_MAGIC_IDX_CRC):
@@ -291,11 +406,9 @@ def parse_boc(src: bytes) -> list[Cell]:
         raise Malformed
 
     d = _Bytes(data)
-    raw: list[tuple[int, int, list[int]]] = []
+    raw: list[tuple[int, int, list[int], bool]] = []
     for _ in range(cells):
         d1, d2 = d.uint(1), d.uint(1)
-        if d1 & 8:
-            raise Malformed
         if d1 & 16:
             d.take(_hashes_count(d1 >> 5) * 34)
         size_bytes = math.ceil(d2 / 2)
@@ -307,18 +420,18 @@ def parse_boc(src: bytes) -> list[Cell]:
             trailing = (value & -value).bit_length()
             value >>= trailing
             length -= trailing
-        raw.append((value, length, [d.uint(size) for _ in range(d1 % 8)]))
+        raw.append((value, length, [d.uint(size) for _ in range(d1 % 8)], d1 & 8 != 0))
 
     built: list[Cell | None] = [None] * len(raw)
     for i in range(len(raw) - 1, -1, -1):
-        value, length, refs = raw[i]
+        value, length, refs, exotic = raw[i]
         children = []
         for ref in refs:
             child = built[ref] if 0 <= ref < len(built) else None
             if child is None:
                 raise Malformed
             children.append(child)
-        built[i] = Cell(value, length, tuple(children))
+        built[i] = Cell(value, length, tuple(children), exotic)
     out = []
     for root in roots:
         cell = built[root] if 0 <= root < len(built) else None
@@ -370,7 +483,7 @@ def serialize_boc(root: Cell, crc: bool = True) -> bytes:
     out += total.to_bytes(off_bytes, "big")
     out += (0).to_bytes(size_bytes, "big")
     for c, refs in cells:
-        out += bytes([len(c.refs), c.descriptor2()]) + padded(c.value, c.length)
+        out += bytes([c.descriptor1(), c.descriptor2()]) + padded(c.value, c.length)
         for ref in refs:
             out += ref.to_bytes(size_bytes, "big")
     if crc:
