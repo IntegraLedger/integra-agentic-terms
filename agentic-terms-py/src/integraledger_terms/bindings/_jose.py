@@ -385,7 +385,7 @@ class _Resolver:
         self.by_digest = by_digest
         self.codes = codes
         self.referenced: set[str] = set()
-        self.listed_undisclosed: set[str] = set()
+        self.listed_ignored: set[str] = set()
 
     def run(self, value: Any) -> _Outcome:
         frames: list[_Step] = [self.resolve(value, 0, 1)]
@@ -448,12 +448,10 @@ class _Resolver:
             if not isinstance(digest, str):
                 return _Fail(codes.malformed)
             found = self.by_digest.get(digest)
-            if found is None:
-                if digest in self.listed_undisclosed:
+            if found is None or found.name is None:
+                if digest in self.listed_ignored:
                     return _Fail(codes.malformed)
-                self.listed_undisclosed.add(digest)
-                continue
-            if found.name is None:
+                self.listed_ignored.add(digest)
                 continue
             if digest in self.referenced:
                 return _Fail(codes.malformed)
@@ -473,10 +471,10 @@ class _Resolver:
 
 def read_sd_jwt(token: object, codes: SdJwtCodes, bounds: SdJwtBounds = DEFAULT_BOUNDS) -> SdJwt | Refusal:
     """Reads an SD-JWT presentation and resolves its disclosures: every disclosure must be referenced and no digest
-    referenced twice; a digest in an object's _sd that does not name a three-element disclosure is ignored there, and
-    one that names no disclosure may be listed in an _sd once (RFC 9901 section 7.1 step 4). A resolved payload that,
-    with each disclosed value where its reference sits, nests more than MAX_JSON_DEPTH levels is too_large. No
-    signature is verified."""
+    referenced twice; a digest in an object's _sd that does not name a three-element disclosure, whether it names a
+    two-element disclosure or none, is ignored at its first _sd listing, and a second _sd listing of it is malformed
+    (RFC 9901 section 7.1 step 4). A resolved payload that, with each disclosed value where its reference sits, nests
+    more than MAX_JSON_DEPTH levels is too_large. No signature is verified."""
     malformed = Refusal(codes.malformed)
     if not isinstance(token, str):
         return malformed

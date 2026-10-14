@@ -77,6 +77,29 @@ def test_sd_jwt_c8_a_digest_that_names_no_disclosure_is_listed_once() -> None:
             assert isinstance(r, SdJwt) and r.resolved == row["expectResolved"], row["case"]
 
 
+def test_sd_jwt_a_two_element_disclosure_listed_in_sd_is_ignored_once() -> None:
+    """RFC 9901 section 7.1 step 4 rejects a digest met more than once. C4's array-element disclosure (RFC 9901 section
+    4.2.4.2, "FR"), listed once in the payload's _sd and once as {"...": digest}, resolves where the element sits; listed
+    twice in _sd, it is malformed, as sd-jwt.json's C8 rows give for it."""
+
+    def b64u(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    def compact(value: Any) -> bytes:
+        return json.dumps(value, separators=(",", ":")).encode("utf-8")
+
+    fr = V["C4"][1]
+    assert disclosure_digest(fr["disclosure"]) == fr["expectDigest"]
+
+    def presentation(listings: int) -> str:
+        payload = {"nationalities": [{"...": fr["expectDigest"]}], "_sd": [fr["expectDigest"]] * listings, "_sd_alg": "sha-256"}
+        return f"{b64u(compact({'alg': 'ES256'}))}.{b64u(compact(payload))}.{'A' * 86}~{fr['disclosure']}~"
+
+    once = read_sd_jwt(presentation(1), CODES)
+    assert isinstance(once, SdJwt) and once.resolved == {"nationalities": ["FR"]}
+    assert read_sd_jwt(presentation(2), CODES) == Refusal("malformed")
+
+
 def test_sd_jwt_a_resolved_payload_nested_past_64_levels_is_too_large() -> None:
     """The payload nests 42 levels and its disclosure 1 + n, each within 64; the disclosed value takes the place of
     the reference at level 42, so the resolved payload nests 41 + n levels. @integraledger/lcp's SD-JWT reader

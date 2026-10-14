@@ -8,7 +8,7 @@ import type { Refusal } from "@integraledger/lcp";
 import { binding as a2aBinding } from "@integraledger/lcp/a2a";
 import { paymentRequest } from "@integraledger/lcp/ack";
 import { delegated, undelegated } from "@integraledger/lcp/acp";
-import { checkoutMandate } from "@integraledger/lcp/ap2";
+import { checkoutMandate, readMandate } from "@integraledger/lcp/ap2";
 import { sellerReference, viAutonomous, viImmediate, visaTap } from "@integraledger/lcp/card";
 import { ap2Mandate, bookingAp2Mandate, bookingUnsigned, unsigned } from "@integraledger/lcp/ucp";
 import { check, confirm, finish, transact, type Binding, type Presented, type Signature, type SigningRequest } from "../src/index.js";
@@ -23,6 +23,7 @@ const AP2: V = vectors("ap2-checkout-mandate.json");
 const UCP: V = vectors("ucp.json");
 const ACP: V = vectors("acp-checkout.json");
 const ACK: V = vectors("ack-payment-request.json");
+const SD_JWT: V = vectors("sd-jwt.json");
 
 const BUYER = "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const enc = new TextEncoder();
@@ -291,6 +292,21 @@ describe("ap2/checkout-mandate", () => {
     await httpLink(p, row.input.doc, row.expect.code);
   });
   it("B16: an account that names no buyer is no-payable-option, with no fetch", () => unpayable(p, UNNAMED));
+
+  // RFC 9901 section 7.1 step 4 rejects a digest met more than once. sd-jwt.json's C4 array-element disclosure (RFC 9901
+  // section 4.2.4.2, "FR"), listed once in a mandate's _sd and once as {"...": digest}, resolves where the element sits;
+  // listed twice in _sd, the mandate is malformed, as sd-jwt.json's C8 rows give for it.
+  it("a digest of a two-element disclosure listed twice in the mandate's _sd is ap2/mandate-malformed; once, the mandate reads", async () => {
+    const fr = SD_JWT.C4[1];
+    expect(sha256b64u(fr.disclosure)).toBe(fr.expectDigest);
+    const checkoutHash = sha256b64u("abc");
+    const mandate = (listings: number) => {
+      const payload = { vct: "mandate.checkout.1", checkout_hash: checkoutHash, nationalities: [{ "...": fr.expectDigest }], _sd: Array(listings).fill(fr.expectDigest), _sd_alg: "sha-256" };
+      return `${b64u(JSON.stringify({ alg: "ES256" }))}.${b64u(JSON.stringify(payload))}.${"A".repeat(86)}~${fr.disclosure}~`;
+    };
+    expect(await readMandate(mandate(1))).toEqual({ checkout_hash: checkoutHash });
+    expect(await readMandate(mandate(2))).toEqual({ refused: true, code: "ap2/mandate-malformed" });
+  });
 });
 
 // ── UCP ──
