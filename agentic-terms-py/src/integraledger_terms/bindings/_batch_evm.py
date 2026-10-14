@@ -8,7 +8,7 @@ from typing import Any, TypeGuard
 from .._keccak import keccak256
 from .._types import Refusal
 from ._batch import is_delay
-from ._evm import address_word, bytes32_word, hex_of, uint_word
+from ._evm import address_word, bytes32_word, hex_of, non_zero_address, uint_word
 from ._lcp import is_address, is_object, safe_int
 
 BATCH_SETTLEMENT = "0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003"
@@ -21,17 +21,11 @@ DOMAIN_VERSION = "1"
 _DOMAIN_TYPEHASH = keccak256(b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
 _U40_LIMIT = 1 << 40
 _HASH32 = re.compile(r"0x[0-9a-fA-F]{64}")
-_ZERO = "0x" + "0" * 40
 _ADDRESSES = ("payer", "payerAuthorizer", "receiver", "receiverAuthorizer", "token")
 
 
 def is_hash32(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and _HASH32.fullmatch(value) is not None
-
-
-def non_zero_address(value: object) -> TypeGuard[str]:
-    """An address that is not the zero address."""
-    return is_address(value) and value.lower() != _ZERO
 
 
 def is_channel_config(c: object) -> TypeGuard[Mapping[str, Any]]:

@@ -19,11 +19,10 @@ from ._batch_evm import (
     erc3009_deposit_nonce,
     is_deposit_config,
     is_hash32,
-    non_zero_address,
     voucher_request,
 )
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
-from ._evm import Witness, bytes_of, eip3009_typed_data, permit2_typed_data
+from ._evm import Witness, bytes_of, eip3009_typed_data, non_zero_address, permit2_typed_data
 from ._lcp import UINT256_LIMIT, chain_id_of, is_address, is_object, normal_hash, safe_int
 from ._rail_bytes import decimal_below
 from ._x402 import chosen, filter_of, payment_with, read_for

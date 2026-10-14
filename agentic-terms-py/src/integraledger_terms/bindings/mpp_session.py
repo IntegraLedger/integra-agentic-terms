@@ -12,7 +12,7 @@ from .._keccak import keccak256
 from .._types import Advertised, Refusal
 from ._channel import BatchUnsigned, ChannelRef
 from ._codec import hex_bytes, to_hex
-from ._evm import PERMIT2, Witness, permit2_typed_data
+from ._evm import PERMIT2, ZERO_ADDRESS, Witness, permit2_typed_data
 from ._lcp import is_address, is_object, normal_hash
 from ._mpp import (
     Echoed,
@@ -38,7 +38,7 @@ from ._mpp_checks import (
     unix_of,
     xrpl_network_of,
 )
-from ._mpp_evm import ZERO_ADDRESS, address_word, receive_typed_data, uint_word
+from ._mpp_evm import address_word, receive_typed_data, uint_word
 from ._session_within import within_checks, within_unsigned
 from ._svm import key_bytes, key_string
 from ._tempo import (

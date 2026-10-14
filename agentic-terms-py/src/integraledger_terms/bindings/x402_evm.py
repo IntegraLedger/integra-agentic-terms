@@ -32,6 +32,7 @@ from ._evm import (
     decode_permission_context,
     eip3009_typed_data,
     is_reference_manager,
+    non_zero_address,
     payment_hash,
     permit2_typed_data,
 )
@@ -540,7 +541,7 @@ def _auth_capture_terms(option: Mapping[str, Any]) -> _Terms | Refusal:
     return _Terms(
         chain_id=chain_id,
         deployment=deployment,
-        bound=receiver_authorizer.lower() != ZERO_ADDRESS or policy.lower() != ZERO_ADDRESS,
+        bound=non_zero_address(receiver_authorizer) or non_zero_address(policy),
         receiver_authorizer=receiver_authorizer,
         policy=policy,
         operator=operator,

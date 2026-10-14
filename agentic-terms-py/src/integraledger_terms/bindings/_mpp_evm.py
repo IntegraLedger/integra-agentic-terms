@@ -5,12 +5,12 @@ import re
 from typing import Any
 
 from .._types import Refusal
+from ._evm import ZERO_ADDRESS
 from ._lcp import is_address, normal_hash, uint256_of
 
 UINT256_LIMIT = 2**256
 MAX_SAFE_INTEGER = 2**53 - 1
 TRANSFER_SELECTOR = "a9059cbb"
-ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 _EIP155 = re.compile(r"eip155:([0-9]+)")
 

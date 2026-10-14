@@ -9,7 +9,7 @@ helpers take values their callers have already checked."""
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
 
 from .._core import AtrHash
 from .._keccak import keccak256
@@ -22,6 +22,11 @@ UPTO_PERMIT2_PROXY = "0x4020A4f3b7b90ccA423B9fabCc0CE57C6C240002"
 PAYMENT_INFO_TYPEHASH = "0xae68ac7ce30c86ece8196b61a7c486d8f0061f575037fbd34e7fe4e2820c6591"
 SALT_BINDING_TYPEHASH = "0x8a2a7e41a0bda000ded071ff38b79401d2603e1826516ff2635b11fe9e30877f"
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+
+def non_zero_address(value: object) -> TypeGuard[str]:
+    """An address that is not the zero address."""
+    return is_address(value) and value.lower() != ZERO_ADDRESS
 
 
 @dataclass(frozen=True, slots=True)

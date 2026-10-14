@@ -11,6 +11,7 @@ from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
 from .._types import Advertised, Refusal
 from ._codec import b64u_decode, b64u_encode, to_hex
+from ._evm import ZERO_ADDRESS
 from ._jose import js_length
 from ._lcp import (
     agreement_fault,
@@ -38,7 +39,6 @@ from ._mpp_checks import (
     utf16_length,
     xrpl_network_of,
 )
-from ._mpp_evm import ZERO_ADDRESS
 
 MAX_CHALLENGES = 32
 MAX_CREDENTIAL = 65_536
