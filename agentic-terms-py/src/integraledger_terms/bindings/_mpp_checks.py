@@ -699,14 +699,16 @@ def usdc_profile(d: Obj) -> tuple[str, Obj] | Refusal:
 
 
 def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    """charge on usdc: the active profile, amount a positive integer string, recipient a string, and what each
+    profile's build reads: EVM chainId and addresses; the Solana charge's checks on the Solana details, whose network is
+    required, and on externalId, its carrier; Stacks chainId and the token contract. The Gateway build reads recipient
+    and the request's hash, and none of the Gateway details. No other profile reads externalId."""
     profile = usdc_profile(d)
     if isinstance(profile, Refusal):
         return profile
     kind, p = profile
     amount = r.get("amount")
     if not isinstance(amount, str) or _POSITIVE.fullmatch(amount) is None or not isinstance(r.get("recipient"), str):
-        return Refusal("mpp/request-malformed")
-    if _has(r, "externalId") and not isinstance(r["externalId"], str):
         return Refusal("mpp/request-malformed")
     if kind == "evm":
         if positive_int(p.get("chainId")) is None or not is_address(r.get("currency")) or not is_address(r.get("recipient")):
