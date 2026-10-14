@@ -1,48 +1,29 @@
-"""The Stacks transaction the buyer half reads: a signed transaction's consensus bytes decoded field by field (version,
-chain id, authorization with its spending conditions, anchor and post-condition modes, post-conditions, payload and
-Clarity values), to find a contract call's function name and each argument's bytes. The bytes must be exactly one
-transaction's encoding: a read past the end, or bytes after the payload, makes them malformed.
+"""The Stacks transaction the buyer half reads, by the rule lcp reads by: a transaction a Stacks node decodes and
+serializes back to the same bytes (stacks-core 4.0.5). It is read field by field as stacks-core's
+StacksTransaction::consensus_deserialize reads it, to find a contract call's function name and each argument's bytes;
+any other bytes are malformed.
 
-Clarity values are read as a Stacks node reads them (stacks-core 4.0.5). A value nests at most 16 levels, the outermost
-counting 1, and is typed as the node types it: a tuple has members, each named once by a Clarity name, in name order
-as bytes; a list's items have a least common type; a value's type is at most 1,048,576 bytes; a string-ascii holds
-alphanumeric, punctuation and whitespace bytes; a string-utf8 is well-formed UTF-8, a byte-order mark included; a
-principal has a version below 32, and a contract principal's name is a letter then letters, digits, - and _, or
-__transient, of at most 128 characters. A function name and an asset name are Clarity names of at most 128 characters,
-a smart contract's Clarity version is 1 to 7, and a token transfer's memo is any 34 bytes.
+Among the node's rules: the bytes are one transaction's encoding, read to their end; the version byte is 0x00 or 0x80;
+every address and principal has a version below 32; a multisig authorization holds exactly the signatures it requires,
+an order-independent one at least that many, and a P2WSH one compressed keys only; a multisig key field holds a
+compressed secp256k1 point (33 bytes) whether it marks the key compressed (0x00) or uncompressed (0x01), as SIP-005
+encodes it. A contract name is a letter then letters, digits, - and _, or __transient: 1 to 40 characters where the
+transaction names a contract, at most 128 in a value; a Clarity name is at most 128 characters of the name form. A
+principal is any recipient: a token transfer's, a pay-to-alt coinbase's, and a Nakamoto coinbase's, which is none or
+(some <principal>). A token transfer's memo is any 34 bytes. A smart contract's Clarity version is 1 to 7 and its code
+printable ASCII, tab or newline. A poisoned microblock holds two signed headers that differ and share a sequence
+number or a parent. A coinbase or a poisoned microblock is anchored on chain only, a Nakamoto coinbase's VRF proof
+parses, and a tenure change's fields are whole.
 
-Enumerations, signature and coinbase lengths and public keys are checked, and anything else is accepted as read. A
-multisig key field holds a compressed secp256k1 point (33 bytes) whether it marks the key compressed (0x00) or
-uncompressed (0x01), as SIP-005 encodes it. A contract name the transaction names is well-formed UTF-8 of at most 128
-bytes that does not begin with a byte-order mark. Payload types 7 and 8 are read as @stacks/transactions 7.6.0 reads
-and writes them back: a tenure change's last field, the 20-byte public key hash, is the bytes that remain of it, so a
-transaction that ends within it is one; a Nakamoto coinbase's recipient is none or (some <value>), which is all that is
-written back, and counts from the value inside its (some ...).
+A Clarity value nests at most 16 levels, the outermost counting 1, and is typed as the node types it: a tuple has
+members, each named once, in name order as bytes; a list's items have a least common type; a value's type is at most
+1,048,576 bytes; a string-ascii holds alphanumeric, punctuation and whitespace bytes; a string-utf8 is well-formed
+UTF-8, a byte-order mark included.
 """
 
 import re
 from dataclasses import dataclass
 
-_TX_VERSIONS = frozenset({0, 128})
-_HASH_MODES = frozenset({0, 1, 2, 3, 5, 7})
-_KEY_ENCODINGS = frozenset({0, 1})
-_AUTH_TYPES = frozenset({4, 5})
-_ANCHOR_MODES = frozenset({1, 2, 3})
-_POST_CONDITION_MODES = frozenset({1, 2, 3})
-_POST_CONDITION_TYPES = frozenset({0, 1, 2, 3, 4})
-_PRINCIPALS = frozenset({1, 2, 3})
-_FUNGIBLE_CODES = frozenset({1, 2, 3, 4, 5})
-_NFT_CODES = frozenset({16, 17, 18})
-_POX_CODES = frozenset({48, 49, 50})
-_AUTH_FIELDS = frozenset({0, 1, 2, 3})
-_PAYLOADS = frozenset({0, 1, 2, 3, 4, 5, 6, 7, 8})
-_CLARITY_VERSIONS = frozenset({1, 2, 3, 4, 5, 6, 7})
-_TENURE_CAUSES = frozenset({0, 1, 2, 3, 4, 5, 6})
-# The Clarity type ids of none and (some <value>).
-_NONE = 9
-_SOME = 10
-_MAX_NAME = 128
-_MAX_BODY = 100_000
 # The most bytes a Clarity value's type admits, the most characters a string-utf8 holds, and the deepest a type nests
 # (stacks-core 4.0.5, clarity-types/src/types/mod.rs).
 _MAX_VALUE_SIZE = 1024 * 1024
@@ -54,13 +35,21 @@ _MAX_DEPTH = 16
 _CLARITY_NAME = re.compile(r"[a-zA-Z]([a-zA-Z0-9]|[-_!?+<>=/*])*|[-+=/*]|[<>]=?")
 _CONTRACT_NAME = re.compile(r"[a-zA-Z]([a-zA-Z0-9]|[-_]){0,127}|__transient")
 # The bytes a string-ascii holds: alphanumeric, punctuation and whitespace (space, tab, newline, form feed, carriage
-# return).
+# return); and the bytes a smart contract's code holds: printable ASCII, tab and newline.
 _ASCII_TEXT = bytes([*range(0x20, 0x7F), 0x09, 0x0A, 0x0C, 0x0D])
+_CODE_TEXT = bytes([*range(0x20, 0x7F), 0x09, 0x0A])
+# secp256k1's field prime and group order (SEC 2, 2.4.1).
 _P = 2**256 - 2**32 - 977
+_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+# Edwards25519's field prime, curve constant d, a square root of -1 and group order L (RFC 8032, 5.1).
+_ED_P = 2**255 - 19
+_ED_D = -121665 * pow(121666, -1, _ED_P) % _ED_P
+_ED_I = pow(2, (_ED_P - 1) // 4, _ED_P)
+_ED_L = 2**252 + 27742317777372353535851937790883648493
 
 
 class Malformed(Exception):
-    """The bytes do not decode as a Stacks transaction."""
+    """The bytes are not a transaction a Stacks node decodes and serializes back to the same bytes."""
 
 
 def _need(ok: bool) -> None:
@@ -84,11 +73,6 @@ class _Reader:
     def byte(self) -> int:
         return self.read(1)[0]
 
-    def enum(self, members: frozenset[int]) -> int:
-        value = self.byte()
-        _need(value in members)
-        return value
-
     def number(self, n: int) -> int:
         """An n-byte big-endian integer."""
         return int.from_bytes(self.read(n), "big")
@@ -101,13 +85,11 @@ class _Reader:
         _need(text.isascii() and form.fullmatch(text) is not None)
         return text
 
-    def remaining(self) -> int:
-        return len(self.data) - self.at
-
-    def principal(self) -> None:
-        """A principal's address: a version below 32 and a 20-byte hash."""
-        _need(self.byte() < 32)
-        self.read(20)
+    def address(self) -> tuple[int, bytes]:
+        """An address or a principal's: a version below 32 and a 20-byte hash."""
+        version = self.byte()
+        _need(version < 32)
+        return version, self.read(20)
 
 
 # ── Clarity types, as a node types a value it reads.
@@ -230,10 +212,10 @@ def _value(r: _Reader, level: int) -> _Type:
     if prefix in (3, 4):
         return _BOOL
     if prefix == 5:
-        r.principal()
+        r.address()
         return _PRINCIPAL
     if prefix == 6:
-        r.principal()
+        r.address()
         r.name(0, 128, _CONTRACT_NAME)
         return _PRINCIPAL
     if prefix == 7:
@@ -272,26 +254,6 @@ def _value(r: _Reader, level: int) -> _Type:
 # ── the transaction.
 
 
-def _text(data: bytes) -> str:
-    """Well-formed UTF-8 text that does not begin with a byte-order mark."""
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        raise Malformed from None
-    _need(not text.startswith("\ufeff"))
-    return text
-
-
-def _lp_string(r: _Reader, prefix: int = 1, maximum: int = _MAX_NAME) -> str:
-    content = _text(r.read(r.number(prefix)))
-    _need(len(content.encode("utf-8")) <= maximum)
-    return content
-
-
-def _address(r: _Reader) -> None:
-    r.read(1 + 20)
-
-
 def _compressed_point(key: bytes) -> bool:
     """Whether key is a compressed secp256k1 point: 02 or 03, then an x below the field prime that has a point (SEC 1,
     2.3.4)."""
@@ -306,44 +268,96 @@ def _compressed_point(key: bytes) -> bool:
 
 
 def _spending_condition(r: _Reader) -> None:
-    mode = r.enum(_HASH_MODES)
+    """A singlesig, multisig or order-independent multisig spending condition: a multisig one holds exactly the
+    signatures it requires, an order-independent one at least that many, and a P2WSH one (hash mode 3 or 7) compressed
+    keys and signatures only."""
+    mode = r.byte()
     r.read(20 + 8 + 8)
     if mode in (0, 2):
-        encoding = r.enum(_KEY_ENCODINGS)
-        _need(mode == 0 or encoding == 0)
+        encoding = r.byte()
+        _need(encoding in (0, 1) and (mode == 0 or encoding == 0))
         r.read(65)
         return
+    _need(mode in (1, 3, 5, 7))
+    signatures = 0
     uncompressed = False
     for _ in range(r.number(4)):
-        field = r.enum(_AUTH_FIELDS)
+        field = r.byte()
+        _need(field in (0, 1, 2, 3))
         if field in (0, 1):
             _need(_compressed_point(r.read(33)))
         else:
             r.read(65)
+            signatures += 1
         uncompressed = uncompressed or field in (1, 3)
-    r.read(2)
-    _need(not uncompressed or mode not in (3, 7))
+    required = r.number(2)
+    _need(signatures <= 0xFFFF and (signatures == required if mode in (1, 3) else signatures >= required))
+    _need(not uncompressed or mode in (1, 5))
 
 
 def _post_condition(r: _Reader) -> None:
-    kind = r.enum(_POST_CONDITION_TYPES)
-    principal = r.enum(_PRINCIPALS)
+    """A post-condition: STX, fungible, non-fungible, Staking or Pox, its principal, its asset, and a condition code of
+    its type."""
+    kind = r.byte()
+    _need(kind <= 4)
+    principal = r.byte()
+    _need(principal in (1, 2, 3))
     if principal in (2, 3):
-        _address(r)
+        r.address()
     if principal == 3:
-        _lp_string(r)
+        r.name(1, 40, _CONTRACT_NAME)
     if kind in (1, 2):
-        _address(r)
-        _lp_string(r)
+        r.address()
+        r.name(1, 40, _CONTRACT_NAME)
         r.name(0, 128, _CLARITY_NAME)
     if kind == 2:
         _value(r, 1)
-        r.enum(_NFT_CODES)
+        _need(0x10 <= r.byte() <= 0x12)
     elif kind == 4:
-        r.enum(_POX_CODES)
+        _need(0x30 <= r.byte() <= 0x32)
     else:
-        r.enum(_FUNGIBLE_CODES)
+        _need(1 <= r.byte() <= 5)
         r.read(8)
+
+
+def _microblock_header(r: _Reader) -> bytes:
+    """A microblock header, signed with a recoverable secp256k1 signature: a recovery id from 0 to 3, r and s below the
+    group order."""
+    header = r.read(1 + 2 + 32 + 32 + 65)
+    signature = header[67:]
+    _need(signature[0] <= 3)
+    _need(int.from_bytes(signature[1:33], "big") < _N and int.from_bytes(signature[33:], "big") < _N)
+    return header
+
+
+def _ed_add(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+    """Two Edwards25519 points added, in affine coordinates (RFC 8032, 5.1.4)."""
+    (x1, y1), (x2, y2) = a, b
+    t = _ED_D * x1 * x2 * y1 * y2 % _ED_P
+    x = (x1 * y2 + y1 * x2) * pow(1 + t, -1, _ED_P) % _ED_P
+    y = (y1 * y2 + x1 * x2) * pow(1 - t, -1, _ED_P) % _ED_P
+    return x, y
+
+
+def _vrf_proof(r: _Reader) -> None:
+    """A Nakamoto coinbase's 80-byte VRF proof: Gamma, the canonical encoding of an Edwards25519 point not of small
+    order (RFC 8032, 5.1.3); c, 16 bytes; s, a scalar below the group order L."""
+    proof = r.read(80)
+    gamma = int.from_bytes(proof[:32], "little")
+    y, sign = gamma & (2**255 - 1), gamma >> 255
+    _need(y < _ED_P)
+    u, v = (y * y - 1) % _ED_P, (_ED_D * y * y + 1) % _ED_P
+    x = u * pow(v, 3, _ED_P) * pow(u * pow(v, 7, _ED_P), (_ED_P - 5) // 8, _ED_P) % _ED_P
+    if v * x * x % _ED_P == (_ED_P - u) % _ED_P:
+        x = x * _ED_I % _ED_P
+    _need(v * x * x % _ED_P == u and not (x == 0 and sign == 1))
+    if x & 1 != sign:
+        x = _ED_P - x
+    point = (x, y)
+    for _ in range(3):
+        point = _ed_add(point, point)
+    _need(point != (0, 1))
+    _need(int.from_bytes(proof[48:], "little") < _ED_L)
 
 
 @dataclass
@@ -354,59 +368,68 @@ class Call:
     args: list[bytes]
 
 
-def _payload(r: _Reader) -> Call | None:
-    kind = r.enum(_PAYLOADS)
+def _payload(r: _Reader) -> tuple[int, Call | None]:
+    """The payload: its type, and a contract call's function and arguments."""
+    kind = r.byte()
     if kind == 0:
-        _value(r, 1)
+        principal = r.byte()
+        _need(principal in (5, 6))
+        r.address()
+        if principal == 6:
+            r.name(0, 128, _CONTRACT_NAME)
         r.read(8 + 34)
-    elif kind == 1:
-        _lp_string(r)
-        _lp_string(r, 4, _MAX_BODY)
     elif kind == 2:
-        _address(r)
-        _lp_string(r)
+        r.address()
+        r.name(1, 40, _CONTRACT_NAME)
         call = Call(r.name(0, 128, _CLARITY_NAME), [])
         for _ in range(r.number(4)):
             at = r.at
             _value(r, 1)
             call.args.append(r.data[at : r.at])
-        return call
-    elif kind in (4, 5, 8):
+        return kind, call
+    elif kind in (1, 6):
+        if kind == 6:
+            _need(1 <= r.byte() <= 7)
+        r.name(1, 40, _CONTRACT_NAME)
+        _need(not r.read(r.number(4)).translate(None, _CODE_TEXT))
+    elif kind == 3:
+        a, b = _microblock_header(r), _microblock_header(r)
+        _need(a != b and (a[1:3] == b[1:3] or a[3:35] == b[3:35]))
+    elif kind == 4:
         r.read(32)
-        if kind == 8:
-            _need(r.remaining() > 0 and r.data[r.at] in (_NONE, _SOME))
-        if kind != 4:
-            # @stacks/transactions 7.6.0 holds a Nakamoto coinbase's recipient as the value inside its (some ...), and
-            # its levels count from that value.
-            _value(r, 0 if kind == 8 else 1)
-        if kind == 8:
-            r.read(80)
-    elif kind == 6:
-        r.enum(_CLARITY_VERSIONS)
-        _lp_string(r)
-        _lp_string(r, 4, 2**32)
+    elif kind == 5:
+        r.read(32)
+        _need(_value(r, 1) == _PRINCIPAL)
+    elif kind == 8:
+        r.read(32)
+        recipient = _value(r, 1)
+        _need(recipient.kind == "optional" and recipient.parts[0] in (_NO_TYPE, _PRINCIPAL))
+        _vrf_proof(r)
     elif kind == 7:
-        r.read(92)
-        r.number(4)
-        r.enum(_TENURE_CAUSES)
-        r.read(min(20, r.remaining()))
-    return None
+        r.read(20 + 20 + 20 + 32 + 4)
+        _need(r.byte() <= 6)
+        r.read(20)
+    else:
+        raise Malformed
+    return kind, None
 
 
 def contract_call(data: bytes) -> Call | None:
     """The contract call a transaction's payload makes, or None for any other payload. Raises Malformed for bytes
-    that are not exactly one transaction's encoding."""
+    that are not a transaction a Stacks node decodes and serializes back to the same bytes."""
     r = _Reader(data)
-    r.enum(_TX_VERSIONS)
+    _need(r.byte() in (0x00, 0x80))
     r.read(4)
-    auth = r.enum(_AUTH_TYPES)
+    auth = r.byte()
+    _need(auth in (4, 5))
     _spending_condition(r)
     if auth == 5:
         _spending_condition(r)
-    r.enum(_ANCHOR_MODES)
-    r.enum(_POST_CONDITION_MODES)
+    anchor = r.byte()
+    _need(anchor in (1, 2, 3) and r.byte() in (1, 2, 3))
     for _ in range(r.number(4)):
         _post_condition(r)
-    call = _payload(r)
+    kind, call = _payload(r)
+    _need(anchor == 1 or kind not in (3, 4, 5, 8))
     _need(r.at == len(data))
     return call

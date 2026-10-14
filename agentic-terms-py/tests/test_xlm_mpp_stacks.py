@@ -404,6 +404,319 @@ def test_mpp_charge_usdc_stacks_smart_contract_clarity_version_is_1_to_7() -> No
     )
 
 
+# ── the transaction as a Stacks node reads it ─────────────────────────────────────────────────────────────────────
+# stacks-core 4.0.5 reads a transaction with StacksTransaction::consensus_deserialize (stacks-codec/src/transaction.rs
+# :3065-3165). Each table's expected answers are that deserializer's reading of the same bytes, run on them, as above.
+
+SENDER, ASSET_CONTRACT, SIGNER = FT_CONDITION[2:23], FT_CONDITION[23:44], WIRE[7:27]
+COINBASE = b"\x12" * 32
+# The VRF proof of stacks-core's own Nakamoto coinbase test (stacks-codec/src/transaction.rs:3767-3778).
+VRF = bytes.fromhex(
+    "9275df67a68c8745c0ff97b48201ee6db447f7c93b23ae24cdc2400f52fdb08a1a6ac7ec71bf9c9c76e96ee4675ebff60625af2871850104"
+    "7bfd87b810c2d2139b73c23bd69de66360953a642c2a330a"
+)
+STANDARD = b"\x05" + SENDER
+CONTRACT = b"\x06" + ASSET_CONTRACT + name("usdcx")
+
+
+def payload(p: bytes) -> bytes:
+    """M4 with its payload replaced by p."""
+    return transaction([FT_CONDITION], p)
+
+
+def anchored(mode: int, p: bytes) -> bytes:
+    """M4 with its anchor mode and its payload replaced."""
+    return WIRE[:109] + bytes([mode]) + WIRE[110:111] + word(1, 4) + FT_CONDITION + p
+
+
+def post_condition(condition: bytes, mode: int = 2) -> bytes:
+    """M4 under one post-condition and the post-condition mode given."""
+    return WIRE[:110] + bytes([mode]) + word(1, 4) + condition + CALL
+
+
+def authorization(spending: bytes) -> bytes:
+    """M4 with its standard authorization's spending condition replaced."""
+    return WIRE[:6] + spending + WIRE[109:]
+
+
+def token_transfer(recipient: bytes) -> bytes:
+    return payload(b"\x00" + recipient + word(1_000_000, 8) + b"\x00" * 34)
+
+
+def pay_to_alt(recipient: bytes) -> bytes:
+    return payload(b"\x05" + COINBASE + recipient)
+
+
+def nakamoto(recipient: bytes, proof: bytes = VRF) -> bytes:
+    return payload(b"\x08" + COINBASE + recipient + proof)
+
+
+def test_mpp_charge_usdc_stacks_the_payloads_keep_their_layout() -> None:
+    assert WIRE[5:7] == b"\x04\x00" and WIRE[109:111] == b"\x01\x02" and WIRE[111:115] == word(1, 4)
+    assert FT_CONDITION[:2] == b"\x01\x02" and CALL[0] == 2 and len(VRF) == 80
+
+
+def test_mpp_charge_usdc_stacks_every_recipient_is_a_principal() -> None:
+    # A token transfer's recipient is a principal (clarity-types/src/types/serialization.rs:289-311), a pay-to-alt
+    # coinbase's a principal, and a Nakamoto coinbase's none or (some <principal>) (transaction.rs:2915-3007).
+    principals = [
+        ("a token transfer to a standard principal", token_transfer(STANDARD), NOT_H),
+        ("a token transfer to a contract principal", token_transfer(CONTRACT), NOT_H),
+        ("a pay-to-alt coinbase to a standard principal", pay_to_alt(STANDARD), NOT_H),
+        ("a pay-to-alt coinbase to a contract principal", pay_to_alt(CONTRACT), NOT_H),
+        ("a Nakamoto coinbase to none", nakamoto(b"\x09"), NOT_H),
+        ("a Nakamoto coinbase to (some <standard principal>)", nakamoto(some(STANDARD)), NOT_H),
+        ("a Nakamoto coinbase to (some <contract principal>)", nakamoto(some(CONTRACT)), NOT_H),
+    ]
+    others = [
+        ("a token transfer to a uint", token_transfer(UINT), MALFORMED),
+        ("a token transfer to none", token_transfer(b"\x09"), MALFORMED),
+        ("a token transfer to (some <principal>)", token_transfer(some(STANDARD)), MALFORMED),
+        ("a pay-to-alt coinbase to a uint", pay_to_alt(UINT), MALFORMED),
+        ("a pay-to-alt coinbase to (some <principal>)", pay_to_alt(some(STANDARD)), MALFORMED),
+        ("a Nakamoto coinbase to a principal", nakamoto(STANDARD), MALFORMED),
+        ("a Nakamoto coinbase to (some <uint>)", nakamoto(some(UINT)), MALFORMED),
+        ("a Nakamoto coinbase to (some (some <principal>))", nakamoto(some(some(STANDARD))), MALFORMED),
+    ]
+    nested = [
+        (f"{site} nesting a principal {n} levels in {kind}", build(levels(n, container, STANDARD)), MALFORMED)
+        for kind, container in CONTAINERS.items()
+        for n in (2, 16, 17)
+        for site, build in (
+            ("a token transfer's recipient", token_transfer),
+            ("a pay-to-alt coinbase's recipient", pay_to_alt),
+            ("a Nakamoto coinbase's (some ...)", lambda v: nakamoto(some(v))),
+        )
+    ]
+    assert_reads(principals + others + nested)
+
+
+def test_mpp_charge_usdc_stacks_contract_call_names_an_address_and_a_contract() -> None:
+    # A contract call names an address of version below 32 (stacks-common/src/types/chainstate.rs:383-395) and a
+    # contract name of 1 to 40 characters of the contract-name form (representations.rs:36-60, :138-160).
+    address = CALL[1:22]
+    rest = CALL[28:]
+
+    def call(version: int, contract_name: str) -> bytes:
+        return payload(b"\x02" + bytes([version]) + address[1:] + name(contract_name) + rest)
+
+    assert_reads(
+        [
+            ("the contract __transient", call(address[0], "__transient"), H_M4),
+            ("a contract name of 40 characters", call(address[0], "Token_A-" + "x" * 32), H_M4),
+            ("address version 31", call(31, "usdcx"), H_M4),
+            ("a contract name of 41 characters", call(address[0], "a" * 41), MALFORMED),
+            ("an empty contract name", call(address[0], ""), MALFORMED),
+            ("a contract name starting with a digit", call(address[0], "1abc"), MALFORMED),
+            ("a contract name led by a byte-order mark", call(address[0], "\xef\xbb\xbfusdcx"), MALFORMED),
+            ("address version 32", call(32, "usdcx"), MALFORMED),
+            ("address version 255", call(255, "usdcx"), MALFORMED),
+        ]
+    )
+
+
+def test_mpp_charge_usdc_stacks_smart_contract_code_is_printable_ascii() -> None:
+    # A smart contract names a contract of 1 to 40 characters and holds code of printable ASCII, tab and newline
+    # (stacks-codec/src/strings.rs:63-112).
+    def contract(code: bytes, contract_name: str = "hello") -> bytes:
+        return payload(b"\x01" + name(contract_name) + word(len(code), 4) + code)
+
+    assert_reads(
+        [
+            ("tab and newline", contract(b"(define-data-var a\tint\n1)"), NOT_H),
+            ("a space and ~", contract(b"(a ~)"), NOT_H),
+            ("a carriage return", contract(b"(a)\r"), MALFORMED),
+            ("the byte 0x7f", contract(b"(a)\x7f"), MALFORMED),
+            ("the byte 0x80", contract(b"(a)\x80"), MALFORMED),
+            ("a contract name of 41 characters", contract(b"(a)", "a" * 41), MALFORMED),
+        ]
+    )
+
+
+def test_mpp_charge_usdc_stacks_coinbase_and_poisoned_microblock_are_anchored_on_chain() -> None:
+    # A coinbase (payload types 4, 5 and 8) and a poisoned microblock (3) are anchored on chain only
+    # (transaction.rs:3115-3135); any other payload takes any of the three anchor modes.
+    header = b"\x00" + word(1, 2) + b"\x21" * 32 + b"\x31" * 32 + b"\x00" + word(1, 32) * 2
+    poisoned = b"\x03" + header + header[:35] + b"\x32" * 32 + header[67:]
+    assert_reads(
+        [
+            ("a coinbase on chain", anchored(1, b"\x04" + COINBASE), NOT_H),
+            ("a poisoned microblock on chain", anchored(1, poisoned), NOT_H),
+            ("a contract call, any anchor mode", anchored(3, CALL), H_M4),
+            ("a contract call off chain", anchored(2, CALL), H_M4),
+            ("a coinbase, any anchor mode", anchored(3, b"\x04" + COINBASE), MALFORMED),
+            ("a coinbase off chain", anchored(2, b"\x04" + COINBASE), MALFORMED),
+            ("a pay-to-alt coinbase, any anchor mode", anchored(3, b"\x05" + COINBASE + STANDARD), MALFORMED),
+            ("a Nakamoto coinbase off chain", anchored(2, b"\x08" + COINBASE + b"\x09" + VRF), MALFORMED),
+            ("a poisoned microblock, any anchor mode", anchored(3, poisoned), MALFORMED),
+            ("anchor mode 4", anchored(4, CALL), MALFORMED),
+        ]
+    )
+
+
+def test_mpp_charge_usdc_stacks_poisoned_microblock_holds_two_signed_headers() -> None:
+    # A poisoned microblock holds two microblock headers that differ and share a sequence number or a parent block
+    # (transaction.rs:2942-2962), each signed with a recoverable secp256k1 signature: a recovery id from 0 to 3, r and
+    # s below the group order (:2563-2584).
+    n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+    def header(sequence: int, parent: int, root: int, recovery: int = 0, r: int = 1, s: int = 1) -> bytes:
+        signature = bytes([recovery]) + word(r, 32) + word(s, 32)
+        return b"\x00" + word(sequence, 2) + bytes([parent]) * 32 + bytes([root]) * 32 + signature
+
+    def poison(a: bytes, b: bytes) -> bytes:
+        return payload(b"\x03" + a + b)
+
+    first = header(1, 0x21, 0x31)
+    assert_reads(
+        [
+            ("roots differ", poison(first, header(1, 0x21, 0x32)), NOT_H),
+            ("sequences differ", poison(first, header(2, 0x21, 0x31)), NOT_H),
+            ("s one below the group order", poison(first, header(1, 0x21, 0x32, s=n - 1)), NOT_H),
+            ("recovery id 3", poison(first, header(1, 0x21, 0x32, recovery=3)), NOT_H),
+            ("the same header twice", poison(first, first), MALFORMED),
+            ("sequence and parent differ", poison(first, header(2, 0x22, 0x31)), MALFORMED),
+            ("recovery id 4", poison(first, header(1, 0x21, 0x32, recovery=4)), MALFORMED),
+            ("r the group order", poison(first, header(1, 0x21, 0x32, r=n)), MALFORMED),
+            ("s the group order", poison(first, header(1, 0x21, 0x32, s=n)), MALFORMED),
+            ("one header", payload(b"\x03" + first), MALFORMED),
+        ]
+    )
+
+
+def test_mpp_charge_usdc_stacks_nakamoto_vrf_proof_parses() -> None:
+    # A Nakamoto coinbase's VRF proof parses (stacks-common/src/util/vrf.rs:281-351): Gamma, its first 32 bytes, the
+    # canonical encoding of an Edwards25519 point (RFC 8032, 5.1.3) not of small order; c, 16 bytes; s, 32 bytes, a
+    # scalar below the group order L (RFC 8032, 5.1).
+    gamma, c, s = VRF[:32], VRF[32:48], VRF[48:]
+    p = 2**255 - 19
+    order = 2**252 + 27742317777372353535851937790883648493
+
+    def le(n: int) -> bytes:
+        return n.to_bytes(32, "little")
+
+    def proof(g: bytes = gamma, c_: bytes = c, s_: bytes = s) -> bytes:
+        return nakamoto(b"\x09", g + c_ + s_)
+
+    negated = gamma[:31] + bytes([gamma[31] ^ 0x80])
+    assert_reads(
+        [
+            ("stacks-core's proof", proof(), NOT_H),
+            ("Gamma negated", proof(negated), NOT_H),
+            ("c all 0xff", proof(c_=b"\xff" * 16), NOT_H),
+            ("s = L - 1", proof(s_=le(order - 1)), NOT_H),
+            ("all zero", nakamoto(b"\x09", b"\x00" * 80), MALFORMED),
+            ("Gamma the identity, y = 1", proof(le(1)), MALFORMED),
+            ("Gamma (0, -1), of order 2", proof(le(p - 1)), MALFORMED),
+            ("Gamma y = 2, on no point", proof(le(2)), MALFORMED),
+            ("Gamma y = 3 + p, not canonical", proof(le(3 + p)), MALFORMED),
+            ("Gamma x = 0 with its sign bit set", proof(le(1 + 2**255)), MALFORMED),
+            ("s = L", proof(s_=le(order)), MALFORMED),
+            ("79 bytes", nakamoto(b"\x09", VRF[:79]), MALFORMED),
+        ]
+    )
+
+
+def test_mpp_charge_usdc_stacks_tenure_change_fields_are_whole() -> None:
+    # A tenure change holds three 20-byte consensus hashes, a 32-byte block id, a count, a cause from 0 to 6 and a
+    # 20-byte key hash (transaction.rs:300-345); a node reads them whole.
+    def tenure(cause: int) -> bytes:
+        hashes = b"\x01" * 20 + b"\x02" * 20 + b"\x03" * 20
+        return b"\x07" + hashes + b"\x04" * 32 + word(5, 4) + bytes([cause]) + b"\x06" * 20
+
+    assert_reads(
+        [
+            ("cause 0", payload(tenure(0)), NOT_H),
+            ("cause 6", payload(tenure(6)), NOT_H),
+            ("cause 7", payload(tenure(7)), MALFORMED),
+            ("one byte short", payload(tenure(0)[:-1]), MALFORMED),
+            ("no key hash", payload(tenure(0)[:-20]), MALFORMED),
+        ]
+    )
+
+
+def test_mpp_charge_usdc_stacks_post_conditions_are_ones_a_node_reads() -> None:
+    # A post-condition (transaction.rs:2452-2540) names its principal (:2345-2368) by an address of version below 32
+    # and a contract name of 1 to 40 characters, an asset by a contract name and a Clarity name (:2177-2186), and a
+    # condition code of its type: 1 to 5 for STX, fungible and Staking, 0x10 to 0x12 non-fungible, 0x30 to 0x32 Pox.
+    # The post-condition mode is 1 to 3 (:3137-3152).
+    amount = word(1_000_000, 8)
+
+    def stx(principal: bytes, code: int = 1) -> bytes:
+        return b"\x00" + principal + bytes([code]) + amount
+
+    def asset(contract_name: str, asset_name: str, address: bytes = ASSET_CONTRACT) -> bytes:
+        return address + name(contract_name) + name(asset_name)
+
+    def named(contract_name: str) -> bytes:
+        """An STX post-condition on the contract principal of that name."""
+        return stx(b"\x03" + ASSET_CONTRACT + name(contract_name))
+
+    def fungible(asset_bytes: bytes) -> bytes:
+        return post_condition(b"\x01\x02" + SENDER + asset_bytes + b"\x01" + amount)
+
+    nft = b"\x02\x02" + SENDER + asset("usdcx", "nft") + uint_value(1)
+    version_32 = b"\x20" + ASSET_CONTRACT[1:]
+    assert_reads(
+        [
+            ("Staking, code 5", post_condition(b"\x03\x02" + SENDER + b"\x05" + amount), H_M4),
+            ("Pox, code 0x32", post_condition(b"\x04\x01\x32"), H_M4),
+            ("non-fungible, code 0x12", post_condition(nft + b"\x12"), H_M4),
+            ("a contract principal named by 40 characters", post_condition(named("a" * 40)), H_M4),
+            ("the post-condition mode 3", post_condition(stx(b"\x01"), 3), H_M4),
+            ("Staking, code 6", post_condition(b"\x03\x02" + SENDER + b"\x06" + amount), MALFORMED),
+            ("Pox, code 0x33", post_condition(b"\x04\x01\x33"), MALFORMED),
+            ("non-fungible, code 0x13", post_condition(nft + b"\x13"), MALFORMED),
+            ("a contract principal named by 41 characters", post_condition(named("a" * 41)), MALFORMED),
+            ("a contract principal named 1abc", post_condition(named("1abc")), MALFORMED),
+            ("an asset contract named by 41 characters", fungible(asset("a" * 41, "usdcx-token")), MALFORMED),
+            ("an address of version 32", post_condition(stx(b"\x02\x20" + SENDER[1:])), MALFORMED),
+            ("an asset address of version 32", fungible(asset("usdcx", "usdcx-token", version_32)), MALFORMED),
+            ("post-condition type 5", post_condition(b"\x05" + stx(b"\x01")[1:]), MALFORMED),
+            ("the post-condition mode 4", post_condition(stx(b"\x01"), 4), MALFORMED),
+        ]
+    )
+
+
+def test_mpp_charge_usdc_stacks_multisig_holds_the_signatures_it_requires() -> None:
+    # A multisig spending condition (transaction.rs:805-871) holds exactly the signatures it requires, an
+    # order-independent one (:997-1060) at least that many, and a P2WSH one (hash mode 3 or 7) compressed keys and
+    # signatures only. A key field holds a compressed secp256k1 point that parses
+    # (stacks-common/src/types/mod.rs:54-73). The key is the point of the scalar 1 (SEC 2, 2.4.1).
+    key = bytes.fromhex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+    off_curve = b"\x02" + word(5, 32)  # 5^3 + 7 is not a square modulo secp256k1's field prime
+    prime = b"\x02" + word(2**256 - 2**32 - 977, 32)
+
+    def sig(field: int = 2) -> bytes:
+        return bytes([field]) + b"\x00" * 65
+
+    def multisig(mode: int, fields: list[bytes], required: int) -> bytes:
+        body = bytes([mode]) + SIGNER + word(0, 8) + word(1000, 8) + word(len(fields), 4) + b"".join(fields)
+        return authorization(body + word(required, 2))
+
+    assert_reads(
+        [
+            ("P2SH, a key and a signature, 1 required", multisig(1, [b"\x00" + key, sig()], 1), H_M4),
+            ("P2SH, a key marked uncompressed and a signature", multisig(1, [b"\x01" + key, sig()], 1), H_M4),
+            ("P2SH, an uncompressed signature", multisig(1, [sig(3)], 1), H_M4),
+            ("P2WSH, a key and a signature", multisig(3, [b"\x00" + key, sig()], 1), H_M4),
+            ("order-independent P2SH, two signatures, 1 required", multisig(5, [sig(), sig()], 1), H_M4),
+            ("order-independent P2WSH, two signatures, 1 required", multisig(7, [sig(), sig()], 1), H_M4),
+            ("P2SH, two signatures, 1 required", multisig(1, [sig(), sig()], 1), MALFORMED),
+            ("P2SH, one signature, 2 required", multisig(1, [b"\x00" + key, sig()], 2), MALFORMED),
+            ("P2SH, two keys, no signature, 2 required", multisig(1, [b"\x00" + key, b"\x00" + key], 2), MALFORMED),
+            ("order-independent P2SH, one signature, 2 required", multisig(5, [b"\x00" + key, sig()], 2), MALFORMED),
+            ("P2SH, a key off the curve and a signature", multisig(1, [b"\x00" + off_curve, sig()], 1), MALFORMED),
+            ("P2SH, a key whose x is the field prime", multisig(1, [b"\x00" + prime, sig()], 1), MALFORMED),
+            ("P2SH, a key led by 0x04", multisig(1, [b"\x00\x04" + key[1:], sig()], 1), MALFORMED),
+            ("P2WSH, a key marked uncompressed", multisig(3, [b"\x01" + key, sig()], 1), MALFORMED),
+            ("P2WSH, an uncompressed signature", multisig(3, [sig(3)], 1), MALFORMED),
+            ("order-independent P2WSH, an uncompressed key", multisig(7, [b"\x01" + key, sig()], 1), MALFORMED),
+            ("hash mode 4", multisig(4, [sig()], 1), MALFORMED),
+        ]
+    )
+
+
 def test_mpp_charge_usdc_stacks_canonical_rows() -> None:
     rows = json.loads((Path(__file__).parent / "stacks_canonical.json").read_text())["rows"]
     assert len(rows) == 48
@@ -414,8 +727,10 @@ def test_mpp_charge_usdc_stacks_canonical_rows() -> None:
 
 def test_mpp_charge_usdc_stacks_multisig_key_fields() -> None:
     # SIP-005: a multisig key field holds a compressed secp256k1 point, marked compressed (0x00) or uncompressed (0x01).
-    # A key off the curve, a 65-byte body, or an uncompressed key under P2WSH is not a transaction that decodes and
-    # re-serializes to the same bytes.
+    # Each row's spending condition holds two key fields and requires two signatures, and a Stacks node decodes a
+    # multisig spending condition only with exactly the signatures it requires (stacks-codec/src/transaction.rs:852),
+    # so it decodes none of these transactions. The key-field rules with the signatures given are
+    # test_mpp_charge_usdc_stacks_multisig_holds_the_signatures_it_requires's.
     rows = json.loads((Path(__file__).parent / "stacks_key_fields.json").read_text())["rows"]
     assert len(rows) == 11
     for row in rows:
@@ -424,9 +739,10 @@ def test_mpp_charge_usdc_stacks_multisig_key_fields() -> None:
 
 
 def test_mpp_charge_usdc_stacks_agreed_refusals() -> None:
-    # Each agreedRefusals row is M4's signed transaction with its payload replaced, presented as the credential's
-    # transaction; bound refuses it with the row's code, the outcome @stacks/transactions 7.6.0 gives. The rows are
-    # selected by their input, and the file holds at least one.
+    # Each agreedRefusals row is M4's signed transaction with the part its case names replaced (the payload, the anchor
+    # mode and payload, a post-condition or the authorization), presented as the credential's transaction; bound
+    # refuses it with the row's code, which is stacks-core 4.0.5's reading of the bytes. Every row is selected by its
+    # input, and the file holds at least one.
     rows = [r for r in V.get("agreedRefusals", {}).get("rows", []) if isinstance(r.get("wireHex"), str)]
     assert rows, "mpp-charge-usdc-stacks.json holds no agreedRefusals row with a wireHex"
     for row in rows:
