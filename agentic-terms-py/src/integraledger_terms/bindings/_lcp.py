@@ -7,7 +7,6 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard
-from urllib.parse import urlsplit
 
 from .._core import AtrHash, is_hash
 from ._jose import js_length
@@ -23,8 +22,6 @@ AGREEMENT_URL_SNAKE = "legal_context_agreement_url"
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 _EIP155 = re.compile(r"eip155:([1-9][0-9]{0,15})")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
-# Code points a WHATWG URL host may not hold.
-_FORBIDDEN_HOST = re.compile(r"[\x00-\x20#%/:<>?@\[\\\]^|\x7f]")
 
 
 def is_object(value: object) -> TypeGuard[Mapping[str, Any]]:
@@ -94,23 +91,6 @@ def from_lcp_string(value: object) -> AtrHash | None:
     if not isinstance(value, str) or not value.startswith("lcp:sha256:"):
         return None
     return normal_hash(value[len("lcp:sha256:") :])
-
-
-def is_url(value: object) -> TypeGuard[str]:
-    """Whether value parses as an absolute URL with a host, as a WHATWG URL parser would accept it."""
-    if not isinstance(value, str) or value != value.strip() or any(c in value for c in "\t\n\r"):
-        return False
-    try:
-        parts = urlsplit(value)
-        parts.port
-    except ValueError:
-        return False
-    if parts.scheme == "" or parts.netloc == "":
-        return False
-    host = parts.hostname or ""
-    if host == "" or (not host.startswith("[") and _FORBIDDEN_HOST.search(host) is not None):
-        return False
-    return True
 
 
 # Unicode White_Space, every Unicode Cc control character, and the backslash.
