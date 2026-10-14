@@ -376,3 +376,22 @@ def test_links_a_whatwg_parser_reads_as_ipv4_or_as_a_domain() -> None:
     assert is_https_link("https://0x1g.example/x") is True
     assert is_https_link("https://0x7f.1/x") is True
     assert is_https_link("https://atr.seller.example.:8443/x") is True
+
+
+def test_json_form_hands_a_request_of_any_depth_or_shape_without_recursion() -> None:
+    # The TypeScript gate hands the signer the request as built, whatever its depth: json_form forms the same request,
+    # each byte string as 0x and lowercase hex, without recursion, and each mapping and list once however often reached.
+    deep: object = b"\x01"
+    for _ in range(100_000):
+        deep = {"n": (deep,)}
+    formed: Any = terms._gate.json_form(deep)
+    for _ in range(100_000):
+        formed = formed["n"][0]
+    assert formed == "0x01"
+    shared = [b"\xab"]
+    out: Any = terms._gate.json_form({"a": shared, "b": (shared, bytearray(b"\x00"))})
+    assert out == {"a": ["0xab"], "b": [["0xab"], "0x00"]} and out["a"] is out["b"][0]
+    cycle: dict[str, object] = {"x": 1}
+    cycle["self"] = cycle
+    looped: Any = terms._gate.json_form(cycle)
+    assert looped["x"] == 1 and looped["self"] is looped

@@ -171,14 +171,33 @@ def _moves(piece: Piece, unsigned: Any) -> bool:
 
 
 def json_form(value: Any) -> Any:
-    """A signing request as the signer receives it: every byte string as 0x and lowercase hex, the rest as given."""
-    if isinstance(value, (bytes, bytearray)):
-        return "0x" + bytes(value).hex()
-    if isinstance(value, Mapping):
-        return {k: json_form(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [json_form(v) for v in value]
-    return value
+    """A signing request as the signer receives it: every byte string as 0x and lowercase hex, the rest as given. It
+    walks without recursion, each mapping and list formed once however often it is reached, so a request of any depth
+    or shape is handed over as the TypeScript gate hands it."""
+
+    def form(v: Any) -> Any:
+        if isinstance(v, (bytes, bytearray)):
+            return "0x" + bytes(v).hex()
+        if not isinstance(v, (Mapping, list, tuple)):
+            return v
+        if id(v) in formed:
+            return formed[id(v)]
+        out: dict[Any, Any] | list[Any] = {} if isinstance(v, Mapping) else []
+        formed[id(v)] = out
+        pending.append((v.items() if isinstance(v, Mapping) else enumerate(v), out))
+        return out
+
+    formed: dict[int, Any] = {}
+    pending: list[tuple[Any, Any]] = []
+    top = form(value)
+    while pending:
+        members, out = pending.pop()
+        for k, v in members:
+            if isinstance(out, dict):
+                out[k] = form(v)
+            else:
+                out.append(form(v))
+    return top
 
 
 def _bound(binding: Binding, presented: Any) -> AtrHash | Refusal:
