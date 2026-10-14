@@ -849,6 +849,16 @@ def test_ccd_d3_bounds_refusals() -> None:
         assert (row["case"], X402_EXACT_CCD.bound(payment)) == (row["case"], Refusal(row["expect"]["code"]))
 
 
+def test_ccd_d4_bound_reads_no_receiver_or_amount() -> None:
+    """D4.rows: D3's CCD or PLT payment with a receiver or amount that bound does not read, each giving the row's
+    expectBound. The rows' expectReference is a reference answer, which the Python binding does not give."""
+    rows = CCD["D4"]["rows"]
+    assert rows
+    for row in rows:
+        payment = set_paths(CCD["D3"][row["base"]]["payment"], row["set"])
+        assert (row["case"], X402_EXACT_CCD.bound(payment)) == (row["case"], row["expectBound"])
+
+
 def test_ccd_build_the_transfer_the_wallet_signs_and_complete_wraps_what_it_returns() -> None:
     def required(o: dict[str, Any]) -> dict[str, Any]:
         return {"x402Version": 2, "resource": CCD_F["resource"], "accepts": [o]}

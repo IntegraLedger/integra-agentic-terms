@@ -136,8 +136,8 @@ def _is_one(v: object) -> bool:
 
 
 def _token_transfer(ops: bytes) -> AtrHash | Refusal:
-    """The carrier in the memo of the one transfer operation of a PLT TokenUpdate, with its recipient and amount
-    mantissa read as the transfer's shape requires."""
+    """The carrier in the memo of the one transfer operation of a PLT TokenUpdate. The transfer's recipient and amount
+    are not read."""
     v = decode_cbor(ops)
     if not isinstance(v, list):
         return Refusal("ccd/operations-malformed")
@@ -156,25 +156,7 @@ def _token_transfer(ops: bytes) -> AtrHash | Refusal:
     memo_bytes = memo.value if is_tag(memo, 24) else memo
     if not isinstance(memo_bytes, bytes):
         return Refusal("ccd/operations-malformed")
-    carrier = memo_carrier(memo_bytes)
-    if isinstance(carrier, Refusal):
-        return carrier
-
-    recipient = map_get(body, "recipient")
-    account = (
-        map_get(recipient.value, 3) if is_tag(recipient, 40307) and isinstance(recipient.value, CborMap) else None
-    )
-    if not isinstance(account, bytes) or len(account) != 32:
-        return Refusal("ccd/operations-malformed")
-
-    amount = map_get(body, "amount")
-    fraction = amount.value if is_tag(amount, 4) else None
-    if not isinstance(fraction, list) or len(fraction) != 2:
-        return Refusal("ccd/operations-malformed")
-    mantissa = fraction[1]
-    if isinstance(mantissa, bool) or not isinstance(mantissa, int) or mantissa < 0:
-        return Refusal("ccd/operations-malformed")
-    return carrier
+    return memo_carrier(memo_bytes)
 
 
 def _json_size(value: object) -> int | None:
@@ -186,8 +168,8 @@ def _json_size(value: object) -> int | None:
 
 
 def _signed(presented: object) -> AtrHash | Refusal:
-    """The carrier of the signed transaction's one transfer, after the transaction's shape, sender and transfer are
-    read as reference reads them."""
+    """The carrier of the signed transaction's one transfer. Of the transaction it reads the version, the header's
+    sender and expiry, the payload's type and the one transfer's memo, and no sponsor, receiver, amount or token."""
     if not is_object(presented) or safe_int(presented.get("x402Version")) != 2:
         return Refusal("x402/not-v2")
     if not ccd_option(presented.get("accepted")):
@@ -219,17 +201,7 @@ def _signed(presented: object) -> AtrHash | Refusal:
         memo = _memo_blob(body.get("memo"))
         if isinstance(memo, Refusal):
             return memo
-        carrier = memo_carrier(memo)
-        if isinstance(carrier, Refusal):
-            return carrier
-        to = body.get("toAddress")
-        receiver = account_bytes(to) if isinstance(to, str) else Refusal("ccd/address-malformed")
-        if isinstance(receiver, Refusal):
-            return receiver
-        amount = body.get("amount")
-        if not isinstance(amount, str) or _DECIMAL.fullmatch(amount) is None or int(amount) >= _UINT64_LIMIT:
-            return Refusal("ccd/transaction-malformed")
-        return carrier
+        return memo_carrier(memo)
     if kind == "tokenUpdate":
         ops = _hex_bytes(body.get("operations"), MAX_OPERATIONS)
         if isinstance(ops, Refusal):
@@ -294,6 +266,8 @@ class X402ExactCcd:
         return CcdUnsigned(request=request, _required=required, _accepted=accepted)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        """The hash inside what the sender signed, in x402's wire form: the one transfer's memo. No signature is
-        verified here."""
+        """The hash inside what the sender signed, in x402's wire form: the one transfer's memo. Of the signed
+        transaction it reads the version, the header's sender and expiry, the payload's type and the one transfer's
+        memo, and no sponsor, receiver, amount or token. No signature is verified here; the chain accepts the
+        transaction only with the sender's valid signature."""
         return _signed(presented)
