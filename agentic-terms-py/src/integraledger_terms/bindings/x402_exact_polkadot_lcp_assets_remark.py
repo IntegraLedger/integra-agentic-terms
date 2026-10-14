@@ -214,12 +214,10 @@ class X402ExactPolkadotLcpAssetsRemark:
             return p
         _, payload, _ = p
         extrinsic, call = payload.get("extrinsic"), payload.get("call")
-        if (
-            not isinstance(extrinsic, str)
-            or len(extrinsic) > 2 * MAX_EXTRINSIC + 2
-            or _LOWER_HEX.fullmatch(extrinsic) is None
-        ):
+        if not isinstance(extrinsic, str) or _LOWER_HEX.fullmatch(extrinsic) is None:
             return Refusal("polkadot/extrinsic-malformed")
+        if len(extrinsic) > 2 * MAX_EXTRINSIC + 2:
+            return Refusal("polkadot/extrinsic-too-large")
         if not isinstance(call, str) or _LOWER_HEX.fullmatch(call) is None:
             return Refusal("polkadot/call-not-profile")
         xt, call_bytes = bytes.fromhex(extrinsic[2:]), bytes.fromhex(call[2:])

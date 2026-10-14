@@ -652,6 +652,44 @@ def test_polkadot_v3_complete_bound_and_the_refusals() -> None:
         assert (row["case"], DOT_BINDING.bound(dot_presented(row["extrinsic"], row["call"]))) == (row["case"], Refusal(row["expect"]))
 
 
+def dot_resized(total: int) -> bytes:
+    """V3's extrinsic resized to total bytes: its signed preamble and V2's call, with zero bytes added before the call
+    where the extensions sit, under a SCALE Compact<u32> length prefix in its two-byte mode (64 to 16,383 bytes)."""
+    v3, call = bytes.fromhex(DOT["V3"]["extrinsic"][2:]), bytes.fromhex(DOT["V2"]["expectCall"][2:])
+    assert v3[0] & 3 == 1 and v3.endswith(call)
+    n = total - 2
+    return ((n << 2) | 1).to_bytes(2, "little") + v3[2 : len(v3) - len(call)] + bytes(total - len(v3)) + call
+
+
+def test_polkadot_v3_resized_around_the_4096_byte_bound() -> None:
+    # An extrinsic longer than 4,096 bytes is polkadot/extrinsic-too-large and text that is not lowercase hex is
+    # polkadot/extrinsic-malformed; the protocol package's bound reads the extrinsic's hex, then its size, then the
+    # call's hex, so an oversize extrinsic beside a call that is not hex is too large.
+    at, over = dot_resized(4096), dot_resized(4097)
+    assert (len(at), len(over)) == (4096, 4097)
+    call = DOT["V2"]["expectCall"]
+    assert DOT_BINDING.bound(dot_presented("0x" + at.hex(), call)) == DOT["V3"]["expectBound"]
+    assert DOT_BINDING.bound(dot_presented("0x" + over.hex(), call)) == Refusal("polkadot/extrinsic-too-large")
+    assert DOT_BINDING.bound(dot_presented("0x" + over.hex().upper(), call)) == Refusal("polkadot/extrinsic-malformed")
+    assert DOT_BINDING.bound(dot_presented("0x" + over.hex(), "0xzz")) == Refusal("polkadot/extrinsic-too-large")
+    assert DOT_BINDING.bound(dot_presented("0x" + at.hex(), "0xzz")) == Refusal("polkadot/call-not-profile")
+    assert dot_unsigned().complete(over) == Refusal("polkadot/extrinsic-too-large")
+
+
+def test_polkadot_v3_the_bound_rows() -> None:
+    """V3.atBound binds H at 4,096 bytes, and each V3.refusals row whose extrinsic is longer than 4,096 bytes answers
+    its code; both are V3 resized as dot_resized builds it."""
+    at = DOT["V3"].get("atBound")
+    assert at is not None, "x402-exact-polkadot-lcp-assets-remark.json holds no V3.atBound"
+    assert at["extrinsic"] == "0x" + dot_resized(4096).hex()
+    assert DOT_BINDING.bound(dot_presented(at["extrinsic"], at["call"])) == at["expectBound"]
+    over = [r for r in DOT["V3"]["refusals"] if len(r["extrinsic"]) > 2 + 2 * 4096]
+    assert over, "x402-exact-polkadot-lcp-assets-remark.json holds no V3.refusals row over 4,096 bytes"
+    for row in over:
+        assert row["extrinsic"].lower() == "0x" + dot_resized(4097).hex()
+        assert (row["case"], DOT_BINDING.bound(dot_presented(row["extrinsic"], row["call"]))) == (row["case"], Refusal(row["expect"]))
+
+
 def test_polkadot_the_option_filter() -> None:
     """Each option row, through build (the filter's refusal) and read (not payable)."""
     for row in DOT["options"]:
