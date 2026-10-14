@@ -4,9 +4,11 @@
 // seller's document) by membership only. The other copy is the installed package's pairing entry points bundled by
 // esbuild into one module and imported from a temporary folder. Each expected outcome is the same pairing's through the
 // gate's own copy, checked beside it: ACP's currency is three lowercase letters (acp-checkout.json V4's choice carries
-// "usd"), so "USD" is acp/choice-malformed; card/seller-reference is confirm-only (card.json C2); the two EVM pairings
-// whose proof is the agreement return the credential with the agreement's receipt (mpp-charge-evm-transaction.json MV11,
-// mpp-charge-evm-hash.json MV12); batch-settlement Solana's first voucher is x402-batch-settlement.json's ES3.
+// "usd"), so "USD" is acp/choice-malformed; a session whose legal context is not in its metadata is acp/no-legal-context
+// (acp-checkout.json V6); card/seller-reference is confirm-only (card.json C2); the two EVM pairings whose proof is the
+// agreement return the credential with the agreement's receipt (mpp-charge-evm-transaction.json MV11,
+// mpp-charge-evm-hash.json MV12), and `0x`, which holds no signed transaction, completes no credential
+// (mpp/credential-malformed); batch-settlement Solana's first voucher is x402-batch-settlement.json's ES3.
 import { createPrivateKey, sign as edSign } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -64,7 +66,12 @@ async function otherCopy(): Promise<Other> {
 }
 const other = await otherCopy();
 
-type AcpVectors = { fixed: { A: string; H: AtrHash }; V2: { expectSession: unknown }; V4: { choice: Record<string, unknown> } };
+type AcpVectors = {
+  fixed: { A: string; H: AtrHash };
+  V2: { expectSession: unknown };
+  V4: { choice: Record<string, unknown> };
+  V6: { doc: unknown; expect: { refused: true; code: string } };
+};
 const ACP = vectors<AcpVectors>("acp-checkout.json");
 const CARD = vectors<{ C2: { build: { doc: unknown } } }>("card.json");
 const X = vectors<{
@@ -160,6 +167,20 @@ describe("the other copy is a second copy of the protocol package", () => {
   });
 });
 
+describe("a binding from another copy: its read's refusal runs the gate's declines", () => {
+  it("acp/checkout/delegated with no legal context in the session's metadata: offer-unreadable, no fetch, no signer call", async () => {
+    expect(ACP.V6.expect).toEqual({ refused: true, code: "acp/no-legal-context" });
+    for (const binding of [delegated as Binding, other.delegated]) {
+      const f = serving(ABC);
+      const s = signer(never);
+      const out = await transact(ACP.V6.doc, offered(binding), s, f);
+      expect(out).toEqual({ decline: { code: "offer-unreadable", detail: ACP.V6.expect.code } });
+      expect(f.calls).toBe(0);
+      expect(s.kinds).toEqual([]);
+    }
+  });
+});
+
 describe("a binding from another copy: its build's refusal runs the gate's declines", () => {
   it("acp/checkout/delegated with currency USD: offer-unreadable acp/choice-malformed, no agreement, no signer call", async () => {
     const { session: _s, ...values } = ACP.V4.choice;
@@ -243,6 +264,18 @@ describe("a binding from another copy: a bound that finds no signed place runs t
         expect(s.kinds).toEqual(["eip712", "evm-call"]);
         expect(out).toMatchObject({ agreement: receiptFor(H), h: H });
         expect((out as { signed: { payload: unknown } }).signed.payload).toEqual(payload(answers[0]!));
+      }
+    }),
+  );
+
+  it("mpp/charge/evm/transaction: a signer answering 0x completes no credential, signed-not-bound mpp/credential-malformed", () =>
+    at(X.fixed.now, async () => {
+      for (const binding of [evmTransaction as Binding, other.evmTransaction]) {
+        const s = signer(async () => "0x");
+        const out = await transactApproved(docOf(binding), binding, s, seller(ABC, H));
+        expect(s.kinds).toEqual(["eip712", "evm-call"]);
+        expect((out as Declined).decline).toEqual({ code: "signed-not-bound", detail: "mpp/credential-malformed" });
+        expect(out).not.toHaveProperty("signed");
       }
     }),
   );
