@@ -2,6 +2,7 @@
 is the ATR hash's first 8 bytes, which the payer signs as the Soroban transfer's to. The full hash rides in the
 challenge. Nothing here fetches or signs."""
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -11,9 +12,10 @@ from .._types import Advertised, Refusal
 from . import _stellar
 from ._lcp import is_object, safe_int
 from ._mpp import chosen_for, credential_of, echoed_for, expires_of, read
-from ._mpp_checks import is_stellar_recipient
+from ._mpp_checks import is_fee_payer, is_stellar_recipient
 
 ID = "mpp/charge/stellar"
+_HASH = re.compile(r"[0-9a-fA-F]{64}")
 
 
 def _presented_xdr(payload: Mapping[str, Any]) -> str | Refusal:
@@ -96,7 +98,14 @@ class MppChargeStellar:
         stellar/option-malformed. For a transaction credential, not yet submitted, the operation carries exactly one
         address-credential entry of the payer. For a hash credential, whose transaction landed, the entry is the
         payer's first address-credential entry whose root invocation is the operation's transfer, byte for byte; other
-        entries of the payer are not read. The authorization's signature is not verified here."""
+        entries of the payer are not read. A hash credential whose transaction carries no address entry of the payer,
+        under a request with feePayer false or absent, binds H when the payer is the source account of the transaction
+        and of its operation and an entry with source-account credentials is that transfer: the payer signed the whole
+        transaction, to included. That transaction is the instrument, so the credential's hash must name it: 64 hex
+        digits, else mpp/credential-malformed. There feePayer is read as pairings_of reads it: one that is present and
+        not a boolean is stellar/option-malformed. For a transaction credential such a payment is
+        stellar/no-address-auth. The authorization's signature is not verified here; the network verifies it when the
+        entry is used."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
@@ -111,14 +120,31 @@ class MppChargeStellar:
         xdr = _presented_xdr(e.payload)
         if isinstance(xdr, Refusal):
             return xdr
-        signed = _stellar.read_signed_transfer(xdr, network, e.payload.get("type") == "hash")
-        if isinstance(signed, Refusal):
-            return signed
-        payment = signed.payment
+        landed = e.payload.get("type") == "hash"
+        signed = _stellar.read_signed_transfer(xdr, network, landed)
+        read: tuple[_stellar.Payment | _stellar.SourcePayment, bool] | Refusal
+        read = signed if isinstance(signed, Refusal) else (signed.payment, signed.agrees)
+        if (
+            isinstance(read, Refusal)
+            and read.code == "stellar/no-address-auth"
+            and landed
+            and e.checked.details.get("feePayer") is not True
+        ):
+            if not is_fee_payer(e.checked.details):
+                return Refusal("stellar/option-malformed")
+            source = _stellar.read_source_transfer(xdr, network)
+            if not isinstance(source, Refusal):
+                hash_ = e.payload.get("hash")
+                if not isinstance(hash_, str) or _HASH.fullmatch(hash_) is None:
+                    return Refusal("mpp/credential-malformed")
+                read = (source, True)
+        if isinstance(read, Refusal):
+            return read
+        payment, agrees = read
         if payment.to_id is None:
             return Refusal("stellar/no-carrier")
         if payment.to != e.checked.request.get("recipient") or payment.to_id != _stellar.muxed_id(e.h):
             return Refusal("stellar/carrier-mismatch")
-        if not signed.agrees:
+        if not agrees:
             return Refusal("stellar/not-one-transfer")
         return e.h

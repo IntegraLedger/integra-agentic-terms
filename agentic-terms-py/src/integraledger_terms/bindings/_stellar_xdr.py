@@ -114,11 +114,12 @@ def public_key(r: Reader) -> bytes:
     return r.opaque(32)
 
 
-def muxed_account(r: Reader) -> None:
+def muxed_account(r: Reader) -> bytes:
+    """A MuxedAccount's Ed25519 key, its id left out."""
     kind = r.enum(frozenset({0, 256}))
     if kind == 256:
         r.u64()
-    r.opaque(32)
+    return r.opaque(32)
 
 
 def sc_address(r: Reader) -> Address:
@@ -309,6 +310,10 @@ class Credentials:
 
 @dataclass(frozen=True, slots=True)
 class Entry:
+    """An authorization entry: its credentials' kind (0 the source account, 1 address, 2 address V2, 3 address with
+    delegates), its address credentials of kind 1 or 2, its root invocation's bytes, and the root invocation."""
+
+    kind: int
     credentials: Credentials | None
     invocation: bytes
     root: Invocation
@@ -343,7 +348,7 @@ def auth_entry(r: Reader) -> Entry:
             _delegate(r, 0)
     start = r.at
     root = invocation(r)
-    return Entry(credentials, r.data[start : r.at], root)
+    return Entry(kind, credentials, r.data[start : r.at], root)
 
 
 # ── the transaction ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -573,12 +578,15 @@ def _invoke(r: Reader) -> Invoke | None:
 
 @dataclass(frozen=True, slots=True)
 class Envelope:
-    """A v1 transaction's one invoke, where its source account's bytes sit, and whether it came in a fee bump."""
+    """A v1 transaction's one invoke, where its source account's bytes sit, and whether it came in a fee bump; the
+    Ed25519 keys of the v1 transaction's source account and of the operation's, None when the operation names none."""
 
     fee_bump: bool
     source_start: int
     source_end: int
     invoke: Invoke
+    source: bytes
+    operation_source: bytes | None
 
 
 def _signatures(r: Reader) -> None:
@@ -587,27 +595,34 @@ def _signatures(r: Reader) -> None:
         r.var_opaque(64)
 
 
-def _v1(r: Reader) -> tuple[int, int, list[Invoke | None]]:
+@dataclass(frozen=True, slots=True)
+class _V1:
+    source_start: int
+    source_end: int
+    source: bytes
+    operations: list[tuple[bytes | None, Invoke | None]]
+
+
+def _v1(r: Reader) -> _V1:
     source_start = r.at
-    muxed_account(r)
+    source = muxed_account(r)
     source_end = r.at
     r.u32()
     r.i64()
     _preconditions(r)
     _memo(r)
-    invokes: list[Invoke | None] = []
+    operations: list[tuple[bytes | None, Invoke | None]] = []
     for _ in range(r.count(100)):
-        if r.flag():
-            muxed_account(r)
+        operation_source = muxed_account(r) if r.flag() else None
         kind = r.enum(range(0, 27))
         if kind == 24:
-            invokes.append(_invoke(r))
+            operations.append((operation_source, _invoke(r)))
         else:
             _operation(r, kind)
-            invokes.append(None)
+            operations.append((operation_source, None))
     _transaction_ext(r)
     _signatures(r)
-    return source_start, source_end, invokes
+    return _V1(source_start, source_end, source, operations)
 
 
 def envelope(data: bytes) -> Envelope:
@@ -618,16 +633,19 @@ def envelope(data: bytes) -> Envelope:
     if kind == 0:
         raise Malformed
     if kind == 2:
-        start, end, invokes = _v1(r)
+        v1 = _v1(r)
     else:
         muxed_account(r)
         r.i64()
         r.enum(frozenset({2}))
-        start, end, invokes = _v1(r)
+        v1 = _v1(r)
         r.enum(range(0, 1))
         _signatures(r)
     if r.remaining:
         raise Malformed
-    if len(invokes) != 1 or invokes[0] is None:
+    if len(v1.operations) != 1:
         raise NotOneTransfer
-    return Envelope(kind == 5, start, end, invokes[0])
+    operation_source, invoke = v1.operations[0]
+    if invoke is None:
+        raise NotOneTransfer
+    return Envelope(kind == 5, v1.source_start, v1.source_end, invoke, v1.source, operation_source)

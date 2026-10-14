@@ -1,6 +1,7 @@
 """mpp/charge/stellar: the TypeScript gate's placement, B2, B6, B10 and B16 rows, and the buyer half's vector rows.
 Expected values are the vector files'; the payer signs with the Ed25519 seed x402-exact-stellar.json publishes."""
 
+import base64
 import hashlib
 import json
 from datetime import datetime
@@ -8,8 +9,9 @@ from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_CHARGE_STELLAR, Refusal, _gate
-from integraledger_terms.bindings import _stellar
+from integraledger_terms import MPP_CHARGE_STELLAR, X402_EXACT_STELLAR, Refusal, _gate
+from integraledger_terms.bindings import _stellar, _stellar_xdr
+from integraledger_terms.bindings._codec import b64u_decode, b64u_encode
 
 import ed25519
 from breadth import H, LINK, Pairing, build_and_sign, plant
@@ -20,6 +22,7 @@ from xlm_support import EVM_ACCOUNT, b16, mpp_b10
 V = load("mpp-charge-stellar.json")
 X = load("x402-exact-stellar.json")
 F: dict[str, Any] = V["fixed"]
+SA: dict[str, Any] = V["sourceAccount"]
 SEED = bytes.fromhex(X["fixed"]["payerSeed"])
 # The entry's expiration is currentLedger + ceil((expires - now) / 5): 988 + 12 = 1000.
 NOW = int(datetime.fromisoformat(F["expires"].replace("Z", "+00:00")).timestamp()) - 60
@@ -126,6 +129,96 @@ def test_mpp_charge_stellar_a_landed_transaction_is_read_by_the_payer_entry_that
         assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == F["H"], row["case"]
         sent = {"type": "transaction", "transaction": row["envelope"]}
         assert MPP_CHARGE_STELLAR.bound(credential(sent, challenge)) == Refusal("stellar/no-address-auth"), row["case"]
+
+
+# ── a push payment the payer authorized as the transaction's source account ─────────────────────────────────────────
+
+
+def key_of(seed: str) -> bytes:
+    """The Ed25519 key of the seed that repeats one byte, as the sourceAccount section names each account."""
+    return ed25519.public_key(bytes.fromhex(seed) * 32)
+
+
+def assert_written(envelope: str, write: dict[str, Any]) -> None:
+    """The envelope is what the row's write says: the transaction's source, the operation's source (none when the
+    write names none), and one entry with source-account credentials whose root invocation carries a sub-invocation
+    only where the write says so."""
+    env = _stellar_xdr.envelope(base64.b64decode(envelope))
+    assert env.source == key_of(write["source"])
+    assert env.operation_source == (key_of(write["operationSource"]) if "operationSource" in write else None)
+    assert [e.kind for e in env.invoke.entries] == [0]
+    assert env.invoke.entries[0].root.subs == (1 if write.get("subInvocation") else 0)
+
+
+def with_fee_payer(challenge: dict[str, Any], value: object) -> dict[str, Any]:
+    """The challenge with its request's methodDetails.feePayer set to value, or left out when value is Ellipsis; its
+    id and opaque derive from H, not from the request."""
+    raw = b64u_decode(challenge["request"])
+    assert raw is not None
+    request = json.loads(raw)
+    if value is ...:
+        del request["methodDetails"]["feePayer"]
+    else:
+        request["methodDetails"]["feePayer"] = value
+    return {**challenge, "request": b64u_encode(json.dumps(request).encode("utf-8"))}
+
+
+def test_mpp_charge_stellar_source_account_push_binds_h() -> None:
+    """sourceAccount: the payer (seed 05) is the transaction's source, and its one entry has source-account credentials
+    and is the operation's transfer. A hash credential presenting that landed transaction, under the section's
+    challenge (feePayer false) and the same challenge with feePayer absent, binds H; read_source_transfer reads the
+    transfer the section's expectReference names."""
+    assert_written(SA["envelope"], SA["write"])
+    pushed = {"type": "hash", "hash": SA["hash"], "transaction": SA["envelope"]}
+    for challenge in (SA["challenge"], with_fee_payer(SA["challenge"], ...)):
+        assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == SA["expectBound"]
+    ref = SA["expectReference"]
+    payment = _stellar.read_source_transfer(SA["envelope"], ref["network"])
+    assert isinstance(payment, _stellar.SourcePayment), payment
+    assert (payment.asset, payment.to_base, str(payment.to_id)) == (ref["asset"], ref["toBase"], ref["toId"])
+    assert payment.source == _stellar.account(key_of(SA["write"]["source"]))
+
+
+@pytest.mark.parametrize("fee_payer", [None, "false", 0, []])
+def test_mpp_charge_stellar_source_account_push_reads_fee_payer_as_a_boolean(fee_payer: object) -> None:
+    """A source-account push under a request whose feePayer is present and not a boolean is stellar/option-malformed,
+    the code the challenge's checks give it (@integraledger/lcp 0.4.0's isFeePayer: absent or a boolean)."""
+    pushed = {"type": "hash", "hash": SA["hash"], "transaction": SA["envelope"]}
+    challenge = with_fee_payer(SA["challenge"], fee_payer)
+    assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == Refusal("stellar/option-malformed")
+
+
+def test_mpp_charge_stellar_source_account_refusals() -> None:
+    """sourceAccount.refusals under the section's own challenge: each row's credential (its type, its envelope and hash,
+    or the section's) is refused with the row's code, and each row's envelope is what its write says. x402, whose
+    entries must be address credentials, refuses the section's envelope stellar/no-address-auth."""
+    rows = [row for row in SA["refusals"] if row["challenge"] == "sourceAccount"]
+    assert rows, "mpp-charge-stellar.json sourceAccount holds no refusal row under its own challenge"
+    for row in rows:
+        envelope = row.get("envelope", SA["envelope"])
+        if "write" in row:
+            assert_written(envelope, row["write"])
+        payload: dict[str, Any] = {"type": row["type"], "transaction": envelope}
+        if row["type"] == "hash":
+            payload["hash"] = row.get("hash", SA["hash"])
+        assert MPP_CHARGE_STELLAR.bound(credential(payload, SA["challenge"])) == Refusal(row["expect"]), row["case"]
+    x402 = {"x402Version": 2, "accepted": X["V3"]["accepted"], "payload": {"transaction": SA["envelope"]}}
+    assert X402_EXACT_STELLAR.bound({**x402, "extensions": X["V3"]["extensions"]}) == Refusal("stellar/no-address-auth")
+
+
+def test_mpp_charge_stellar_source_account_status_rows_name_the_transfer() -> None:
+    """sourceAccount.status rows whose named transaction succeeded: the row settles exactly when
+    read_source_transfer reads the landed envelope as the payer's source-account transfer to the reference's to id. A
+    row names x402-exact-stellar.json's section whose envelope it carries, or none for the section's own."""
+    rows = [row for row in SA["status"] if row["status"] == "SUCCESS"]
+    assert any(row["expect"]["state"] == "settled" for row in rows)
+    assert any(row["expect"]["state"] != "settled" for row in rows)
+    ref = SA["expectReference"]
+    for row in rows:
+        envelope = X[row["envelope"]]["envelope"] if "envelope" in row else SA["envelope"]
+        payment = _stellar.read_source_transfer(envelope, ref["network"])
+        named = isinstance(payment, _stellar.SourcePayment) and str(payment.to_id) == ref["toId"]
+        assert named is (row["expect"]["state"] == "settled"), row["case"]
 
 
 def test_mpp_charge_stellar_occupied_and_option_malformed() -> None:

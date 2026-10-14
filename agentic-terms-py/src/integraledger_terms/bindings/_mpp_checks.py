@@ -481,6 +481,11 @@ def is_xrpl_invoice_id(d: Obj) -> bool:
     return isinstance(inv, str) and _HEX64.fullmatch(inv) is not None
 
 
+def is_fee_payer(d: Obj) -> bool:
+    """A charge challenge's methodDetails.feePayer: absent or a boolean."""
+    return "feePayer" not in d or isinstance(d["feePayer"], bool)
+
+
 def is_stellar_recipient(value: object) -> bool:
     """A Stellar account (G...) or its muxed form (M...), as a charge challenge's recipient is."""
     if not isinstance(value, str):
@@ -515,7 +520,7 @@ def stellar_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         or not is_stellar_recipient(to)
     ):
         return Refusal("stellar/option-malformed")
-    if _has(d, "feePayer") and not isinstance(d["feePayer"], bool):
+    if not is_fee_payer(d):
         return Refusal("stellar/option-malformed")
     return ["mpp/charge/stellar"]
 

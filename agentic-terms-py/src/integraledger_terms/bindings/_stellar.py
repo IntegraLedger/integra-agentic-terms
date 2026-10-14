@@ -148,6 +148,18 @@ class Payment:
 
 
 @dataclass(frozen=True, slots=True)
+class SourcePayment:
+    """A landed transfer the payer authorized as the transaction's source account: no address entry, so no auth."""
+
+    asset: str
+    source: str
+    to: str
+    to_base: str
+    to_id: int | None
+    amount: int
+
+
+@dataclass(frozen=True, slots=True)
 class _Parsed:
     payment: Payment
     agrees: bool
@@ -194,6 +206,28 @@ def _carries(call: xdr.Call, entry: xdr.Entry) -> bool:
     return root.call is not None and root.subs == 0 and root.call.raw == call.raw
 
 
+def _operation_of(data: bytes) -> tuple[xdr.Envelope, _Transfer] | Refusal:
+    """The envelope's one invokeHostFunction operation calling transfer(from, to, amount) on a contract, and that
+    transfer."""
+    try:
+        env = xdr.envelope(data)
+    except xdr.NotOneTransfer:
+        return Refusal("stellar/not-one-transfer")
+    except (xdr.Malformed, RecursionError):
+        return Refusal("stellar/tx-malformed")
+    operation = _transfer_of(env.invoke.call)
+    return Refusal("stellar/not-one-transfer") if operation is None else (env, operation)
+
+
+def _address_entries(env: xdr.Envelope, source: str) -> list[tuple[xdr.Entry, xdr.Credentials]]:
+    """The address-credential entries whose address is source, in order."""
+    return [
+        (e, e.credentials)
+        for e in env.invoke.entries
+        if e.credentials is not None and (who := _strkey_of(e.credentials.address)) is not None and who[0] == source
+    ]
+
+
 def _parse(data: bytes, network: str, landed: bool) -> _Parsed | Refusal:
     """The envelope's one transfer operation and the one address-credential entry whose address is its from. The
     payment's contract, to and amount are read from the entry's root invocation, the invocation the payer signs, which
@@ -204,24 +238,13 @@ def _parse(data: bytes, network: str, landed: bool) -> _Parsed | Refusal:
     the entries in order, skips one whose address or root invocation does not match, and authenticates the first that
     matches, so other entries of from may ride unused. With no such entry, from must have exactly one entry, as
     without landed."""
-    try:
-        env = xdr.envelope(data)
-    except xdr.NotOneTransfer:
-        return Refusal("stellar/not-one-transfer")
-    except (xdr.Malformed, RecursionError):
-        return Refusal("stellar/tx-malformed")
+    o = _operation_of(data)
+    if isinstance(o, Refusal):
+        return o
+    env, operation = o
     call = env.invoke.call
-    operation = _transfer_of(call)
-    if operation is None:
-        return Refusal("stellar/not-one-transfer")
     source = operation.source
-    matches = [
-        (e, e.credentials)
-        for e in env.invoke.entries
-        if e.credentials is not None
-        and (who := _strkey_of(e.credentials.address)) is not None
-        and who[0] == source[0]
-    ]
+    matches = _address_entries(env, source[0])
     used = next(((e, c) for e, c in matches if _carries(call, e)), None) if landed else None
     if used is None and len(matches) != 1:
         return Refusal("stellar/no-address-auth")
@@ -238,6 +261,30 @@ def _parse(data: bytes, network: str, landed: bool) -> _Parsed | Refusal:
     auth = Auth(address=source[0], nonce=c.nonce, expiration=c.expiration, v2=c.v2, preimage_hash="0x" + digest)
     payment = Payment(signed.asset, source[0], signed.to[0], signed.to[1], signed.to[2], signed.amount, auth)
     return _Parsed(payment, agrees, env, entry, c)
+
+
+def read_source_transfer(text: object, network: object) -> SourcePayment | Refusal:
+    """The transfer of a landed transaction whose payer authorized it as the transaction's source account: from has no
+    address-credential entry, from is the source account of the transaction (the inner one of a fee bump) and of its
+    operation, and an entry with source-account credentials has the operation's transfer as its root invocation, byte
+    for byte, with no sub-invocations. The transaction's signatures, which the network verified when it applied the
+    transaction, cover it whole, to included. Anything else is stellar/no-address-auth."""
+    data = _bytes_of(text, network)
+    if isinstance(data, Refusal):
+        return data
+    o = _operation_of(data)
+    if isinstance(o, Refusal):
+        return o
+    env, operation = o
+    source = operation.source[0]
+    key = decode_strkey(_ACCOUNT, source)
+    if key is None or env.source != key or env.operation_source not in (None, key):
+        return Refusal("stellar/no-address-auth")
+    if _address_entries(env, source):
+        return Refusal("stellar/no-address-auth")
+    if not any(e.kind == 0 and _carries(env.invoke.call, e) for e in env.invoke.entries):
+        return Refusal("stellar/no-address-auth")
+    return SourcePayment(operation.asset, source, operation.to[0], operation.to[1], operation.to[2], operation.amount)
 
 
 def _bytes_of(text: object, network: object) -> bytes | Refusal:
