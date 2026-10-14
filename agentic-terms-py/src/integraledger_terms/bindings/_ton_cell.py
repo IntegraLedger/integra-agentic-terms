@@ -148,6 +148,8 @@ class Cell:
             if bits == 8 + 256 + 16:
                 mask, at = 1, 8
             else:
+                if bits < 16:
+                    raise Malformed
                 mask, at = (self.value >> (bits - 16)) & 0xFF, 16
                 level = mask.bit_length()
                 if not 1 <= level <= 3 or bits != 16 + (_hash_index(_below(mask, level - 1)) + 1) * (256 + 16):

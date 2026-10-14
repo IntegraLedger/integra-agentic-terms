@@ -1,5 +1,5 @@
 {
- "about": "The settlement BoC of this pairing's B6 row (x402-exact-tvm.json's fixed inputs); that BoC with one cell replaced by a library cell (TVM's exotic cell type 2, then 32 bytes of 0x01), or with its comment cell's exotic bit set; and the settlement built with a state init whose code, which no read parses, is a library cell, a pruned branch (type 1, level 1) or a Merkle proof (type 3) of a cell over that pruned branch, with that state init; and the signed request in a message whose state init's libraries dictionary or extra currencies hold a library cell, which no read parses. Built with @ton/core 0.63.1 as @integraledger/lcp's tvm test builds them, signed with the fixed seed. Each row's expect is @integraledger/lcp's exactTvm.bound for the row's BoC with the fixed placed option: the bound hash, or the refusal code. A state init's stateInitHash is its representation hash, the address an undeployed wallet derives from it. A row with a stateInit and no settlementBoc expects exactTvm.build's refusal for that state init.",
+ "about": "The settlement BoC of this pairing's B6 row (x402-exact-tvm.json's fixed inputs); that BoC with one cell replaced by a library cell (TVM's exotic cell type 2, then 32 bytes of 0x01), or with its comment cell's exotic bit set; and the settlement built with a state init whose code, which no read parses, is a library cell, a pruned branch (type 1, level 1) or a Merkle proof (type 3) of a cell over that pruned branch, with that state init; and the signed request in a message whose state init's libraries dictionary or extra currencies hold a library cell, which no read parses. Built with @ton/core 0.63.1 as @integraledger/lcp's tvm test builds them, signed with the fixed seed. Each row's expect is @integraledger/lcp's exactTvm.bound for the row's BoC with the fixed placed option: the bound hash, or the refusal code. A state init's stateInitHash is its representation hash, the address an undeployed wallet derives from it. A row with a stateInit and no settlementBoc expects exactTvm.build's refusal for that state init. The last rows mark exotic a state init's code of 8 or 12 bits whose first byte is the pruned-branch type (1): a pruned branch reads its level byte after its type (@ton/core 0.63.1 exoticPruned), so the bag holding that cell is not read.",
  "rows": [
   {
    "case": "the signed settlement",
@@ -86,6 +86,26 @@
    "case": "the signed request in a message whose extra currencies are a library cell",
    "settlementBoc": "te6cckECCAEAAXQAAmBCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvhAAAAAAAAAAAAAAAAAEBAghCAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaADAgoOw8htAwQFAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEGAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDBwCiAAAAAGxjcDpzaGEyNTY6MHhiYTc4MTZiZjhmMDFjZmVhNDE0MTQwZGU1ZGFlMjIyM2IwMDM2MWEzOTYxNzdhOWNiNDEwZmY2MWYyMDAxNWFkilSILg==",
    "expect": "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  },
+  {
+   "case": "the settlement whose state init's code is an 8-bit cell of the pruned-branch type, marked exotic",
+   "settlementBoc": "te6cckECCgEAAYUAAmFCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAPAAQQCATQCAwgCAQBRgAAAAD///4jFRHHuugT4yv6pbZaeXS65ZTOE347KCQ35ukQA2ge3riABoXNpbnR///8RarE7vAAAAAWZIPP+AGU2U43mAfjsaje+4nhm8OhSvY/YhUPSfyJY4EizAfVKK5gCHoEsiHyhC0CjReCANAplzQr9+N2Hxg1BoAUCCg7DyG0DBgcAAAFoYgAIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiKAX14QAAAAAAAAAAAAAAAAAAQgBYQ+KfqUAAAAAAAAAACJxCAEkhnSu2XytibmQ2ylpL0WeMVN1U5BQf9RR1IfWeEuf2gMJAKIAAAAAbGNwOnNoYTI1NjoweGJhNzgxNmJmOGYwMWNmZWE0MTQxNDBkZTVkYWUyMjIzYjAwMzYxYTM5NjE3N2E5Y2I0MTBmZjYxZjIwMDE1YWQfCmfV",
+   "expect": "tvm/boc-malformed"
+  },
+  {
+   "case": "a state init whose code is an 8-bit cell of the pruned-branch type, marked exotic",
+   "stateInit": "te6cckEBAwEAMwACATQBAggCAQBRgAAAAD///4jFRHHuugT4yv6pbZaeXS65ZTOE347KCQ35ukQA2ge3riAosr4U",
+   "expect": "tvm/boc-malformed"
+  },
+  {
+   "case": "the settlement whose state init's code is a 12-bit cell of the pruned-branch type, marked exotic",
+   "settlementBoc": "te6cckECCgEAAYYAAmFCAA7RDTcZ95FCABTXO8gHsN1BBcp0CdHb33px9SOIA7IvgAAAAAAAAAAAAAAAAAPAAQQCATQCAwgDAQgAUYAAAAA///+IxURx7roE+Mr+qW2Wnl0uuWUzhN+OygkN+bpEANoHt64gAaFzaW50f///EWqxO7wAAAAFmSDz/gBlNlON5gH47Go3vuJ4ZvDoUr2P2IVD0n8iWOBIswH1SiuYAh6BLIh8oQtAo0XggDQKZc0K/fjdh8YNQaAFAgoOw8htAwYHAAABaGIACIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIigF9eEAAAAAAAAAAAAAAAAAAEIAWEPin6lAAAAAAAAAAAicQgBJIZ0rtl8rYm5kNspaS9FnjFTdVOQUH/UUdSH1nhLn9oDCQCiAAAAAGxjcDpzaGEyNTY6MHhiYTc4MTZiZjhmMDFjZmVhNDE0MTQwZGU1ZGFlMjIyM2IwMDM2MWEzOTYxNzdhOWNiNDEwZmY2MWYyMDAxNWFkcIjv6Q==",
+   "expect": "tvm/boc-malformed"
+  },
+  {
+   "case": "a state init whose code is a 12-bit cell of the pruned-branch type, marked exotic",
+   "stateInit": "te6cckEBAwEANAACATQBAggDAQgAUYAAAAA///+IxURx7roE+Mr+qW2Wnl0uuWUzhN+OygkN+bpEANoHt64gSJyU3Q==",
+   "expect": "tvm/boc-malformed"
   }
  ]
 }

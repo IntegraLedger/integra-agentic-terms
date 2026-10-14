@@ -11,7 +11,7 @@ import pytest
 
 from integraledger_terms import X402_EXACT_TVM as BINDING
 from integraledger_terms import Refusal, _gate
-from integraledger_terms.bindings._ton_cell import Builder, Cell, crc32c, parse_boc
+from integraledger_terms.bindings._ton_cell import Builder, Cell, Malformed, crc32c, parse_boc
 from integraledger_terms.bindings.x402_exact_tvm import boc_of, lcp_comment, root_of
 
 import ed25519
@@ -315,3 +315,32 @@ def test_x402_exact_tvm_an_exotic_cell_is_refused_by_the_check_that_parses_it() 
     assert len(refused) >= 1
     for row in refused:
         assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
+
+
+# A pruned branch reads its level byte after its type byte (@ton/core 0.63.1 exoticPruned), so a cell marked exotic
+# whose first byte is that type and which holds fewer than 16 bits is not read. Each bag is one such cell (d1 8: exotic,
+# no references), with no index and a CRC-32C. lcp's exactTvm answers tvm/boc-malformed for the bag as a settlement and
+# as a state init, and tvm/carrier-mismatch for an option whose forwardPayload is the bag, in build and in bound.
+@pytest.mark.parametrize(
+    "bag",
+    [
+        "b5ee9c724101010100030008020115dae68b",  # 8 bits: the type byte alone
+        "b5ee9c724101010100040008030108e45088de",  # 12 bits
+        "b5ee9c724101010100040008030101288b3aa6",  # 15 bits
+    ],
+)
+def test_x402_exact_tvm_a_pruned_branch_cell_without_its_level_byte_is_malformed(bag: str) -> None:
+    boc = base64.b64encode(bytes.fromhex(bag)).decode()
+    with pytest.raises(Malformed):
+        parse_boc(bytes.fromhex(bag))
+    assert root_of(boc) == Refusal("tvm/boc-malformed")
+    assert BINDING.bound(presented(boc)) == Refusal("tvm/boc-malformed")
+    assert BINDING.build(tvm_choice(stateInit=boc), F["H"]) == Refusal("tvm/boc-malformed")
+    option = {**F["placed"], "extra": {**F["placed"]["extra"], "forwardPayload": boc}}
+    choice = tvm_choice(option, required={"x402Version": 2, "resource": F["resource"], "accepts": [option]})
+    assert BINDING.build(choice, F["H"]) == Refusal("tvm/carrier-mismatch")
+    unsigned = BINDING.build(tvm_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
+    assert not isinstance(signed, Refusal)
+    assert BINDING.bound({**signed, "accepted": option}) == Refusal("tvm/carrier-mismatch")
