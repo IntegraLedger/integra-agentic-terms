@@ -91,7 +91,7 @@ def _authorization_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     to, value = text(o.request.get("recipient")), text(o.request.get("amount"))
 
     def complete(signature: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(signature, 65, MAX_SIGNATURE):
+        if not is_hex_bytes(signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         return {
             "challenge": challenge,
@@ -193,7 +193,7 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     from_ = choice["from"]
 
     def complete(signature: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(signature, 65, MAX_SIGNATURE):
+        if not is_hex_bytes(signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         return {
             "challenge": challenge,

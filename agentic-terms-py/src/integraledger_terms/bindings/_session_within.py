@@ -65,7 +65,7 @@ def within_unsigned(w: Mapping[str, Any], typed_data: dict[str, Any], channel_id
         if not isinstance(signatures, (list, tuple)) or len(signatures) != 1:
             return Refusal("mpp/credential-malformed")
         signature = signatures[0]
-        if not is_hex_bytes(signature, 65, MAX_SIGNATURE):
+        if not is_hex_bytes(signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         payload: dict[str, Any] = {"action": action, "channelId": channel_id, "cumulativeAmount": amount, "signature": signature}
         if descriptor is not None:

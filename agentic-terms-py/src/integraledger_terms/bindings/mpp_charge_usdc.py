@@ -153,7 +153,7 @@ def _evm_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     source = f"did:pkh:eip155:{chain_id}:{from_}"
 
     def complete(signature: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(signature, 65, MAX_SIGNATURE):
+        if not is_hex_bytes(signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         return {
             "challenge": challenge,

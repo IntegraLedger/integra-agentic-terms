@@ -401,7 +401,7 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         ]
 
         def complete_hash(funded: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
-            if normal_hash(funded) is None or not is_hex_bytes(voucher_signature, 65, MAX_SIGNATURE):
+            if normal_hash(funded) is None or not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
                 return Refusal("mpp/credential-malformed")
             return {"challenge": challenge, "source": source, "payload": {**base, "type": "hash", "hash": funded, "signature": voucher_signature}}
 
@@ -465,7 +465,7 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         return typed_data
 
     def complete_signed(funded: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(funded, 65, MAX_SIGNATURE) or not is_hex_bytes(voucher_signature, 65, MAX_SIGNATURE):
+        if not is_hex_bytes(funded, 1, MAX_SIGNATURE) or not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         return {
             "challenge": challenge,
@@ -666,7 +666,7 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         c = opened(signed_tx)
         if isinstance(c, Refusal):
             return c
-        if not is_hex_bytes(voucher_signature, 65, MAX_SIGNATURE):
+        if not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         payload: dict[str, Any] = {
             "action": "open",
@@ -782,7 +782,7 @@ def _subscription_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     source = f"did:pkh:eip155:{chain_id}:{choice['from']}"
 
     def complete(root_signature: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(root_signature, 65, MAX_SIGNATURE):
+        if not is_hex_bytes(root_signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         signed = encode_key_authorization(authorization, root_signature)
         if isinstance(signed, Refusal):
