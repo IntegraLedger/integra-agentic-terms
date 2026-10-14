@@ -423,5 +423,5 @@ class MppLightningSession(MppLightning):
         return ChannelRef(_SESSION_CHANNEL_NETWORK, session_id.lower())
 
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
-        """A bearer proof is the deposit preimage, and a topUp pays a new invoice: neither carries the hash."""
+        """A bearer proof carries no hash; a topUp is within the session and is found by channel_ref."""
         return Refusal("mpp/not-bound-within")
