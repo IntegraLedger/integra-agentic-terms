@@ -251,8 +251,8 @@ def _ln_fields(pairing: str, request: Mapping[str, Any]) -> tuple[Any, Any]:
 
 def _ln_challenge_checks(pairing: str, c: object, h: AtrHash, placed: bool) -> Bolt11 | Refusal:
     """The checks of what the seller's node wrote: the invoice decodes, its one h is h, it has no d, the request has
-    no description, its payment hash is the request's, its currency is the challenge's network, and expires is no
-    later than the invoice's own expiry."""
+    no description, its payment hash is the request's, its currency is the challenge's network, and expires, where the
+    challenge carries one, is no later than the invoice's own expiry."""
     checked = check_challenge(c, placed)
     if isinstance(checked, Refusal):
         return checked
@@ -277,7 +277,7 @@ def _ln_challenge_checks(pairing: str, c: object, h: AtrHash, placed: bool) -> B
         network = checked.details["network"]
         if not isinstance(network, str) or MPP_NETWORKS.get(network) != b.currency:
             return Refusal("ln/currency-network")
-    if checked.expires > b.timestamp + b.expiry:
+    if checked.expires is not None and checked.expires > b.timestamp + b.expiry:
         return Refusal("ln/expires-after-invoice")
     return b
 

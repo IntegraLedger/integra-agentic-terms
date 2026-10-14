@@ -13,7 +13,18 @@ from .._types import Advertised, Refusal
 from ._codec import b58_encode, b64u_decode, canonical_or_none, to_hex
 from ._jose import UNPARSED, parse_json
 from ._lcp import is_address, is_object, normal_hash
-from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, is_hex_bytes, read, same_bytes, text
+from ._mpp import (
+    Checked,
+    MppUnsigned,
+    chosen_for,
+    credential_of,
+    echoed_for,
+    expires_of,
+    is_hex_bytes,
+    read,
+    same_bytes,
+    text,
+)
 from ._mpp_checks import MAX_DECODED, positive_int
 from ._mpp_evm import eip3009_typed_data
 
@@ -121,7 +132,9 @@ def _evm_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     if isinstance(nonce, Refusal):
         return nonce
     chain_id = positive_int(_profile_of(o).get("chainId"))
-    valid_before = o.expires
+    valid_before = expires_of(o)
+    if isinstance(valid_before, Refusal):
+        return valid_before
     to, value = text(o.request.get("recipient")), text(o.request.get("amount"))
     typed_data = eip3009_typed_data(
         network=f"eip155:{chain_id}",

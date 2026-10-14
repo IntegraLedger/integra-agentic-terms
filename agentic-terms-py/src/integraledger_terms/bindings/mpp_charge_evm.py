@@ -16,6 +16,7 @@ from ._mpp import (
     challenge_hash,
     credential_of,
     echoed_for,
+    expires_of,
     is_hex_bytes,
     offer_for,
     read,
@@ -69,7 +70,9 @@ def _authorization_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     chain_id = chain_of(o)
     challenge = dict(choice["challenge"])
     nonce = challenge_hash(challenge["id"], challenge["realm"])
-    valid_before = o.expires
+    valid_before = expires_of(o)
+    if isinstance(valid_before, Refusal):
+        return valid_before
     from_ = choice["from"]
     typed_data = eip3009_typed_data(
         network=f"eip155:{chain_id}",
@@ -165,7 +168,9 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     challenge = dict(choice["challenge"])
     challenge_hash_value = challenge_hash(challenge["id"], challenge["realm"])
     external_id = text(o.request.get("externalId"))
-    deadline = o.expires
+    deadline = expires_of(o)
+    if isinstance(deadline, Refusal):
+        return deadline
     nonce = int(challenge_hash_value, 16)
     transfers = [{"to": recipient, "amount": primary}, *(splits or [])]
     permitted = [{"token": currency, "amount": t["amount"]} for t in transfers]

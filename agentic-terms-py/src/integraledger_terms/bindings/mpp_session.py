@@ -20,6 +20,7 @@ from ._mpp import (
     credential_of,
     did_pkh_address,
     echoed_for,
+    expires_of,
     is_hex_bytes,
     offer_for,
     params_of,
@@ -374,7 +375,9 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     channel_id = evm_channel_id(from_, recipient, currency, salt, signer, escrow, chain_id)
     if isinstance(channel_id, Refusal):
         return channel_id
-    deadline = o.expires
+    deadline = expires_of(o)
+    if isinstance(deadline, Refusal):
+        return deadline
     challenge = dict(choice["challenge"])
     source = f"did:pkh:eip155:{chain_id}:{from_}"
 
@@ -598,6 +601,9 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     o = offer_for(choice, h, SESSION_TEMPO)
     if isinstance(o, Refusal):
         return o
+    valid_before = expires_of(o)
+    if isinstance(valid_before, Refusal):
+        return valid_before
     p = params_of(choice["challenge"])
     if isinstance(p, Refusal):
         return p
@@ -679,7 +685,7 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         "kind": "tempo-call",
         "chainId": p.chain_id,
         "call": {"to": p.escrow, "data": data},
-        "validBefore": o.expires,
+        "validBefore": valid_before,
         "broadcast": False,
     }
     return SessionUnsigned(funding, voucher, complete)

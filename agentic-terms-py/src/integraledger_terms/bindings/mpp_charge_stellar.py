@@ -10,7 +10,7 @@ from .._core import AtrHash
 from .._types import Advertised, Refusal
 from . import _stellar
 from ._lcp import is_object, safe_int
-from ._mpp import chosen_for, credential_of, echoed_for, read
+from ._mpp import chosen_for, credential_of, echoed_for, expires_of, read
 from ._mpp_checks import is_stellar_recipient
 
 ID = "mpp/charge/stellar"
@@ -69,7 +69,10 @@ class MppChargeStellar:
         ledger, now = safe_int(choice.get("currentLedger")), safe_int(choice.get("now"))
         if ledger is None or ledger < 0 or now is None:
             return Refusal("stellar/tx-malformed")
-        expiration = ledger + max(0, -(-(checked.expires - now) // 5))
+        expires = expires_of(checked)
+        if isinstance(expires, Refusal):
+            return expires
+        expiration = ledger + max(0, -(-(expires - now) // 5))
         fee_payer = checked.details.get("feePayer") is True
         s = _stellar.signing_for(choice.get("simulatedXdr"), checked.details.get("network"), expiration, fee_payer)
         if isinstance(s, Refusal):

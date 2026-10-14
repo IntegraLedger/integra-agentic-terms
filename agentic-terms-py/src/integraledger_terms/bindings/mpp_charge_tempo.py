@@ -18,6 +18,7 @@ from ._mpp import (
     check_attribution,
     credential_of,
     echoed_for,
+    expires_of,
     is_hex_bytes,
     offer_for,
     read,
@@ -38,6 +39,9 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     o = offer_for(choice, h, pairing)
     if isinstance(o, Refusal):
         return o
+    valid_before = expires_of(o)
+    if isinstance(valid_before, Refusal):
+        return valid_before
     client_id = choice.get("clientId")
     if "clientId" in choice and not is_well_formed(client_id):
         return Refusal("mpp/input-malformed")
@@ -64,7 +68,7 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         "kind": "tempo-call",
         "chainId": chain_id,
         "call": {"to": text(o.request.get("currency")), "data": data},
-        "validBefore": o.expires,
+        "validBefore": valid_before,
         "broadcast": broadcast,
     }
     return MppUnsigned(request, complete)

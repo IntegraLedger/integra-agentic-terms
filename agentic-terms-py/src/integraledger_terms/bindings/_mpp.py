@@ -166,15 +166,42 @@ def is_challenge_shape(c: object) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Checked:
-    """A challenge as check_challenge has checked it; expires is unix seconds."""
+    """A challenge as check_challenge has checked it. expires is unix seconds; None when the challenge carries none,
+    and then pairings holds none that needs it."""
 
     challenge: Mapping[str, Any]
     intent: str
     method: str
     request: dict[str, Any]
     details: Mapping[str, Any]
-    expires: int
+    expires: int | None
     pairings: tuple[str, ...]
+
+
+# The pairings that need the challenge's expires: each one's build writes it into what the payer signs (the EIP-3009
+# validBefore, the Permit2 deadline, the Tempo transaction's validBefore, the Stellar entry's expiration ledger, the
+# session opening's deadline), or, on NEAR Intents and the XRP Ledger charge, the method's draft requires it. Without
+# expires a challenge offers none of them.
+NEEDS_EXPIRES = frozenset(
+    {
+        "mpp/charge/evm/authorization",
+        "mpp/charge/evm/permit2",
+        "mpp/charge/tempo/memo",
+        "mpp/charge/tempo/push",
+        "mpp/charge/usdc/evm",
+        "mpp/charge/stellar",
+        "mpp/charge/nearintents",
+        "mpp/charge/xrpl",
+        "mpp/session/evm",
+        "mpp/session/tempo",
+    }
+)
+
+
+def expires_of(checked: Checked) -> int | Refusal:
+    """Unix seconds of a checked challenge's expires, for a build whose pairing writes it; none is
+    mpp/expires-required, as pairings_of gives it."""
+    return Refusal("mpp/expires-required") if checked.expires is None else checked.expires
 
 
 def check_challenge(c: object, placed: bool) -> Checked | Refusal:
@@ -189,7 +216,7 @@ def check_challenge(c: object, placed: bool) -> Checked | Refusal:
     if check is None:
         return Refusal("mpp/not-this-pairing")
     expires = unix_of(c["expires"]) if "expires" in c else None
-    if expires is None:
+    if "expires" in c and expires is None:
         return Refusal("mpp/expires-required")
     request = decode_object(c["request"])
     if request is None:
@@ -204,14 +231,21 @@ def check_challenge(c: object, placed: bool) -> Checked | Refusal:
     if "methodDetails" in request and not is_object(md):
         return Refusal("mpp/request-malformed")
     details: Mapping[str, Any] = md if is_object(md) else {}
-    pairings = check(request, details, c)
-    if isinstance(pairings, Refusal):
-        return pairings
+    named = check(request, details, c)
+    if isinstance(named, Refusal):
+        return named
+    pairings = named if expires is not None else [p for p in named if p not in NEEDS_EXPIRES]
+    if not pairings and named:
+        return Refusal("mpp/expires-required")
     return Checked(c, c["intent"], c["method"], request, details, expires, tuple(pairings))
 
 
 def pairings_of(c: object) -> tuple[str, ...] | Refusal:
-    """A challenge checked as issued (no LCP member in opaque), and its pairings in the order they are offered."""
+    """A challenge checked as issued (no LCP member in opaque), and its pairings in the order they are offered. A
+    Tempo charge whose amount is 0 names none: MPP pays it with a proof credential, which moves no money. An expires
+    that is present must be an RFC 3339 date-time, else mpp/expires-required. Without expires, the pairings whose build
+    writes it into what the payer signs, and the NEAR Intents and XRP Ledger charges, whose drafts require it, are left
+    out, and a challenge left with no pairing is mpp/expires-required."""
     checked = check_challenge(c, False)
     return checked if isinstance(checked, Refusal) else checked.pairings
 
