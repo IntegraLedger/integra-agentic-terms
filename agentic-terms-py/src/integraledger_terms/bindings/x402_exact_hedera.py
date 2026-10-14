@@ -17,6 +17,7 @@ from ._hedera_proto import (
     complete_with,
     decode_hedera_tx,
     entity,
+    is_entity,
     len_field,
     tx_id_field,
     v_field,
@@ -32,14 +33,9 @@ HEDERA_NETWORKS = ("hedera:mainnet", "hedera:testnet", "hedera:previewnet", "hed
 MAX_EXECUTORS = 16
 MAX_AUTHORIZATION_HEX = 8192
 
-_ENTITY = re.compile(r"(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})")
 _DECIMAL = re.compile(r"0|[1-9][0-9]{0,18}")
 _HEX_BYTES = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
 _ABSENT = object()
-
-
-def is_entity(value: object) -> bool:
-    return isinstance(value, str) and _ENTITY.fullmatch(value) is not None
 
 
 def is_hedera_network(value: object) -> bool:

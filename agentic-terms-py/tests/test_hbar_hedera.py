@@ -13,6 +13,7 @@ from integraledger_terms import (
     Refusal,
     _gate,
 )
+from integraledger_terms.bindings._hedera_proto import TxId, tx_id_text
 
 import ed25519
 from breadth import LINK, Pairing, build_and_sign, plant, x402_doc
@@ -172,6 +173,36 @@ def test_x402_exact_hedera_v1_memo() -> None:
 def test_x402_exact_hedera_v3_list_form() -> None:
     assert X402_EXACT_HEDERA.bound(presented(E["V3"]["listBase64"])) == E["V3"]["expectBound"]
     assert X402_EXACT_HEDERA.bound(presented(E["V3"]["inconsistentListBase64"])) == Refusal(E["V3"]["expectInconsistent"])
+
+
+def test_hedera_transaction_id_text_takes_only_a_transaction_id() -> None:
+    """The list form compares each body's transaction id as text, account@seconds.nanos with nine digits of nanos. The
+    writer raises TypeError for an id outside its type, as @integraledger/lcp's txIdText does: an account that is not
+    shard.realm.num, seconds that are not a non-negative int, or nanos that are not an int from 0 to 999,999,999."""
+
+    def tx_id(*fields: Any) -> Any:
+        return TxId(*fields)
+
+    assert tx_id_text(TxId("0.0.1235", 1700000000, 0)) == "0.0.1235@1700000000.000000000"
+    assert tx_id_text(TxId("1.2.3", 0, 999_999_999)) == "1.2.3@0.999999999"
+    outside: tuple[Any, ...] = (
+        tx_id("x", 1700000000, 0),
+        tx_id("0.0.01", 1700000000, 0),
+        tx_id("0.1235", 1700000000, 0),
+        tx_id(5, 1700000000, 0),
+        tx_id("0.0.1235", -1, 0),
+        tx_id("0.0.1235", True, 0),
+        tx_id("0.0.1235", 1.5, 0),
+        tx_id("0.0.1235", "1700000000", 0),
+        tx_id("0.0.1235", 1700000000, -1),
+        tx_id("0.0.1235", 1700000000, 1_000_000_000),
+        tx_id("0.0.1235", 1700000000, True),
+        tx_id("0.0.1235", 1700000000, 1.5),
+        "0.0.1235@1700000000.000000000",
+    )
+    for value in outside:
+        with pytest.raises(TypeError):
+            tx_id_text(value)
 
 
 def test_x402_exact_hedera_v4x_attribution_memo_is_not_lcp() -> None:

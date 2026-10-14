@@ -16,6 +16,7 @@ from ._hedera_proto import (
     account_amount,
     decode_hedera_tx,
     entity,
+    is_entity,
     len_field,
     tx_id_field,
     write_body,
@@ -23,7 +24,7 @@ from ._hedera_proto import (
 from ._lcp import is_object, is_well_formed
 from ._mpp import attribution_memo, challenge_bound, check_attribution, credential_of, read
 from ._mpp_checks import decode_object, hedera_charge_legs
-from .x402_exact_hedera import HederaUnsigned, is_entity
+from .x402_exact_hedera import HederaUnsigned
 
 ID = "mpp/charge/hedera"
 

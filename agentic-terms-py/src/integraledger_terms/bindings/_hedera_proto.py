@@ -1,8 +1,9 @@
 """The Hedera wire subset, read and written by hand: protobuf varints and length-delimited fields over the five
 messages a CryptoTransfer payment uses (Transaction, SignedTransaction, TransactionBody, SignatureMap and the transfer
-lists), and the transaction-id text forms."""
+lists), entity ids, and the transaction id's text form."""
 
 import base64
+import re
 from dataclasses import dataclass
 
 from .._types import Refusal
@@ -16,6 +17,12 @@ INT64_LIMIT = 1 << 63
 UINT64_LIMIT = 1 << 64
 
 _MAX_FIELD_NUMBER = 536_870_911
+_ENTITY = re.compile(r"(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})")
+
+
+def is_entity(value: object) -> bool:
+    """A Hedera entity id, shard.realm.num."""
+    return isinstance(value, str) and _ENTITY.fullmatch(value) is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,13 +33,20 @@ class TxId:
 
 
 def tx_id_text(tx_id: TxId) -> str:
-    """0.0.1235@1700000000.000000000"""
+    """0.0.1235@1700000000.000000000. Raises TypeError on an id that is not a TxId: an account shard.realm.num, seconds
+    a non-negative int, and nanos an int from 0 to 999,999,999, the range of protobuf's Timestamp."""
+    if (
+        not isinstance(tx_id, TxId)
+        or not is_entity(tx_id.account)
+        or not isinstance(tx_id.seconds, int)
+        or isinstance(tx_id.seconds, bool)
+        or tx_id.seconds < 0
+        or not isinstance(tx_id.nanos, int)
+        or isinstance(tx_id.nanos, bool)
+        or not 0 <= tx_id.nanos <= 999_999_999
+    ):
+        raise TypeError("not a Hedera transaction id")
     return f"{tx_id.account}@{tx_id.seconds}.{tx_id.nanos:09d}"
-
-
-def tx_id_mirror(tx_id: TxId) -> str:
-    """0.0.1235-1700000000-000000000, the Mirror Node's form."""
-    return f"{tx_id.account}-{tx_id.seconds}-{tx_id.nanos:09d}"
 
 
 @dataclass(frozen=True, slots=True)
