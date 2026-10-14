@@ -5,7 +5,7 @@ does."""
 import copy
 from typing import Any
 
-from integraledger_terms import X402_EXACT_XRPL, Confirmed, Refusal, confirm
+from integraledger_terms import X402_EXACT_XRPL, Confirmed, Declined, Refusal, confirm, finish
 from integraledger_terms.bindings import _xrpl
 
 from breadth import ABC, H, Pairing, build_and_sign, plant, run, x402_doc
@@ -23,7 +23,7 @@ assert OPTION["extra"]["invoiceId"] == F["L"] and F["H"] == H
 def answer(request: Any) -> Any:
     assert request["kind"] == "xrpl-tx", request["kind"]
     assert request["txJson"] == V2["expectTxJson"]
-    return "0x" + V2["blob"]
+    return V2["blob"]
 
 
 XRPL = Pairing(
@@ -127,3 +127,11 @@ def test_x402_exact_xrpl_agreed_refusals() -> None:
     ]
     for bad in ({"fee": "0"}, {"sequence": -1}, {"lastLedgerSequence": 2**32}, {"fee": "1.5"}):
         assert X402_EXACT_XRPL.build({**choice, **bad}, H) == Refusal(option_malformed)
+
+
+def test_x402_exact_xrpl_a_blob_answered_in_0x_hex_is_declined_signed_not_bound() -> None:
+    # The build's complete reads the signed blob as hex digits without 0x, as the XRP Ledger writes it.
+    out = run(lambda c: confirm(XRPL.doc, X402_EXACT_XRPL, XRPL.account, c, XRPL.inputs), serving(ABC))
+    assert isinstance(out, Confirmed), out
+    done = finish(out.atr_bytes, out.chosen, "0x" + V2["blob"], X402_EXACT_XRPL)
+    assert isinstance(done, Declined) and (done.code, done.detail) == ("signed-not-bound", "xrpl/blob-malformed"), done

@@ -357,7 +357,7 @@ describe("x402/exact/xrpl", () => {
     answer: answering((r) => {
       if (r.kind !== "xrpl-tx") throw new Error(r.kind);
       expect(r.txJson).toEqual(X.V2.expectTxJson);
-      return `0x${X.V2.blob}`;
+      return X.V2.blob;
     }),
   };
   it("B6: the Payment is V2's; V2's signed blob completes a payment bound to H", async () => {
@@ -366,6 +366,12 @@ describe("x402/exact/xrpl", () => {
       expect(r.txJson).toEqual(X.V2.expectTxJson);
     });
     expect((signed as { payload: unknown }).payload).toEqual({ signedTxBlob: X.V2.blob });
+  });
+  it("a signed blob answered in 0x hex is declined signed-not-bound: the answer is hex digits without 0x", async () => {
+    const out = await confirm(p.doc, exactXrpl, p.account, serving(ABC), p.inputs!);
+    if (isDeclined(out)) throw new Error(out.decline.code);
+    const done = await finish(ABC, out.chosen, `0x${X.V2.blob}`, exactXrpl);
+    expect(isDeclined(done) && [done.decline.code, done.decline.detail]).toEqual(["signed-not-bound", "xrpl/blob-malformed"]);
   });
   it("a ticketSequence option takes ticketSequence, not sequence", async () => {
     const option = { ...f.option, extra: { ...f.option.extra, assetTransferMethod: "ticketSequence" } } as Option;

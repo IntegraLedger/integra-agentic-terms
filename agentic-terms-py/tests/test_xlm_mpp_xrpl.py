@@ -5,10 +5,10 @@ gate's test does."""
 import json
 from typing import Any
 
-from integraledger_terms import MPP_CHARGE_XRPL, Declined, Refusal, confirm
+from integraledger_terms import MPP_CHARGE_XRPL, Declined, Refusal, confirm, transact
 from integraledger_terms.bindings._xrpl import mpp_invoice_id, same_invoice
 
-from breadth import ABC, H, LINK, Pairing, build_and_sign, plant, run
+from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, plant, run
 from mpp_docs import issued, place_carrier
 from support import load, serving
 from xlm_support import EVM_ACCOUNT, b16, mpp_b10
@@ -30,7 +30,7 @@ def doc_of(challenge: dict[str, Any]) -> Any:
 def answer(request: Any) -> Any:
     assert request["kind"] == "xrpl-tx", request["kind"]
     assert request["txJson"]["InvoiceID"] == F["invoiceId"]
-    return "0x" + V["V3"]["blob"]
+    return V["V3"]["blob"]
 
 
 XRPL = Pairing(
@@ -117,3 +117,10 @@ def test_mpp_charge_xrpl_occupied_and_refusals() -> None:
     expect = agreed["a signed InvoiceID that is the request's invoiceId but not the echoed challenge's hash"]
     presented = {"challenge": h2_doc[0], "payload": {"type": "transaction", "blob": V["V3"]["blob"]}}
     assert MPP_CHARGE_XRPL.bound(presented) == Refusal(expect)
+
+
+def test_mpp_charge_xrpl_a_blob_answered_in_0x_hex_is_declined_signed_not_bound() -> None:
+    # The build's complete reads the signed blob as hex digits without 0x, as the XRP Ledger writes it.
+    signer = Recording(XRPL.account, lambda r: "0x" + V["V3"]["blob"])
+    out = run(lambda c: transact(XRPL.doc, MPP_CHARGE_XRPL, signer, c, inputs=XRPL.inputs), serving(ABC))
+    assert isinstance(out, Declined) and (out.code, out.detail) == ("signed-not-bound", "xrpl/blob-malformed"), out

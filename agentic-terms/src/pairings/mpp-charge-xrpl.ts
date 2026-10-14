@@ -1,12 +1,13 @@
 /**
  * The buyer piece for `mpp/charge/xrpl`: the Payment whose `InvoiceID` is the request's `methodDetails.invoiceId`,
- * handed to the wallet as `xrpl-tx`. The wallet's signed blob, as `0x` hex, completes the build's own credential.
+ * handed to the wallet as `xrpl-tx`. The wallet's signed blob, as hex digits without `0x`, completes the build's own
+ * credential.
  * `Fee`, `Sequence` and `LastLedgerSequence` are the buyer's reads.
  */
 import type { Json, Refusal } from "@integraledger/lcp";
 import type { Inputs, Signature } from "../types.js";
 import { inputsOf, refuse } from "./common.js";
-import { completeWith, hexDigits, mppRailPiece, XRPL_ADDRESS } from "./mpp-rails.js";
+import { completeWith, mppRailPiece, XRPL_ADDRESS } from "./mpp-rails.js";
 
 const PAIRING = "mpp/charge/xrpl";
 
@@ -14,9 +15,9 @@ function inputs(_request: Record<string, unknown>, given: Inputs): Record<string
   return inputsOf(given, PAIRING, { fee: "decimal", sequence: "uint", lastLedgerSequence: "uint" });
 }
 
-/** The signed blob's hex digits, from `0x` hex. */
+/** The signed blob as given: the build's `complete` reads it as hex digits without `0x`. */
 function blob(signature: Signature): string | Refusal {
-  return hexDigits(signature) ?? refuse("mpp/credential-malformed");
+  return typeof signature === "string" ? signature : refuse("mpp/credential-malformed");
 }
 
 export const mppChargeXrpl = mppRailPiece({

@@ -1,6 +1,7 @@
 /**
  * The buyer piece for `x402/exact/xrpl`: the Payment whose `InvoiceID` is the SHA-256 of the option's
- * `extra.invoiceId`, handed to the wallet as `xrpl-tx`. The wallet's signed blob, as `0x` hex, completes the payment.
+ * `extra.invoiceId`, handed to the wallet as `xrpl-tx`. The wallet's signed blob, as hex digits without `0x`, completes
+ * the payment.
  * `Fee`, `Sequence` (or `TicketSequence`) and `LastLedgerSequence` are the buyer's reads.
  */
 import type { Json, Refusal } from "@integraledger/lcp";
@@ -10,7 +11,6 @@ import { inputsOf, refuse } from "./common.js";
 import { railPiece } from "./x402-rail.js";
 
 const PAIRING = "x402/exact/xrpl";
-const BLOB = /^0x((?:[0-9a-fA-F]{2})+)$/;
 
 function inputs(accepted: PaymentRequirements, given: Inputs): Record<string, Json> | Refusal {
   const ticket = accepted.extra?.["assetTransferMethod"] === "ticketSequence";
@@ -21,10 +21,9 @@ function inputs(accepted: PaymentRequirements, given: Inputs): Record<string, Js
   });
 }
 
-/** The signed blob's hex digits, from `0x` hex. */
+/** The signed blob as given: the build's `complete` reads it as hex digits without `0x`. */
 function blob(signature: Signature): string | Refusal {
-  const m = typeof signature === "string" ? BLOB.exec(signature) : null;
-  return m === null ? refuse("x402/signature-malformed") : m[1]!;
+  return typeof signature === "string" ? signature : refuse("x402/signature-malformed");
 }
 
 export const x402ExactXrpl = railPiece({

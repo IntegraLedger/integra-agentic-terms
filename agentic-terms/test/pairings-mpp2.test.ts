@@ -342,7 +342,7 @@ describe("mpp/charge/xrpl", () => {
     answer: async (r) => {
       if (r.kind !== "xrpl-tx") throw new Error(r.kind);
       expect(r.txJson.InvoiceID).toBe(f.invoiceId);
-      return `0x${V.V3.blob}`;
+      return V.V3.blob;
     },
   };
 
@@ -366,6 +366,10 @@ describe("mpp/charge/xrpl", () => {
       expect(V.V3.blob).toContain(`5011${f.invoiceId}`);
     });
     expect((signed as MppCredential).payload).toEqual({ type: "transaction", blob: V.V3.blob });
+  });
+  it("a signed blob answered in 0x hex is declined signed-not-bound: the answer is hex digits without 0x", async () => {
+    const out = await transact(p.doc, chargeXrpl, counting(p.account, async () => `0x${V.V3.blob}`), serving(ABC), { inputs: p.inputs! });
+    expect(isDeclined(out) && [out.decline.code, out.decline.detail]).toEqual(["signed-not-bound", "xrpl/blob-malformed"]);
   });
   it("without the buyer's ledger reads, no-payable-option before any fetch", async () => {
     const fetch = serving(ABC);

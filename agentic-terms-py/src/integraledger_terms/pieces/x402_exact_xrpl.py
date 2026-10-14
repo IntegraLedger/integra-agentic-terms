@@ -1,6 +1,6 @@
 """The buyer piece for x402/exact/xrpl: the Payment whose InvoiceID is the SHA-256 of the option's extra.invoiceId,
-handed to the wallet as xrpl-tx. The wallet's signed blob, as 0x hex, completes the payment. Fee, Sequence (or
-TicketSequence) and LastLedgerSequence are the buyer's reads."""
+handed to the wallet as xrpl-tx. The wallet's signed blob, as hex digits without 0x, completes the payment. Fee,
+Sequence (or TicketSequence) and LastLedgerSequence are the buyer's reads."""
 
 import re
 from collections.abc import Mapping
@@ -10,8 +10,6 @@ from .._types import Inputs, Refusal, Signature
 from ..bindings.x402_exact_xrpl import ID
 from ._common import InputKind, inputs_of
 from ._x402_rail import Rail, RailPiece
-
-_BLOB = re.compile(r"0x((?:[0-9a-fA-F]{2})+)")
 
 
 def _inputs(accepted: Mapping[str, Any], given: Inputs) -> dict[str, Any] | Refusal:
@@ -24,9 +22,8 @@ def _inputs(accepted: Mapping[str, Any], given: Inputs) -> dict[str, Any] | Refu
 
 
 def _blob(signature: Signature) -> str | Refusal:
-    """The signed blob's hex digits, from 0x hex."""
-    match = _BLOB.fullmatch(signature) if isinstance(signature, str) else None
-    return Refusal("x402/signature-malformed") if match is None else match.group(1)
+    """The signed blob as given: the build's complete reads it as hex digits without 0x."""
+    return signature if isinstance(signature, str) else Refusal("x402/signature-malformed")
 
 
 PIECE = RailPiece(

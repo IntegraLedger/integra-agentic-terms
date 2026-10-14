@@ -59,7 +59,7 @@ where the row says so.
 | `solana-session-open` | The values of an MPP session opening, which the buyer's channel client composes into an `open`. | The open payload. |
 | `ed25519-raw` | Raw Ed25519 over the bytes given (`request.message`), by the key `request.signer` names. | The 64-byte signature, base58. |
 | `stellar-auth` | A Soroban authorization preimage (`request.preimage`). | The 64-byte Ed25519 signature over its SHA-256, `0x` hex. |
-| `xrpl-tx` | An XRPL transaction as `txJson`. | The signed blob, `0x` hex, signed with a single key: a blob that carries `Signers` is declined `signed-not-bound`. |
+| `xrpl-tx` | An XRPL transaction as `txJson`. | The signed blob, hex digits without `0x`, as the XRP Ledger writes it, signed with a single key: a blob that carries `Signers` is declined `signed-not-bound`. |
 | `xrpl-session-open` | A `PaymentChannelCreate` and the first claim. | `{ signedBlob, claimSignature }`, each hex digits without `0x`, as the XRP Ledger writes them, the blob signed with a single key. |
 | `xrpl-claim` | One claim on the session's payment channel, or a close's final claim, inside a `batch`: `{ channelId, drops, bytes }`, where `bytes` is `CLM\0`, the channel id and `drops` as a big-endian u64. | The signature over `bytes` by the channel's key, hex digits without `0x`. |
 | `hedera-body` | A Hedera transaction body (`request.bodyBytes`). With `broadcast: true` the signer signs and sends it. | `{ publicKey, signature, type }`, with `type` `ed25519` or `ecdsa-secp256k1`. With `broadcast`: `{ transactionId }`. |
