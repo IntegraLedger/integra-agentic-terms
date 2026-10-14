@@ -250,9 +250,10 @@ def test_the_sellers_own_challenge_naming_another_hash_declines_before_any_signe
 
 
 # ── the within challenge's opaque: MPP's flat string-to-string map (draft-httpauth-payment-01, lines 348-352), read
-# as the protocol package reads one: base64url without padding, at most 8 KiB decoded, UTF-8 with a leading byte order
-# mark kept as a character. An opaque that is not one declines offer-unreadable, mpp/opaque-malformed, before any
-# signer call: buyer.json's BW1 and BW2 opaques among them, whose expected decline is that row's.
+# as the protocol package reads one: base64url without padding whose final character's unused bits are zero (RFC 4648
+# section 3.5), at most 8 KiB decoded, UTF-8 with a leading byte order mark kept as a character. An opaque that is not
+# one declines offer-unreadable, mpp/opaque-malformed, before any signer call: buyer.json's BW1 and BW2 opaques among
+# them, whose expected decline is that row's.
 
 _LCP = (
     '{"legalContext":"lcp:sha256:' + H + '",'
@@ -264,6 +265,17 @@ def _seller(size: int) -> str:
     return '{"seller":"' + "x" * (size - 13) + '"}'
 
 
+# The LCP members and one more: 193 bytes, so the base64url's final character carries unused bits.
+_LCP_ODD = _LCP[:-1] + ',"seller":"x"}'
+_B64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def _bent(text: str) -> str:
+    """text's base64url with its final character's lowest unused bit set: the same bytes, written another way."""
+    o = base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
+    return o[:-1] + _B64URL[_B64URL.index(o[-1]) | 1]
+
+
 def _with_opaque(text: str, encoded: str | None = None) -> dict[str, Any]:
     c = own(CHANNEL)
     c["opaque"] = encoded if encoded is not None else base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
@@ -271,15 +283,16 @@ def _with_opaque(text: str, encoded: str | None = None) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "encoded"),
     [
-        '{"legalContext":null}',
-        _LCP[:-1] + ',"seller":1}',
-        '{"seller":1}',
-        '{"seller":{"a":"b"}}',
-        "\ufeff" + _LCP,
-        '{"seller":"\\ud800"}',
-        _seller(8193),
+        ('{"legalContext":null}', None),
+        (_LCP[:-1] + ',"seller":1}', None),
+        ('{"seller":1}', None),
+        ('{"seller":{"a":"b"}}', None),
+        ("\ufeff" + _LCP, None),
+        ('{"seller":"\\ud800"}', None),
+        (_seller(8193), None),
+        (_LCP_ODD, _bent(_LCP_ODD)),
     ],
     ids=[
         "BW1: a legalContext member that is null",
@@ -289,12 +302,13 @@ def _with_opaque(text: str, encoded: str | None = None) -> dict[str, Any]:
         "a byte order mark before the object",
         "a member whose value is an escaped lone surrogate, which has no RFC 8785 form",
         "8193 bytes decoded",
+        "a final character with a non-zero unused bit, over the LCP members and one more",
     ],
 )
-def test_an_opaque_that_is_not_a_flat_string_map_declines_before_any_signer_call(text: str) -> None:
+def test_an_opaque_that_is_not_a_flat_string_map_declines_before_any_signer_call(text: str, encoded: str | None) -> None:
     hold = tempo_hold()
     signer = wallet()
-    out = asyncio.run(within([_with_opaque(text)], hold, MPP_SESSION_TEMPO, signer))
+    out = asyncio.run(within([_with_opaque(text, encoded)], hold, MPP_SESSION_TEMPO, signer))
     assert out == Declined("offer-unreadable", "mpp/opaque-malformed")
     assert signer.requests == []
 
@@ -311,7 +325,17 @@ def test_a_padded_opaque_is_opaque_malformed_and_a_legal_context_not_an_lcp_stri
     assert signer.requests == []
 
 
-@pytest.mark.parametrize("text", [_seller(8192), _LCP], ids=["8192 bytes decoded", "BW1's control naming the held H"])
+def test_an_opaque_with_a_non_zero_unused_bit_holds_the_same_bytes_as_its_canonical_form() -> None:
+    canonical = base64.urlsafe_b64encode(_LCP_ODD.encode("utf-8")).decode("ascii").rstrip("=")
+    assert len(_LCP_ODD.encode("utf-8")) % 3 != 0 and _bent(_LCP_ODD) != canonical
+    assert base64.urlsafe_b64decode(_bent(_LCP_ODD) + "=" * (-len(canonical) % 4)) == _LCP_ODD.encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [_seller(8192), _LCP, _LCP_ODD],
+    ids=["8192 bytes decoded", "BW1's control naming the held H", "the LCP members and one more, written canonically"],
+)
 def test_an_opaque_of_at_most_8_kib_is_read_with_one_voucher_request(text: str) -> None:
     assert len(text.encode("utf-8")) <= 8192
     hold = tempo_hold()

@@ -630,15 +630,24 @@ describe("mpp/session/tempo: the channel hold", () => {
   });
 
   // MPP's opaque is a flat string-to-string map (draft-httpauth-payment-01, lines 348-352), read as the protocol
-  // package reads one: base64url without padding, at most 8 KiB decoded, UTF-8 with a leading byte order mark kept as
-  // a character. An opaque that is not one declines offer-unreadable, mpp/opaque-malformed, before any signer call:
-  // buyer.json's BW1 and BW2 opaques among them, whose expected decline is that row's.
+  // package reads one: base64url without padding whose final character's unused bits are zero (RFC 4648 section 3.5),
+  // at most 8 KiB decoded, UTF-8 with a leading byte order mark kept as a character. An opaque that is not one declines
+  // offer-unreadable, mpp/opaque-malformed, before any signer call: buyer.json's BW1 and BW2 opaques among them, whose
+  // expected decline is that row's.
   const withOpaque = (text: string, encoded?: string): MppChallenge => ({
     ...own({ channelId: T.TS3.expectChannelId }),
     opaque: encoded ?? Buffer.from(text, "utf8").toString("base64url"),
   });
   const LCP = `{"legalContext":"lcp:sha256:${H}","legalContextUrl":"https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f"}`;
   const seller = (bytes: number) => `{"seller":"${"x".repeat(bytes - 13)}"}`;
+  /** The LCP members and one more: 193 bytes, so the base64url's final character carries unused bits. */
+  const LCP_ODD = `${LCP.slice(0, -1)},"seller":"x"}`;
+  /** `text`'s base64url with its final character's lowest unused bit set: the same bytes, written another way. */
+  function bent(text: string): string {
+    const o = Buffer.from(text, "utf8").toString("base64url");
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    return o.slice(0, -1) + alphabet[alphabet.indexOf(o.at(-1)!) | 1]!;
+  }
   it.each([
     ["BW1: a legalContext member that is null", '{"legalContext":null}'],
     ["BW2: the LCP members naming the held H, and a member seller whose value is the number 1", `${LCP.slice(0, -1)},"seller":1}`],
@@ -647,10 +656,11 @@ describe("mpp/session/tempo: the channel hold", () => {
     ["a byte order mark before the object", `\uFEFF${LCP}`],
     ["a member whose value is an escaped lone surrogate, which has no RFC 8785 form", '{"seller":"\\ud800"}'],
     ["8193 bytes decoded", seller(8193)],
-  ])("an opaque with %s: offer-unreadable, mpp/opaque-malformed, and no signer call", async (_, text) => {
+    ["a final character with a non-zero unused bit, over the LCP members and one more", LCP_ODD, bent(LCP_ODD)],
+  ] as [string, string, string?][])("an opaque with %s: offer-unreadable, mpp/opaque-malformed, and no signer call", async (_, text, encoded) => {
     const hold = await held();
     const signer = counting(account, walletAnswer);
-    const out = await at(f.now, () => within([withOpaque(text)], hold, sessionTempo, signer));
+    const out = await at(f.now, () => within([withOpaque(text, encoded)], hold, sessionTempo, signer));
     expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "mpp/opaque-malformed" });
     expect(signer.requests.length).toBe(0);
   });
@@ -667,8 +677,10 @@ describe("mpp/session/tempo: the channel hold", () => {
     expect(signer.requests.length).toBe(0);
   });
 
-  it("an opaque of 8192 bytes decoded, and BW1's control naming the held H, are read: one voucher request each", async () => {
-    for (const text of [seller(8192), LCP]) {
+  it("an opaque of 8192 bytes decoded, BW1's control naming the held H, and the LCP members and one more written canonically, are read: one voucher request each", async () => {
+    expect(bent(LCP_ODD)).not.toBe(Buffer.from(LCP_ODD, "utf8").toString("base64url"));
+    expect(Buffer.from(bent(LCP_ODD), "base64url")).toEqual(Buffer.from(LCP_ODD, "utf8"));
+    for (const text of [seller(8192), LCP, LCP_ODD]) {
       expect(Buffer.from(text, "utf8").length).toBeLessThanOrEqual(8192);
       const hold = await held();
       const signer = counting(account, walletAnswer);
