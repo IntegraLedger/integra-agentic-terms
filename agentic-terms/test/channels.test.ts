@@ -206,6 +206,29 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
       expect(voucherOf(none.signed).voucher.maxClaimableAmount).toBe("0");
     }));
 
+  // The refund values and the retry code are the Solana scheme's (x402's scheme_batch_settlement_svm.md): an EVM batch
+  // refund reads none of them, and answers exactly as with none given.
+  it("an EVM refund given a Solana refund value or the Solana retry code answers as with none given", () =>
+    at(E.now, async () => {
+      const { hold } = await evmHold();
+      const RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable";
+      const plain = counting(evmAccount, evmAnswer);
+      const expected = voucherOf(unwrap(await within(evmDoc, hold, batchEvm, plain, {})).signed);
+      const settled = { success: false, errorReason: RETRY };
+      const cases: [unknown, object, object][] = [
+        [evmDoc, {}, { computeUnitLimit: -1 }],
+        [{ ...evmDoc, error: RETRY }, {}, {}],
+        [evmDoc, { paymentResponse: settled }, {}],
+        [evmDoc, { paymentResponse: "not an object" }, { recentBlockhash: 7 }],
+      ];
+      for (const [d, refund, given] of cases) {
+        const signer = counting(evmAccount, evmAnswer);
+        const out = unwrap(await within(d, hold, batchEvm, signer, refund as never, given as never));
+        expect(signer.requests).toEqual(plain.requests);
+        expect(voucherOf(out.signed)).toEqual(expected);
+      }
+    }));
+
   it("recordCharge: a decimal between the charge recorded and the largest amount signed", () =>
     at(E.now, async () => {
       const { hold } = await evmHold();
@@ -515,6 +538,71 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
     expect(members(out.signed)).toEqual([...BV.ES6.withMemo.payloadMembers].sort());
     expect(batchSvm.channel.kind(out.signed as never)).toBe(BV.ES6.withMemo.expectKind);
     expect(await batchSvm.channel.ref(out.signed as never)).toEqual(BV.ES4.expectRef);
+  });
+
+  // x402's reference client takes the refund again when the settle failure's PAYMENT-RESPONSE carries `errorReason`
+  // invalid_batch_settlement_svm_receiver_binding_unavailable, read first, or else when the 402 payment request's
+  // `error` does (x402's client refund.ts and refund.go). `refund.paymentResponse` carries the decoded
+  // PAYMENT-RESPONSE, here in the HTTP transport's settle-failure form.
+  const failure = (errorReason?: string) => ({
+    success: false,
+    ...(errorReason === undefined ? {} : { errorReason }),
+    transaction: "",
+    network: S.option.network,
+    payer: S.payer,
+  });
+  const kinds = (r: SigningRequest | undefined): string[] => (r?.kind === "batch" ? r.requests.map((q) => q.kind) : []);
+
+  it("the code only in the PAYMENT-RESPONSE's errorReason: the refund taken again, built with the given recentBlockhash", async () => {
+    const hold = await charged1000();
+    for (const [d, refund] of [
+      [doc, { paymentResponse: failure(RETRY) }],
+      [{ ...doc, error: RETRY }, { paymentResponse: failure() }],
+    ] as const) {
+      const signer = counting(account, answer);
+      const out = unwrap(await within(d, hold, batchSvm, signer, refund, inputs));
+      expect(signer.requests.length).toBe(1);
+      expect(kinds(signer.requests[0])).toEqual(["solana-message", "ed25519-raw"]);
+      const r = signer.requests[0] as unknown as { requests: { message: Uint8Array }[] };
+      expect(shape(r.requests[0]!.message).blockhash).toBe(S.blockhash);
+      expect(hex(r.requests[1]!.message)).toBe(BV.ES3.message);
+      expect(members(out.signed)).toEqual([...BV.ES6.withMemo.payloadMembers].sort());
+    }
+  });
+
+  it("the code in neither the errorReason nor the error, or another errorReason read first: the voucher alone", async () => {
+    const hold = await charged1000();
+    for (const [d, refund] of [
+      [doc, { paymentResponse: failure("insufficient_funds") }],
+      [doc, { paymentResponse: failure() }],
+      [{ ...doc, error: RETRY }, { paymentResponse: failure("insufficient_funds") }],
+    ] as const) {
+      const signer = counting(account, answer);
+      const out = unwrap(await within(d, hold, batchSvm, signer, refund, inputs));
+      expect(kinds(signer.requests[0])).toEqual(["ed25519-raw"]);
+      expect(members(out.signed)).toEqual([...BV.ES6.cooperative.payloadMembers].sort());
+    }
+  });
+
+  it("the code in the errorReason with no recentBlockhash: no-payable-option, x402/input-missing, and nothing is signed", async () => {
+    const hold = await charged1000();
+    const signer = counting(account, answer);
+    const { recentBlockhash: _, ...rest } = inputs;
+    const out = await within(doc, hold, batchSvm, signer, { paymentResponse: failure(RETRY) }, rest);
+    expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-missing" });
+    expect(signer.requests.length).toBe(0);
+  });
+
+  it.each([
+    ["a string", "eyJzdWNjZXNzIjpmYWxzZX0="],
+    ["null", null],
+    ["a list", []],
+  ])("a paymentResponse that is %s: no-payable-option, x402/input-malformed, and nothing is signed", async (_, given) => {
+    const hold = await charged1000();
+    const signer = counting(account, answer);
+    const out = await within(doc, hold, batchSvm, signer, { paymentResponse: given as never }, inputs);
+    expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
+    expect(signer.requests.length).toBe(0);
   });
 
   it("the refund taken again with no recentBlockhash: no-payable-option, x402/input-missing, and nothing is signed", async () => {

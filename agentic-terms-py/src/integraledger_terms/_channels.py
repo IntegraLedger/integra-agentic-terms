@@ -39,8 +39,11 @@ ChannelHold = dict[str, Any]
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 _U32_MAX = 2**32 - 1
 _U64_LIMIT = 2**64
-# The error of the payment request a seller answers a Solana refund with when the receiver's binding is unavailable:
-# x402 then takes the refund again, carrying the payer-signed request_close.
+# The pairing whose refunds carry a payer-signed request_close when taken again.
+_SOLANA_BATCH = "x402/batch-settlement/solana"
+# The code a seller answers a Solana refund with when the receiver's binding is unavailable, as a settle failure's
+# PAYMENT-RESPONSE errorReason or a payment request's error: x402 then takes the refund again, carrying the payer-signed
+# request_close.
 _BINDING_UNAVAILABLE = "invalid_batch_settlement_svm_receiver_binding_unavailable"
 _NOT_BOUND_WITHIN = re.compile(r".*/not-bound-within")
 _HOLD_KEYS = ("pairing", "network", "channel", "h", "atr", "charged", "signedMax")
@@ -178,6 +181,20 @@ def _refund_inputs(inputs: Mapping[str, Any]) -> dict[str, Any] | None:
     return out
 
 
+def _taken_again(refund: Mapping[str, Any], required: object) -> bool | None:
+    """Whether a Solana refund is taken again after the receiver's binding is unavailable, as x402's reference client
+    decides it: the errorReason of refund's paymentResponse, the settle failure's decoded PAYMENT-RESPONSE, read first,
+    or else the payment request's error, is _BINDING_UNAVAILABLE. None when paymentResponse is given and is not a
+    mapping."""
+    response = refund.get("paymentResponse")
+    if "paymentResponse" in refund and not isinstance(response, Mapping):
+        return None
+    reason = response.get("errorReason") if isinstance(response, Mapping) else None
+    if reason is None and isinstance(required, Mapping):
+        reason = required.get("error")
+    return reason == _BINDING_UNAVAILABLE
+
+
 def _same_channel(ref: object, hold: Mapping[str, Any]) -> bool:
     return isinstance(ref, ChannelRef) and ref.network == hold["network"] and ref.channel == hold["channel"]
 
@@ -215,12 +232,19 @@ async def within(
     from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge that names another
     channel or another hash is declined, and one with no legal context is signed under the held hash. A voucher's
     maxClaimableAmount is the recorded charge plus the option's amount; a refund's is the recorded charge. inputs are
-    the buyer's own chain values a refund's build takes; inputs that are not a mapping, or a refund value given in
-    another form, are declined no-payable-option with <namespace>/input-malformed. A Solana refund is the voucher
-    alone, and, under a challenge whose error is invalid_batch_settlement_svm_receiver_binding_unavailable, also the
-    payer-signed request_close built with the buyer's recentBlockhash. Before the signer is called, the channel the
-    built payment would name must be the held one. What was signed must be of the expected kind and belong to the held
-    channel, or it is dropped."""
+    the buyer's own chain values a refund's build takes; inputs that are not a mapping are declined no-payable-option
+    with <namespace>/input-malformed.
+
+    A Solana refund is the voucher alone. Taken again after the receiver's binding is unavailable, it also carries the
+    payer-signed request_close, built with the recentBlockhash, computeUnitLimit and computeUnitPrice of inputs: when
+    the errorReason of refund's paymentResponse, the settle failure's decoded PAYMENT-RESPONSE, read first, or else
+    the challenge's error, is invalid_batch_settlement_svm_receiver_binding_unavailable. A Solana refund value given in
+    another form, or a paymentResponse that is not a mapping, is declined no-payable-option with x402/input-malformed,
+    and the refund taken again without a recentBlockhash with x402/input-missing. No other pairing's refund reads these
+    values or this code.
+
+    Before the signer is called, the channel the built payment would name must be the held one. The signed payment
+    must be of the expected kind and belong to the held channel, or it is dropped."""
     if not _has_channel(binding):
         return _declined("pairing-not-supported", "The pairing has no channel.")
     ns = binding.id.split("/")[0]
@@ -280,10 +304,11 @@ async def within(
     payload = hold["opening"].get("payload")
     channel_config = payload.get("channelConfig") if isinstance(payload, Mapping) else None
     required = offer.get("required") if isinstance(offer, Mapping) else None
-    values = _refund_inputs(inputs if inputs is not None else {}) if refund is not None else {}
-    if values is None:
+    solana_refund = refund is not None and binding.id == _SOLANA_BATCH
+    values = _refund_inputs(inputs if inputs is not None else {}) if solana_refund else {}
+    retry = _taken_again(refund, required) if refund is not None and solana_refund else False
+    if values is None or retry is None:
         return _declined("no-payable-option", f"{ns}/input-malformed")
-    retry = refund is not None and isinstance(required, Mapping) and required.get("error") == _BINDING_UNAVAILABLE
     if retry and "recentBlockhash" not in values:
         return _declined("no-payable-option", f"{ns}/input-missing")
 

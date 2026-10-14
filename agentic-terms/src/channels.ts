@@ -67,9 +67,12 @@ interface Batch {
 const DECIMAL = /^[0-9]{1,78}$/;
 const U32_MAX = 0xffff_ffff;
 const U64_LIMIT = 1n << 64n;
+/** The pairing whose refunds carry a payer-signed `request_close` when taken again. */
+const SOLANA_BATCH = "x402/batch-settlement/solana";
 /**
- * The `error` of the payment request a seller answers a Solana refund with when the receiver's binding is unavailable:
- * x402 then takes the refund again, carrying the payer-signed `request_close`.
+ * The code a seller answers a Solana refund with when the receiver's binding is unavailable, as a settle failure's
+ * `PAYMENT-RESPONSE` `errorReason` or a payment request's `error`: x402 then takes the refund again, carrying the
+ * payer-signed `request_close`.
  */
 const BINDING_UNAVAILABLE = "invalid_batch_settlement_svm_receiver_binding_unavailable";
 /** At most this many challenges of a within document are looked at, as the MPP entry point reads a document. */
@@ -202,6 +205,19 @@ function refundInputs(inputs: Inputs): RefundInputs | undefined {
   return out;
 }
 
+/**
+ * Whether a Solana refund is taken again after the receiver's binding is unavailable, as x402's reference client
+ * decides it: the `errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read
+ * first, or else the payment request's `error`, is `BINDING_UNAVAILABLE`. Undefined when `paymentResponse` is given
+ * and is not an object.
+ */
+function takenAgain(refund: { paymentResponse?: unknown }, required: unknown): boolean | undefined {
+  const response = refund.paymentResponse;
+  if (response !== undefined && !isObject(response)) return undefined;
+  const settled = isObject(response) ? response["errorReason"] : undefined;
+  return (settled ?? (isObject(required) ? required["error"] : undefined)) === BINDING_UNAVAILABLE;
+}
+
 /** 24 random bytes as unpadded base64url: 32 characters from `[A-Za-z0-9_-]`. */
 function newRef(): string {
   return toBase64(crypto.getRandomValues(new Uint8Array(REF_BYTES))).replace(/\+/g, "-").replace(/\//g, "_");
@@ -265,20 +281,26 @@ export async function openChannel(
  * channel are re-derived from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge
  * that names another channel or another hash is declined, and one with no legal context is signed under the held
  * hash. A voucher's `maxClaimableAmount` is the recorded charge plus the option's amount; a refund's is the recorded
- * charge. `inputs` are the buyer's own chain values a refund's build takes; `inputs` that is not an object, or a refund
- * value given in another form, is declined `no-payable-option` with `<namespace>/input-malformed`. A Solana refund is
- * the voucher alone, and, under a challenge whose `error` is
- * `invalid_batch_settlement_svm_receiver_binding_unavailable`, also the payer-signed `request_close` built with the
- * buyer's `recentBlockhash`. Before the signer is called, the channel the built payment would name must be the held
- * one. What was signed must be of the expected kind and belong
- * to the held channel, or it is dropped.
+ * charge. `inputs` are the buyer's own chain values a refund's build takes; `inputs` that is not an object is declined
+ * `no-payable-option` with `<namespace>/input-malformed`.
+ *
+ * A Solana refund is the voucher alone. Taken again after the receiver's binding is unavailable, it also carries the
+ * payer-signed `request_close`, built with the `recentBlockhash`, `computeUnitLimit` and `computeUnitPrice` of
+ * `inputs`: when the `errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read
+ * first, or else the challenge's `error`, is `invalid_batch_settlement_svm_receiver_binding_unavailable`. A Solana
+ * refund value given in another form, or a `paymentResponse` that is not an object, is declined `no-payable-option`
+ * with `x402/input-malformed`, and the refund taken again without a `recentBlockhash` with `x402/input-missing`. No
+ * other pairing's refund reads these values or this code.
+ *
+ * Before the signer is called, the channel the built payment would name must be the held one. The signed payment must
+ * be of the expected kind and belong to the held channel, or it is dropped.
  */
 export async function within(
   doc: unknown,
   hold: ChannelHold,
   binding: Binding,
   signer: Signer,
-  refund?: { amount?: string },
+  refund?: { amount?: string; paymentResponse?: { errorReason?: string } },
   inputs: Inputs = {},
 ): Promise<{ signed: Presented; hold: ChannelHold } | Declined> {
   const b = stepsOf(binding);
@@ -332,9 +354,10 @@ export async function within(
   const payload = (hold.opening as Record<string, unknown>)["payload"];
   const channelConfig = isObject(payload) ? payload["channelConfig"] : undefined;
   const required = isObject(offer) ? offer["required"] : undefined;
-  const values = refund !== undefined ? refundInputs(inputs) : {};
-  if (values === undefined) return declined("no-payable-option", `${ns}/input-malformed`);
-  const retry = refund !== undefined && isObject(required) && required["error"] === BINDING_UNAVAILABLE;
+  const solanaRefund = refund !== undefined && b.id === SOLANA_BATCH;
+  const values = solanaRefund ? refundInputs(inputs) : {};
+  const retry = solanaRefund ? takenAgain(refund, required) : false;
+  if (values === undefined || retry === undefined) return declined("no-payable-option", `${ns}/input-malformed`);
   if (retry && values.recentBlockhash === undefined) return declined("no-payable-option", `${ns}/input-missing`);
 
   const unsigned = await guarded(() =>

@@ -160,12 +160,17 @@ Pass `refund` to `within` to sign a refund instead of a voucher. Its `maxClaimab
 
 - `refund: {}` closes the channel for the remainder.
 - `refund: { amount }` asks for a partial refund, where the pairing builds one.
-- On Solana the refund is the voucher for the recorded charge. When the seller answers it with a payment request whose
-  `error` is `invalid_batch_settlement_svm_receiver_binding_unavailable`, call `within` again with that payment request:
-  the refund then also carries the payer-signed `request_close`, built with your `recentBlockhash` (a base58 blockhash)
-  and, where you give them, `computeUnitLimit` (a u32) and `computeUnitPrice` (a u64, in decimal). These go in
-  `within`'s last argument, `inputs`; without `recentBlockhash` that refund is declined `no-payable-option` with
-  `x402/input-missing`, and a value given in another form is declined with `x402/input-malformed`.
+- On Solana the refund is the voucher for the recorded charge. When the seller answers it with
+  `invalid_batch_settlement_svm_receiver_binding_unavailable`, call `within` again: the refund then also carries the
+  payer-signed `request_close`, built with your `recentBlockhash` (a base58 blockhash) and, where you give them,
+  `computeUnitLimit` (a u32) and `computeUnitPrice` (a u64, in decimal). These go in `within`'s last argument,
+  `inputs`.
+- The seller gives that code in one of two places, and `within` reads them as x402's reference client does: the
+  `errorReason` of a settle failure's `PAYMENT-RESPONSE`, which you pass decoded as `refund.paymentResponse`
+  (`refund: { paymentResponse }`), read first; or else the `error` of the payment request you pass as the document.
+- Without `recentBlockhash` the refund taken again is declined `no-payable-option` with `x402/input-missing`. A value
+  given in another form, or a `paymentResponse` that is not an object, is declined with `x402/input-malformed`. No
+  other pairing's refund reads these values or this code.
 
 An MPP session closes with `refund: {}`; a partial refund in a session is declined with
 `mpp/within-action-not-built`.
@@ -186,6 +191,7 @@ An MPP session closes with `refund: {}`; a partial refund in a session is declin
 ## In Python
 
 The same steps: `open_channel(atr_bytes, opened, binding, landed=None)`, `await within(doc, hold, binding, signer,
-refund=None, inputs=None)`, and `record_charge(hold, charged)`. The hold is a `dict` with the same members. The
+refund=None, inputs=None)`, and `record_charge(hold, charged)`. The hold is a `dict` with the same members, and so is
+`refund` (`amount`, `paymentResponse`). The
 [Python README](https://github.com/IntegraLedger/integra-agentic-terms/tree/main/agentic-terms-py#channels-and-sessions)
 runs the same channel and prints the same channel id.

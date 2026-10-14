@@ -152,7 +152,7 @@ declare function within(
   hold: ChannelHold,
   binding: Binding,
   signer: Signer,
-  refund?: { amount?: string },
+  refund?: { amount?: string; paymentResponse?: { errorReason?: string } },
   inputs?: Inputs,
 ): Promise<{ signed: Presented; hold: ChannelHold } | Declined>;
 ```
@@ -162,7 +162,10 @@ and the amount from the new challenge. On x402's batch channels the challenge mu
 payment the build returns must name the held channel before the signer is called. On an MPP session, a challenge that
 names another channel or another hash is declined before the signer is called, and one with no legal context is signed
 under the held hash. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
-recorded charge. See [channels and sessions](../guides/channels-and-sessions.md).
+recorded charge. A Solana refund also carries the payer-signed `request_close` when it is taken again: when the
+`errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read first, or else the
+document's `error`, is `invalid_batch_settlement_svm_receiver_binding_unavailable`. See
+[channels and sessions](../guides/channels-and-sessions.md#refunds-and-closing).
 
 ### `recordCharge`
 

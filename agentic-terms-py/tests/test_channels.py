@@ -180,6 +180,36 @@ def test_a_refunds_voucher_claims_the_recorded_charge() -> None:
     assert payload(none.signed)["voucher"]["maxClaimableAmount"] == "0"
 
 
+# The code a seller answers a Solana refund with when the receiver's binding is unavailable (x402's
+# scheme_batch_settlement_svm.md).
+SOLANA_RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("doc", "refund", "inputs"),
+    [
+        (EVM_DOC, {}, {"computeUnitLimit": -1}),
+        ({**EVM_DOC, "error": SOLANA_RETRY}, {}, {}),
+        (EVM_DOC, {"paymentResponse": {"success": False, "errorReason": SOLANA_RETRY}}, {}),
+        (EVM_DOC, {"paymentResponse": "not a mapping"}, {"recentBlockhash": 7}),
+    ],
+    ids=["computeUnitLimit -1", "the Solana retry code as the error", "the Solana retry code as the errorReason",
+         "a paymentResponse that is not a mapping, and a blockhash that is not a string"],  # fmt: skip
+)
+def test_an_evm_refund_reads_no_solana_refund_value_or_retry_code(
+    doc: dict[str, Any], refund: dict[str, Any], inputs: dict[str, Any]
+) -> None:
+    # The refund values and the retry code are the Solana scheme's (x402's scheme_batch_settlement_svm.md): an EVM batch
+    # refund reads none of them, and answers exactly as with none given.
+    hold, _ = evm_hold()
+    plain = signer()
+    expected = payload(unwrap(run_within(hold, refund={}, s=plain)).signed)
+    s = signer()
+    out = unwrap(asyncio.run(within(doc, hold, BINDING, s, refund, inputs)))
+    assert s.requests == plain.requests
+    assert payload(out.signed) == expected
+
+
 def test_record_charge_between_the_recorded_charge_and_the_largest_signed() -> None:
     hold, _ = evm_hold()
     assert unwrap(record_charge(hold, "1000"))["charged"] == "1000"
