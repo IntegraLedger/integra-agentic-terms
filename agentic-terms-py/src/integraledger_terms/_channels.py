@@ -9,7 +9,6 @@ cumulative charge, bounded by what was signed.
 The channel members come from the pairing's binding (build_within, channel_kind, channel_ref, bound_within)."""
 
 import base64
-import binascii
 import json
 import re
 import secrets
@@ -21,6 +20,7 @@ from . import _gate
 from ._core import MAX_ATR_BYTES, atr_hash, hash_equals
 from ._types import Advertised, Declined, DeclineCode, Json, Refusal, Signer
 from .bindings._channel import BatchUnsigned, ChannelRef
+from .bindings._codec import b64_decode
 from .bindings._lcp import from_lcp_string
 from .bindings._mpp import network as mpp_network
 from .bindings._mpp_checks import decode_string_map
@@ -30,10 +30,10 @@ from .pieces._mpp import pairings_of_placed, request_of
 from .pieces.x402_batch_settlement_solana import KEY
 
 # A channel the buyer opened for an ATR it compared, as JSON the caller keeps and hands back: pairing, network,
-# channel, h, atr (base64 of the ATR bytes the opening compared), opening (the signed opening as the gate returned it,
-# written as plain JSON, with the landed receipt given beside it as its landed member, where one is given), charged
-# (the server's cumulative charge last recorded, decimal, "0" at the opening) and signedMax (the largest
-# maxClaimableAmount signed in the channel, decimal).
+# channel, h, atr (padded standard base64, in its canonical form, of the ATR bytes the opening compared), opening (the
+# signed opening as the gate returned it, written as plain JSON, with the landed receipt given beside it as its landed
+# member, where one is given), charged (the server's cumulative charge last recorded, decimal, "0" at the opening) and
+# signedMax (the largest maxClaimableAmount signed in the channel, decimal).
 ChannelHold = dict[str, Any]
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
@@ -107,10 +107,9 @@ def _opening_max(signed: object) -> str:
 
 
 def _atr_of(hold: Mapping[str, Any]) -> bytes | None:
-    try:
-        return base64.b64decode(hold["atr"], validate=True)
-    except (binascii.Error, ValueError):
-        return None
+    """The held ATR's bytes, read from padded standard base64 in its canonical form only (b64_decode); None for any
+    other value."""
+    return b64_decode(hold["atr"])
 
 
 def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | None = None) -> ChannelHold | Declined:

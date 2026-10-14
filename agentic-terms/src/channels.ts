@@ -31,7 +31,7 @@ export interface ChannelHold {
   network: string;
   channel: string;
   h: AtrHash;
-  /** Base64 of the ATR bytes the opening compared. */
+  /** Padded standard base64 of the ATR bytes the opening compared, in its canonical form (RFC 4648 sections 3.5, 4). */
   atr: string;
   /**
    * The signed opening payment as the gate returned it, written as plain JSON, with the landed receipt given beside it
@@ -113,9 +113,11 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+/** The bytes of padded standard base64 in its canonical form (RFC 4648 sections 3.5 and 4), else undefined. */
 function fromBase64(s: string): Uint8Array | undefined {
   try {
     const binary = atob(s);
+    if (btoa(binary) !== s) return undefined;
     return Uint8Array.from(binary, (c) => c.charCodeAt(0));
   } catch {
     return undefined;

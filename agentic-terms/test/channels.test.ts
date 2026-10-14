@@ -3,7 +3,7 @@
 // ids are the vector files' (the batch-settlement file's EB1-EB6 and ES1-ES4; the Tempo session file's TS3); the
 // arithmetic of the voucher ceiling is x402 batch-settlement's client rule: "the client sets the voucher's
 // `maxClaimableAmount` to `chargedCumulativeAmount + amount`".
-import { createPrivateKey, sign as edSign } from "node:crypto";
+import { createHash, createPrivateKey, sign as edSign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { concat, hashTypedData, keccak256, recoverTypedDataAddress, toHex, toRlp, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount, sign } from "viem/accounts";
@@ -241,6 +241,26 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
           "hash-mismatch",
         );
         expect(signer.requests.length).toBe(0);
+      }));
+    // A hold's `atr` is read as padded standard base64 in its canonical form only (RFC 4648 sections 3.5 and 4). Over
+    // the 2-byte ATR "ab", spelled "YWI=", the spellings "YWJ=" (a pad bit set), "YWI" (no padding) and "YW\nI=" (a line
+    // break) are unreadable before any signer call; the canonical spelling signs.
+    it("a hold whose ATR is not canonical base64: signed-not-bound, the held ATR unreadable, 0 signer calls", () =>
+      at(E.now, async () => {
+        const ab = new TextEncoder().encode("ab");
+        const doc = x402Doc(batchEvm, E.option, `0x${createHash("sha256").update(ab).digest("hex")}`);
+        const opened = unwrap(await transact(doc, batchEvm, counting(evmAccount, evmAnswer), serving(ab), { inputs: evmInputs }));
+        const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchEvm));
+        expect(hold.atr).toBe("YWI=");
+        for (const atr of ["YWJ=", "YWI", "YW\nI="]) {
+          const signer = counting(evmAccount, evmAnswer);
+          const out = await within(doc, { ...hold, atr }, batchEvm, signer);
+          expect(isDeclined(out) && out.decline, atr).toEqual({ code: "signed-not-bound", detail: "The held ATR is unreadable." });
+          expect(signer.requests.length).toBe(0);
+        }
+        const signer = counting(evmAccount, evmAnswer);
+        unwrap(await within(doc, hold, batchEvm, signer));
+        expect(signer.requests.length).toBe(1);
       }));
     it("a hold whose opening was edited to EB6's plant (salt H′, channel id matched): signed-not-bound, 0 signer calls", () =>
       at(E.now, async () => {

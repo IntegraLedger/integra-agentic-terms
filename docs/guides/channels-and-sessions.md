@@ -141,7 +141,7 @@ client rule sets it: `1000` before any charge is recorded, `2000` after the sell
 | `pairing` | The pairing the channel was opened with. |
 | `network`, `channel` | The channel, as the pairing names it. |
 | `h` | H. |
-| `atr` | Base64 of the ATR's bytes the opening compared. |
+| `atr` | Padded standard base64 of the ATR's bytes the opening compared, in its canonical form (RFC 4648 sections 3.5 and 4). `within` reads no other spelling. |
 | `opening` | The signed opening as the gate returned it, written as plain JSON, with the `landed` receipt given beside it as its `landed` member, where one is given (abridged above). `openChannel` declines an opening holding a number JSON does not carry (NaN, an infinity) with `signed-not-bound`. |
 | `charged` | The seller's cumulative charge last recorded, decimal; `"0"` at the opening. |
 | `signedMax` | The largest cumulative amount signed in the channel, decimal. |
@@ -173,7 +173,8 @@ An MPP session closes with `refund: {}`; a partial refund in a session is declin
 ## What `within` refuses
 
 - A hold for another pairing: `pairing-not-supported`.
-- A hold whose bytes, opening or channel do not agree: `hash-mismatch` or `signed-not-bound`.
+- A hold whose bytes, opening or channel do not agree: `hash-mismatch` or `signed-not-bound`. An `atr` that is not
+  padded standard base64 in its canonical form is unreadable: `signed-not-bound`.
 - A challenge that advertises another H: `hash-mismatch`. The signer is not called.
 - An MPP challenge that names a channel this hold did not open: `no-payable-option`. The signer is not called.
 - An x402 challenge under which the voucher or refund would name a channel this hold did not open:

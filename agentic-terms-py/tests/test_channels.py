@@ -7,6 +7,7 @@ amount`"."""
 import asyncio
 import base64
 import copy
+import hashlib
 import json
 import math
 from collections.abc import Mapping
@@ -212,6 +213,24 @@ def test_a_hold_whose_atr_bytes_were_edited() -> None:
     s = signer()
     assert code(run_within({**hold, "atr": base64.b64encode(ABD).decode()}, s=s)) == "hash-mismatch"
     assert s.requests == []
+
+
+@pytest.mark.parametrize("atr", ["YWJ=", "YWI", "YW\nI="], ids=["a pad bit set", "no padding", "a line break"])
+def test_a_hold_whose_atr_is_not_canonical_base64_is_unreadable(atr: str) -> None:
+    # A hold's atr is read as padded standard base64 in its canonical form only (RFC 4648 sections 3.5 and 4). Over the
+    # 2-byte ATR "ab", spelled "YWI=", another spelling is unreadable before any signer call; the canonical one signs.
+    ab = b"ab"
+    doc = doc_for("0x" + hashlib.sha256(ab).hexdigest())
+    opened = run(lambda c: transact(doc, BINDING, signer(), c, inputs=INPUTS), serving(ab))
+    assert isinstance(opened, Transacted) and opened.signed is not None, opened
+    hold = unwrap(open_channel(opened.atr_bytes, opened.signed, BINDING))
+    assert hold["atr"] == "YWI="
+    s = signer()
+    assert run_within({**hold, "atr": atr}, doc=doc, s=s) == Declined("signed-not-bound", "The held ATR is unreadable.")
+    assert s.requests == []
+    s = signer()
+    assert isinstance(run_within(hold, doc=doc, s=s), Within)
+    assert len(s.requests) == 1
 
 
 def test_a_hold_whose_opening_was_edited_to_eb6s_plant() -> None:
