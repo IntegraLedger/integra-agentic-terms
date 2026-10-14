@@ -275,7 +275,6 @@ def test_eb6_kinds_bound_and_plant() -> None:
     assert binding.bound_within(planted) == BV["EB6"]["plant"]["expectBoundWithinMatched"]
 
 
-
 def test_eb9_the_evm_within_refund() -> None:
     """The file holds EB9 rows. build_within over EB1's channel with EB2's maxClaimableAmount, its one request
     completed with EB2's signature, gives the row's payment type and amount, or its refusal."""
@@ -315,6 +314,7 @@ def test_agreed_refusals_an_evm_auth_salt_that_is_not_a_hash() -> None:
     salts: list[Any] = [[E["authSalt"]], 42]
     for salt in salts:
         assert X402_BATCH_SETTLEMENT_EIP155.build({**choice, "authSalt": salt}, H) == Refusal(rows[0]["expect"]), salt
+
 
 def test_ec1_cloudflare_bound() -> None:
     binding = X402_BATCH_SETTLEMENT_CLOUDFLARE

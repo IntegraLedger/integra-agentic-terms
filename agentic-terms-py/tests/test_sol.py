@@ -530,7 +530,6 @@ def test_the_solana_builds_answer_a_choice_that_is_not_an_object_with_not_v2() -
             assert call(value, H) == Refusal("x402/not-v2"), (call, value)
 
 
-
 def test_x402_batch_settlement_solana_the_option_names_a_receiver_authorizer_and_client_vouchers() -> None:
     """The filter takes an option whose extra.receiverAuthorizer is a base58 key and whose extra.voucherSigner is
     absent or client, as @integraledger/lcp's pairingOf names x402/batch-settlement/solana."""
@@ -596,6 +595,7 @@ def test_x402_batch_settlement_solana_es10_the_ed25519_point_rule() -> None:
     for row in rows:
         assert _svm.is_point(bytes.fromhex(row["bytesHex"])) == row["point"], row["case"]
 
+
 def batch_presented(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {"x402Version": 2, "accepted": BV["ES4"]["accepted"], "payload": dict(payload)}
 
@@ -654,18 +654,7 @@ def test_x402_batch_settlement_solana_agreed_refusals_on_the_buyer_half() -> Non
     assert isinstance(out, Confirmed) and out.request is not None
     good = batch_answer(out.request)
     assert code(finish(ABC, out.chosen, good[:1], X402_BATCH_SETTLEMENT_SOLANA)) == "signed-not-bound"
-    doc, accepted = p.doc, p.doc["accepts"][0]
-    choice = {
-        "required": doc,
-        "accepted": accepted,
-        "payer": BS["payer"],
-        "payerAuthorizer": BS["payer"],
-        "deposit": int(BS["deposit"]),
-        "salt": int(BS["salt"]),
-        "openSlot": int(BS["openSlot"]),
-        "tokenProgram": BS["tokenProgram"],
-        "recentBlockhash": BS["blockhash"],
-    }
+    choice = batch_choice(p.doc)
     unsigned = BATCH_BINDING.build(choice, H)
     assert not isinstance(unsigned, Refusal)
     signature_count = batch_agreed("complete with a signature count")
