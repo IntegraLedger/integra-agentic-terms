@@ -963,6 +963,19 @@ def test_cardano_v4_refusals() -> None:
     assert decode_cardano_tx(deep) == Refusal("cardano/tx-malformed")
 
 
+def test_cardano_agreed_refusals_of_a_transaction_beyond_the_bmp() -> None:
+    """Each agreedRefusals row that gives a transaction: {"$repeat": [s, n]} is s repeated n times, and its length is
+    counted in UTF-16 code units, as the file's about states."""
+    rows = [row for row in ADA["agreedRefusals"]["rows"] if "transaction" in row]
+    assert rows
+    for row in rows:
+        s, n = row["transaction"]["$repeat"]
+        text = s * n
+        assert sum(2 if ord(c) > 0xFFFF else 1 for c in text) % 4 == 0 and len(text) % 4 != 0
+        assert decode_cardano_tx(text) == Refusal(row["expect"]), row["case"]
+        assert X402_EXACT_CARDANO.bound(ada_payment(text)) == Refusal(row["expect"]), row["case"]
+
+
 def test_cardano_plant_metadata_the_signed_body_does_not_commit_to_is_refused_never_read() -> None:
     got = X402_EXACT_CARDANO.bound(ada_payment(ADA["plant"]["transactionBase64"]))
     assert got == Refusal(ADA["plant"]["expectBound"])
@@ -972,7 +985,7 @@ def test_cardano_the_filter_build_and_complete() -> None:
     O = ADA_F["O"]
     for network in ("cardano:mainnet", "cardano:preview", "cip34:1-764824073", "cip34:0-2"):
         assert cardano_option_check({**O, "network": network}) is None
-    for m in ("script", "masumi"):
+    for m in ("default", "script", "masumi"):
         assert cardano_option_check({**O, "extra": {"assetTransferMethod": m}}) is None
     assert cardano_option_check({**O, "extra": {"assetTransferMethod": "eip3009"}}) is not None
     assert cardano_option_check({**O, "extra": {"paymentFlow": "upfront"}}) is not None
@@ -994,7 +1007,11 @@ def test_cardano_the_filter_build_and_complete() -> None:
         "extensions": required["extensions"],
     }
     assert u.complete({"transaction": ADA["V3"]["transactionBase64"], "nonce": ADA_F["nonce"]}) == Refusal("x402/signed-not-bound")
-    assert u.complete({"transaction": ADA["V2"]["transactionBase64"], "nonce": "x" * 257}) == Refusal("x402/signed-not-bound")
+    # lcp's exactCardano takes a payload nonce of any length.
+    for nonce in ("x" * 257, "x" * 4096):
+        long_nonce = u.complete({"transaction": ADA["V2"]["transactionBase64"], "nonce": nonce})
+        assert isinstance(long_nonce, dict) and long_nonce["payload"]["nonce"] == nonce
+        assert X402_EXACT_CARDANO.bound(long_nonce) == ADA["V2"]["expectBound"]
 
 
 # ── x402/exact/sui

@@ -512,7 +512,22 @@ const ADA = vectors<{
   fixed: { O: PaymentRequirements; nonce: string; resource: { url: string } };
   V1: { auxiliaryDataHex: string };
   V2: { transactionBase64: string; expectReference: unknown };
+  agreedRefusals: { rows: { case: string; transaction?: { $repeat: [string, number] }; expect: string }[] };
 }>("x402-exact-cardano.json");
+
+// Each agreedRefusals row that gives a transaction: {"$repeat": [s, n]} is s repeated n times, its length counted in
+// UTF-16 code units, as the file's about states.
+describe("x402/exact/cardano agreedRefusals: a transaction beyond the BMP", () => {
+  const rows = ADA.agreedRefusals.rows.filter((r) => r.transaction !== undefined);
+  it("the file holds such rows", () => expect(rows.length).toBeGreaterThan(0));
+  for (const r of rows) {
+    it(`${r.case}: ${r.expect}`, async () => {
+      const [s, n] = r.transaction!.$repeat;
+      const payment = { x402Version: 2, accepted: ADA.fixed.O, payload: { transaction: s.repeat(n), nonce: ADA.fixed.nonce } };
+      expect(await exactCardano.bound(payment as never)).toEqual({ refused: true, code: r.expect });
+    });
+  }
+});
 
 const cardanoRow: Row = (() => {
   const f = ADA.fixed;

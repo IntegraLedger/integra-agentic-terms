@@ -22,7 +22,6 @@ ID = "x402/exact/cardano"
 # CIP-20 line 1 of the carrier; line 2 is the hash's 64 lower-case hex digits.
 LCP_MARKER = "lcp:sha256:0x"
 MAX_TX_BYTES = 64 * 1024
-MAX_NONCE = 256
 NETWORKS = {
     "cardano:mainnet": "cardano:mainnet",
     "cardano:preprod": "cardano:preprod",
@@ -31,7 +30,7 @@ NETWORKS = {
     "cip34:0-1": "cardano:preprod",
     "cip34:0-2": "cardano:preview",
 }
-_METHODS = ("script", "masumi")
+_METHODS = ("default", "script", "masumi")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 _LABEL_MESSAGE = 674
@@ -216,7 +215,7 @@ def _presented_tx(presented: object) -> CardanoTx | Refusal:
     transaction, nonce = payload.get("transaction"), payload.get("nonce")
     if not isinstance(transaction, str):
         return Refusal("x402/payload-malformed")
-    if not isinstance(nonce, str) or len(nonce.encode("utf-16-le", "surrogatepass")) // 2 > MAX_NONCE:
+    if not isinstance(nonce, str):
         return Refusal("x402/payload-malformed")
     return decode_cardano_tx(transaction)
 
