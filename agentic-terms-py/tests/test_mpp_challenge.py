@@ -63,6 +63,14 @@ def test_mv3_place_writes_id_and_opaque_and_read_gives_h_and_link() -> None:
         assert place(placed, H, LINK, c) == placed
 
 
+# The seller's placement refuses a challenge list holding any challenge that carries a refused member, the member
+# refusals use, with mpp/challenge-malformed, whatever the member's value, as the protocol package's place does.
+def test_place_refuses_a_list_holding_a_challenge_with_a_refused_member() -> None:
+    assert not isinstance(place([C_E, C_T], H, LINK, C_E), Refusal)
+    for value in (True, False, {"code": "x"}):
+        assert place([C_E, {**C_T, "refused": value}], H, LINK, C_E) == refused("mpp/challenge-malformed")
+
+
 def test_mv14_the_agreement_url_in_opaque() -> None:
     placed = placed_doc(C_E, H, LINK, AGREEMENT)
     opaque = placed[0]["opaque"]

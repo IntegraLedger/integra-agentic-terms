@@ -98,8 +98,10 @@ def place(
 ) -> list[dict[str, Any]] | Refusal:
     """A copy of doc in which the challenge whose bound members equal option carries the id derived from h (the bare
     base64url of h for a Tempo subscription) and an opaque holding the seller's map plus legalContext,
-    legalContextUrl and, when given, legalContextAgreementUrl, as base64url of the RFC 8785 JSON."""
-    if len(doc) > MAX_CHALLENGES or not all(is_challenge_shape(c) for c in doc):
+    legalContextUrl and, when given, legalContextAgreementUrl, as base64url of the RFC 8785 JSON. A doc holding a
+    challenge that carries a refused member is mpp/challenge-malformed, as one holding a challenge without the
+    required members is."""
+    if len(doc) > MAX_CHALLENGES or not all(is_challenge_shape(c) for c in doc) or any("refused" in c for c in doc):
         return Refusal("mpp/challenge-malformed")
     hash_ = normal_hash(h)
     if hash_ is None:
