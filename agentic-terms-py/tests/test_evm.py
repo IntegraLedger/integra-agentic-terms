@@ -297,6 +297,18 @@ def test_ev3_auth_capture_salt_commitment_and_nonces() -> None:
     assert_truncated(unbound_hash, ev3["unbound"]["expectPaymentHash"])
 
 
+def test_payment_hash_and_permit2_typed_data_answer_a_malformed_argument() -> None:
+    """A payment info that is not one, and a Permit2 permitted that is neither an object nor a list of objects, are
+    evm/field-malformed: the code @integraledger/lcp's paymentHash and permit2TypedData give the same arguments."""
+    expect = Refusal("evm/field-malformed")
+    infos: list[Any] = [None, 42, "x", True, [None], {}]
+    for info in infos:
+        assert _evm.payment_hash(84532, AC_EIP3009["EV3"]["escrow"], info) == expect
+    permitted: list[Any] = [None, 42, "abc", True, 1.5, [None], [42]]
+    for value in permitted:
+        assert _evm.permit2_typed_data(84532, value, _evm.EXACT_PERMIT2_PROXY, 0, 0) == expect
+
+
 def test_ev4_auth_capture_eip3009_build_complete_and_bound() -> None:
     fixed, ev3, ev4 = AC_EIP3009["fixed"], AC_EIP3009["EV3"], AC_EIP3009["EV4"]
     unsigned = built(X402_AUTH_CAPTURE_EIP155_EIP3009, fixed)

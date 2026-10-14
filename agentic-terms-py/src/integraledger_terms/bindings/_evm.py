@@ -1,7 +1,10 @@
 """The EVM rail pieces the x402 EVM pairings build with: the Permit2 proxies and collectors, the commerce-payments
 escrow's deployments, MetaMask's reference DelegationManager, 32-byte ABI words, EIP-3009 and Permit2 typed data, the
-escrow's salt commitment and payment hash, and a strict decoder of a permission context's delegations. Nothing here
-throws on a caller's value: malformed input gives a Refusal or None."""
+escrow's salt commitment and payment hash, and a strict decoder of a permission context's delegations.
+
+eip3009_typed_data, permit2_typed_data (all but the Witness its caller builds), bind_salt, payment_hash and
+decode_permission_context return a Refusal for a malformed value, and bytes_of answers a value that is not strict hex
+with None; the word writers, as_hash and the other helpers take values their callers have already checked."""
 
 import re
 from collections.abc import Mapping, Sequence
@@ -175,7 +178,7 @@ class Witness:
 
 def permit2_typed_data(
     chain_id: int,
-    permitted: Mapping[str, Any] | Sequence[Mapping[str, Any]],
+    permitted: Mapping[str, Any] | list[Mapping[str, Any]],
     spender: object,
     nonce: int,
     deadline: int,
@@ -189,6 +192,8 @@ def permit2_typed_data(
     if not is_address(verifying_contract) or not is_address(spender):
         return Refusal("evm/field-malformed")
     if not is_uint256(nonce) or not is_uint256(deadline):
+        return Refusal("evm/field-malformed")
+    if not isinstance(permitted, (Mapping, list)):
         return Refusal("evm/field-malformed")
     batch = not isinstance(permitted, Mapping)
     entries: list[Mapping[str, Any]] = [permitted] if isinstance(permitted, Mapping) else list(permitted)
@@ -293,12 +298,12 @@ def _within(value: object, bits: int) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 1 << bits
 
 
-def payment_hash(chain_id: int, escrow: str, p: PaymentInfo) -> str | Refusal:
+def payment_hash(chain_id: int, escrow: str, p: object) -> str | Refusal:
     """The escrow's getHash: keccak256(abi.encode(chainId, escrow, keccak256(abi.encode(PAYMENT_INFO_TYPEHASH, p)))).
-    With payer zero it is x402's signatureNonce."""
+    With payer zero it is x402's signatureNonce. A p that is not a PaymentInfo is evm/field-malformed."""
     if isinstance(chain_id, bool) or not isinstance(chain_id, int) or not 0 < chain_id <= 2**53 - 1:
         return Refusal("evm/field-malformed")
-    if not is_address(escrow):
+    if not is_address(escrow) or not isinstance(p, PaymentInfo):
         return Refusal("evm/field-malformed")
     for address in (p.operator, p.payer, p.receiver, p.token, p.fee_receiver):
         if not is_address(address):
