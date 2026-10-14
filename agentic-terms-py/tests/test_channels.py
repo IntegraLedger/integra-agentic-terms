@@ -392,6 +392,26 @@ def test_open_channel_declines_an_opening_holding_a_number_that_is_not_finite(n:
     assert out == Declined("signed-not-bound", "The opening is not plain JSON.")
 
 
+def _nested(opening: dict[str, Any], levels: int) -> dict[str, Any]:
+    # The opening is level 1 and its extensions level 2, so levels lists below them reach level levels + 2.
+    n: object = 0
+    for _ in range(levels):
+        n = [n]
+    return {**opening, "extensions": {"n": n}}
+
+
+def test_open_channel_holds_an_opening_nested_64_levels_and_declines_one_nested_deeper() -> None:
+    # The protocol package writes and reads no JSON whose arrays and objects nest more than 64 levels: the hold records
+    # the opening as JSON, so an opening nested deeper is not held, at any depth, as the TypeScript gate declines it.
+    # json.dumps never walks 100,000 levels, which this process (its recursion limit raised by an import) could not.
+    _, opening = evm_hold()
+    held = unwrap(open_channel(ABC, _nested(opening, 62), BINDING))
+    assert json.dumps(held["opening"]["extensions"], separators=(",", ":")) == '{"n":' + "[" * 62 + "0" + "]" * 62 + "}"
+    for levels in (63, 100_000):
+        out = open_channel(ABC, _nested(opening, levels), BINDING)
+        assert out == Declined("signed-not-bound", "The opening is not plain JSON.")
+
+
 @dataclass(frozen=True)
 class NoWithin:
     """The batch-settlement binding without build_within."""

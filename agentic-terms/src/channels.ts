@@ -7,7 +7,7 @@
  * legal context is signed under the held hash. Both are served through the binding's `buildWithin`. `recordCharge`
  * records the server's cumulative charge, bounded by what was signed.
  */
-import { fromLcpString, hash, hashEquals, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
+import { fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
 import { fromBase64, fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
@@ -118,7 +118,8 @@ function toBase64(bytes: Uint8Array): string {
 
 /**
  * A value as the plain JSON `JSON.stringify` writes for it, without the members it leaves out (undefined, a function or
- * a symbol); undefined when it holds a number that is not finite, or `JSON.stringify` writes nothing for it or throws.
+ * a symbol), read back as the protocol package reads JSON, so its arrays and objects nest at most 64 levels; undefined
+ * when it holds a number that is not finite, nests deeper, or `JSON.stringify` writes nothing for it or throws.
  */
 function asJson(v: unknown): Json | undefined {
   try {
@@ -127,7 +128,7 @@ function asJson(v: unknown): Json | undefined {
       if (typeof n === "number" && !Number.isFinite(n)) throw new RangeError("A number that is not finite.");
       return x;
     });
-    return text === undefined ? undefined : (JSON.parse(text) as Json);
+    return text === undefined ? undefined : (parseJson(text) as Json | undefined);
   } catch {
     return undefined;
   }

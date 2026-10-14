@@ -20,7 +20,7 @@ from . import _gate
 from ._core import MAX_ATR_BYTES, atr_hash, hash_equals
 from ._types import Advertised, Declined, DeclineCode, Json, Refusal, Signer
 from .bindings._channel import BatchUnsigned, ChannelRef
-from .bindings._codec import b64_decode
+from .bindings._codec import b64_decode, nests_within
 from .bindings._lcp import from_lcp_string
 from .bindings._mpp import network as mpp_network
 from .bindings._mpp_checks import decode_string_map
@@ -84,8 +84,11 @@ def _has_channel(binding: Any) -> bool:
 
 
 def _as_json(value: object) -> Any:
-    """The value as plain JSON, as json.dumps writes it with allow_nan=False and json.loads reads it back; None when
-    json.dumps cannot write it."""
+    """The value as plain JSON, as json.dumps writes it with allow_nan=False and json.loads reads it back, its arrays
+    and objects nested at most 64 levels, as the protocol package reads JSON; None when it nests deeper or json.dumps
+    cannot write it."""
+    if not nests_within(value):
+        return None
     try:
         return json.loads(json.dumps(value, allow_nan=False))
     except (TypeError, ValueError):

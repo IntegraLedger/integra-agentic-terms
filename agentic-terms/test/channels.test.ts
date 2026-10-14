@@ -376,6 +376,27 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
         expect(isDeclined(out) && out.decline).toEqual({ code: "signed-not-bound", detail: "The opening is not plain JSON." });
       }
     }));
+
+  // The protocol package writes and reads no JSON whose arrays and objects nest more than 64 levels: the hold records
+  // the opening as JSON, so an opening nested deeper is not held, at any depth, as the Python gate declines it.
+  it("openChannel holds an opening nested 64 levels and declines one nested 65 or 100,000: signed-not-bound", () =>
+    at(E.now, async () => {
+      const { opening } = await evmHold();
+      // The opening is level 1 and its extensions level 2, so `levels` arrays below them reach level `levels` + 2.
+      const nested = (levels: number): Presented => {
+        let n: unknown = 0;
+        for (let i = 0; i < levels; i++) n = [n];
+        return { ...(opening as object), extensions: { n } } as Presented;
+      };
+      const held = unwrap(await openChannel(ABC, nested(62), batchEvm));
+      expect(JSON.stringify((held.opening as { extensions: unknown }).extensions)).toBe(
+        `{"n":${"[".repeat(62)}0${"]".repeat(62)}}`,
+      );
+      for (const levels of [63, 100_000]) {
+        const out = await openChannel(ABC, nested(levels), batchEvm);
+        expect(isDeclined(out) && out.decline).toEqual({ code: "signed-not-bound", detail: "The opening is not plain JSON." });
+      }
+    }));
 });
 
 // EB9: the protocol package's EVM buildWithin over EB1's channel with EB2's maxClaimableAmount, its one request

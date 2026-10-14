@@ -16,9 +16,8 @@ from typing import Any
 
 from .._types import Refusal
 from . import _codec
-from ._codec import b64u_decode, b64u_encode, es_number, js_json, text_encode
+from ._codec import MAX_JSON_DEPTH, b64u_decode, b64u_encode, es_number, js_json, text_encode
 
-MAX_JSON_DEPTH = 64
 RESOLUTION_DEPTH = 16
 MIB = 1_048_576
 

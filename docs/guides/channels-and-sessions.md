@@ -142,7 +142,7 @@ client rule sets it: `1000` before any charge is recorded, `2000` after the sell
 | `network`, `channel` | The channel, as the pairing names it. |
 | `h` | H. |
 | `atr` | Padded standard base64 of the ATR's bytes the opening compared, in its canonical form (RFC 4648 sections 3.5 and 4). `within` reads no other spelling. |
-| `opening` | The signed opening as the gate returned it, written as plain JSON, with the `landed` receipt given beside it as its `landed` member, where one is given (abridged above). `openChannel` declines an opening holding a number JSON does not carry (NaN, an infinity) with `signed-not-bound`. |
+| `opening` | The signed opening as the gate returned it, written as plain JSON, with the `landed` receipt given beside it as its `landed` member, where one is given (abridged above). `openChannel` declines an opening holding a number JSON does not carry (NaN, an infinity), or arrays and objects nested more than 64 levels deep, with `signed-not-bound`. |
 | `charged` | The seller's cumulative charge last recorded, decimal; `"0"` at the opening. |
 | `signedMax` | The largest cumulative amount signed in the channel, decimal. |
 
