@@ -13,11 +13,11 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
+from ._codec import b64u_encode
 from ._jose import (
     MIB,
     SdJwt,
     SdJwtCodes,
-    b64u_encode,
     decode_json_segment,
     js_length,
     jws_segments,

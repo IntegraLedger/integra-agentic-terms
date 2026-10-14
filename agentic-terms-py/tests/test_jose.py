@@ -10,11 +10,10 @@ from typing import Any
 from support import load
 
 from integraledger_terms import Refusal
+from integraledger_terms.bindings._codec import b64u_decode, b64u_encode
 from integraledger_terms.bindings._jose import (
     SdJwt,
     SdJwtCodes,
-    b64u_decode,
-    b64u_encode,
     disclosure_digest,
     js_length,
     json_bytes,

@@ -24,11 +24,11 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
+from ._codec import b64u_decode
 from ._jose import (
     SdJwt,
     SdJwtBounds,
     SdJwtCodes,
-    b64u_decode,
     decode_json_segment,
     disclosure_digest,
     js_length,

@@ -6,7 +6,6 @@ signature check. Nothing here verifies a signature.
 Every read of JSON text by a binding goes through parse_json or decode_json_segment, which parse only text whose
 arrays and objects nest at most MAX_JSON_DEPTH levels deep, counted over the text's brackets outside strings."""
 
-import base64
 import hashlib
 import json
 import math
@@ -17,7 +16,7 @@ from typing import Any
 
 from .._types import Refusal
 from . import _codec
-from ._codec import es_number
+from ._codec import b64u_decode, b64u_encode, es_number
 
 MAX_JSON_DEPTH = 64
 RESOLUTION_DEPTH = 16
@@ -265,17 +264,6 @@ def json_bytes(value: Any) -> float | None:
         else:
             return None
     return total
-
-
-def b64u_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def b64u_decode(text: object) -> bytes | None:
-    """Base64url without padding in its canonical form (RFC 7515 §2, RFC 4648 §3.5), read through _codec.b64u_decode:
-    None for padding, a character outside the alphabet, a length of 1 mod 4, or a last character with a bit set past
-    the last whole byte, which spells the same bytes in another form."""
-    return _codec.b64u_decode(text)
 
 
 def disclosure_digest(text: str) -> str:
