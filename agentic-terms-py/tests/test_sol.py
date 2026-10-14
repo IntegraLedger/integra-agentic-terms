@@ -541,6 +541,38 @@ def test_x402_batch_settlement_solana_the_option_names_a_receiver_authorizer_and
     for other in others:
         assert not batch_pairs({**option, "extra": other}), other
 
+
+def batch_choice(doc: Mapping[str, Any]) -> dict[str, Any]:
+    """build's choice of doc's first option: the svm payer as payer and payer authorizer, and the fixed deposit, salt,
+    open slot, token program and blockhash."""
+    return {
+        "required": doc,
+        "accepted": doc["accepts"][0],
+        "payer": BS["payer"],
+        "payerAuthorizer": BS["payer"],
+        "deposit": int(BS["deposit"]),
+        "salt": int(BS["salt"]),
+        "openSlot": int(BS["openSlot"]),
+        "tokenProgram": BS["tokenProgram"],
+        "recentBlockhash": BS["blockhash"],
+    }
+
+
+def test_x402_batch_settlement_solana_es9_the_timeout_is_compared_only_as_a_number() -> None:
+    """The file holds ES9's rows: fixed.svm.option with the row's maxTimeoutSeconds, or without the member. The filter
+    takes the option when the row names the pairing, and build of the advertised option gives the row's
+    expectAdvertise refusal, or builds when it is null: build refuses the options advertise refuses."""
+    rows = BV.get("ES9", {}).get("rows", [])
+    assert rows, "the vector file holds no ES9 rows"
+    bare = {k: v for k, v in BS["option"].items() if k != "maxTimeoutSeconds"}
+    for row in rows:
+        option = {**bare, "maxTimeoutSeconds": row["maxTimeoutSeconds"]} if "maxTimeoutSeconds" in row else bare
+        label = repr(row.get("maxTimeoutSeconds", "absent"))
+        assert option["extra"]["withdrawDelay"] == 3600, label
+        assert (X402_BATCH_SETTLEMENT_SOLANA.id if batch_pairs(option) else None) == row["expectPairing"], label
+        built = BATCH_BINDING.build(batch_choice(x402_doc(with_memo(option), BV["fixed"]["resource"])), H)
+        assert (built.code if isinstance(built, Refusal) else None) == row["expectAdvertise"], label
+
 def batch_presented(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {"x402Version": 2, "accepted": BV["ES4"]["accepted"], "payload": dict(payload)}
 

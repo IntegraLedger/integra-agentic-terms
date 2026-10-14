@@ -8,6 +8,7 @@ import { privateKeyToAccount, sign } from "viem/accounts";
 import { sessionEvm, sessionTempo, subscriptionTempo, type MppChallenge } from "@integraledger/lcp/mpp";
 import { batchCloudflare, batchEvm, batchSvm } from "@integraledger/lcp/x402-batch-settlement";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
+import { pairingOf } from "@integraledger/lcp";
 import { check, confirm, finish, transact, type Binding, type Signature, type SigningRequest } from "../src/index.js";
 import {
   ABC,
@@ -301,6 +302,26 @@ describe("x402/batch-settlement/cloudflare", () => {
     b10(withHttpLink(doc), batchCloudflare, account, "x402"));
   it("B16: another namespace, and another network, are no-payable-option before any fetch", () =>
     b16(doc, batchCloudflare, ["eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "cloudflare:403:agent.example"]));
+});
+
+// ES9: fixed.svm.option with each row's maxTimeoutSeconds, or without the member: the root pairingOf and the Solana
+// pairing's advertise.
+type Es9Row = { maxTimeoutSeconds?: unknown; expectPairing: string | null; expectAdvertise: string | null };
+it("x402-batch-settlement.json ES9: the file holds rows, and the timeout is compared only when it is a number", () => {
+  const v = vectors<{ fixed: { link: string; resource: { url: string }; svm: { option: PaymentRequirements } }; ES9?: { rows: Es9Row[] } }>(
+    "x402-batch-settlement.json",
+  );
+  const rows = v.ES9?.rows ?? [];
+  expect(rows.length, "ES9 rows").toBeGreaterThan(0);
+  const { maxTimeoutSeconds: _, ...bare } = v.fixed.svm.option;
+  for (const row of rows) {
+    const given = "maxTimeoutSeconds" in row;
+    const o = (given ? { ...bare, maxTimeoutSeconds: row.maxTimeoutSeconds } : bare) as PaymentRequirements;
+    const label = given ? JSON.stringify(row.maxTimeoutSeconds) : "absent";
+    expect(pairingOf(o) ?? null, label).toBe(row.expectPairing);
+    const doc = batchSvm.advertise({ x402Version: 2, resource: v.fixed.resource, accepts: [o] }, H, v.fixed.link, o);
+    expect("refused" in doc ? doc.code : null, label).toBe(row.expectAdvertise);
+  }
 });
 
 // The vector file's agreedRefusals rows that carry their input: a row with choice runs its pairing's call on that

@@ -6,7 +6,6 @@ the transaction that opens the payment channel. Later vouchers are paid under th
 here fetches, hashes an ATR or signs.
 """
 
-import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -48,32 +47,14 @@ MAX_MEMO = 256
 MAX_SAFE_INTEGER = 2**53 - 1
 U64_LIMIT = 1 << 64
 _U64_DECIMAL = re.compile(r"[0-9]{1,20}")
-_NUMERIC = re.compile(r"\s*[-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?\s*")
-
-
-def _js_number(value: object) -> float | None:
-    """The number a relational comparison reads from a JSON value: numbers as they are, booleans and null as 0 or 1,
-    a numeric string as its number, the empty string as 0; None where the comparison reads NaN."""
-    if value is None:
-        return 0.0
-    if isinstance(value, bool):
-        return float(value)
-    if isinstance(value, int):
-        return float(value) if abs(value) <= 2**1023 else (math.inf if value > 0 else -math.inf)
-    if isinstance(value, float):
-        return value
-    if isinstance(value, str):
-        if value.strip() == "":
-            return 0.0
-        return float(value) if _NUMERIC.fullmatch(value) else None
-    return None
 
 
 def pairs(option: Mapping[str, Any]) -> bool:
     """The pairing's filter: scheme batch-settlement on a solana network, base58 keys for asset, payTo,
     extra.feePayer and extra.receiverAuthorizer, extra.voucherSigner absent or client, a known extra.tokenProgram,
-    extra.withdrawDelay in 900-2 592 000 and not below maxTimeoutSeconds, extra.paymentFlow absent or authorization,
-    and extra.memo of at most 256 UTF-8 bytes when present."""
+    extra.withdrawDelay in 900-2 592 000 and not below a maxTimeoutSeconds that is a number, extra.paymentFlow absent
+    or authorization, and extra.memo of at most 256 UTF-8 bytes when present. A maxTimeoutSeconds of another type is
+    never converted to compare: the option is taken, and build refuses it x402/option-malformed."""
     if not is_object(option) or option.get("scheme") != SCHEME or not is_object(option.get("extra")):
         return False
     extra = option["extra"]
@@ -89,10 +70,9 @@ def pairs(option: Mapping[str, Any]) -> bool:
         return False
     if not is_delay(extra.get("withdrawDelay")):
         return False
-    if "maxTimeoutSeconds" in option:
-        timeout = _js_number(option["maxTimeoutSeconds"])
-        if timeout is not None and float(extra["withdrawDelay"]) < timeout:
-            return False
+    timeout = option.get("maxTimeoutSeconds")
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and extra["withdrawDelay"] < timeout:
+        return False
     if "paymentFlow" in extra and extra["paymentFlow"] != "authorization":
         return False
     if "memo" in extra and (not isinstance(extra["memo"], str) or memo_length(extra["memo"]) > MAX_MEMO):
