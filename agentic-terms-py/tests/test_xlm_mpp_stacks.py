@@ -727,10 +727,9 @@ def test_mpp_charge_usdc_stacks_canonical_rows() -> None:
 
 def test_mpp_charge_usdc_stacks_multisig_key_fields() -> None:
     # SIP-005: a multisig key field holds a compressed secp256k1 point, marked compressed (0x00) or uncompressed (0x01).
-    # Each row's spending condition holds two key fields and requires two signatures, and a Stacks node decodes a
-    # multisig spending condition only with exactly the signatures it requires (stacks-codec/src/transaction.rs:852),
-    # so it decodes none of these transactions. The key-field rules with the signatures given are
-    # test_mpp_charge_usdc_stacks_multisig_holds_the_signatures_it_requires's.
+    # Each row's spending condition holds two key fields and the two signatures it requires, so each row's answer is
+    # the key fields' alone: a key that does not parse (stacks-common/src/types/mod.rs:54-73), or one marked
+    # uncompressed under P2WSH, is mpp/stacks-tx-malformed.
     rows = json.loads((Path(__file__).parent / "stacks_key_fields.json").read_text())["rows"]
     assert len(rows) == 11
     for row in rows:
