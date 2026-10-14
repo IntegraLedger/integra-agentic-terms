@@ -85,6 +85,11 @@ describe("the request binding, from the buyer's own request", () => {
     ["payment-signature bound", "http:1", { headers: ["payment-signature"] }, { method: "GET", url: ARTICLE_A }, "ln/request-binding-malformed"],
     ["a URL with a fragment", "http:1", { headers: [] }, { method: "GET", url: `${ARTICLE_A}#x` }, "ln/request-binding-malformed"],
     ["a URL with user information", "http:1", { headers: [] }, { method: "GET", url: "https://u@api.example.com/article/A" }, "ln/request-binding-malformed"],
+    // The WHATWG URL Standard's basic URL parser fails each of these three: a port past 65535, an IPv4 address with a
+    // part past 255, and an IPv4 address of five parts.
+    ["a URL with port 65536", "http:1", { headers: [] }, { method: "GET", url: "https://api.example.com:65536/article/A" }, "ln/request-binding-malformed"],
+    ["a URL whose host is 256.1.1.1", "http:1", { headers: [] }, { method: "GET", url: "https://256.1.1.1/article/A" }, "ln/request-binding-malformed"],
+    ["a URL whose host is 1.2.3.4.5", "http:1", { headers: [] }, { method: "GET", url: "https://1.2.3.4.5/article/A" }, "ln/request-binding-malformed"],
     ["x402/payment bound", "mcp:1", { server: SERVER, metadata: ["x402/payment"] }, { server: SERVER, name: "get_article" }, "ln/request-binding-malformed"],
     ["null arguments", "mcp:1", { server: SERVER, metadata: [] }, { server: SERVER, name: "get_article", arguments: null }, "ln/request-binding-malformed"],
   ] as const)("%s is refused", async (_case, profile, params, request, expected) => {

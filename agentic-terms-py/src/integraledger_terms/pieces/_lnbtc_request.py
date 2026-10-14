@@ -16,6 +16,7 @@ from typing import Any
 from .._types import Refusal
 from ..bindings._bolt11 import decode, invoice_h
 from ..bindings._codec import canonical_json
+from ..bindings._url import url_scheme
 from ._common import bytes_of
 
 _HTTP_DOMAIN = "x402:exact:lnbtc:bolt11:http:1"
@@ -47,7 +48,13 @@ def _value_hash(data: bytes | None) -> str:
 
 
 def _is_target_uri(url: object) -> bool:
-    return isinstance(url, str) and _ASCII_URI.fullmatch(url) is not None and _HTTP_TARGET.fullmatch(url) is not None
+    """An absolute http or https URL in ASCII syntax, with a host, and no fragment or user information."""
+    return (
+        isinstance(url, str)
+        and _ASCII_URI.fullmatch(url) is not None
+        and _HTTP_TARGET.fullmatch(url) is not None
+        and url_scheme(url) in ("http", "https")
+    )
 
 
 def _is_absolute_uri(value: object) -> bool:
