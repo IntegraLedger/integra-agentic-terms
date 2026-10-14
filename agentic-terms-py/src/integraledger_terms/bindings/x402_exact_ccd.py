@@ -271,7 +271,7 @@ class X402ExactCcd:
         required, accepted = c.get("required"), c.get("accepted")
         wrong = chosen(required, accepted, CHECK)
         if wrong is not True:
-            return wrong if isinstance(wrong, Refusal) else Refusal("x402/option-not-this-pairing")
+            return wrong
         assert is_object(required) and is_object(accepted)
         sponsor = accepted["extra"]["feePayer"]
         now = safe_int(c.get("now"))

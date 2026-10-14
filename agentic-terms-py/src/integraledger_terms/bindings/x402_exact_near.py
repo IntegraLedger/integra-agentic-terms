@@ -5,7 +5,7 @@ import base64
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
@@ -46,7 +46,7 @@ def _decimal_below(value: object, limit: int) -> int | None:
     return n if n < limit else None
 
 
-def check(o: Mapping[str, Any]) -> bool | Refusal | None:
+def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """True for an exact option on near:mainnet or near:testnet that this pairing pays."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
@@ -164,7 +164,7 @@ class X402ExactNear:
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, check)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         nh = normal_hash(h)
         if nh is None:

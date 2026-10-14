@@ -5,7 +5,7 @@ Nothing here fetches, hashes or signs."""
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
@@ -95,7 +95,7 @@ def _servable(o: Mapping[str, Any]) -> bool:
     )
 
 
-def check_exact(o: Mapping[str, Any]) -> bool | Refusal | None:
+def check_exact(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """True for a cryptoTransfer option (or no method) this pairing serves; None for another pairing's option."""
     if not _on_hedera(o):
         return None
@@ -118,7 +118,7 @@ def executors_of(o: Mapping[str, Any]) -> list[str] | None:
     return list(listed)
 
 
-def check_executor(o: Mapping[str, Any]) -> bool | Refusal | None:
+def check_executor(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """True for a transferExecutor option with a non-empty list of executors; None for another pairing's option."""
     if not _on_hedera(o):
         return None
@@ -178,7 +178,7 @@ class X402ExactHedera:
             return Refusal("hedera/option-malformed")
         ok = chosen(c.get("required"), c.get("accepted"), check_exact)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         if not _valid_build_inputs(c):
             return Refusal("hedera/option-malformed")
         nh = normal_hash(h)
@@ -280,7 +280,7 @@ class X402ExactHederaExecutor:
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, check_executor)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         now = safe_int(c.get("now"))
         if now is None or now < 0:
             return Refusal("hedera/option-malformed")

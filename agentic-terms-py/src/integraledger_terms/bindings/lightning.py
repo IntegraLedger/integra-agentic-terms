@@ -151,7 +151,7 @@ def _choice(c: object) -> tuple[Mapping[str, Any], Mapping[str, Any]] | Refusal:
     accepted = c.get("accepted") if is_object(c) else None
     wrong = chosen(required, accepted, _IS_LN)
     if wrong is not True:
-        return wrong if isinstance(wrong, Refusal) else Refusal("x402/option-not-this-pairing")
+        return wrong
     assert is_object(required) and is_object(accepted)
     return required, accepted
 

@@ -170,7 +170,7 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     required, accepted = c.get("required"), c.get("accepted")
     ok = chosen(required, accepted, _FILTER)
     if ok is not True:
-        return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+        return ok
     assert is_object(required) and is_object(accepted)
     if not payable(accepted):
         return Refusal("x402/option-malformed")
@@ -285,7 +285,7 @@ def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
     required, accepted = w.get("required"), w.get("accepted")
     ok = chosen(required, accepted, _FILTER)
     if ok is not True:
-        return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+        return ok
     assert is_object(required) and is_object(accepted)
     config = w.get("channelConfig")
     if not is_channel_config(config):

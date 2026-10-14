@@ -72,7 +72,7 @@ class X402ExactStellar:
         c: Mapping[str, Any] = choice if is_object(choice) else {}
         ok = chosen(c.get("required"), c.get("accepted"), _THIS)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         accepted = c["accepted"]
         if not _payable(accepted):
             return Refusal("x402/option-malformed")

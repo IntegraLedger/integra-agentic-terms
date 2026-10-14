@@ -172,7 +172,7 @@ class X402ExactCasper:
         required, accepted = c.get("required"), c.get("accepted")
         wrong = chosen(required, accepted, CHECK)
         if wrong is not True:
-            return wrong if isinstance(wrong, Refusal) else Refusal("x402/option-not-this-pairing")
+            return wrong
         assert is_object(required) and is_object(accepted)
         from_ = c.get("from")
         if not _is_address(from_):

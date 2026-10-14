@@ -8,7 +8,7 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
@@ -203,7 +203,7 @@ def cardano_option_check(option: object) -> Refusal | None:
     return None
 
 
-def _check(option: Mapping[str, Any]) -> bool | Refusal | None:
+def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     refused = cardano_option_check(option)
     return True if refused is None else refused
 
@@ -267,7 +267,7 @@ class X402ExactCardano:
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _check)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         expected = normal_hash(h)
         if expected is None:

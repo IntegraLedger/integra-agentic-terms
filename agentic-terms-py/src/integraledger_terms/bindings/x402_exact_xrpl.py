@@ -120,7 +120,7 @@ class X402ExactXrpl:
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         if not _payable(accepted):
             return Refusal("x402/option-malformed")

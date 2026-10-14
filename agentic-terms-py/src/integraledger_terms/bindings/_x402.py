@@ -2,7 +2,7 @@
 checking the chosen option is one the document offers, the payment for it, and reading a presented payment."""
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Refusal
@@ -25,7 +25,7 @@ MAX_SIGNATURE_BYTES = 8192
 
 # A pairing's option filter: True for an option the pairing serves, a refusal naming why an option of this pairing
 # cannot be served, and None for an option that is not this pairing's.
-OptionFilter = Callable[[Mapping[str, Any]], "bool | Refusal | None"]
+OptionFilter = Callable[[Mapping[str, Any]], "Literal[True] | Refusal | None"]
 
 
 def filter_of(
@@ -34,7 +34,7 @@ def filter_of(
     """The filter for the options pairs accepts: those payable also accepts (every one, without it) are served, and
     the rest are refused x402/option-malformed."""
 
-    def check(option: Mapping[str, Any]) -> bool | Refusal | None:
+    def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         if not pairs(option):
             return None
         return True if payable is None or payable(option) else Refusal("x402/option-malformed")
@@ -102,7 +102,7 @@ def read_for(check: OptionFilter) -> Callable[[object], Advertised | Refusal]:
     return read
 
 
-def chosen(required: object, accepted: object, check: OptionFilter) -> bool | Refusal:
+def chosen(required: object, accepted: object, check: OptionFilter) -> Literal[True] | Refusal:
     """The checks build makes on the buyer's choice before anything pairing-specific: the document is x402 v2 with
     at most 32 options, the chosen option is one it offers, and the filter serves it."""
     if not is_v2(required):
@@ -141,7 +141,7 @@ def presented_with(presented: object, check: OptionFilter) -> tuple[Mapping[str,
     if served is None:
         return Refusal("x402/option-not-this-pairing")
     if served is not True:
-        return served if isinstance(served, Refusal) else Refusal("x402/option-not-this-pairing")
+        return served
     payload = presented.get("payload")
     if not is_object(payload):
         return Refusal("x402/payload-malformed")

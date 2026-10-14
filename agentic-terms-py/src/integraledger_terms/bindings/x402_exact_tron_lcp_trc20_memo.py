@@ -5,7 +5,7 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
@@ -37,7 +37,7 @@ _MAX_SAFE_INTEGER = 2**53 - 1
 _BOM = b"\xef\xbb\xbf"
 
 
-def check(o: Mapping[str, Any]) -> bool | Refusal | None:
+def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """True for an exact lcp-trc20-memo option on a tron: network that this pairing pays."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
@@ -112,7 +112,7 @@ class X402ExactTronLcpTrc20Memo:
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, check)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         owner = tron_address(c.get("payer"))
         if isinstance(owner, Refusal):

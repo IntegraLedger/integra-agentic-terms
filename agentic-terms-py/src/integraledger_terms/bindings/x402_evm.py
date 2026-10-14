@@ -670,10 +670,10 @@ def _auth_capture_bound(pairing: str, presented: object) -> AtrHash | Refusal:
 # The bindings.
 
 
-def _reads(pairing: str) -> Callable[[Mapping[str, Any]], bool | Refusal | None]:
+def _reads(pairing: str) -> Callable[[Mapping[str, Any]], Literal[True] | Refusal | None]:
     """The filter at read: the option names the pairing's option-level id."""
 
-    def check(option: Mapping[str, Any]) -> bool | None:
+    def check(option: Mapping[str, Any]) -> Literal[True] | None:
         return True if pairing_of(option) == _option_id_of(pairing) else None
 
     return check

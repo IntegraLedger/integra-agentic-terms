@@ -168,7 +168,7 @@ class X402BatchSettlementSolana:
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         if not payable(accepted) or int(accepted["amount"]) >= U64_LIMIT:
             return Refusal("x402/option-malformed")
@@ -277,7 +277,7 @@ class X402BatchSettlementSolana:
         required, accepted = w.get("required"), w.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         channel_config = w.get("channelConfig")
         config = _config(channel_config)

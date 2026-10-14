@@ -50,7 +50,7 @@ class X402BatchSettlementCloudflare:
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _FILTER)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         lc = legal_context_of(required.get("extensions"))
         if isinstance(lc, Refusal):

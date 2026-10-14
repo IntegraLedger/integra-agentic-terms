@@ -7,7 +7,7 @@ system.remark_with_event]) with the ATR hash's LCP string as the remark. Nothing
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
@@ -118,7 +118,7 @@ def _with_suffix(xt: bytes, call: bytes) -> bool | Refusal:
     return True
 
 
-def _check(option: Mapping[str, Any]) -> bool | Refusal | None:
+def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """The pairing's filter: exact on a supported Polkadot network, the profile's transfer method, a u32 asset id, a
     non-zero u128 amount, a timeout of 1 to 3600 seconds and an SS58 payee."""
     network = option.get("network") if is_object(option) else None
@@ -179,7 +179,7 @@ class X402ExactPolkadotLcpAssetsRemark:
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, _check)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         nh = normal_hash(h)
         if nh is None:

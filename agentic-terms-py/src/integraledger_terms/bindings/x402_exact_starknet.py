@@ -7,7 +7,7 @@ low 250 bits. Nothing here fetches, hashes or signs.
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
@@ -91,7 +91,7 @@ def _is_int(value: object, n: int) -> bool:
     return (isinstance(value, (int, float)) and value == n) or value == str(n)
 
 
-def _check(option: Mapping[str, Any]) -> bool | Refusal | None:
+def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """The pairing's filter: scheme exact on a Starknet network, the default transfer and the authorization flow,
     felts for asset, payTo and a fee payer that is neither zero nor ANY_CALLER, an amount below 2^256 and a positive
     timeout."""
@@ -214,7 +214,7 @@ class X402ExactStarknet:
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, CHECK)
         if ok is not True:
-            return ok if isinstance(ok, Refusal) else Refusal("x402/option-not-this-pairing")
+            return ok
         assert is_object(required) and is_object(accepted)
         account = felt_value(choice.get("from"))
         if account is None:
