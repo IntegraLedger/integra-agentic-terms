@@ -182,11 +182,3 @@ def canonical_or_none(value: Any) -> str | None:
         return canonical_json(value)
     except (TypeError, ValueError, UnicodeEncodeError, RecursionError):
         return None
-
-
-def utf8_json_length(value: Any) -> int | None:
-    """The UTF-8 length of value's compact JSON text, or None when value has none."""
-    try:
-        return len(js_json(value).encode("utf-8"))
-    except (TypeError, ValueError, UnicodeEncodeError, RecursionError):
-        return None
