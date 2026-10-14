@@ -14,7 +14,6 @@ from ._tron_proto import (
     INT64_LIMIT,
     SIGNATURE_BYTES,
     TronRaw,
-    base58_shape,
     decode_tron_tx,
     encode_transaction,
     encode_tron_raw,
@@ -38,7 +37,8 @@ _BOM = b"\xef\xbb\xbf"
 
 
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """True for an exact lcp-trc20-memo option on a tron: network that this pairing pays."""
+    """True for an exact lcp-trc20-memo option on a tron: network that this pairing pays, whose asset and payTo are
+    base58check addresses."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = o.get("network")
@@ -52,7 +52,7 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     m = _NETWORK.fullmatch(network)
     if m is None or int(m.group(1)) > _MAX_SAFE_INTEGER:
         return Refusal("tron/network-malformed")
-    if base58_shape(o.get("asset")) is None or base58_shape(o.get("payTo")) is None:
+    if isinstance(tron_address(o.get("asset")), Refusal) or isinstance(tron_address(o.get("payTo")), Refusal):
         return Refusal("tron/address-malformed")
     amount = o.get("amount")
     if not isinstance(amount, str) or _DECIMAL.fullmatch(amount) is None or int(amount) >= UINT256_LIMIT:

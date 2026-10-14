@@ -2,6 +2,7 @@
 half's vector rows. Expected values are x402-exact-tron-lcp-trc20-memo.json's."""
 
 import hashlib
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -9,7 +10,9 @@ from eth_account import Account
 
 from integraledger_terms import X402_EXACT_TRON_LCP_TRC20_MEMO as BINDING
 from integraledger_terms import Refusal, _gate
-from integraledger_terms.bindings._codec import b58_encode
+from integraledger_terms.bindings._codec import b58_decode, b58_encode
+from integraledger_terms.bindings._tron_proto import TronRaw, decode_tron_tx, encode_tron_raw
+from integraledger_terms.bindings.x402_exact_tron_lcp_trc20_memo import check
 
 from breadth import Pairing, build_and_sign, plant, x402_doc
 from hbar_support import EVM_ACCOUNT, b10, b16, identifier_row, inputs_row
@@ -141,6 +144,7 @@ def test_x402_exact_tron_lcp_trc20_memo_agreed_refusals() -> None:
         expect = Refusal(row["expect"])
         if "option" in row:
             assert BINDING.build(tron_choice(row["option"]), F["H"]) == expect, row["case"]
+            assert BINDING.bound({**T["V2"]["expectPayload"], "accepted": row["option"]}) == expect, row["case"]
         elif "transaction" in row:
             assert BINDING.bound(presented(row["transaction"])) == expect, row["case"]
         elif "payer" in row:
@@ -164,3 +168,65 @@ def test_x402_exact_tron_lcp_trc20_memo_agreed_refusals() -> None:
             continue
         seen += 1
     assert seen > 10
+
+
+def test_x402_exact_tron_lcp_trc20_memo_agreed_refusals_measure_the_transaction_in_utf16_code_units() -> None:
+    # The agreedRefusals rows whose transaction holds a character beyond the BMP, which JavaScript's String length,
+    # the file's measure, counts as two UTF-16 code units.
+    rows = [r for r in T["agreedRefusals"]["rows"] if isinstance(r.get("transaction"), str) and max(r["transaction"]) > "\uffff"]
+    assert len(rows) >= 1
+    for row in rows:
+        assert BINDING.bound(presented(row["transaction"])) == Refusal(row["expect"]), row["case"]
+
+
+def test_x402_exact_tron_lcp_trc20_memo_a_transaction_is_measured_in_utf16_code_units() -> None:
+    # As lcp's decodeTronTx measures it, by String length: U+10000 is one code point and two UTF-16 code units, so
+    # 8,191 hex characters and U+10000 are past the 8,192 bound, and 8,190 and U+10000 are at it and not hex.
+    astral = "\U00010000"
+    for text, expect in [
+        ("a" * 8191 + astral, "tron/tx-too-large"),
+        (astral * 4097, "tron/tx-too-large"),
+        ("a" * 8190 + astral, "tron/tx-malformed"),
+        (astral * 4096, "tron/tx-malformed"),
+        ("a" * 8193, "tron/tx-too-large"),
+    ]:
+        assert decode_tron_tx(text) == Refusal(expect), (len(text), expect)
+        assert BINDING.bound(presented(text)) == Refusal(expect), (len(text), expect)
+
+
+def test_x402_exact_tron_lcp_trc20_memo_the_option_filter_reads_base58check_addresses() -> None:
+    # fixed.O's payTo, then its asset, with the last character changed: 34 base58 characters of 25 bytes beginning
+    # 0x41, whose SHA-256d checksum fails. lcp's filter reads both as base58check addresses.
+    for member in ("payTo", "asset"):
+        last = F["O"][member][-1]
+        changed = F["O"][member][:-1] + ("y" if last != "y" else "z")
+        decoded = b58_decode(changed)
+        assert decoded is not None and len(decoded) == 25 and decoded[0] == 0x41
+        option = {**F["O"], member: changed}
+        assert check(option) == Refusal("tron/address-malformed"), member
+        assert BINDING.bound({**T["V2"]["expectPayload"], "accepted": option}) == Refusal("tron/address-malformed")
+        assert BINDING.build(tron_choice(option), F["H"]) == Refusal("tron/address-malformed")
+    assert BINDING.bound(T["V2"]["expectPayload"]) == T["V3"]["expectBound"]
+
+
+def test_tron_raw_encoder_refuses_fields_outside_what_the_decoder_reads_back() -> None:
+    # lcp's encodeTronRaw throws TypeError for a value that is not a TronRaw, a bytes field that is not bytes, or an
+    # expiration, timestamp or feeLimit that is not an integer from 0 below 2^63.
+    raw = TronRaw(ref_block_bytes=bytes(2), ref_block_hash=bytes(8), expiration=1, data=b"a", owner=bytes(21),
+                  contract_address=bytes(21), call_data=bytes(68), timestamp=1, fee_limit=1)
+    def with_(member: str, value: Any) -> TronRaw:
+        changes: dict[str, Any] = {member: value}
+        return replace(raw, **changes)
+
+    for member in ("expiration", "timestamp", "fee_limit"):
+        for good in (0, 2**63 - 1):
+            assert isinstance(encode_tron_raw(with_(member, good)), bytes)
+        for bad in (-1, 2**63, True, 1.0, "1"):
+            with pytest.raises(TypeError):
+                encode_tron_raw(with_(member, bad))
+    for member in ("ref_block_bytes", "ref_block_hash", "data", "owner", "contract_address", "call_data"):
+        for not_bytes in (None, "ab", [1, 2]):
+            with pytest.raises(TypeError):
+                encode_tron_raw(with_(member, not_bytes))
+    with pytest.raises(TypeError):
+        encode_tron_raw(None)  # type: ignore[arg-type]

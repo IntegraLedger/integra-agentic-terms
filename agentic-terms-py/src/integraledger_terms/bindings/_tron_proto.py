@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 from .._types import Refusal
 from ._codec import b58_decode
+from ._jose import js_length
 
 TRIGGER_SMART_CONTRACT = 31
 TRIGGER_URL = b"type.googleapis.com/protocol.TriggerSmartContract"
@@ -52,8 +53,20 @@ def _int_field(no: int, v: int) -> bytes:
     return _varint(no << 3) + _varint(v) if v else b""
 
 
+_RAW_BYTES = ("ref_block_bytes", "ref_block_hash", "data", "owner", "contract_address", "call_data")
+_RAW_INTS = ("expiration", "timestamp", "fee_limit")
+
+
 def encode_tron_raw(r: TronRaw) -> bytes:
-    """Transaction.raw as java-tron serialises it: fields in ascending order, default values omitted."""
+    """Transaction.raw as java-tron serialises it: fields in ascending order, default values omitted. Raises TypeError
+    when r is not a TronRaw, a bytes field is not bytes, or expiration, timestamp or fee_limit is not an int from 0
+    below 2^63, the values decode_tron_tx reads back."""
+    if not isinstance(r, TronRaw) or not all(isinstance(getattr(r, k), bytes) for k in _RAW_BYTES):
+        raise TypeError("not a TronRaw")
+    for k in _RAW_INTS:
+        v = getattr(r, k)
+        if not isinstance(v, int) or isinstance(v, bool) or not 0 <= v < INT64_LIMIT:
+            raise TypeError("not a TronRaw")
     trigger = _bytes_field(1, r.owner) + _bytes_field(2, r.contract_address) + _bytes_field(4, r.call_data)
     any_value = _bytes_field(1, TRIGGER_URL) + _bytes_field(2, trigger)
     contract = _int_field(1, TRIGGER_SMART_CONTRACT) + _bytes_field(2, any_value)
@@ -120,12 +133,13 @@ def _fields_of(b: bytes) -> list[_Field] | None:
 
 
 def decode_tron_tx(text: object) -> tuple[TronRaw, bytes, list[bytes]] | Refusal:
-    """A signed Transaction from lowercase hex: raw_data with exactly one TriggerSmartContract and only the fields
-    TronRaw names, and 1 to 5 signatures of 65 bytes. The raw bytes must be exactly what encode_tron_raw writes for the
-    fields read."""
+    """A signed Transaction from lowercase hex of at most 8,192 characters, counted in UTF-16 code units as
+    JavaScript's String length counts them: raw_data with exactly one TriggerSmartContract and only the fields TronRaw
+    names, and 1 to 5 signatures of 65 bytes. The raw bytes must be exactly what encode_tron_raw writes for the fields
+    read."""
     if not isinstance(text, str):
         return Refusal("tron/tx-malformed")
-    if len(text) > MAX_TX_HEX:
+    if js_length(text) > MAX_TX_HEX:
         return Refusal("tron/tx-too-large")
     if len(text) == 0 or len(text) % 2 != 0 or not set(text) <= _LOWER_HEX:
         return Refusal("tron/tx-malformed")
@@ -230,18 +244,13 @@ def decode_raw(raw_bytes: bytes) -> TronRaw | Refusal:
 # ── addresses ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-def base58_shape(address: object) -> bytes | None:
-    """The 25 decoded bytes of a base58 string of 34 characters whose first byte is 0x41, or None."""
-    if not isinstance(address, str) or len(address) != 34:
-        return None
-    b = b58_decode(address)
-    return b if b is not None and len(b) == 25 and b[0] == 0x41 else None
-
-
 def tron_address(address: object) -> bytes | Refusal:
-    """A base58check address as its 21 bytes, which begin 0x41. The checksum is SHA-256 twice."""
-    b = base58_shape(address)
-    if b is None:
+    """A base58check address of 34 characters as its 21 bytes, which begin 0x41; its last four bytes are the first four
+    of SHA-256 twice over the 21. Anything else is tron/address-malformed."""
+    if not isinstance(address, str) or len(address) != 34:
+        return Refusal("tron/address-malformed")
+    b = b58_decode(address)
+    if b is None or len(b) != 25 or b[0] != 0x41:
         return Refusal("tron/address-malformed")
     payload = b[:21]
     if hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] != b[21:25]:

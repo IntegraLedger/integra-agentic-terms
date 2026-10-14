@@ -644,6 +644,25 @@ describe("x402/exact/tvm accounts", () => {
     }));
 });
 
+describe("x402/exact/tron/lcp-trc20-memo agreedRefusals", () => {
+  // The rows whose transaction holds a character beyond the BMP, which JavaScript's String length, the file's measure,
+  // counts as two UTF-16 code units.
+  it("each row whose transaction holds a character beyond the BMP gives the row's refusal", async () => {
+    const v = vectors<{ agreedRefusals: { rows: { case: string; transaction?: unknown; expect: string }[] } }>(
+      "x402-exact-tron-lcp-trc20-memo.json",
+    );
+    const rows = v.agreedRefusals.rows.filter(
+      (r) => typeof r.transaction === "string" && /[\u{10000}-\u{10FFFF}]/u.test(r.transaction),
+    );
+    expect(rows.length, "agreedRefusals rows whose transaction holds a character beyond the BMP").toBeGreaterThan(0);
+    for (const row of rows) {
+      const f = TRON.fixed;
+      const presented = { x402Version: 2, resource: f.resource, accepted: f.O, payload: { transaction: row.transaction } };
+      expect([row.case, await exactTronMemo.bound(presented as never)]).toEqual([row.case, { refused: true, code: row.expect }]);
+    }
+  });
+});
+
 describe("inputs", () => {
   it("a missing or malformed input is no-payable-option with the pairing's input-missing, before any fetch", () =>
     at(nearRow.now, async () => {
