@@ -76,7 +76,7 @@ A signer that raises is a `Declined("signer-failed", …)`.
 - **Later:** `check(atr_bytes, presented, binding)`.
 - **Agreement:** `await agree(atr_bytes, url, signer, client)` returns `ToApprove`, signing nothing; once your agent
   approves it, `await agree(atr_bytes, url, signer, client, approved=…)` pays it and returns `Agreed`.
-- **Channels:** `open_channel(atr_bytes, opened, binding)`, `await within(doc, hold, binding, signer)`,
+- **Channels:** `open_channel(atr_bytes, opened, binding, landed=…)`, `await within(doc, hold, binding, signer)`,
   `record_charge(hold, charged)`.
 
 The [Python README](https://github.com/IntegraLedger/integra-agentic-terms/tree/main/agentic-terms-py#readme) runs each
