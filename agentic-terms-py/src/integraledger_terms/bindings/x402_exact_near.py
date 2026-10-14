@@ -65,8 +65,8 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("near/option-malformed")
     if _decimal_below(o.get("amount"), U128_LIMIT) is None:
         return Refusal("near/option-malformed")
-    timeout = safe_int(o.get("maxTimeoutSeconds"))
-    if timeout is None or timeout < 1:
+    # Any integer timeout: build opens a window of max(1, maxTimeoutSeconds) blocks, x402's own mapping.
+    if safe_int(o.get("maxTimeoutSeconds")) is None:
         return Refusal("near/option-malformed")
     return True
 
@@ -158,7 +158,7 @@ class X402ExactNear:
 
     def build(self, c: Json, h: AtrHash) -> NearUnsigned | Refusal:
         """The delegate action for the chosen option: one ft_transfer whose memo is the hash's LCP string, with the
-        key's next nonce and a window of maxTimeoutSeconds blocks past the final height."""
+        key's next nonce and a window of max(1, maxTimeoutSeconds) blocks past the final height."""
         if not is_object(c):
             return Refusal("x402/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")

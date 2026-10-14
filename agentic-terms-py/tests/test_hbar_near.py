@@ -115,6 +115,34 @@ def test_x402_exact_near_v2_complete_and_bound() -> None:
         assert X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"])) == Refusal(row["expect"]), row["case"]
 
 
+def delegate_with_height(height: int) -> bytes:
+    """V2's delegate action with its maxBlockHeight, the u64 before the 33-byte public key, set to height."""
+    delegate = base64.b64decode(N["V2"]["expectSignedDelegateAction"])[:-65]
+    at = len(delegate) - 33 - 8
+    return delegate[:at] + height.to_bytes(8, "little") + delegate[at + 8 :]
+
+
+def test_x402_exact_near_any_integer_timeout_and_a_window_of_at_least_one_block() -> None:
+    # x402's scheme_exact_near maps maxTimeoutSeconds to max(1, ...) blocks, so read, build and bound take any safe
+    # integer. The expected request hash is V2's delegate action with maxBlockHeight finalHeight + 1, under V1's prefix.
+    prefix = bytes.fromhex(N["V1"]["expectPrefix"])
+    final = int(F["finalHeight"])
+    assert hashlib.sha256(prefix + delegate_with_height(final + 60)).hexdigest() == N["V1"]["expectRequestHash"]
+    one_block = hashlib.sha256(prefix + delegate_with_height(final + 1)).hexdigest()
+    for timeout in (1, 0, -60, -(2**53 - 1)):
+        option = {**F["O"], "maxTimeoutSeconds": timeout}
+        read = X402_EXACT_NEAR.read(x402_doc(option, F["resource"]))
+        assert not isinstance(read, Refusal) and read.offer["options"] == [option], timeout
+        unsigned = X402_EXACT_NEAR.build(near_choice(option), F["H"])
+        assert not isinstance(unsigned, Refusal), timeout
+        assert unsigned.request["hash"].hex() == one_block, timeout
+        under = {**presented(N["V2"]["expectSignedDelegateAction"]), "accepted": option}
+        assert X402_EXACT_NEAR.bound(under) == N["V2"]["expectBound"], timeout
+    absent = {k: v for k, v in F["O"].items() if k != "maxTimeoutSeconds"}
+    for option in [absent, *({**F["O"], "maxTimeoutSeconds": v} for v in ("60", 1.5, 2**53, None, True))]:
+        assert X402_EXACT_NEAR.build(near_choice(option), F["H"]) == Refusal("near/option-malformed"), option
+
+
 def test_x402_exact_near_agreed_refusals() -> None:
     for row in N["agreedRefusals"]["rows"]:
         if "option" in row:
