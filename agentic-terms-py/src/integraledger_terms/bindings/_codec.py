@@ -1,5 +1,5 @@
-"""Byte encodings the bindings read and write: strict unpadded base64url (RFC 4648 §5), base64, base58 (the Bitcoin
-alphabet), 0x hex, and the JSON forms the TypeScript bindings compare with."""
+"""Byte encodings the bindings read and write: base64url without padding (RFC 4648 §5), read in its canonical form
+(§3.5), base64, base58 (the Bitcoin alphabet), 0x hex, and the JSON forms the TypeScript bindings compare with."""
 
 import base64
 import binascii
@@ -10,6 +10,9 @@ from typing import Any
 
 _B64U = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 _B64U_INDEX = {c: i for i, c in enumerate(_B64U)}
+_B64U_TEXT = re.compile(r"[A-Za-z0-9_-]*")
+# The bits of the last character past the last whole byte, by the text's length mod 4.
+_B64U_SPARE = (0, 0, 0x0F, 0x03)
 _B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 _B58_INDEX = {c: i for i, c in enumerate(_B58)}
 _HEX = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
@@ -19,28 +22,24 @@ def b64u_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
+def is_b64u(text: object) -> bool:
+    """True when text is base64url without padding in its canonical form (RFC 4648 §3.5): the URL-safe alphabet alone, a
+    length that is not 1 mod 4, and zero bits past the last whole byte in the last character."""
+    if not isinstance(text, str) or len(text) % 4 == 1 or _B64U_TEXT.fullmatch(text) is None:
+        return False
+    return text == "" or _B64U_INDEX[text[-1]] & _B64U_SPARE[len(text) % 4] == 0
+
+
 def b64u_decode(text: object, max_bytes: int | None = None) -> bytes | None:
-    """Strict base64url without padding: only the alphabet, canonical (zero) trailing bits, and at most max_bytes
-    decoded. None for anything else."""
-    if not isinstance(text, str) or len(text) % 4 == 1:
+    """The bytes of base64url without padding in its canonical form (is_b64u), when they number at most max_bytes: the
+    length is checked before anything is decoded. None for anything else."""
+    if not isinstance(text, str):
         return None
     if max_bytes is not None and len(text) > math.ceil(max_bytes * 4 / 3):
         return None
-    out = bytearray()
-    acc = 0
-    bits = 0
-    for c in text:
-        v = _B64U_INDEX.get(c)
-        if v is None:
-            return None
-        acc = ((acc << 6) | v) & 0xFFFFFF
-        bits += 6
-        if bits >= 8:
-            bits -= 8
-            out.append((acc >> bits) & 0xFF)
-    if acc & ((1 << bits) - 1):
+    if not is_b64u(text):
         return None
-    return bytes(out)
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
 def b64_encode(data: bytes) -> str:
