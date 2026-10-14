@@ -50,11 +50,14 @@
   },
   "dependencies": {
     "@integraledger/terms": "workspace:*",
-    "@integraledger/lcp": "0.2.0",
     "@modelcontextprotocol/server": "2.1.0",
     "zod": "4.6.5"
   },
+  "peerDependencies": {
+    "@integraledger/lcp": "~0.4.0"
+  },
   "devDependencies": {
+    "@integraledger/lcp": "0.4.0",
     "esbuild": "0.28.2"
   }
 }

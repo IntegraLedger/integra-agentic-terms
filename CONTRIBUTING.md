@@ -16,8 +16,10 @@ pnpm install --frozen-lockfile
 pnpm -r --if-present run build
 ```
 
-The install policy is strict: dependencies are exact versions, a version must have been published for at least a day
-before it installs (`minimumReleaseAge`), and dependency build scripts do not run unless allowed. A change that adds a
+The install policy is strict: every dependency and devDependency is an exact version, a version must have been
+published for at least a day before it installs (`minimumReleaseAge`), and dependency build scripts do not run unless
+allowed. Peer dependencies are ranges: `@integraledger/lcp` is a peer of both TypeScript packages, with an exact
+devDependency for their own tests, so an application and the gate share one copy of lcp. A change that adds a
 dependency pins an exact version.
 
 ## The layout

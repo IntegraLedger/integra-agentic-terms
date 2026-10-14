@@ -45,7 +45,8 @@ npm install @integraledger/terms @integraledger/lcp
 ```
 
 - Node.js `>=26.10.0`. ESM only.
-- `@integraledger/lcp` is a dependency of this package; install it beside it to import the bindings you pass in.
+- `@integraledger/lcp` is a peer dependency of this package (`~0.4.0`): install it beside it, so your application and
+  the gate share one copy, and import from it the bindings you pass in.
 - Chain libraries (`@solana/kit`, `@stellar/stellar-sdk` and others) are optional peers of `@integraledger/lcp`,
   needed only by the pairings that use them.
 
