@@ -96,6 +96,8 @@ describe("the request binding, from the buyer's own request", () => {
     ["null headers", "http:1", { headers: [] }, { method: "GET", url: ARTICLE_A, headers: null }, "ln/request-binding-malformed"],
     ["a null header value", "http:1", { headers: ["accept"] }, { method: "GET", url: ARTICLE_A, headers: { accept: null } }, "ln/request-binding-malformed"],
     ["x402/payment bound", "mcp:1", { server: SERVER, metadata: ["x402/payment"] }, { server: SERVER, name: "get_article" }, "ln/request-binding-malformed"],
+    // meta, when present, is an object; a present null is not, and is not an absent member.
+    ["null meta", "mcp:1", { server: SERVER, metadata: [] }, { server: SERVER, name: "get_article", meta: null }, "ln/request-binding-malformed"],
     ["null arguments", "mcp:1", { server: SERVER, metadata: [] }, { server: SERVER, name: "get_article", arguments: null }, "ln/request-binding-malformed"],
     // The WHATWG URL Standard's basic URL parser fails a port past 65535.
     ["an MCP server with port 65536", "mcp:1", { server: "https://api.example.com:65536/mcp", metadata: [] }, { server: "https://api.example.com:65536/mcp", name: "get_article" }, "ln/request-binding-malformed"],

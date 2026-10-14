@@ -118,7 +118,7 @@ def _mcp_binding(params: Mapping[str, Any], request: Mapping[str, Any]) -> dict[
         return _malformed()
     if not _ascending(names):
         return _malformed()
-    server, name, meta = request.get("server"), request.get("name"), request.get("meta")
+    server, name = request.get("server"), request.get("name")
     if not _is_absolute_uri(server):
         return _malformed()
     if params.get("server") != server:
@@ -128,9 +128,9 @@ def _mcp_binding(params: Mapping[str, Any], request: Mapping[str, Any]) -> dict[
     arguments = request["arguments"] if "arguments" in request else {}
     if not isinstance(arguments, Mapping):
         return _malformed()
-    if meta is not None and not isinstance(meta, Mapping):
+    given = request["meta"] if "meta" in request else {}
+    if not isinstance(given, Mapping):
         return _malformed()
-    given = meta if meta is not None else {}
     bound: list[dict[str, str]] = []
     for n in names:
         if n not in given:
