@@ -398,7 +398,7 @@ export async function check(
   const h = await hash(bytes);
   const b = await boundOf(steps(binding), presented);
   if (isRefusal(b) || !hashEquals(b, h)) {
-    return declined("signed-not-bound", "The payment does not carry the hash of these bytes.");
+    return declined("signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.");
   }
   return { h };
 }

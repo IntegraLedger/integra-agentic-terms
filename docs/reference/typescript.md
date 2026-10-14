@@ -141,8 +141,8 @@ declare function openChannel(
 ```
 
 Takes a channel pairing's signed opening and the ATR bytes the gate compared for it, with the `landed` receipt
-`transact` returned beside it, where there is one. The opening must be of kind `open`, carry the hash of these bytes,
-and name its channel.
+`transact` returned beside it, where there is one. The opening must be of kind `open`, the pairing must read the hash of
+these bytes from it, and it must name its channel.
 
 ### `within`
 

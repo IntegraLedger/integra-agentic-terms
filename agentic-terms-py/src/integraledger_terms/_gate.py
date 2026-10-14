@@ -306,7 +306,9 @@ def check(atr_bytes: bytes, presented: Any, binding: Binding) -> Checked | Decli
     h = atr_hash(atr_bytes)
     bound = _bound(binding, presented)
     if isinstance(bound, Refusal) or not hash_equals(bound, h):
-        return Declined("signed-not-bound", "The payment does not carry the hash of these bytes.")
+        return Declined(
+            "signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment."
+        )
     return Checked(h=h)
 
 

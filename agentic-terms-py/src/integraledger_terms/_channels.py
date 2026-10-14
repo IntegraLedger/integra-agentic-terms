@@ -122,7 +122,8 @@ def _atr_of(hold: Mapping[str, Any]) -> bytes | None:
 def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | None = None) -> ChannelHold | Declined:
     """Takes a channel pairing's signed opening and the ATR bytes the gate compared for it, with the landed receipt
     transact returned beside the opening, where it returned one. The opening, with that receipt, must be of kind open,
-    carry the hash of these bytes, and name its channel; the hold keeps all three together."""
+    the pairing must read the hash of these bytes from it, and it must name its channel; the hold keeps all three
+    together."""
     if not _has_channel(binding):
         return _declined("pairing-not-supported", "The pairing has no channel.")
     if landed is not None and (not isinstance(landed, Mapping) or not isinstance(opened, Mapping)):
@@ -137,7 +138,9 @@ def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | No
     h = atr_hash(atr_bytes)
     inside = _guarded(lambda: binding.bound(signed))
     if not isinstance(inside, str) or not hash_equals(inside, h):
-        return _declined("signed-not-bound", "The opening does not carry the hash of these bytes.")
+        return _declined(
+            "signed-not-bound", "The pairing does not read the hash of the compared bytes from the opening."
+        )
     ref = _guarded(lambda: binding.channel_ref(signed))
     if isinstance(ref, Refusal):
         return _declined("signed-not-bound", ref.code)

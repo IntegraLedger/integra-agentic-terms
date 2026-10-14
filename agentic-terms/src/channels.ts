@@ -225,7 +225,8 @@ function openingMax(signed: unknown): string {
 /**
  * Takes a channel pairing's signed opening and the ATR bytes the gate compared for it, with the landed receipt
  * `transact` returned beside the opening, where it returned one. The opening, with that receipt, must be of kind `open`,
- * carry the hash of these bytes, and name its channel; the hold keeps all three together.
+ * the pairing must read the hash of these bytes from it, and it must name its channel; the hold keeps all three
+ * together.
  */
 export async function openChannel(
   bytes: Uint8Array,
@@ -249,7 +250,7 @@ export async function openChannel(
   const h = await hash(bytes);
   const inside = await guarded(() => b.bound(signed));
   if (isRefusal(inside) || !hashEquals(inside, h)) {
-    return declined("signed-not-bound", "The opening does not carry the hash of these bytes.");
+    return declined("signed-not-bound", "The pairing does not read the hash of the compared bytes from the opening.");
   }
   const ref = await guarded(() => channel.ref(signed));
   if (isRefusal(ref)) return declined("signed-not-bound", ref.code);

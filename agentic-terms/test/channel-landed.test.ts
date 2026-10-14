@@ -55,6 +55,6 @@ describe("mpp/session/hedera: the channel the gate opened is held with its lande
     if (isDeclined(out)) throw new Error(out.decline.detail);
     if ("approve" in out) throw new Error("an agreement payment to approve");
     const hold = await openChannel(out.bytes, out.signed!, sessionHedera);
-    expect(isDeclined(hold) && hold.decline).toEqual({ code: "signed-not-bound", detail: "The opening does not carry the hash of these bytes." });
+    expect(isDeclined(hold) && hold.decline).toEqual({ code: "signed-not-bound", detail: "The pairing does not read the hash of the compared bytes from the opening." });
   });
 });

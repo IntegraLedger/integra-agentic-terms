@@ -61,4 +61,7 @@ def test_without_the_landed_receipt_the_opening_cannot_be_held() -> None:
     assert out.signed is not None, out
     hold = open_channel(out.atr_bytes, out.signed, MPP_SESSION_HEDERA)
     assert isinstance(hold, Declined)
-    assert (hold.code, hold.detail) == ("signed-not-bound", "The opening does not carry the hash of these bytes.")
+    assert (hold.code, hold.detail) == (
+        "signed-not-bound",
+        "The pairing does not read the hash of the compared bytes from the opening.",
+    )
