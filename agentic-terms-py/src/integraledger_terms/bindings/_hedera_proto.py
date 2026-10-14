@@ -3,7 +3,6 @@ messages a CryptoTransfer payment uses (Transaction, SignedTransaction, Transact
 lists), and the transaction-id text forms."""
 
 import base64
-import re
 from dataclasses import dataclass
 
 from .._types import Refusal
@@ -17,7 +16,6 @@ INT64_LIMIT = 1 << 63
 UINT64_LIMIT = 1 << 64
 
 _MAX_FIELD_NUMBER = 536_870_911
-_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,10 +327,3 @@ def complete_with(body_bytes: bytes, s: object) -> str | Refusal:
     pair = len_field(1, public_key) + len_field(3 if kind == "ed25519" else 6, signature)
     signed = len_field(1, body_bytes) + len_field(2, len_field(1, pair))
     return base64.b64encode(len_field(5, signed)).decode("ascii")
-
-
-def from_base64(text: object) -> bytes | None:
-    """Standard padded base64 whose length is a multiple of 4, or None."""
-    if not isinstance(text, str) or len(text) % 4 != 0 or _BASE64.fullmatch(text) is None:
-        return None
-    return base64.b64decode(text)

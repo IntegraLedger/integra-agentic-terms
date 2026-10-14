@@ -34,7 +34,6 @@ U64_LIMIT = 1 << 64
 U32_LIMIT = 1 << 32
 
 _NETWORK = re.compile(r"solana:[1-9A-HJ-NP-Za-km-z]{32}")
-_B64 = re.compile(r"[A-Za-z0-9+/]*={0,2}")
 _PDA_MARKER = b"ProgramDerivedAddress"
 
 # Account roles as @solana/kit numbers them: bit 1 signer, bit 0 writable.
@@ -225,13 +224,12 @@ def static_nonce(tx: SvmTx) -> Refusal | None:
 
 
 def wire_of(text: object) -> bytes | Refusal:
-    """The base64 wire in a payment, decoded, or the refusal naming what is wrong with it."""
+    """The wire in a payment, padded standard base64 in its canonical form (RFC 4648 §3.5), decoded, or the refusal
+    naming what is wrong with it."""
     if not isinstance(text, str) or text == "":
         return Refusal("svm/tx-malformed")
     if len(text) > -(-MAX_WIRE // 3) * 4 + 4:
         return Refusal("svm/tx-too-large")
-    if _B64.fullmatch(text) is None or len(text) % 4 != 0:
-        return Refusal("svm/tx-malformed")
     data = b64_decode(text)
     if data is None:
         return Refusal("svm/tx-malformed")

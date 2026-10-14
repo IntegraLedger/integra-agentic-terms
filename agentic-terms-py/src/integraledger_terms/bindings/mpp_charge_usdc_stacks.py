@@ -2,7 +2,6 @@
 bytes, signed by the buyer's Stacks wallet. Nothing here fetches or signs."""
 
 import base64
-import binascii
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -11,6 +10,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Refusal
 from . import _stacks
+from ._codec import b64_decode
 from ._lcp import is_object, normal_hash
 from ._mpp import chosen_for, credential_of, echoed_for, read
 
@@ -20,22 +20,10 @@ MAX_STACKS_TX = 16_384
 STACKS_FORMAT = "stacks_transaction_v1"
 MEMO_PREFIX = bytes.fromhex("0a0200000020")
 _C32_PRINCIPAL = re.compile(r"S[0-9A-HJKMNP-TV-Z]{38,40}")
-_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 
 
 def _text(value: object) -> str:
     return value if isinstance(value, str) else ""
-
-
-def _strict_base64(text: str) -> bytes | None:
-    """Padded base64 whose padding bits are zero, or None."""
-    if _BASE64.fullmatch(text) is None:
-        return None
-    try:
-        data = base64.b64decode(text, validate=True)
-    except binascii.Error:
-        return None
-    return data if base64.b64encode(data).decode("ascii") == text else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +102,7 @@ class MppChargeUsdcStacks:
         text = e.payload.get("transaction")
         if not isinstance(text, str) or len(text) > -(-MAX_STACKS_TX // 3) * 4:
             return Refusal("mpp/stacks-tx-malformed")
-        wire = _strict_base64(text)
+        wire = b64_decode(text)
         if wire is None or len(wire) == 0 or len(wire) > MAX_STACKS_TX:
             return Refusal("mpp/stacks-tx-malformed")
         try:

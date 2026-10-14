@@ -9,13 +9,13 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
+from ._codec import b64_decode
 from ._hedera_proto import (
     INT64_LIMIT,
     UINT64_LIMIT,
     account_amount,
     decode_hedera_tx,
     entity,
-    from_base64,
     len_field,
     tx_id_field,
     write_body,
@@ -124,7 +124,7 @@ class MppChargeHedera:
         if kind not in ("transaction", "hash"):
             return Refusal("mpp/credential-type")
         if kind == "transaction":
-            wire = from_base64(payload.get("transaction"))
+            wire = b64_decode(payload.get("transaction"))
             if wire is None:
                 return Refusal("hedera/tx-malformed")
             decoded = decode_hedera_tx(wire)

@@ -1,5 +1,6 @@
-"""Byte encodings the bindings read and write: base64url without padding (RFC 4648 §5), read in its canonical form
-(§3.5), base64, base58 (the Bitcoin alphabet), 0x hex, and the JSON forms the TypeScript bindings compare with."""
+"""Byte encodings the bindings read and write: base64url without padding (RFC 4648 §5) and padded standard base64
+(§4), each read in its canonical form (§3.5), base58 (the Bitcoin alphabet), 0x hex, and the JSON forms the TypeScript
+bindings compare with."""
 
 import base64
 import binascii
@@ -47,13 +48,16 @@ def b64_encode(data: bytes) -> str:
 
 
 def b64_decode(text: object) -> bytes | None:
-    """Standard padded base64, alphabet enforced; None for anything else."""
+    """Standard padded base64 (RFC 4648 §4) in its canonical form (RFC 4648 §3.5); None for anything else. A text whose
+    last character before the padding has a bit set past the last byte is not that form. Every rail's standard base64
+    is read here."""
     if not isinstance(text, str):
         return None
     try:
-        return base64.b64decode(text, validate=True)
+        data = base64.b64decode(text, validate=True)
     except (binascii.Error, ValueError):
         return None
+    return data if base64.b64encode(data).decode("ascii") == text else None
 
 
 def b58_encode(data: bytes) -> str:

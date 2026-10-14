@@ -275,6 +275,21 @@ def test_x402_exact_tvm_depth_33_is_too_large_and_depth_32_is_within_the_bound()
     assert isinstance(root_of(boc_of(_chain_of(32))), Cell)
 
 
+def test_x402_exact_tvm_a_bag_not_in_canonical_base64_is_malformed_before_its_size_is_read() -> None:
+    # 8,194 bytes, over the 8 KiB bound. The respelled text sets a bit past the last byte in the last character before
+    # the padding (RFC 4648 §3.5). lcp's exactTvm.bound answers tvm/boc-too-large for the canonical text and
+    # tvm/boc-malformed for the respelled one.
+    canonical = base64.b64encode(bytes(8193) + b"\x01").decode()
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    respelled = canonical[:-3] + alphabet[alphabet.index(canonical[-3]) | 1] + canonical[-2:]
+    assert respelled != canonical and base64.b64decode(respelled) == base64.b64decode(canonical)
+    assert root_of(canonical) == Refusal("tvm/boc-too-large")
+    assert root_of(respelled) == Refusal("tvm/boc-malformed")
+    assert BINDING.bound(presented(canonical)) == Refusal("tvm/boc-too-large")
+    assert BINDING.bound(presented(respelled)) == Refusal("tvm/boc-malformed")
+    assert root_of("") == Refusal("tvm/boc-malformed")
+
+
 def test_x402_exact_tvm_an_exotic_cell_in_the_settlement_is_boc_malformed() -> None:
     rows = json.loads((Path(__file__).parent / "tvm_exotic.json").read_text())["rows"]
     assert [r["expect"] for r in rows[1:]] == ["tvm/boc-malformed"] * 3

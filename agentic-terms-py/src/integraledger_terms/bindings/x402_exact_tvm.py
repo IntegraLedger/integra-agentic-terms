@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
+from ._codec import b64_decode
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._ton_cell import Builder, Cell, Malformed, parse_boc, serialize_boc
 from ._ton_tlb import (
@@ -38,7 +39,6 @@ SIGNATURE_BITS = 512
 SEND_MODE = 3
 
 _NETWORK = re.compile(r"tvm:(-?(?:0|[1-9][0-9]{0,15}))")
-_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 _MAX_SAFE_INTEGER = 2**53 - 1
 _BOM = b"\xef\xbb\xbf"
@@ -71,14 +71,16 @@ def _cell_count(root: Cell) -> int:
 
 
 def root_of(boc: object) -> Cell | Refusal:
-    """The one root of a base64 bag of cells of at most 8 KiB, at most 512 cells and depth 32, or the refusal."""
-    if not isinstance(boc, str) or len(boc) == 0 or _BASE64.fullmatch(boc) is None:
+    """The one root of a bag of cells written in padded standard base64, or the refusal. A text that is not that base64
+    in its canonical form (RFC 4648 §3.5) is tvm/boc-malformed before its size is read; the bag holds at most 8 KiB, 512
+    cells and depth 32."""
+    data = None if boc == "" else b64_decode(boc)
+    if data is None:
         return Refusal("tvm/boc-malformed")
-    pad = 2 if boc.endswith("==") else 1 if boc.endswith("=") else 0
-    if len(boc) // 4 * 3 - pad > MAX_BOC_BYTES:
+    if len(data) > MAX_BOC_BYTES:
         return Refusal("tvm/boc-too-large")
     try:
-        roots = parse_boc(base64.b64decode(boc))
+        roots = parse_boc(data)
     except Malformed:
         return Refusal("tvm/boc-malformed")
     if len(roots) != 1:

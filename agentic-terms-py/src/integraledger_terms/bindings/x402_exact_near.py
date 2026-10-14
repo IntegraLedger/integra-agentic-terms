@@ -19,7 +19,7 @@ from ._borsh_near import (
     encode_signed_delegate,
     public_key_of,
 )
-from ._codec import js_json
+from ._codec import b64_decode, js_json
 from ._jose import parse_json
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._x402 import chosen, payment_with, presented_with, read_for
@@ -31,7 +31,6 @@ MAX_ARGS_BYTES = 4096
 
 _ACCOUNT = re.compile(r"[a-z0-9._-]{2,64}")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
-_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 _BOM = b"\xef\xbb\xbf"
 
 
@@ -101,15 +100,16 @@ def _memo_of(args: bytes) -> AtrHash | Refusal:
 
 
 def near_carrier(signed_delegate_action: object) -> AtrHash | Refusal:
-    """The hash in a base64 SignedDelegateAction whose one action is a FunctionCall of ft_transfer with a JSON object
-    of arguments whose memo is an LCP string. The bytes must be exactly the borsh encoding of what is read."""
+    """The hash in a SignedDelegateAction, padded standard base64 in its canonical form (RFC 4648 §3.5), whose one
+    action is a FunctionCall of ft_transfer with a JSON object of arguments whose memo is an LCP string. The bytes must be exactly the borsh encoding of what is read."""
     if not isinstance(signed_delegate_action, str):
         return Refusal("near/sda-malformed")
     if len(signed_delegate_action) > MAX_SDA_BASE64:
         return Refusal("near/sda-too-large")
-    if len(signed_delegate_action) == 0 or _BASE64.fullmatch(signed_delegate_action) is None:
+    data = None if signed_delegate_action == "" else b64_decode(signed_delegate_action)
+    if data is None:
         return Refusal("near/sda-malformed")
-    decoded = decode_signed_delegate(base64.b64decode(signed_delegate_action))
+    decoded = decode_signed_delegate(data)
     if decoded is None:
         return Refusal("near/sda-malformed")
     da = decoded[0]

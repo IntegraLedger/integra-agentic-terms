@@ -1,9 +1,9 @@
-"""The primitives the bindings share, against published values: Keccak-256, base58, strict base64url, and numbers
-as ECMAScript writes them."""
+"""The primitives the bindings share, against published values: Keccak-256, base58, strict base64url and base64, and
+numbers as ECMAScript writes them."""
 
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._cbor import CborMap, CborSimple, decode_cbor
-from integraledger_terms.bindings._codec import b58_decode, b58_encode, b64u_decode, canonical_json, es_number
+from integraledger_terms.bindings._codec import b58_decode, b58_encode, b64_decode, b64u_decode, canonical_json, es_number
 
 import ed25519
 
@@ -34,6 +34,22 @@ def test_base64url_is_strict() -> None:
     assert b64u_decode("YWJ") is None
     assert b64u_decode("YWJj=") is None
     assert b64u_decode("Y") is None
+
+
+def test_base64_reads_the_canonical_form_only() -> None:
+    # RFC 4648 §10's test vectors, then §3.5: a bit set past the last byte in the last character before the padding
+    # makes the same bytes in a form that is not canonical, and that text is not read.
+    for data, text in ((b"", ""), (b"f", "Zg=="), (b"fo", "Zm8="), (b"foo", "Zm9v"), (b"foob", "Zm9vYg==")):
+        assert b64_decode(text) == data
+    assert b64_decode("QQ==") == b"A"
+    assert b64_decode("QR==") is None
+    assert b64_decode("QUI=") == b"AB"
+    assert b64_decode("QUJ=") is None
+    assert b64_decode("QQ") is None
+    assert b64_decode("QQ=") is None
+    assert b64_decode("QQ==QQ==") is None
+    assert b64_decode("Q Q==") is None
+    assert b64_decode("QQ-_") is None
 
 
 def test_numbers_and_member_order_as_rfc_8785_writes_them() -> None:

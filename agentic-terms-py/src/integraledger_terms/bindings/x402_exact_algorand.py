@@ -4,7 +4,6 @@ The payer signs an asset transfer whose note is the ATR hash's LCP string; with 
 after that fee payer's zero payment, which carries both fees. Nothing here fetches or signs.
 """
 
-import base64
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -13,7 +12,7 @@ from typing import Any, Literal
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from . import _algorand
-from ._codec import b64_encode
+from ._codec import b64_decode, b64_encode
 from ._lcp import from_lcp_string, is_list, is_object, normal_hash, safe_int, to_lcp_string
 from ._x402 import chosen, payment_with, presented_with, read_for
 
@@ -21,7 +20,6 @@ ID = "x402/exact/algorand"
 
 _NETWORK = re.compile(r"algorand:([-_a-zA-Z0-9]{32})")
 _ASSET = re.compile(r"0|[1-9][0-9]{0,19}")
-_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 _UINT64_LIMIT = 1 << 64
 MAX_GROUP = 16
 MAX_ENTRY = 8192
@@ -34,13 +32,6 @@ def _uint64(value: object) -> int | None:
         return None
     number = int(value)
     return number if number < _UINT64_LIMIT else None
-
-
-def _base64(value: object) -> bytes | None:
-    """Standard padded base64, or None."""
-    if not isinstance(value, str) or len(value) % 4 != 0 or _BASE64.fullmatch(value) is None:
-        return None
-    return base64.b64decode(value)
 
 
 def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
@@ -90,7 +81,7 @@ def carrier(payload: object) -> Carried | Refusal:
     entry = group[index]
     if not isinstance(entry, str) or len(entry) > MAX_ENTRY:
         return Refusal("avm/txn-malformed")
-    data = _base64(entry)
+    data = b64_decode(entry)
     if data is None:
         return Refusal("avm/txn-malformed")
     try:
@@ -163,7 +154,7 @@ class X402ExactAlgorand:
             or not isinstance(pr.get("genesisId"), str)
         ):
             return Refusal("avm/option-malformed")
-        genesis = _base64(pr.get("genesisHash"))
+        genesis = b64_decode(pr.get("genesisHash"))
         if genesis is None or len(genesis) != 32:
             return Refusal("avm/network-mismatch")
         reference = _NETWORK.fullmatch(accepted["network"])

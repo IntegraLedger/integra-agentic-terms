@@ -1,34 +1,28 @@
-"""Byte helpers the rail bindings share: strict padded base64 with a size bound checked before decoding, decimal
-strings below a limit, and the JSON a rail wire form may carry."""
+"""Byte helpers the rail bindings share: padded standard base64 in its canonical form with a size bound checked
+before decoding, decimal strings below a limit, and the JSON a rail wire form may carry."""
 
-import base64
-import binascii
 import re
 from typing import Any, Literal
 
+from ._codec import b64_decode
 from ._jose import UNPARSED
 from ._jose import parse_json as parse_json_text
 
 U64_LIMIT = 1 << 64
 
-_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
 
 def base64_bytes(text: object, max_bytes: int) -> bytes | Literal["too-large", "malformed"]:
-    """The bytes of a padded standard base64 string, "too-large" when they would exceed max_bytes, or "malformed".
-    The length is checked before anything is decoded."""
+    """The bytes of padded standard base64 as b64_decode reads it (the canonical form only), "too-large" when they
+    would exceed max_bytes, or "malformed". The length is checked before anything is decoded."""
     if not isinstance(text, str) or len(text) % 4 != 0:
         return "malformed"
     pad = 2 if text.endswith("==") else 1 if text.endswith("=") else 0
     if len(text) // 4 * 3 - pad > max_bytes:
         return "too-large"
-    if _BASE64.fullmatch(text) is None:
-        return "malformed"
-    try:
-        return base64.b64decode(text, validate=True)
-    except (binascii.Error, ValueError):
-        return "malformed"
+    data = b64_decode(text)
+    return "malformed" if data is None else data
 
 
 def decimal_below(value: object, limit: int) -> int | None:

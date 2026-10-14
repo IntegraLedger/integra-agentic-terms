@@ -571,6 +571,14 @@ def test_aptos_agreed_refusals() -> None:
     assert u.complete({"transaction": "AAA"}) == Refusal(rows[refusing])
 
 
+def test_aptos_agreed_refusals_of_a_transaction_text() -> None:
+    """Each agreedRefusals row that gives the transaction as a string: decoding it is the row's refusal."""
+    rows = [row for row in AP["agreedRefusals"]["rows"] if isinstance(row.get("transaction"), str)]
+    assert rows
+    for row in rows:
+        assert decode_aptos_tx(row["transaction"]) == Refusal(row["expect"]), row["case"]
+
+
 # ── x402/exact/polkadot/lcp-assets-remark
 
 DOT = load("x402-exact-polkadot-lcp-assets-remark.json")
@@ -1101,6 +1109,14 @@ def test_sui_agreed_refusals() -> None:
     p = sui_payment(SUI["V2"]["tx"]["transactionBase64"])
     p["payload"]["transaction"] = 1
     assert X402_EXACT_SUI.bound(p) == Refusal(rows["payload.transaction not a string"])
+
+
+def test_sui_agreed_refusals_of_a_transaction_text() -> None:
+    """Each agreedRefusals row that gives the transaction as a string: decoding it is the row's refusal."""
+    rows = [row for row in SUI["agreedRefusals"]["rows"] if isinstance(row.get("transaction"), str)]
+    assert rows
+    for row in rows:
+        assert decode_sui_tx(row["transaction"]) == Refusal(row["expect"]), row["case"]
 
 
 def test_sui_the_pairings_filter() -> None:

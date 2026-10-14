@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
+from ._codec import b64_decode
 from ._hedera_proto import (
     INT64_LIMIT,
     UINT64_LIMIT,
@@ -16,7 +17,6 @@ from ._hedera_proto import (
     complete_with,
     decode_hedera_tx,
     entity,
-    from_base64,
     len_field,
     tx_id_field,
     v_field,
@@ -211,7 +211,7 @@ class X402ExactHedera:
         p = presented_with(presented, check_exact)
         if isinstance(p, Refusal):
             return p
-        wire = from_base64(p[1].get("transaction"))
+        wire = b64_decode(p[1].get("transaction"))
         if wire is None:
             return Refusal("hedera/tx-malformed")
         decoded = decode_hedera_tx(wire)

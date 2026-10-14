@@ -208,7 +208,14 @@ def test_x402_exact_solana_v2_bound_of_the_partially_signed_wire_is_h() -> None:
     assert X402_EXACT_SOLANA.bound(presented) == S["V2"]["expectBound"]
 
 
-@pytest.mark.parametrize("row", S["V3"][:3], ids=lambda r: r["case"])
+V3_WIRES = [r for r in S["V3"] if "wireBase64" in r]
+
+
+def test_x402_exact_solana_v3_holds_wire_rows() -> None:
+    assert V3_WIRES
+
+
+@pytest.mark.parametrize("row", V3_WIRES, ids=lambda r: r["case"])
 def test_x402_exact_solana_v3_bound_refusals(row: dict[str, Any]) -> None:
     presented = {"x402Version": 2, "accepted": row["accepted"], "payload": {"transaction": row["wireBase64"]}}
     assert X402_EXACT_SOLANA.bound(presented) == Refusal(row["expect"])

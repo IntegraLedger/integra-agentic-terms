@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from .._core import AtrHash
 from .._types import Refusal
 from . import _stellar_xdr as xdr
-from ._codec import b64_decode, b64_encode
+from ._codec import b64_decode
 
 PASSPHRASE = {
     "stellar:pubnet": "Public Global Stellar Network ; September 2015",
@@ -111,13 +111,6 @@ def muxed_for(base: str, h: AtrHash) -> str:
 
 
 # ── envelopes ────────────────────────────────────────────────────────────────────────────────────────────────────
-
-
-def strict_base64(text: str) -> bytes | None:
-    """Strict RFC 4648 base64: the standard alphabet, padded to a multiple of 4, with zero padding bits (the bytes
-    encode back to the same text). None for anything else."""
-    data = b64_decode(text)
-    return data if data is not None and b64_encode(data) == text else None
 
 
 def _strkey_of(address: xdr.Address) -> tuple[str, str, int | None] | None:
@@ -241,7 +234,7 @@ def _bytes_of(text: object, network: object) -> bytes | Refusal:
         return Refusal("stellar/tx-malformed")
     if len(text) > MAX_XDR:
         return Refusal("stellar/tx-too-large")
-    data = strict_base64(text)
+    data = b64_decode(text)
     return Refusal("stellar/tx-malformed") if data is None else data
 
 
