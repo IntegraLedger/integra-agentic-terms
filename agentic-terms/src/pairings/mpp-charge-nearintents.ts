@@ -1,7 +1,7 @@
 /**
  * The buyer piece for `mpp/charge/nearintents`: the first challenge offering the pairing whose `originNetwork` is the
- * account's network. Nothing the buyer deposits carries the hash, and the binding builds nothing for the buyer to sign,
- * so the gate's comparison is the whole of the buyer's step.
+ * account's network. Nothing the buyer deposits carries the hash, and the binding builds nothing for the buyer to sign:
+ * the proof of the hash is the agreement payment the offer's agreement URL asks for, whose signed payload carries it.
  */
 import type { Json, Refusal } from "@integraledger/lcp";
 import type { BuyerPiece, Chosen } from "../types.js";

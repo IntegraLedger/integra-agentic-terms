@@ -1,7 +1,7 @@
 /**
  * The buyer piece for MPP's `card` and `stripe` pairings: the first challenge, in document order, that offers the
- * pairing. Nothing the buyer's card or Stripe token signs carries the hash, and the binding builds nothing for the
- * buyer to sign, so the gate's comparison is the whole of the buyer's step.
+ * pairing. Nothing in the card or Stripe payment carries the hash, and the binding builds nothing for the buyer to sign:
+ * the proof of the hash is the agreement payment the offer's agreement URL asks for, whose signed payload carries it.
  */
 import type { Json, Refusal } from "@integraledger/lcp";
 import type { MppChallenge } from "@integraledger/lcp/mpp";

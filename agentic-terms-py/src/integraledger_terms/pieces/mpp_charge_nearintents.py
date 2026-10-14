@@ -1,6 +1,6 @@
 """The buyer piece for mpp/charge/nearintents: the first challenge offering the pairing whose originNetwork is the
-account's network. Nothing the buyer deposits carries the hash, so the gate's comparison is the whole of the buyer's
-step."""
+account's network. Nothing the buyer deposits carries the hash, and the binding builds nothing for the buyer to sign:
+the proof of the hash is the agreement payment the offer's agreement URL asks for, whose signed payload carries it."""
 
 import re
 from collections.abc import Mapping
