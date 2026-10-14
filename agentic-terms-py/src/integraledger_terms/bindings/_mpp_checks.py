@@ -44,7 +44,7 @@ _STACKS_NAME = re.compile(r"[a-zA-Z](?:[a-zA-Z0-9]|[-_])*")
 _C32_PRINCIPAL = re.compile(r"S[0-9A-HJKMNP-TV-Z]{38,40}")
 _HEDERA_ENTITY = re.compile(r"(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})")
 _HEDERA_AMOUNT = re.compile(r"(0|[1-9][0-9]{0,18})")
-_HEDERA_MAX_SPLITS = 9
+_HEDERA_MAX_SPLITS = 8
 _EVM_MAX_SPLITS = 10
 _MAX_MEMO_BYTES = 566
 
@@ -434,7 +434,8 @@ def _hedera_entity(value: object) -> bool:
 
 def hedera_charge_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] | Refusal:
     """The currency, the amount and the transfer legs of an MPP Hedera charge: the recipient's remainder and each
-    split, every account distinct. The amount is positive; a split's amount may be zero."""
+    split, every account distinct. The amount is positive; a split's amount may be zero. At most eight splits: with the
+    payer and the recipient, ten token transfer entries, the most a Hedera transaction carries."""
     amount = _hedera_positive_amount(request.get("amount"))
     currency, recipient = request.get("currency"), request.get("recipient")
     if amount is None or not _hedera_entity(currency) or not _hedera_entity(recipient):

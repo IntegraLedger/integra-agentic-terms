@@ -11,7 +11,7 @@ from integraledger_terms import MPP_CHARGE_HEDERA as BINDING
 from integraledger_terms import MPP_SESSION_HEDERA as SESSION
 from integraledger_terms import Declined, Refusal, Transacted, confirm, transact
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, js_json
-from integraledger_terms.bindings._mpp import attribution_memo, check_attribution
+from integraledger_terms.bindings._mpp import attribution_memo, check_attribution, check_challenge
 from integraledger_terms.bindings.mpp_session_hedera import channel_id, voucher
 
 import ed25519
@@ -181,6 +181,25 @@ def test_mpp_charge_hedera_build_complete_and_bound() -> None:
     assert BINDING.bound(credential({"type": "transaction", "transaction": wire})) == C["bound"]["expectBound"]
     other = credential({"type": "transaction", "transaction": C["bound"]["otherTransactionBase64"]})
     assert BINDING.bound(other) == Refusal(C["bound"]["expectOther"])
+
+
+def test_mpp_charge_hedera_requests_are_refused() -> None:
+    """mpp-charge-hedera.json requests: a challenge carrying each request fails the pairing's request checks with the
+    row's code, and the build of a choice carrying it is refused with the same code. Among them, nine splits: with the
+    payer and the recipient, eleven token transfer entries, over the ten a Hedera transaction carries."""
+    rows = C["requests"]
+    assert rows, "the vector file holds no requests rows"
+    for row in rows:
+        challenge = issued("hedera", "charge", js_json(row["request"]), realm=F["realm"], expires=F["expires"])
+        assert check_challenge(challenge, False) == Refusal(row["expect"]), row["case"]
+        choice = {
+            "challenge": {**DOC[0], "request": challenge["request"]},
+            "payer": F["payer"],
+            "node": F["node"],
+            "validStart": {"seconds": int(F["validStart"]["seconds"]), "nanos": F["validStart"]["nanos"]},
+            "maxFee": int(F["maxFee"]),
+        }
+        assert BINDING.build(choice, H) == Refusal(row["expect"]), row["case"]
 
 
 def test_mpp_charge_hedera_push_needs_the_landed_memo() -> None:
