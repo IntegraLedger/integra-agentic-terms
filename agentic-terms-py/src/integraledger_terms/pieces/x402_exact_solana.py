@@ -1,6 +1,6 @@
 """The buyer piece for x402/exact/solana: the v0 message whose one memo is the option's extra.memo, signed by the payer
-as solana-message. The recent blockhash is the option's extra.recentBlockhash when it names one, else the buyer's; the
-mint's decimals and token program are the buyer's reads."""
+as solana-message. The recent blockhash is the option's extra.recentBlockhash when it is a base58 key, else the
+buyer's; the mint's decimals and token program are the buyer's reads."""
 
 from collections.abc import Mapping
 from typing import Any
@@ -23,7 +23,7 @@ def with_unit_price(c: dict[str, Any]) -> dict[str, Any] | Refusal:
 def _inputs(accepted: Mapping[str, Any], given: Inputs) -> dict[str, Any] | Refusal:
     extra = accepted.get("extra")
     offered = extra.get("recentBlockhash") if isinstance(extra, Mapping) else None
-    from_offer = isinstance(offered, str) and offered != ""
+    from_offer = isinstance(offered, str) and SOLANA_ADDRESS.fullmatch(offered) is not None
     spec: dict[str, Any] = {"decimals": "uint", "tokenProgram": "string"}
     if not from_offer:
         spec["recentBlockhash"] = "string"

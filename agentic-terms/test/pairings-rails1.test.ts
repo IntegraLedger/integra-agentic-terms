@@ -149,6 +149,7 @@ describe("x402/exact/solana", () => {
       tokenProgram: string; option: Option; resource: { url: string } };
     V1: { feePayer: string; blockhash: string; instructions: Ix[]; messageLength: number; messageFirstByte: number };
     defaultComputeBudget: { instructions: Ix[] };
+    agreedRefusals: { rows: { case: string; expect: string; choice?: unknown; h?: unknown }[] };
   }>("x402-exact-solana.json");
   const f = S.fixed;
   const payer = ed25519(f.payerSeed);
@@ -193,12 +194,43 @@ describe("x402/exact/solana", () => {
     if (isDeclined(out) || out.request === null || out.request.kind !== "solana-message") throw new Error("no request");
     expect(decompile(out.request.message).blockhash).toBe(S.V1.blockhash);
   });
+  it("an offered extra.recentBlockhash that is not a base58 key is not taken: the buyer's own is the build's, and without one the option is declined x402/input-missing", async () => {
+    // x402's exact SVM scheme: a client whose offered blockhash is absent or malformed fetches its own.
+    for (const offered of ["x", "", "0".repeat(44), "1".repeat(31), 7]) {
+      const option = { ...f.option, extra: { ...f.option.extra, recentBlockhash: offered } } as Option;
+      const doc = docOf(exactSvm, option, f.resource);
+      const given = { decimals: f.decimals, tokenProgram: f.tokenProgram };
+      const out = await confirm(doc, exactSvm, p.account, serving(ABC), { ...given, recentBlockhash: f.blockhash });
+      if (isDeclined(out) || out.request === null || out.request.kind !== "solana-message") throw new Error(String(offered));
+      expect(decompile(out.request.message).blockhash, String(offered)).toBe(S.V1.blockhash);
+      const fetch = serving(ABC);
+      const without = await confirm(doc, exactSvm, p.account, fetch, given);
+      expect(isDeclined(without) && [without.decline.code, without.decline.detail], String(offered)).toEqual([
+        "no-payable-option",
+        "x402/input-missing",
+      ]);
+      expect(fetch.calls).toBe(0);
+    }
+  });
   it("a missing input is declined before any fetch", async () => {
     const fetch = serving(ABC);
     const out = await confirm(p.doc, exactSvm, p.account, fetch, { decimals: f.decimals, recentBlockhash: f.blockhash });
     expect(code(out)).toBe("no-payable-option");
     expect(isDeclined(out) && out.decline.detail).toBe("x402/input-missing");
     expect(fetch.calls).toBe(0);
+  });
+  it("agreedRefusals: the file holds rows with a choice and rows with an h; build gives each row's refusal, with V1's choice for an h", async () => {
+    const rows = S.agreedRefusals.rows.filter((r) => "choice" in r || "h" in r);
+    expect(rows.filter((r) => "choice" in r).length, "agreedRefusals rows with a choice").toBeGreaterThan(0);
+    expect(rows.filter((r) => "h" in r).length, "agreedRefusals rows with an h").toBeGreaterThan(0);
+    const doc = docOf(exactSvm, f.option, f.resource);
+    const choice = { required: doc, accepted: doc.accepts[0]!, payer: f.payer, decimals: f.decimals, tokenProgram: f.tokenProgram, recentBlockhash: f.blockhash };
+    const build = exactSvm.build as (c: unknown, h: unknown) => Promise<unknown>;
+    expect(await build(choice, H)).not.toHaveProperty("refused");
+    for (const row of rows) {
+      const out = "choice" in row ? await build(row.choice, H) : await build(choice, row.h);
+      expect(out, row.case).toEqual({ refused: true, code: row.expect });
+    }
   });
   refusals(p, [EVM_ACCOUNT, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:${f.payer}`]);
 });
@@ -213,6 +245,7 @@ describe("x402/upto/solana", () => {
     EU2: { openInstructionData: string };
     EU3: { messageLength: number; feePayer: string; blockhash: string;
       instructions: { program: string; accounts: [string, boolean, boolean][]; data: string }[] };
+    agreedRefusals: { rows: { case: string; expect: string; choice?: unknown; h?: unknown }[] };
   }>("x402-upto-solana.json");
   const f = U.fixed;
   const payer = ed25519(f.payerSeed);
@@ -276,6 +309,28 @@ describe("x402/upto/solana", () => {
       }
       expect(nonces[0]).not.toBe(nonces[1]);
     }));
+  it("agreedRefusals: the file holds rows with a choice and rows with an h; build gives each row's refusal, with EU3's choice for an h", async () => {
+    const rows = U.agreedRefusals.rows.filter((r) => "choice" in r || "h" in r);
+    expect(rows.filter((r) => "choice" in r).length, "agreedRefusals rows with a choice").toBeGreaterThan(0);
+    expect(rows.filter((r) => "h" in r).length, "agreedRefusals rows with an h").toBeGreaterThan(0);
+    const doc = docOf(uptoSvm, f.option, f.resource);
+    const choice = {
+      required: doc,
+      accepted: doc.accepts[0]!,
+      payer: f.payer,
+      nonce: BigInt(f.nonce),
+      openSlot: BigInt(f.openSlot),
+      now: f.now,
+      tokenProgram: f.tokenProgram,
+      recentBlockhash: f.blockhash,
+    };
+    const build = uptoSvm.build as (c: unknown, h: unknown) => Promise<unknown>;
+    expect(await build(choice, H)).not.toHaveProperty("refused");
+    for (const row of rows) {
+      const out = "choice" in row ? await build(row.choice, H) : await build(choice, row.h);
+      expect(out, row.case).toEqual({ refused: true, code: row.expect });
+    }
+  });
   refusals(p, [EVM_ACCOUNT, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:${f.payer}`]);
 });
 

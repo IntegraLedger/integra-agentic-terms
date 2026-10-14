@@ -11,7 +11,7 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
-from ._lcp import is_object, to_lcp_string
+from ._lcp import is_object, normal_hash, to_lcp_string
 from ._svm import (
     TOKEN,
     TOKEN_2022,
@@ -66,8 +66,8 @@ _read = read_for(_THIS)
 
 
 def bound_of(accepted: Mapping[str, Any], tx: SvmTx) -> AtrHash | Refusal:
-    """The hash in the one memo, which must equal the option's extra.memo, in a message whose durable nonce, if it uses
-    one, is named by static keys."""
+    """The hash in the one memo, which must equal the option's extra.memo, in a message whose durable nonce account, if
+    it uses one, is a static key; the RecentBlockhashes sysvar may come from a lookup table."""
     from_table = static_nonce(tx)
     if from_table is not None:
         return from_table
@@ -100,6 +100,8 @@ class X402ExactSolana:
         assert is_object(required) and is_object(accepted)
         if not payable(accepted):
             return Refusal("x402/option-malformed")
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         memo = extra.get("memo")
         if memo != to_lcp_string(h):

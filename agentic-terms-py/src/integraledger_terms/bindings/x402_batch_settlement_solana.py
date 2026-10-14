@@ -15,7 +15,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._batch import SCHEME, is_delay, payable, payload_of
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
-from ._lcp import is_list, is_object, safe_int, to_lcp_string
+from ._lcp import is_list, is_object, normal_hash, safe_int, to_lcp_string
 from ._svm import (
     TOKEN,
     TOKEN_2022,
@@ -177,6 +177,8 @@ class X402BatchSettlementSolana:
         assert is_object(required) and is_object(accepted)
         if not payable(accepted) or int(accepted["amount"]) >= U64_LIMIT:
             return Refusal("x402/option-malformed")
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         memo = extra.get("memo")
         if memo != to_lcp_string(h):

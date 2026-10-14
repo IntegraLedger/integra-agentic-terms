@@ -59,7 +59,7 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 
 | Pairing | Request | Inputs |
 | --- | --- | --- |
-| `x402/exact/solana` | `solana-message` | `decimals` (integer) and `tokenProgram` (string): the mint's; `recentBlockhash` (string, required unless the option's `extra.recentBlockhash` names one); `computeUnitLimit` (integer, optional); `computeUnitPrice` (decimal, optional) |
+| `x402/exact/solana` | `solana-message` | `decimals` (integer) and `tokenProgram` (string): the mint's; `recentBlockhash` (string, required unless the option's `extra.recentBlockhash` is a base58 key); `computeUnitLimit` (integer, optional); `computeUnitPrice` (decimal, optional) |
 | `x402/upto/solana` | `solana-message` | `openSlot` (decimal), `tokenProgram` (string), `recentBlockhash` (string); `nonce` (decimal, optional: a random u64 otherwise); `computeUnitLimit`, `computeUnitPrice` (optional) |
 | `x402/batch-settlement/solana` | `batch`: the opening's `solana-message`, then the first voucher's `ed25519-raw` | `payerAuthorizer` (string), `openSlot` (decimal), `tokenProgram` (string); `recentBlockhash` (unless the option names one); `deposit` (unless `extra.minDeposit` sets it); `salt`, `computeUnitLimit`, `computeUnitPrice` (optional) |
 | `mpp/charge/solana` | `solana-message` | `decimals`, `tokenProgram`, `recentBlockhash`, each required only where the request's `methodDetails` leaves it out (none for native SOL besides the blockhash); `computeUnitLimit`, `computeUnitPrice` (optional) |

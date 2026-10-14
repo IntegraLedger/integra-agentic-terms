@@ -12,7 +12,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from . import _stellar
-from ._lcp import is_object, safe_int
+from ._lcp import is_object, normal_hash, safe_int
 from ._x402 import chosen, filter_of, legal_context_of, read_for
 
 ID = "x402/exact/stellar"
@@ -76,6 +76,8 @@ class X402ExactStellar:
         accepted = c["accepted"]
         if not _payable(accepted):
             return Refusal("x402/option-malformed")
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         ledger = safe_int(c.get("currentLedger"))
         if ledger is None or ledger < 0:
             return Refusal("stellar/tx-malformed")

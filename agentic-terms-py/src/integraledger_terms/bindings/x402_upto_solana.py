@@ -12,7 +12,7 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
-from ._lcp import is_object, safe_int, to_lcp_string
+from ._lcp import is_object, normal_hash, safe_int, to_lcp_string
 from ._svm import (
     TOKEN,
     TOKEN_2022,
@@ -37,6 +37,7 @@ from ._x402 import chosen, filter_of, is_v2, payment_with, read_for
 
 ID = "x402/upto/solana"
 MAX_MEMO = 256
+MAX_SAFE_INTEGER = 2**53 - 1
 U64_LIMIT = 1 << 64
 _U64_DECIMAL = re.compile(r"[0-9]{1,20}")
 
@@ -102,6 +103,8 @@ class X402UptoSolana:
         assert is_object(required) and is_object(accepted)
         if not payable(accepted):
             return Refusal("x402/option-malformed")
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
@@ -119,6 +122,8 @@ class X402UptoSolana:
         channel = channel_pda(payer, fee_payer, accepted["asset"], signer, nonce, open_slot)
         if isinstance(channel, Refusal):
             return channel
+        if open_slot > MAX_SAFE_INTEGER:
+            return Refusal("svm/input-malformed")
         amount = int(accepted["amount"])
         limit, price = choice.get("computeUnitLimit"), choice.get("computeUnitPrice")
         message = build_channel_message(

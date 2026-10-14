@@ -11,7 +11,7 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
-from ._lcp import from_lcp_string, is_object, to_lcp_string
+from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
 from ._x402 import chosen, filter_of, payment_with, read_for
 from ._xrpl import Blob, decode_presented, is_blob_hex, is_xrpl_network, network_id, same_invoice, x402_invoice_id
 
@@ -124,6 +124,8 @@ class X402ExactXrpl:
         assert is_object(required) and is_object(accepted)
         if not _payable(accepted):
             return Refusal("x402/option-malformed")
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         if extra.get("invoiceId") != to_lcp_string(h):
             return Refusal("xrpl/carrier-mismatch")

@@ -15,6 +15,7 @@ from typing import Any, Literal
 from .._core import AtrHash
 from .._types import Refusal
 from ._codec import b58_decode, b58_encode, b64_decode, b64_encode
+from ._jose import js_length
 from ._lcp import from_lcp_string, to_lcp_string
 
 MEMO_V3 = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
@@ -41,8 +42,6 @@ READONLY = 0
 WRITABLE = 1
 READONLY_SIGNER = 2
 WRITABLE_SIGNER = 3
-
-Role = Literal[0, 1, 2, 3]
 
 
 # ── keys and networks ───────────────────────────────────────────────────────────────────────────────────────────
@@ -225,22 +224,23 @@ def canonical_carrier(h: AtrHash, memo: str) -> Carrier | Refusal:
 
 def static_nonce(tx: SvmTx) -> Refusal | None:
     """svm/nonce-account-not-static when the message's first instruction is the System program's AdvanceNonceAccount
-    (data 04000000) and its nonce account or its RecentBlockhashes sysvar is an address lookup table entry, past the
-    static keys: the runtime resolves those entries and can take the message as durable, while the message alone
-    cannot show the nonce it uses. Else None."""
+    (data 04000000) and its nonce account is an address lookup table entry, past the static keys: a durable message
+    names its nonce account as a static key (SIMD-0242), and the message alone cannot show the nonce account it uses.
+    The RecentBlockhashes sysvar may come from a table. Else None."""
     first = tx.instructions[0] if tx.instructions else None
     if first is None or not _program_is(tx, first, _SYSTEM_BYTES) or first.data[:4] != _ADVANCE_NONCE_ACCOUNT:
         return None
-    named = first.accounts[:2]
+    named = first.accounts[:1]
     return Refusal("svm/nonce-account-not-static") if any(i >= len(tx.keys) for i in named) else None
 
 
 def wire_of(text: object) -> bytes | Refusal:
     """The wire in a payment, padded standard base64 in its canonical form (RFC 4648 §3.5), decoded, or the refusal
-    naming what is wrong with it."""
+    naming what is wrong with it. The text's length is measured in UTF-16 code units, as String.prototype.length
+    counts it."""
     if not isinstance(text, str) or text == "":
         return Refusal("svm/tx-malformed")
-    if len(text) > -(-MAX_WIRE // 3) * 4 + 4:
+    if js_length(text) > -(-MAX_WIRE // 3) * 4 + 4:
         return Refusal("svm/tx-too-large")
     data = b64_decode(text)
     if data is None:
@@ -268,12 +268,14 @@ def _compact(value: int) -> bytes:
 def signed_wire(message: bytes, signer: str, signature: object) -> bytes | Refusal:
     """The wire for a message and one signer's signature: the compact-u16 signature count, one 64-byte slot per
     required signer in key order with the signature in the signer's slot and zeros in every other, then the
-    message."""
+    message. A message under 2 bytes is svm/tx-malformed."""
     if not isinstance(signature, (bytes, bytearray)) or len(signature) != 64:
         return Refusal("svm/input-malformed")
     signer_key = key_bytes(signer)
-    if signer_key is None or len(message) < 2:
+    if signer_key is None:
         return Refusal("svm/input-malformed")
+    if len(message) < 2:
+        return Refusal("svm/tx-malformed")
     required = message[1] if message[0] & 0x80 else message[0]
     head = _compact(required)
     wire = bytearray(head + bytes(64 * required) + message)
@@ -308,29 +310,21 @@ class SvmSigning:
 
 _P = 2**255 - 19
 _D = -121665 * pow(121666, _P - 2, _P) % _P
-_SQRT_M1 = pow(2, (_P - 1) // 4, _P)
 
 
 def is_point(data: bytes) -> bool:
-    """Whether 32 bytes decode as an Ed25519 point by RFC 8032 §5.1.3: y is the little-endian integer with bit 255
-    cleared, taken modulo p; x² = (y² - 1) / (d·y² + 1) must have a square root; x = 0 with the sign bit set does not
-    decode."""
+    """Whether 32 bytes decompress as an Ed25519 point as @noble/curves' Point.fromBytes(b, true) does: y is the
+    little-endian integer with bit 255 cleared, taken modulo p, and x² = (y² - 1) / (d·y² + 1) must have a square
+    root."""
     if len(data) != 32:
         return False
     y = int.from_bytes(data, "little") & ((1 << 255) - 1)
-    sign = data[31] >> 7
     y2 = y * y % _P
     u = (y2 - 1) % _P
     v = (_D * y2 + 1) % _P
     x = u * pow(v, 3, _P) * pow(u * pow(v, 7, _P), (_P - 5) // 8, _P) % _P
     vx2 = v * x * x % _P
-    if vx2 == u:
-        pass
-    elif vx2 == (-u) % _P:
-        x = x * _SQRT_M1 % _P
-    else:
-        return False
-    return not (x == 0 and sign == 1)
+    return vx2 == u or vx2 == (-u) % _P
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,7 +387,9 @@ def compile_v0(fee_payer: str, recent_blockhash: str, instructions: Sequence[Ins
     """The v0 message bytes, with no lookup tables, for instructions under fee_payer and recent_blockhash. The fee
     payer is the first account; the others follow signers before non-signers, writable before read-only, and by
     address in collation order within each class. An account's roles across instructions are joined. A program
-    that is the fee payer or is writable is refused."""
+    that is the fee payer or is writable is refused, and so are @solana/kit 8.4.0's v0 limits: more than 64 accounts,
+    12 signers or 64 instructions, an instruction naming more than 255 accounts, and data past 65 535 bytes, which
+    the compact-u16 length cannot hold."""
     blockhash = key_bytes(recent_blockhash)
     if key_bytes(fee_payer) is None or blockhash is None:
         return Refusal("svm/input-malformed")
@@ -424,9 +420,14 @@ def compile_v0(fee_payer: str, recent_blockhash: str, instructions: Sequence[Ins
     )
     ordered = [fee_payer, *others]
     index = {a: i for i, a in enumerate(ordered)}
-    if len(ordered) > 256:
-        return Refusal("svm/input-malformed")
     signers = [a for a in ordered if roles[a] & READONLY_SIGNER]
+    if (
+        len(ordered) > 64
+        or len(signers) > 12
+        or len(instructions) > 64
+        or any(len(ix.accounts) > 255 or len(ix.data) > 0xFFFF for ix in instructions)
+    ):
+        return Refusal("svm/input-malformed")
     readonly_signers = [a for a in signers if not roles[a] & WRITABLE]
     readonly_unsigned = [a for a in ordered if not roles[a] & READONLY_SIGNER and not roles[a] & WRITABLE]
     out = bytearray([0x80, len(signers), len(readonly_signers), len(readonly_unsigned)])
@@ -543,8 +544,10 @@ class SvmUnsigned:
 
 
 def memo_length(memo: str) -> int:
-    """The UTF-8 length of a memo, a lone surrogate counting as the three bytes of its replacement."""
-    return len(memo.encode("utf-8", "surrogatepass"))
+    """The UTF-8 length TextEncoder writes for the memo as a JavaScript string of its UTF-16 code units: a surrogate
+    pair is one four-byte character, held as one code point or as two, and a lone surrogate is U+FFFD's three
+    bytes."""
+    return len(memo.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8"))
 
 
 def integer_of(value: object) -> Any:

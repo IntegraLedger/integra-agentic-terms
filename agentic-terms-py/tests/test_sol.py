@@ -172,6 +172,23 @@ def test_x402_exact_solana_the_offers_recent_blockhash_is_the_builds() -> None:
     assert decompile(hexb(out.request["message"]))["blockhash"] == S["V1"]["blockhash"]
 
 
+@pytest.mark.parametrize("offered", ["x", "", "0" * 44, "1" * 31, 7])
+def test_x402_exact_solana_an_offered_recent_blockhash_that_is_not_a_base58_key_is_not_taken(offered: Any) -> None:
+    """x402's exact SVM scheme: a client whose offered blockhash is absent or malformed fetches its own. So the buyer's
+    recentBlockhash is the build's, and without one the option is declined x402/input-missing before any fetch."""
+    p = exact_pairing()
+    option = with_memo({**SF["option"], "extra": {**SF["option"]["extra"], "recentBlockhash": offered}})
+    doc = x402_doc(option, SF["resource"])
+    given = {"decimals": SF["decimals"], "tokenProgram": SF["tokenProgram"]}
+    out = run(lambda c: confirm(doc, X402_EXACT_SOLANA, p.account, c, {**given, "recentBlockhash": SF["blockhash"]}), serving(ABC))
+    assert isinstance(out, Confirmed) and out.request is not None and out.request["kind"] == "solana-message"
+    assert decompile(hexb(out.request["message"]))["blockhash"] == S["V1"]["blockhash"]
+    link = serving(ABC)
+    without = run(lambda c: confirm(doc, X402_EXACT_SOLANA, p.account, c, given), link)
+    assert code(without) == "no-payable-option" and isinstance(without, Declined) and without.detail == "x402/input-missing"
+    assert link.calls == 0
+
+
 def test_x402_exact_solana_a_missing_input_is_declined_before_any_fetch() -> None:
     p = exact_pairing()
     link = serving(ABC)
@@ -179,6 +196,31 @@ def test_x402_exact_solana_a_missing_input_is_declined_before_any_fetch() -> Non
     out = run(lambda c: confirm(p.doc, X402_EXACT_SOLANA, p.account, c, inputs), link)
     assert code(out) == "no-payable-option" and isinstance(out, Declined) and out.detail == "x402/input-missing"
     assert link.calls == 0
+
+
+def exact_choice() -> dict[str, Any]:
+    """V1's choice: build's choice of the fixed option with the fixed payer, decimals, token program and blockhash."""
+    doc = x402_doc(with_memo(SF["option"]), SF["resource"])
+    return {
+        "required": doc,
+        "accepted": doc["accepts"][0],
+        "payer": SF["payer"],
+        "decimals": SF["decimals"],
+        "tokenProgram": SF["tokenProgram"],
+        "recentBlockhash": SF["blockhash"],
+    }
+
+
+def test_x402_exact_solana_agreed_refusals_with_a_choice_or_an_h() -> None:
+    """The file holds agreedRefusals rows with a choice and rows with an h. build gives each row's refusal: a row's
+    choice with H, and V1's choice with a row's h."""
+    rows = [r for r in S["agreedRefusals"]["rows"] if "choice" in r or "h" in r]
+    assert any("choice" in r for r in rows), "no agreedRefusals row carries a choice"
+    assert any("h" in r for r in rows), "no agreedRefusals row carries an h"
+    assert not isinstance(X402_EXACT_SOLANA.build(exact_choice(), H), Refusal)
+    for row in rows:
+        got = X402_EXACT_SOLANA.build(row["choice"], H) if "choice" in row else X402_EXACT_SOLANA.build(exact_choice(), row["h"])
+        assert got == Refusal(row["expect"]), row["case"]
 
 
 def test_x402_exact_solana_b10_b16_refusals() -> None:
@@ -401,6 +443,45 @@ def test_x402_upto_solana_eu3_the_payers_signature_over_the_vectors_message_make
     assert signature.hex().startswith(U["EU3"]["payerSignaturePrefix"])
     assert signature.hex().endswith(U["EU3"]["payerSignatureSuffix"])
     assert _svm.signed_wire(tx.message, UF["payer"], signature) == wire
+
+
+def upto_choice() -> dict[str, Any]:
+    """EU3's choice: build's choice of the fixed option with the fixed payer, nonce, open slot, now, token program and
+    blockhash."""
+    doc = x402_doc(with_memo(UF["option"]), UF["resource"])
+    return {
+        "required": doc,
+        "accepted": doc["accepts"][0],
+        "payer": UF["payer"],
+        "nonce": int(UF["nonce"]),
+        "openSlot": int(UF["openSlot"]),
+        "now": UF["now"],
+        "tokenProgram": UF["tokenProgram"],
+        "recentBlockhash": UF["blockhash"],
+    }
+
+
+def test_x402_upto_solana_agreed_refusals_with_a_choice_or_an_h() -> None:
+    """The file holds agreedRefusals rows with a choice and rows with an h. build gives each row's refusal: a row's
+    choice with H, and EU3's choice with a row's h."""
+    rows = [r for r in U["agreedRefusals"]["rows"] if "choice" in r or "h" in r]
+    assert any("choice" in r for r in rows), "no agreedRefusals row carries a choice"
+    assert any("h" in r for r in rows), "no agreedRefusals row carries an h"
+    assert not isinstance(X402_UPTO_SOLANA.build(upto_choice(), H), Refusal)
+    for row in rows:
+        got = X402_UPTO_SOLANA.build(row["choice"], H) if "choice" in row else X402_UPTO_SOLANA.build(upto_choice(), row["h"])
+        assert got == Refusal(row["expect"]), row["case"]
+
+
+def test_x402_upto_solana_agreed_refusals_an_open_slot_past_the_safe_integers() -> None:
+    """The file holds agreedRefusals rows with an openSlot. build of EU3's choice with the row's openSlot, above
+    2^53 - 1, gives the row's refusal, as @integraledger/lcp 0.4.0's build does after the channel address."""
+    rows = [r for r in U["agreedRefusals"]["rows"] if "openSlot" in r]
+    assert rows, "no agreedRefusals row carries an openSlot"
+    for row in rows:
+        assert int(row["openSlot"]) > 2**53 - 1, row["case"]
+        got = X402_UPTO_SOLANA.build({**upto_choice(), "openSlot": int(row["openSlot"])}, H)
+        assert got == Refusal(row["expect"]), row["case"]
 
 
 def upto_presented(accepted: Mapping[str, Any], wire: str) -> dict[str, Any]:
