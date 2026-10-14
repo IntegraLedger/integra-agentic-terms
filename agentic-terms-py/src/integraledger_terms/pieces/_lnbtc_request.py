@@ -87,24 +87,26 @@ def _http_binding(params: Mapping[str, Any], request: Mapping[str, Any], resourc
         return _malformed()
     if not _ascending(names):
         return _malformed()
-    method, url, body, headers = request.get("method"), request.get("url"), request.get("body"), request.get("headers")
+    method, url = request.get("method"), request.get("url")
     if not isinstance(method, str) or _METHOD.fullmatch(method) is None or not _is_target_uri(url):
         return _malformed()
     if resource_url != url:
         return Refusal("ln/request-resource-mismatch")
-    content = b"" if body is None else bytes_of(body)
+    content = bytes_of(request["body"]) if "body" in request else b""
     if content is None:
         return _malformed()
-    if headers is not None and not isinstance(headers, Mapping):
+    given = request["headers"] if "headers" in request else {}
+    if not isinstance(given, Mapping):
         return _malformed()
-    given = headers if headers is not None else {}
     bound: list[dict[str, str]] = []
     for name in names:
-        v = given.get(name)
-        if v is not None and (not isinstance(v, str) or _FIELD_VALUE.fullmatch(v) is None):
+        if name not in given:
+            bound.append({"name": name, "valueHash": _value_hash(None)})
+            continue
+        v = given[name]
+        if not isinstance(v, str) or _FIELD_VALUE.fullmatch(v) is None:
             return _malformed()
-        value = None if v is None else v.strip(" \t").encode("ascii")
-        bound.append({"name": name, "valueHash": _value_hash(value)})
+        bound.append({"name": name, "valueHash": _value_hash(v.strip(" \t").encode("ascii"))})
     return {"domain": _HTTP_DOMAIN, "method": method, "url": url, "bodyHash": _sha256_hex(content), "headers": bound}
 
 

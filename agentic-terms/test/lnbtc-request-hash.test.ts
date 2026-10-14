@@ -90,6 +90,11 @@ describe("the request binding, from the buyer's own request", () => {
     ["a URL with port 65536", "http:1", { headers: [] }, { method: "GET", url: "https://api.example.com:65536/article/A" }, "ln/request-binding-malformed"],
     ["a URL whose host is 256.1.1.1", "http:1", { headers: [] }, { method: "GET", url: "https://256.1.1.1/article/A" }, "ln/request-binding-malformed"],
     ["a URL whose host is 1.2.3.4.5", "http:1", { headers: [] }, { method: "GET", url: "https://1.2.3.4.5/article/A" }, "ln/request-binding-malformed"],
+    // The request input's form: body, when present, is 0x hex, and headers, when present, an object whose members are
+    // field values; a present null is neither, and is not an absent member.
+    ["a null body", "http:1", { headers: [] }, { method: "GET", url: ARTICLE_A, body: null }, "ln/request-binding-malformed"],
+    ["null headers", "http:1", { headers: [] }, { method: "GET", url: ARTICLE_A, headers: null }, "ln/request-binding-malformed"],
+    ["a null header value", "http:1", { headers: ["accept"] }, { method: "GET", url: ARTICLE_A, headers: { accept: null } }, "ln/request-binding-malformed"],
     ["x402/payment bound", "mcp:1", { server: SERVER, metadata: ["x402/payment"] }, { server: SERVER, name: "get_article" }, "ln/request-binding-malformed"],
     ["null arguments", "mcp:1", { server: SERVER, metadata: [] }, { server: SERVER, name: "get_article", arguments: null }, "ln/request-binding-malformed"],
     // The WHATWG URL Standard's basic URL parser fails a port past 65535.
