@@ -43,9 +43,9 @@ def _whole(value: object) -> int | None:
 def build_charge(challenge: object, request: object, c: object) -> HederaUnsigned | Refusal:
     """The body the payer signs for an MPP Hedera charge: the payer's own transaction id, MPP's attribution memo for
     this challenge as the memo, and the token transfers of currency: the payer's debit, the recipient's remainder and
-    each split. With credentialType hash the request carries broadcast: true, for a signer that signs and broadcasts
-    the body; with transaction, the default, the signature completes the transaction. A challenge id or realm with no
-    UTF-8 form is mpp/challenge-malformed, and such a clientId is hedera/option-malformed."""
+    each split. With credentialType hash, the default when none is named, the request carries broadcast: true, for a
+    signer that signs and broadcasts the body; with transaction (pull) the signature completes the transaction. A
+    challenge id or realm with no UTF-8 form is mpp/challenge-malformed, and such a clientId is hedera/option-malformed."""
     if not is_object(challenge) or not is_well_formed(challenge.get("id")) or not is_well_formed(challenge.get("realm")):
         return Refusal("mpp/challenge-malformed")
     if not is_object(request):
@@ -78,7 +78,7 @@ def build_charge(challenge: object, request: object, c: object) -> HederaUnsigne
     token_list += b"".join(len_field(2, account_amount(account, a)) for account, a in every)
     tx_id = tx_id_field(seconds, nanos, payer)
     body = write_body(tx_id, c["node"], max_fee, memo, len_field(2, token_list))
-    if c.get("credentialType") == "hash":
+    if c.get("credentialType") != "transaction":
         return HederaUnsigned(request={"kind": "hedera-body", "bodyBytes": body, "broadcast": True})
     return HederaUnsigned(request={"kind": "hedera-body", "bodyBytes": body})
 

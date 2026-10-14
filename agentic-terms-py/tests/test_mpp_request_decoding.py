@@ -102,7 +102,7 @@ def test_a_request_the_protocol_package_answers_request_malformed_is_not_read(na
 
 
 SIGNATURE = {"publicKey": "0x" + F["publicKey"], "signature": "0x" + F["signature"], "type": "ed25519"}
-INPUTS = {"node": F["node"], "validStart": F["validStart"], "maxFee": F["maxFee"]}
+INPUTS = {"node": F["node"], "validStart": F["validStart"], "maxFee": F["maxFee"], "credentialType": "transaction"}
 
 
 def chosen() -> Chosen:

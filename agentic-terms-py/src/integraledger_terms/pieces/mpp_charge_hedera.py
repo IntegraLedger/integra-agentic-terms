@@ -1,12 +1,12 @@
 """The buyer piece for mpp/charge/hedera: the transaction body whose memo is MPP's attribution memo for the chosen
 challenge, read on the account's own network where the challenge names no chainId, handed to the payer as hedera-body.
 The node, the valid start, the maximum fee, the optional client id and the optional credentialType are the buyer's.
-- credentialType transaction (the default, pull): the signer answers {publicKey, signature, type} with 0x hex bytes,
-  and the credential is {challenge, payload: {type: "transaction", transaction}}, the signed body in base64.
-- credentialType hash (push): the request carries broadcast: true; the signer signs and broadcasts the body and answers
-  {transactionId}, which must name the body's payer and valid start. The credential is {challenge, payload: {type:
-  "hash", transactionId}}, and landed beside it holds the network and the body's memo, which bound reads. The signer
-  moves the payment, so a decline keeps it."""
+- credentialType hash (push, the default when none is named): the request carries broadcast: true; the signer signs
+  and broadcasts the body and answers {transactionId}, which must name the body's payer and valid start. The
+  credential is {challenge, payload: {type: "hash", transactionId}}, and landed beside it holds the network and the
+  body's memo, which bound reads. The signer moves the payment, so a decline keeps it.
+- credentialType transaction (pull): the signer answers {publicKey, signature, type} with 0x hex bytes, and the
+  credential is {challenge, payload: {type: "transaction", transaction}}, the signed body in base64."""
 
 import re
 from collections.abc import Mapping
@@ -71,7 +71,7 @@ def _answer(signature: Signature) -> dict[str, Any] | Refusal:
 
 
 def _is_push(c: Mapping[str, Any] | None) -> bool:
-    return c is not None and c.get("credentialType") == "hash"
+    return c is not None and c.get("credentialType") != "transaction"
 
 
 def _pushed_id(signature: Signature, c: Mapping[str, Any]) -> str | Refusal:

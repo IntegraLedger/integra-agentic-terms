@@ -102,7 +102,7 @@ sign, point or leading zero, does not offer the pairing (`mpp/request-malformed`
 | --- | --- | --- |
 | `x402/exact/hedera` | `hedera-body` | `node` (string), `validStart` (object: `seconds` decimal, `nanos` integer), `maxFee` (decimal); `decimals` (integer, optional) |
 | `x402/exact/hedera/transfer-executor` | `hedera-executor` | none |
-| `mpp/charge/hedera` | `hedera-body`; with `credentialType: "hash"`, broadcast by the signer | `node`, `validStart`, `maxFee`; `clientId` (string, optional); `credentialType` (`transaction` or `hash`, optional) |
+| `mpp/charge/hedera` | `hedera-body`, broadcast by the signer unless `credentialType` is `"transaction"` | `node`, `validStart`, `maxFee`; `clientId` (string, optional); `credentialType` (`hash`, the default, or `transaction`; optional) |
 | `mpp/session/hedera` | `hedera-session-open`, broadcast by the signer | `deposit` (decimal) |
 
 ## Other chains

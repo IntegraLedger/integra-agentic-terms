@@ -168,7 +168,7 @@ describe("mpp/charge/hedera", () => {
     binding: chargeHedera,
     doc: docOf(chargeHedera, issued),
     account: `hedera:testnet:${f.payer}`,
-    inputs: { node: f.node, validStart: f.validStart, maxFee: f.maxFee },
+    inputs: { node: f.node, validStart: f.validStart, maxFee: f.maxFee, credentialType: "transaction" },
     answer: async (r) => {
       if (r.kind !== "hedera-body") throw new Error(r.kind);
       expect(toHex(r.bodyBytes)).toBe(`0x${V.build.expectBodyBytes}`);
@@ -235,7 +235,18 @@ describe("mpp/charge/hedera", () => {
     };
     expect(await at("hash")).toEqual(V.build.push.expectRequest);
     expect(await at("transaction")).toEqual(V.build.push.expectPullRequest);
-    expect(await at()).toEqual(V.build.push.expectPullRequest);
+    expect(await at()).toEqual(V.build.push.expectRequest);
+  });
+  it("push is the default: with no credentialType the wallet is handed the push request, and the credential is the hash form", async () => {
+    // mpp-charge-hedera.json build.push, after draft-hedera-charge-00's default credential type, "hash".
+    const signer = counting(push.account, push.answer);
+    const inputs = { node: f.node, validStart: f.validStart, maxFee: f.maxFee };
+    const whole = await transact(push.doc, offered(built), signer, serving(ABC), { inputs });
+    if (isDeclined(whole)) throw new Error(whole.decline.code);
+    if ("approve" in whole) throw new Error("an agreement payment to approve");
+    expect(signer.requests.map((r) => (r as { broadcast?: unknown }).broadcast)).toEqual([true]);
+    expect((whole.signed as MppCredential).payload).toEqual({ type: "hash", transactionId: V.push.transactionId });
+    expect(whole.landed).toEqual(V.fetchPresented.expectLanded);
   });
   it("push: an answer naming another payer or valid start is signed-not-bound, and the moved payment is kept", async () => {
     for (const transactionId of ["0.0.5556@1700000000.000000000", "0.0.5555@1700000001.000000000", "0.0.5555@1700000000.000000001"]) {

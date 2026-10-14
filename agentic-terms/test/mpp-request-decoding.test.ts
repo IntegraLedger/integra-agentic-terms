@@ -94,6 +94,7 @@ describe("finish for mpp/charge/hedera with a chosen challenge's request edited"
       node: f.node,
       validStart: f.validStart,
       maxFee: f.maxFee,
+      credentialType: "transaction",
     });
     if ("decline" in out) throw new Error(out.decline.code);
     return out.chosen;

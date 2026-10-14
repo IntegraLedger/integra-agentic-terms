@@ -40,7 +40,7 @@ CHARGE = Pairing(
     doc=DOC,
     account=f"hedera:testnet:{F['payer']}",
     answer=charge_answer,
-    inputs={"node": F["node"], "validStart": F["validStart"], "maxFee": F["maxFee"]},
+    inputs={"node": F["node"], "validStart": F["validStart"], "maxFee": F["maxFee"], "credentialType": "transaction"},
 )
 
 
@@ -106,6 +106,18 @@ def test_mpp_charge_hedera_push_b6_the_hash_form_whose_landed_memo_gives_h() -> 
     assert whole.landed == C["fetchPresented"]["expectLanded"]
     assert BINDING.bound(signed) == Refusal(C["push"]["expectWithout"])
     assert BINDING.bound({**signed, "landed": whole.landed}) == H
+
+
+def test_mpp_charge_hedera_push_is_the_default_credential_type() -> None:
+    """With no credentialType named, the wallet is handed the push request and the credential is the hash form
+    (mpp-charge-hedera.json build.push, after draft-hedera-charge-00's default credential type, "hash")."""
+    inputs = {"node": F["node"], "validStart": F["validStart"], "maxFee": F["maxFee"]}
+    signer = Recording(PUSH.account, push_answer)
+    whole = run(lambda c: transact(DOC, BINDING, signer, c, inputs=inputs), serving(ABC))
+    assert isinstance(whole, Transacted), whole
+    assert [r.get("broadcast") for r in signer.requests] == [True]
+    assert whole.signed is not None and whole.signed["payload"] == {"type": "hash", "transactionId": C["push"]["transactionId"]}
+    assert whole.landed == C["fetchPresented"]["expectLanded"]
 
 
 def test_mpp_charge_hedera_push_an_answer_naming_another_payer_or_valid_start_keeps_the_moved_payment() -> None:
@@ -314,8 +326,8 @@ def test_mpp_session_hedera_a_log_whose_payer_or_payee_topic_is_not_hex_is_not_t
 
 
 def test_mpp_charge_hedera_build_hands_a_push_over_itself() -> None:
-    # mpp-charge-hedera.json build.push: credentialType hash gives the vector's body with broadcast true; transaction,
-    # or none, gives it with no broadcast member; any other value is the row's refusal.
+    # mpp-charge-hedera.json build.push: credentialType hash, or none, gives the vector's body with broadcast true;
+    # transaction gives it with no broadcast member; any other value is the row's refusal.
     from integraledger_terms.bindings.mpp_charge_hedera import build_charge
 
     p = C["build"]["push"]
@@ -335,5 +347,5 @@ def test_mpp_charge_hedera_build_hands_a_push_over_itself() -> None:
 
     assert at({"credentialType": p["credentialType"]}) == p["expectRequest"]
     assert at({"credentialType": "transaction"}) == p["expectPullRequest"]
-    assert at({}) == p["expectPullRequest"]
+    assert at({}) == p["expectRequest"]
     assert at({"credentialType": p["otherCredentialType"]}) == p["expectOther"]

@@ -3,12 +3,12 @@
  * challenge, handed to the payer as `hedera-body`. The node, the valid start, the maximum fee, the optional client id
  * and the optional `credentialType` are the buyer's. A challenge that names no `chainId` is read on the account's own
  * network.
- * - `credentialType` `transaction` (the default, pull): the signer answers `{publicKey, signature, type}`, and the
- *   credential is `{challenge, payload: {type: "transaction", transaction}}`, the signed body in base64.
- * - `credentialType` `hash` (push): the build's request carries `broadcast: true`; the signer signs and broadcasts the body and
- *   answers `{transactionId}`, which must name the body's payer and valid start. The credential is `{challenge,
- *   payload: {type: "hash", transactionId}}`, and `landed` beside it holds the network and the body's memo, which
- *   `bound` reads. The signer moves the payment, so a decline keeps it.
+ * - `credentialType` `hash` (push, the default when none is named): the build's request carries `broadcast: true`; the
+ *   signer signs and broadcasts the body and answers `{transactionId}`, which must name the body's payer and valid
+ *   start. The credential is `{challenge, payload: {type: "hash", transactionId}}`, and `landed` beside it holds the
+ *   network and the body's memo, which `bound` reads. The signer moves the payment, so a decline keeps it.
+ * - `credentialType` `transaction` (pull): the signer answers `{publicKey, signature, type}`, and the credential is
+ *   `{challenge, payload: {type: "transaction", transaction}}`, the signed body in base64.
  */
 import type { AtrHash, Json, Refusal } from "@integraledger/lcp";
 import { attributionMemo, chargeHedera, type MppChallenge, type MppCredential } from "@integraledger/lcp/mpp";
@@ -61,7 +61,7 @@ function answer(signature: Signature): { publicKey: Uint8Array; signature: Uint8
   return { publicKey, signature: bytes, type: type as "ed25519" | "ecdsa-secp256k1" };
 }
 
-const isPush = (c: Record<string, unknown> | undefined): boolean => c?.["credentialType"] === "hash";
+const isPush = (c: Record<string, unknown> | undefined): boolean => c !== undefined && c["credentialType"] !== "transaction";
 
 /** The push answer's transaction id, when it names the body's payer and valid start. */
 function pushedId(signature: Signature, c: Record<string, unknown>): string | Refusal {
@@ -104,7 +104,7 @@ async function complete(unsigned: unknown, signature: Signature, chosen: Chosen)
 export async function buildHederaCharge(choice: unknown, _h: AtrHash): Promise<unknown> {
   if (isRefusal(choice)) return choice;
   const c = choice as { challenge: MppChallenge & { id: string }; payer: string; node: string;
-    validStart: { seconds: bigint; nanos: number }; maxFee: bigint; clientId?: string; credentialType?: "transaction" | "hash" };
+    validStart: { seconds: bigint; nanos: number }; maxFee: bigint; clientId?: string; credentialType?: "hash" | "transaction" };
   const request = requestOf(c.challenge);
   if (request === undefined || typeof c.challenge.id !== "string") return refuse("mpp/choice-malformed");
   return chargeHedera.build({ id: c.challenge.id, realm: c.challenge.realm }, request as never, {
