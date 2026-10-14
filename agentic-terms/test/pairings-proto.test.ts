@@ -449,6 +449,48 @@ describe("ack/payment-request", () => {
     unpayable(p, [`eip155:1:${BUYER.split(":")[2]}`, "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:x", ...UNNAMED]));
 });
 
+// ── The buyer rows the Python runners read ──
+
+/** The vectors' `{"$repeat": [s, n]}` as s repeated n times, everywhere in v. */
+function expand(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(expand);
+  if (typeof v === "object" && v !== null) {
+    const r = (v as { $repeat?: [string, number] }).$repeat;
+    if (r !== undefined) return r[0].repeat(r[1]);
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, expand(x)]));
+  }
+  return v;
+}
+
+describe("the buyer halves over acp-checkout.json's agreedRefusals, ack-payment-request.json's reads and ucp.json's implementation rows", () => {
+  const acpRows = (ACP.agreedRefusals.rows as V[]).filter((r) => !r.call.endsWith(".advertise"));
+  it.each(acpRows.map((r) => [r.case, r] as const))("acp: %s", async (_case, row) => {
+    const [name, fn] = row.call.split(".") as ["delegated" | "undelegated", "read" | "build" | "bound"];
+    const out = await ({ delegated, undelegated }[name][fn] as (...a: unknown[]) => unknown)(...(expand(row.args) as unknown[]));
+    const got = typeof out === "object" && out !== null && "allowance" in out && !("refused" in out) ? { allowance: out.allowance } : out;
+    expect(got).toEqual(row.expect);
+  });
+
+  const ackRows = (ACK.agreedRefusals.rows as V[]).filter((r) => r.call === "paymentRequest.read");
+  it.each(ackRows.map((r) => [r.case, r] as const))("ack: %s", (_case, row) => {
+    expect(paymentRequest.read(expand(row.args[0]) as never)).toEqual(row.expect);
+  });
+
+  const byId: Record<string, V> = Object.fromEntries([ap2Mandate, bookingAp2Mandate, unsigned, bookingUnsigned].map((b) => [b.id, b]));
+  const ucpRows = (UCP.implementation as V[]).filter((r) => r.fn !== "advertise");
+  it.each(ucpRows.map((r) => [r.name, r] as const))("ucp: %s", async (_name, row) => {
+    const given = expand(row.input) as V;
+    const b = byId[row.pairing]!;
+    if (row.fn === "read") {
+      const r = b.read(given.doc) as V;
+      expect("refused" in r ? r : { h: r.h, link: r.link }).toEqual(row.expect);
+    } else {
+      expect(row.fn).toBe("build");
+      expect(await b.build({ checkout: given.checkout }, given.h)).toEqual(row.expect);
+    }
+  });
+});
+
 // ── A2A ──
 
 describe("a2a", () => {
