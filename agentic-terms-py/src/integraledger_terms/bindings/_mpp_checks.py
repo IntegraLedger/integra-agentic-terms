@@ -391,13 +391,12 @@ def subscription_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 
 
 def lightning_pairings(pairing: str) -> PairingCheck:
-    """Lightning: amount in satoshis and currency "sat"; the payment hash as 64 lower-case hex digits, in
-    methodDetails (charge) or in request (session). The invoice may be absent."""
+    """Lightning: the payment hash as 64 lower-case hex digits, in methodDetails (charge) or in request (session), and
+    the invoice, when present, a string. The invoice is made after the hash, so it may be absent here. amount and
+    currency are not read."""
     charge = pairing == "mpp/charge/lightning"
 
     def check(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-        if not is_decimal(r.get("amount")) or r.get("currency") != "sat":
-            return Refusal("mpp/request-malformed")
         h = d.get("paymentHash") if charge else r.get("paymentHash")
         if not isinstance(h, str) or _PAYMENT_HASH.fullmatch(h) is None:
             return Refusal("ln/payment-hash-required")

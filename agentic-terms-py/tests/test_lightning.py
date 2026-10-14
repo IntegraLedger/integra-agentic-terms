@@ -29,6 +29,7 @@ from integraledger_terms import (
 )
 from integraledger_terms.bindings._bolt11 import Bolt11, decode, invoice_h
 from integraledger_terms.bindings._channel import ChannelRef
+from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._codec import b64u_encode, canonical_json
 from integraledger_terms.bindings.lightning import atr_names_invoice
 from mpp_docs import placed_doc
@@ -390,6 +391,48 @@ def test_mpp_session_lightning_build_refuses_a_return_invoice_the_open_action_ca
     out = MPP_SESSION_LIGHTNING.build(choice, H)
     assert row["expectRefused"] is True
     assert out == Refusal(row["expectCode"])
+
+
+# MPP's Lightning drafts give the request's amount in satoshis and its currency as "sat" (draft-lightning-charge-00,
+# draft-lightning-session-00). Neither pairing reads either member: H rides in the invoice's h, and the ATR commits the
+# request's paymentHash. A request with another currency, or no amount, names its pairing, is placed with the id each
+# file gives (L3's expectId, S1's B6 challenge), and binds the file's H.
+AMOUNT_AND_CURRENCY_ROWS = [
+    ("currency BTC", {"currency": "BTC"}),
+    ("no currency", {"currency": None}),
+    ("an amount that is not a decimal integer", {"amount": "2.5"}),
+    ("no amount", {"amount": None}),
+]
+
+
+def offer_with(vector: dict[str, Any], change: dict[str, Any]) -> dict[str, Any]:
+    request = vector["request"]
+    for path, value in change.items():
+        request = _without(request, path) if value is None else with_set(request, {path: value})
+    return {**vector["challenge"], "request": b64u_encode(canonical_json(request).encode("utf-8"))}
+
+
+@pytest.mark.parametrize(("case", "change"), AMOUNT_AND_CURRENCY_ROWS)
+def test_mpp_charge_lightning_reads_no_amount_or_currency(case: str, change: dict[str, Any]) -> None:
+    offer = offer_with(C["L3"], change)
+    assert pairings_of(offer) == (MPP_CHARGE_LIGHTNING.id,)
+    challenge = placed_doc(offer, H, C["fixed"]["link"])[0]
+    assert challenge["id"] == C["L3"]["expectId"]
+    binding: Any = MPP_CHARGE_LIGHTNING
+    unsigned = binding.build({"challenge": challenge}, H)
+    assert binding.bound(unsigned.complete(C["fixed"]["preimage"])) == C["L3"]["expectBound"]
+
+
+@pytest.mark.parametrize(("case", "change"), AMOUNT_AND_CURRENCY_ROWS)
+def test_mpp_session_lightning_reads_no_amount_or_currency(case: str, change: dict[str, Any]) -> None:
+    offer = offer_with(S["S1"], change)
+    assert pairings_of(offer) == (MPP_SESSION_LIGHTNING.id,)
+    challenge = placed_doc(offer, H, S["fixed"]["link"])[0]
+    b6 = next(r for r in S["buyer"]["rows"] if r["name"] == "B6")
+    assert challenge["id"] == b6["input"]["presented"]["challenge"]["id"]
+    binding: Any = MPP_SESSION_LIGHTNING
+    unsigned = binding.build({"challenge": challenge, "returnInvoice": S["fixed"]["returnInvoice"]}, H)
+    assert binding.bound(unsigned.complete(S["fixed"]["preimage"])) == S["S1"]["expectBound"]
 
 
 # mpp/session/lightning's channel members, from draft-lightning-session-00's actions: open opens the session; bearer
