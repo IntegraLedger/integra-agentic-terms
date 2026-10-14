@@ -160,8 +160,12 @@ Pass `refund` to `within` to sign a refund instead of a voucher. Its `maxClaimab
 
 - `refund: {}` closes the channel for the remainder.
 - `refund: { amount }` asks for a partial refund, where the pairing builds one.
-- The buyer's own chain values a refund's build needs (for Solana, a recent blockhash where the option names none, and
-  the compute budget values) go in `within`'s last argument, `inputs`.
+- On Solana the refund is the voucher for the recorded charge. When the seller answers it with a payment request whose
+  `error` is `invalid_batch_settlement_svm_receiver_binding_unavailable`, call `within` again with that payment request:
+  the refund then also carries the payer-signed `request_close`, built with your `recentBlockhash` (a base58 blockhash)
+  and, where you give them, `computeUnitLimit` (a u32) and `computeUnitPrice` (a u64, in decimal). These go in
+  `within`'s last argument, `inputs`; without `recentBlockhash` that refund is declined `no-payable-option` with
+  `x402/input-missing`, and a value given in another form is declined with `x402/input-malformed`.
 
 An MPP session closes with `refund: {}`; a partial refund in a session is declined with
 `mpp/within-action-not-built`.

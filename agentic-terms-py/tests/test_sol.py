@@ -704,7 +704,8 @@ def test_x402_batch_settlement_solana_open_channel_holds_es1s_channel_and_within
 def test_x402_batch_settlement_solana_within_another_fee_payer_signs_nothing() -> None:
     """A payment for a channel the buyer never opened is refused, and nothing is signed. On Solana the channel address
     is derived from the option's feePayer as well as the held channel configuration, so a within challenge naming
-    another fee payer asks for a voucher or a refund in another channel."""
+    another fee payer asks for a voucher or a refund in another channel. The refund here is the one taken again after
+    the receiver's binding is unavailable, which carries the request_close."""
     p = batch_pairing()
     opener = Recording(BATCH_ACCOUNT, batch_answer)
     opened = run(lambda c: transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, opener, c, inputs=p.inputs), serving(ABC))
@@ -715,16 +716,22 @@ def test_x402_batch_settlement_solana_within_another_fee_payer_signs_nothing() -
     other["accepts"][0]["extra"]["feePayer"] = BV["ES1"]["channelPda"]
     signer = Recording(BATCH_ACCOUNT, batch_answer)
     voucher = asyncio.run(within(other, json.loads(json.dumps(hold)), X402_BATCH_SETTLEMENT_SOLANA, signer))
+    retry = {**other, "error": RETRY}
     refund = asyncio.run(
-        within(other, hold, X402_BATCH_SETTLEMENT_SOLANA, signer, {}, {"recentBlockhash": BS["blockhash"]})
+        within(retry, hold, X402_BATCH_SETTLEMENT_SOLANA, signer, {}, {"recentBlockhash": BS["blockhash"]})
     )
     assert code(voucher) == "no-payable-option" and code(refund) == "no-payable-option"
     assert signer.requests == []
 
 
+# The error of the payment request a seller answers a Solana refund with when the receiver's binding is unavailable
+# (x402's scheme_batch_settlement_svm.md): the refund is then taken again with the payer-signed request_close.
+RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable"
+
+
 class RefundWithin:
     """The batch binding with a build_within that stands in for the protocol package's: it records what the gate hands
-    it and completes with the held channel's configuration, without the transaction the package's completion carries."""
+    it and completes with the held channel's configuration."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -745,25 +752,87 @@ class RefundWithin:
         )
 
 
-def test_x402_batch_settlement_solana_a_full_refund_hands_build_within_refund_and_returns_the_close() -> None:
-    """The Solana batch-settlement refund: within(doc, hold, binding, signer, {}) calls the protocol package's
-    build_within with refund {}, which builds request_close itself and returns one solana-message request, and the gate
-    checks that the completion's kind is close and that it names the held channel."""
-    p = batch_pairing()
-    opened = run(lambda c: transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, Recording(BATCH_ACCOUNT, batch_answer), c,
-                                    inputs=p.inputs), serving(ABC))  # fmt: skip
-    assert isinstance(opened, Transacted) and opened.signed is not None, opened
-    hold = open_channel(opened.atr_bytes, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
-    assert not isinstance(hold, Declined), hold
+def test_x402_batch_settlement_solana_a_full_refund_hands_build_within_the_request_close_values_only_when_taken_again() -> None:
+    """The Solana batch-settlement refund (x402's scheme_batch_settlement_svm.md, the vectors' ES6): within(doc, hold,
+    binding, signer, {}) hands build_within refund {} and none of the buyer's request_close values, so the refund is
+    the voucher alone; under a payment request whose error is invalid_batch_settlement_svm_receiver_binding_unavailable
+    it hands all three, and the refund carries the payer-signed request_close. The gate checks that each completion's
+    kind is close and that it names the held channel."""
+    doc, hold = batch_hold()
+    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    given = {"recentBlockhash": BS["blockhash"], "computeUnitLimit": 300000, "computeUnitPrice": "2"}
+    for d in (doc, {**doc, "error": RETRY}):
+        signer = Recording(BATCH_ACCOUNT, lambda r: ["0x00"])
+        out = asyncio.run(within(d, hold, binding, signer, {}, given))
+        assert isinstance(out, Within), out
+        assert signer.requests == [{"kind": "batch", "requests": [{"kind": "solana-message", "message": "0x010203"}]}]
+        assert BATCH_BINDING.channel_kind(out.signed) == "close"
+        assert BATCH_BINDING.channel_ref(out.signed) == ChannelRef(**BV["ES4"]["expectRef"])
+    values = ("recentBlockhash", "computeUnitLimit", "computeUnitPrice")
+    assert [(w["refund"], [w.get(k) for k in values]) for w in binding.handed] == [
+        ({}, [None, None, None]),
+        ({}, [BS["blockhash"], 300000, 2]),
+    ]
+    assert binding.handed[0]["channelConfig"] == hold["opening"]["payload"]["channelConfig"]
+
+
+def test_x402_batch_settlement_solana_the_refund_taken_again_with_no_blockhash_is_input_missing() -> None:
+    doc, hold = batch_hold()
+    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    signer = Recording(BATCH_ACCOUNT, batch_answer)
+    out = asyncio.run(within({**doc, "error": RETRY}, hold, binding, signer, {}, {"computeUnitLimit": 200000}))
+    assert out == Declined("no-payable-option", "x402/input-missing")
+    assert (binding.handed, signer.requests) == ([], [])
+
+
+@pytest.mark.parametrize(
+    "given",
+    [
+        {"computeUnitLimit": -1},
+        {"computeUnitLimit": 4294967296},
+        {"computeUnitLimit": 1.5},
+        {"computeUnitLimit": "200000"},
+        {"computeUnitLimit": True},
+        {"computeUnitPrice": "1.5"},
+        {"computeUnitPrice": 1},
+        {"computeUnitPrice": "18446744073709551616"},
+        {"recentBlockhash": 7},
+        {"recentBlockhash": "0" * 44},
+    ],
+    ids=[
+        "computeUnitLimit -1",
+        "computeUnitLimit 4294967296, past a u32",
+        "computeUnitLimit 1.5",
+        "computeUnitLimit a string",
+        "computeUnitLimit a bool",
+        "computeUnitPrice 1.5, not a decimal integer string",
+        "computeUnitPrice a number",
+        "computeUnitPrice 2^64, past a u64",
+        "recentBlockhash 7, not a string",
+        "recentBlockhash outside the base58 alphabet",
+    ],
+)
+def test_x402_batch_settlement_solana_a_refund_value_in_another_form_is_input_malformed(given: dict[str, Any]) -> None:
+    """buyer.json's BW3: a refund value given in a form the request_close does not take is declined no-payable-option
+    with x402/input-malformed, before the build and the signer call, never dropped. The forms are the rail's: a base58
+    blockhash, a u32 computeUnitLimit and a u64 computeUnitPrice written in decimal."""
+    doc, hold = batch_hold()
+    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    signer = Recording(BATCH_ACCOUNT, batch_answer)
+    for d in (doc, {**doc, "error": RETRY}):
+        out = asyncio.run(within(d, hold, binding, signer, {}, given))
+        assert out == Declined("no-payable-option", "x402/input-malformed"), d
+    assert (binding.handed, signer.requests) == ([], [])
+
+
+def test_x402_batch_settlement_solana_bw3s_control_signs_the_refund_once() -> None:
+    doc, hold = batch_hold()
     binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, lambda r: ["0x00"])
-    out = asyncio.run(within(p.doc, hold, binding, signer, {}))
-    assert isinstance(out, Within), out
-    assert [w["refund"] for w in binding.handed] == [{}]
-    assert binding.handed[0]["channelConfig"] == hold["opening"]["payload"]["channelConfig"]
-    assert signer.requests == [{"kind": "batch", "requests": [{"kind": "solana-message", "message": "0x010203"}]}]
-    assert BATCH_BINDING.channel_kind(out.signed) == "close"
-    assert BATCH_BINDING.channel_ref(out.signed) == ChannelRef(**BV["ES4"]["expectRef"])
+    given = {"computeUnitLimit": 200000.0, "computeUnitPrice": "1", "recentBlockhash": "EZ3rST5dvHmbanh75jc4PuLfV96vp9fEYBVeNk4FfM1k"}
+    assert isinstance(asyncio.run(within({**doc, "error": RETRY}, hold, binding, signer, {}, given)), Within)
+    assert len(signer.requests) == 1
+    assert binding.handed[0]["computeUnitLimit"] == 200000 and isinstance(binding.handed[0]["computeUnitLimit"], int)
 
 
 def batch_hold() -> tuple[Any, ChannelHold]:

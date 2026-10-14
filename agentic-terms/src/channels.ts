@@ -11,6 +11,7 @@ import { fromLcpString, hash, hashEquals, type AtrHash, type Json, type Refusal 
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
 import { fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
+import { KEY } from "./pairings/x402-batch-settlement-solana.js";
 import {
   MAX_ATR_BYTES,
   type Binding,
@@ -64,6 +65,13 @@ interface Batch {
 }
 
 const DECIMAL = /^[0-9]{1,78}$/;
+const U32_MAX = 0xffff_ffff;
+const U64_LIMIT = 1n << 64n;
+/**
+ * The `error` of the payment request a seller answers a Solana refund with when the receiver's binding is unavailable:
+ * x402 then takes the refund again, carrying the payer-signed `request_close`.
+ */
+const BINDING_UNAVAILABLE = "invalid_batch_settlement_svm_receiver_binding_unavailable";
 /** At most this many challenges of a within document are looked at, as the MPP entry point reads a document. */
 const MAX_CHALLENGES = 32;
 const NOT_BOUND_WITHIN = /\/not-bound-within$/;
@@ -159,16 +167,36 @@ async function wouldBeChannel(
   return isRefusal(ref) ? declined("offer-unreadable", ref.code) : ref;
 }
 
+/** The buyer's own chain values a Solana refund's `request_close` takes. */
+interface RefundInputs {
+  recentBlockhash?: string;
+  computeUnitLimit?: number;
+  computeUnitPrice?: bigint;
+}
+
 /**
- * The buyer's own chain values a refund's build takes: a Solana `request_close` needs a recent blockhash when the option
- * names none, and may take the Compute Budget values.
+ * The buyer's own chain values a Solana refund's `request_close` takes, each optional: `recentBlockhash`, a base58
+ * blockhash; `computeUnitLimit`, a u32; and `computeUnitPrice`, a u64 as a decimal string. Undefined when one is given
+ * in another form. Only the refund taken again after the seller answers `BINDING_UNAVAILABLE` carries a
+ * `request_close`, and it needs the blockhash; the refund before it is the voucher alone, and takes none of these.
  */
-function refundInputs(inputs: Inputs): { recentBlockhash?: string; computeUnitLimit?: number; computeUnitPrice?: bigint } {
-  const out: { recentBlockhash?: string; computeUnitLimit?: number; computeUnitPrice?: bigint } = {};
+function refundInputs(inputs: Inputs): RefundInputs | undefined {
+  const out: RefundInputs = {};
   const { recentBlockhash, computeUnitLimit, computeUnitPrice } = inputs;
-  if (typeof recentBlockhash === "string") out.recentBlockhash = recentBlockhash;
-  if (typeof computeUnitLimit === "number" && Number.isSafeInteger(computeUnitLimit)) out.computeUnitLimit = computeUnitLimit;
-  if (typeof computeUnitPrice === "string" && DECIMAL.test(computeUnitPrice)) out.computeUnitPrice = BigInt(computeUnitPrice);
+  if (recentBlockhash !== undefined) {
+    if (typeof recentBlockhash !== "string" || !KEY.test(recentBlockhash)) return undefined;
+    out.recentBlockhash = recentBlockhash;
+  }
+  if (computeUnitLimit !== undefined) {
+    if (typeof computeUnitLimit !== "number" || !Number.isInteger(computeUnitLimit)) return undefined;
+    if (computeUnitLimit < 0 || computeUnitLimit > U32_MAX) return undefined;
+    out.computeUnitLimit = computeUnitLimit;
+  }
+  if (computeUnitPrice !== undefined) {
+    if (typeof computeUnitPrice !== "string" || !DECIMAL.test(computeUnitPrice)) return undefined;
+    if (BigInt(computeUnitPrice) >= U64_LIMIT) return undefined;
+    out.computeUnitPrice = BigInt(computeUnitPrice);
+  }
   return out;
 }
 
@@ -235,10 +263,13 @@ export async function openChannel(
  * channel are re-derived from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge
  * that names another channel or another hash is declined, and one with no legal context is signed under the held
  * hash. A voucher's `maxClaimableAmount` is the recorded charge plus the option's amount; a refund's is the recorded
- * charge. `inputs` are the buyer's own chain values a refund's build takes; `inputs` that is not an object is declined
- * `no-payable-option` with `<namespace>/input-malformed`. Before the signer is called, the channel the built payment
- * would name must be the held one. What was signed must be of the expected kind and belong to the held channel, or it
- * is dropped.
+ * charge. `inputs` are the buyer's own chain values a refund's build takes; `inputs` that is not an object, or a refund
+ * value given in another form, is declined `no-payable-option` with `<namespace>/input-malformed`. A Solana refund is
+ * the voucher alone, and, under a challenge whose `error` is
+ * `invalid_batch_settlement_svm_receiver_binding_unavailable`, also the payer-signed `request_close` built with the
+ * buyer's `recentBlockhash`. Before the signer is called, the channel the built payment would name must be the held
+ * one. What was signed must be of the expected kind and belong
+ * to the held channel, or it is dropped.
  */
 export async function within(
   doc: unknown,
@@ -299,6 +330,10 @@ export async function within(
   const payload = (hold.opening as Record<string, unknown>)["payload"];
   const channelConfig = isObject(payload) ? payload["channelConfig"] : undefined;
   const required = isObject(offer) ? offer["required"] : undefined;
+  const values = refund !== undefined ? refundInputs(inputs) : {};
+  if (values === undefined) return declined("no-payable-option", `${ns}/input-malformed`);
+  const retry = refund !== undefined && isObject(required) && required["error"] === BINDING_UNAVAILABLE;
+  if (retry && values.recentBlockhash === undefined) return declined("no-payable-option", `${ns}/input-missing`);
 
   const unsigned = await guarded(() =>
     b.buildWithin!(
@@ -308,7 +343,7 @@ export async function within(
         channelConfig,
         maxClaimableAmount,
         ...(refund !== undefined ? { refund: refundAmount === undefined ? {} : { amount: refundAmount } } : {}),
-        ...(refund !== undefined ? refundInputs(inputs) : {}),
+        ...(retry ? values : {}),
       },
       h,
     ),

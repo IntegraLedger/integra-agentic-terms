@@ -67,6 +67,10 @@ type BatchVectors = {
   ES1: { channelPda: string };
   ES3: { message: string; signaturePrefix: string; signatureSuffix: string };
   ES4: { expectRef: { network: string; channel: string }; closeWireBase64: string; expectCloseKind: string };
+  ES6: {
+    cooperative: { payloadMembers: string[]; expectKind: string };
+    withMemo: { payloadMembers: string[]; expectKind: string };
+  };
 };
 const BV = vectors<BatchVectors>("x402-batch-settlement.json");
 
@@ -445,57 +449,123 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
     const signer = counting(account, answer);
     expect(code(await within(other, JSON.parse(JSON.stringify(hold)), batchSvm, signer))).toBe("no-payable-option");
     expect(code(await within(other, hold, batchSvm, signer, {}, { recentBlockhash: S.blockhash }))).toBe("no-payable-option");
+    const retry = { ...other, error: "invalid_batch_settlement_svm_receiver_binding_unavailable" };
+    expect(code(await within(retry, hold, batchSvm, signer, {}, { recentBlockhash: S.blockhash }))).toBe("no-payable-option");
     expect(signer.requests.length).toBe(0);
   });
 
-  // ES6 (the Solana refund): the protocol package's build of `request_close` for a full
-  // refund, with the recent blockhash from the buyer's inputs; its message holds the fee payer, blockhash and
-  // instructions of the one inside ES4's close wire (the rail does not fix key order inside a category), and the
-  // payment is a close of the held channel.
-  it("a full refund through the protocol package's buildWithin: ES4's close message, kind close, the held channel", async () => {
+  // ES6 (the Solana refund, x402's scheme_batch_settlement_svm.md): the refund is the voucher for the recorded charge
+  // alone (ES6.cooperative), and only the refund taken again under a payment request whose `error` is
+  // `invalid_batch_settlement_svm_receiver_binding_unavailable` also carries the payer-signed `request_close`
+  // (ES6.withMemo), built with the buyer's `recentBlockhash`. At a recorded charge of 1000 the voucher's message is ES3's,
+  // and the `request_close` message holds the fee payer, blockhash and instructions of the one inside ES4's close wire
+  // (the rail does not fix key order inside a category). The inputs here are the opening's, blockhash included.
+  const RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable";
+  async function charged1000(): Promise<ChannelHold> {
     const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
     const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
+    return unwrap(recordCharge(hold, "1000"));
+  }
+  const members = (signed: Presented): string[] => Object.keys((signed as { payload: object }).payload).sort();
+
+  it("a full refund is ES6's cooperative form: ES3's voucher alone, kind close, the held channel", async () => {
+    const hold = await charged1000();
     const signer = counting(account, answer);
-    const out = unwrap(await within(doc, hold, batchSvm, signer, {}, { recentBlockhash: S.blockhash }));
+    const out = unwrap(await within(doc, hold, batchSvm, signer, {}, inputs));
     const r = signer.requests[0]!;
-    if (r.kind !== "batch" || r.requests.length !== 1 || r.requests[0]!.kind !== "solana-message") throw new Error("request");
-    const built = shape((r.requests[0] as { message: Uint8Array }).message);
-    const wire = Uint8Array.from(Buffer.from(BV.ES4.closeWireBase64, "base64"));
-    const close = decodeSvmTx(wire);
-    if ("refused" in close) throw new Error(close.code);
-    expect(built).toEqual(shape(close.message));
-    expect(batchSvm.channel.kind(out.signed as never)).toBe(BV.ES4.expectCloseKind);
+    if (signer.requests.length !== 1 || r.kind !== "batch" || r.requests.length !== 1) throw new Error("request");
+    expect(r.requests[0]!.kind).toBe("ed25519-raw");
+    expect(hex((r.requests[0] as { message: Uint8Array }).message)).toBe(BV.ES3.message);
+    expect(members(out.signed)).toEqual([...BV.ES6.cooperative.payloadMembers].sort());
+    expect(batchSvm.channel.kind(out.signed as never)).toBe(BV.ES6.cooperative.expectKind);
     expect(await batchSvm.channel.ref(out.signed as never)).toEqual(BV.ES4.expectRef);
   });
 
-  // The Solana refund: `within(doc, hold, binding, signer, {})` calls the protocol package's `buildWithin` with
-  // `w.refund = {}`, which builds the `request_close` transaction itself and returns one `solana-message` request, whose
-  // completion is `{x402Version: 2, accepted, payload: {type: "refund", channelConfig, transaction}}`; the gate checks
-  // that its kind is `close` and that it names the held channel. The build here stands in for the package's: it records
-  // what the gate hands it and completes with the held channel's configuration, without the transaction the package's
-  // completion carries.
-  it("a full refund hands buildWithin refund {} and returns the close payment for the held channel", async () => {
+  it("the refund taken again after the binding is unavailable is ES6.withMemo's: ES4's close message, then the voucher", async () => {
+    const hold = await charged1000();
+    const signer = counting(account, answer);
+    const out = unwrap(await within({ ...doc, error: RETRY }, hold, batchSvm, signer, {}, inputs));
+    const r = signer.requests[0]!;
+    if (signer.requests.length !== 1 || r.kind !== "batch" || r.requests.length !== 2) throw new Error("request");
+    expect(r.requests.map((q) => q.kind)).toEqual(["solana-message", "ed25519-raw"]);
+    const close = decodeSvmTx(Uint8Array.from(Buffer.from(BV.ES4.closeWireBase64, "base64")));
+    if ("refused" in close) throw new Error(close.code);
+    expect(shape((r.requests[0] as { message: Uint8Array }).message)).toEqual(shape(close.message));
+    expect(hex((r.requests[1] as { message: Uint8Array }).message)).toBe(BV.ES3.message);
+    expect(members(out.signed)).toEqual([...BV.ES6.withMemo.payloadMembers].sort());
+    expect(batchSvm.channel.kind(out.signed as never)).toBe(BV.ES6.withMemo.expectKind);
+    expect(await batchSvm.channel.ref(out.signed as never)).toEqual(BV.ES4.expectRef);
+  });
+
+  it("the refund taken again with no recentBlockhash: no-payable-option, x402/input-missing, and nothing is signed", async () => {
+    const hold = await charged1000();
+    const signer = counting(account, answer);
+    const { recentBlockhash: _, ...rest } = inputs;
+    const out = await within({ ...doc, error: RETRY }, hold, batchSvm, signer, {}, rest);
+    expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-missing" });
+    expect(signer.requests.length).toBe(0);
+  });
+
+  // The build here stands in for the package's: it records what the gate hands it and completes with the held
+  // channel's configuration. The refund hands it `w.refund = {}` and none of the buyer's request_close values; the
+  // refund taken again hands it all three.
+  it("a full refund hands buildWithin refund {}, and the request_close values only for the refund taken again", async () => {
     const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
     const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
-    const handed: { refund?: unknown; channelConfig?: unknown; accepted?: unknown }[] = [];
-    const message = new Uint8Array([1, 2, 3]);
+    const handed: Record<string, unknown>[] = [];
     const binding = {
       ...batchSvm,
-      async buildWithin(w: { refund?: unknown; channelConfig?: unknown; accepted: unknown; required: unknown }) {
+      async buildWithin(w: Record<string, unknown> & { accepted: unknown; channelConfig: unknown }) {
         handed.push(w);
         return {
-          requests: [{ kind: "solana-message", message }],
+          requests: [{ kind: "ed25519-raw", message: new Uint8Array([1, 2, 3]), signer: S.payer }],
           complete: () => ({ x402Version: 2, accepted: w.accepted, payload: { type: "refund", channelConfig: w.channelConfig } }),
         };
       },
     } as unknown as typeof batchSvm;
-    const signer = counting(account, async () => ["0x00"]);
-    const out = unwrap(await within(doc, hold, binding, signer, {}));
-    expect(handed.map((w) => w.refund)).toEqual([{}]);
-    expect(handed[0]!.channelConfig).toEqual((hold.opening as { payload: { channelConfig: unknown } }).payload.channelConfig);
-    expect(signer.requests).toEqual([{ kind: "batch", requests: [{ kind: "solana-message", message }] }]);
-    expect(batchSvm.channel.kind(out.signed as never)).toBe("close");
-    expect(await batchSvm.channel.ref(out.signed as never)).toEqual(BV.ES4.expectRef);
+    const given = { ...inputs, computeUnitLimit: 300000, computeUnitPrice: "2" };
+    for (const d of [doc, { ...doc, error: RETRY }]) {
+      const out = unwrap(await within(d, hold, binding, counting(account, async () => ["1".repeat(64)]), {}, given));
+      expect(batchSvm.channel.kind(out.signed as never)).toBe("close");
+    }
+    const values = ["recentBlockhash", "computeUnitLimit", "computeUnitPrice"];
+    expect(handed.map((w) => [w["refund"], values.map((k) => w[k])])).toEqual([
+      [{}, [undefined, undefined, undefined]],
+      [{}, [S.blockhash, 300000, 2n]],
+    ]);
+    expect(handed[0]!["channelConfig"]).toEqual((hold.opening as { payload: { channelConfig: unknown } }).payload.channelConfig);
+  });
+
+  // buyer.json's BW3: a refund value given in a form the request_close does not take is declined no-payable-option
+  // with x402/input-malformed, before the build and the signer call, never dropped; BW3's control signs. The forms are
+  // the rail's: a base58 blockhash, a u32 computeUnitLimit and a u64 computeUnitPrice written in decimal.
+  it.each([
+    ["computeUnitLimit -1", { computeUnitLimit: -1 }],
+    ["computeUnitLimit 4294967296, past a u32", { computeUnitLimit: 4294967296 }],
+    ["computeUnitLimit 1.5", { computeUnitLimit: 1.5 }],
+    ["computeUnitLimit a string", { computeUnitLimit: "200000" }],
+    ["computeUnitLimit a boolean", { computeUnitLimit: true }],
+    ["computeUnitPrice 1.5, not a decimal integer string", { computeUnitPrice: "1.5" }],
+    ["computeUnitPrice a number", { computeUnitPrice: 1 }],
+    ["computeUnitPrice 2^64, past a u64", { computeUnitPrice: "18446744073709551616" }],
+    ["recentBlockhash 7, not a string", { recentBlockhash: 7 }],
+    ["recentBlockhash outside the base58 alphabet", { recentBlockhash: "0".repeat(44) }],
+  ])("a refund with %s: no-payable-option, x402/input-malformed, nothing signed", async (_, given) => {
+    const hold = await charged1000();
+    const signer = counting(account, answer);
+    for (const d of [doc, { ...doc, error: RETRY }]) {
+      const out = await within(d, hold, batchSvm, signer, {}, given as never);
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
+    }
+    expect(signer.requests.length).toBe(0);
+  });
+
+  it("BW3's control: well-formed refund values, and the refund is signed with one signer call", async () => {
+    const hold = await charged1000();
+    const signer = counting(account, answer);
+    const given = { computeUnitLimit: 200000, computeUnitPrice: "1", recentBlockhash: "EZ3rST5dvHmbanh75jc4PuLfV96vp9fEYBVeNk4FfM1k" };
+    unwrap(await within(doc, hold, batchSvm, signer, {}, given));
+    expect(signer.requests.length).toBe(1);
   });
 
   // buyer.json's BW4: within declines inputs given and not an object with no-payable-option and x402/input-malformed,

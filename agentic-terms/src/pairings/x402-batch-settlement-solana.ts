@@ -10,7 +10,8 @@ import { batchComplete, batchRequest, depositOf, optionalInputs, randomU64, revi
 import { firstOption, inputsOf, isObject, isRefusal, refuse, uintOf, x402Chosen } from "./common.js";
 
 const PAIRING = "x402/batch-settlement/solana";
-const KEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+/** A Solana key or blockhash in base58: 32 to 44 characters of the Bitcoin alphabet. */
+export const KEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const U64 = /^[0-9]{1,20}$/;
 const U64_LIMIT = 1n << 64n;
 

@@ -27,6 +27,7 @@ from .bindings._mpp_checks import decode_string_map
 from .bindings.mpp_session import session_resume
 from .pieces._common import with_payment_identifier
 from .pieces._mpp import pairings_of_placed, request_of
+from .pieces.x402_batch_settlement_solana import KEY
 
 # A channel the buyer opened for an ATR it compared, as JSON the caller keeps and hands back: pairing, network,
 # channel, h, atr (base64 of the ATR bytes the opening compared), opening (the signed opening as the gate returned it,
@@ -36,6 +37,11 @@ from .pieces._mpp import pairings_of_placed, request_of
 ChannelHold = dict[str, Any]
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
+_U32_MAX = 2**32 - 1
+_U64_LIMIT = 2**64
+# The error of the payment request a seller answers a Solana refund with when the receiver's binding is unavailable:
+# x402 then takes the refund again, carrying the payer-signed request_close.
+_BINDING_UNAVAILABLE = "invalid_batch_settlement_svm_receiver_binding_unavailable"
 _NOT_BOUND_WITHIN = re.compile(r".*/not-bound-within")
 _HOLD_KEYS = ("pairing", "network", "channel", "h", "atr", "charged", "signedMax")
 _REF_BYTES = 24
@@ -146,16 +152,29 @@ def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | No
     }
 
 
-def _refund_inputs(inputs: Mapping[str, Any]) -> dict[str, Any]:
-    """The buyer's own chain values a refund's build takes: a Solana request_close needs a recent blockhash when the
-    option names none, and may take the Compute Budget values."""
+def _refund_inputs(inputs: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The buyer's own chain values a Solana refund's request_close takes, each optional: recentBlockhash, a base58
+    blockhash; computeUnitLimit, a u32 (a float with an integral value is read as that integer, as JSON reads it); and
+    computeUnitPrice, a u64 as a decimal string. None when one is given in another form. Only the refund taken again
+    after the seller answers _BINDING_UNAVAILABLE carries a request_close, and it needs the blockhash; the refund before
+    it is the voucher alone, and takes none of these."""
     out: dict[str, Any] = {}
-    blockhash, limit, price = inputs.get("recentBlockhash"), inputs.get("computeUnitLimit"), inputs.get("computeUnitPrice")
-    if isinstance(blockhash, str):
+    if "recentBlockhash" in inputs:
+        blockhash = inputs["recentBlockhash"]
+        if not isinstance(blockhash, str) or KEY.fullmatch(blockhash) is None:
+            return None
         out["recentBlockhash"] = blockhash
-    if isinstance(limit, int) and not isinstance(limit, bool) and 0 <= limit <= 2**53 - 1:
+    if "computeUnitLimit" in inputs:
+        limit = inputs["computeUnitLimit"]
+        if isinstance(limit, float) and limit.is_integer():
+            limit = int(limit)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 0 <= limit <= _U32_MAX:
+            return None
         out["computeUnitLimit"] = limit
-    if isinstance(price, str) and _DECIMAL.fullmatch(price) is not None:
+    if "computeUnitPrice" in inputs:
+        price = inputs["computeUnitPrice"]
+        if not isinstance(price, str) or _DECIMAL.fullmatch(price) is None or int(price) >= _U64_LIMIT:
+            return None
         out["computeUnitPrice"] = int(price)
     return out
 
@@ -197,9 +216,12 @@ async def within(
     from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge that names another
     channel or another hash is declined, and one with no legal context is signed under the held hash. A voucher's
     maxClaimableAmount is the recorded charge plus the option's amount; a refund's is the recorded charge. inputs are
-    the buyer's own chain values a refund's build takes; inputs that are not a mapping are declined no-payable-option
-    with <namespace>/input-malformed. Before the signer is called, the channel the built payment would name must be the
-    held one. What was signed must be of the expected kind and belong to the held channel, or it is dropped."""
+    the buyer's own chain values a refund's build takes; inputs that are not a mapping, or a refund value given in
+    another form, are declined no-payable-option with <namespace>/input-malformed. A Solana refund is the voucher
+    alone, and, under a challenge whose error is invalid_batch_settlement_svm_receiver_binding_unavailable, also the
+    payer-signed request_close built with the buyer's recentBlockhash. Before the signer is called, the channel the
+    built payment would name must be the held one. What was signed must be of the expected kind and belong to the held
+    channel, or it is dropped."""
     if not _has_channel(binding):
         return _declined("pairing-not-supported", "The pairing has no channel.")
     ns = binding.id.split("/")[0]
@@ -259,6 +281,12 @@ async def within(
     payload = hold["opening"].get("payload")
     channel_config = payload.get("channelConfig") if isinstance(payload, Mapping) else None
     required = offer.get("required") if isinstance(offer, Mapping) else None
+    values = _refund_inputs(inputs if inputs is not None else {}) if refund is not None else {}
+    if values is None:
+        return _declined("no-payable-option", f"{ns}/input-malformed")
+    retry = refund is not None and isinstance(required, Mapping) and required.get("error") == _BINDING_UNAVAILABLE
+    if retry and "recentBlockhash" not in values:
+        return _declined("no-payable-option", f"{ns}/input-missing")
 
     w: dict[str, Any] = {
         "required": required,
@@ -268,7 +296,8 @@ async def within(
     }
     if refund is not None:
         w["refund"] = {} if refund_amount is None else {"amount": refund_amount}
-        w.update(_refund_inputs(inputs if inputs is not None else {}))
+    if retry:
+        w.update(values)
     unsigned = _guarded(lambda: binding.build_within(w, h))
     if isinstance(unsigned, Refusal):
         return _declined("offer-unreadable", unsigned.code)
