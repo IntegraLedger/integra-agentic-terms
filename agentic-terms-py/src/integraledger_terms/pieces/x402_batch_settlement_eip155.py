@@ -1,6 +1,6 @@
 """The gate's buyer piece for x402/batch-settlement/eip155: the first option on the signer's chain; the opening's
-token authorization and first voucher, signed in order; the deposit from extra.minDeposit or the buyer's input,
-within the buyer's maximum; and the authorization salt, drawn once and kept in chosen."""
+token authorization and first voucher, signed in order; the deposit from extra.minDeposit or the buyer's input; and
+the authorization salt, drawn once and kept in chosen."""
 
 import re
 from typing import Any

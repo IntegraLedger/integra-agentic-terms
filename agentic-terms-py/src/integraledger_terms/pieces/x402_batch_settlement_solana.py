@@ -1,7 +1,7 @@
 """The buyer piece for x402/batch-settlement/solana: the first option on the signer's cluster; the opening's
 transaction message and first voucher, signed in order, each answered in base58; the deposit from extra.minDeposit or
-the buyer's input, within the buyer's maximum; the recent blockhash from extra.recentBlockhash when the offer carries
-one; and the channel salt, drawn once and kept in chosen."""
+the buyer's input; the recent blockhash from extra.recentBlockhash when the offer carries one; and the channel salt,
+drawn once and kept in chosen."""
 
 import re
 from collections.abc import Mapping

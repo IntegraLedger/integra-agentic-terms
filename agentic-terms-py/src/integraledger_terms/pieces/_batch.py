@@ -13,19 +13,12 @@ from ._common import bigint_of, choice_of, with_payment_identifier
 
 
 def deposit_of(accepted: Mapping[str, Any], inputs: Inputs) -> str | Refusal:
-    """The deposit: extra.minDeposit when the option carries one, else the buyer's deposit input. A deposit above the
-    buyer's maxDeposit input, when given, is refused."""
+    """The deposit: extra.minDeposit when the option carries one, else the buyer's deposit input."""
     extra = accepted.get("extra")
     has_min = isinstance(extra, Mapping) and "minDeposit" in extra
     deposit = bigint_of(extra["minDeposit"] if isinstance(extra, Mapping) and has_min else inputs.get("deposit"))
     if deposit is None:
         return Refusal("x402/option-malformed" if has_min else "x402/input-missing")
-    if "maxDeposit" in inputs:
-        maximum = bigint_of(inputs["maxDeposit"])
-        if maximum is None:
-            return Refusal("x402/input-missing")
-        if deposit > maximum:
-            return Refusal("x402/deposit-above-maximum")
     return str(deposit)
 
 

@@ -188,12 +188,9 @@ describe("x402/batch-settlement/eip155", () => {
     at(f.now, () => b10(withHttpLink(doc), batchEvm, account, "x402", inputs)));
   it("B16: another namespace, and another chain, are no-payable-option before any fetch", () =>
     at(f.now, () => b16(doc, batchEvm, ["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:x", `eip155:1:${f.payer}`], inputs)));
-  it("the deposit: extra.minDeposit when present, the buyer's maximum refused before any fetch; the payer authorizer required", () =>
+  it("the deposit: extra.minDeposit when present, else the buyer's deposit; the payer authorizer required before any fetch", () =>
     at(f.now, async () => {
       const fetch = serving(ABC);
-      const over = await confirm(doc, batchEvm, account, fetch, { ...inputs, maxDeposit: "99999" });
-      expect(code(over)).toBe("no-payable-option");
-      expect(isDeclined(over) && over.decline.detail).toBe("x402/deposit-above-maximum");
       const noAuthorizer = await confirm(doc, batchEvm, account, fetch, { deposit: f.deposit });
       expect(isDeclined(noAuthorizer) && noAuthorizer.decline.detail).toBe("x402/input-missing");
       expect(fetch.calls).toBe(0);

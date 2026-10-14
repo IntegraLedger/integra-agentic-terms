@@ -75,7 +75,6 @@ the gate itself writes:
 | `<protocol>/signature-malformed`, `mpp/credential-malformed` | The signer's answer is not of the form the request kind takes. See [signers](../guides/signers.md). |
 | `<protocol>/build-failed` | The binding's build threw. |
 | `<protocol>/link-not-https`, `<protocol>/legal-context-malformed` | The link or agreement URL is not an `https` URL. |
-| `x402/deposit-above-maximum` | A batch-settlement deposit is above the buyer's `maxDeposit` input. |
 | `x402/payment-identifier-unwritable` | The seller advertises x402's `payment-identifier` extension, and its `info` is not an object or already holds an `id`. |
 | `x402/payload-malformed` | A rail's completed payment is not of the form the pairing's payload takes. |
 | `mpp/splits-malformed` | A Tempo charge's splits are not one to the maximum of recipients, each with an address and a non-zero amount. |

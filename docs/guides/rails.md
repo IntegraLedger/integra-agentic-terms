@@ -37,7 +37,7 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 | `x402/upto/eip155/permit2` | `eip712` | none |
 | `x402/auth-capture/eip155/eip3009` | `eip712` | none |
 | `x402/auth-capture/eip155/permit2` | `eip712` | none |
-| `x402/batch-settlement/eip155` | `batch` of two `eip712`: the opening's token authorization, then the first voucher | `payerAuthorizer` (address, required); `deposit` (decimal, required unless the option's `extra.minDeposit` sets it); `maxDeposit` (decimal, optional: a larger deposit is refused); `authSalt` (32-byte hex, optional: drawn at random otherwise) |
+| `x402/batch-settlement/eip155` | `batch` of two `eip712`: the opening's token authorization, then the first voucher | `payerAuthorizer` (address, required); `deposit` (decimal, required unless the option's `extra.minDeposit` sets it); `authSalt` (32-byte hex, optional: drawn at random otherwise) |
 | `mpp/charge/evm/authorization` | `eip712` | `tokenDomain` (object, required: the token's EIP-712 `name` and `version`) |
 | `mpp/charge/evm/permit2` | `eip712` | `spender` (string, required: the seller server's submitting address) |
 | `mpp/charge/evm/transaction` | `evm-call` | none |
@@ -61,7 +61,7 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 | --- | --- | --- |
 | `x402/exact/solana` | `solana-message` | `decimals` (integer) and `tokenProgram` (string): the mint's; `recentBlockhash` (string, required unless the option's `extra.recentBlockhash` names one); `computeUnitLimit` (integer, optional); `computeUnitPrice` (decimal, optional) |
 | `x402/upto/solana` | `solana-message` | `openSlot` (decimal), `tokenProgram` (string), `recentBlockhash` (string); `nonce` (decimal, optional: a random u64 otherwise); `computeUnitLimit`, `computeUnitPrice` (optional) |
-| `x402/batch-settlement/solana` | `batch`: the opening's `solana-message`, then the first voucher's `ed25519-raw` | `payerAuthorizer` (string), `openSlot` (decimal), `tokenProgram` (string); `recentBlockhash` (unless the option names one); `deposit` (unless `extra.minDeposit` sets it); `maxDeposit`, `salt`, `computeUnitLimit`, `computeUnitPrice` (optional) |
+| `x402/batch-settlement/solana` | `batch`: the opening's `solana-message`, then the first voucher's `ed25519-raw` | `payerAuthorizer` (string), `openSlot` (decimal), `tokenProgram` (string); `recentBlockhash` (unless the option names one); `deposit` (unless `extra.minDeposit` sets it); `salt`, `computeUnitLimit`, `computeUnitPrice` (optional) |
 | `mpp/charge/solana` | `solana-message` | `decimals`, `tokenProgram`, `recentBlockhash`, each required only where the request's `methodDetails` leaves it out (none for native SOL besides the blockhash); `computeUnitLimit`, `computeUnitPrice` (optional) |
 | `mpp/charge/usdc/solana` | `solana-message` | as `mpp/charge/solana`, read from `methodDetails.solana` |
 | `mpp/session/solana` | `solana-session-open`; with an `operator` voucher signer, then `ed25519-raw` for the session proof | `deposit` (decimal, optional) |

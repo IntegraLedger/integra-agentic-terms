@@ -9,19 +9,11 @@ import type { BatchUnsigned } from "@integraledger/lcp/x402-batch-settlement";
 import type { Chosen, Inputs, Presented, Signature, SigningRequest } from "../types.js";
 import { bigintOf, choiceOf, hexOf, isObject, isRefusal, refuse, withPaymentIdentifier } from "./common.js";
 
-/**
- * The deposit: `extra.minDeposit` when the option carries one, else the buyer's `deposit` input. A deposit above the
- * buyer's `maxDeposit` input, when given, is refused.
- */
+/** The deposit: `extra.minDeposit` when the option carries one, else the buyer's `deposit` input. */
 export function depositOf(accepted: PaymentRequirements, inputs: Inputs): string | Refusal {
   const min = isObject(accepted.extra) ? accepted.extra["minDeposit"] : undefined;
   const deposit = min !== undefined ? bigintOf(min) : bigintOf(inputs["deposit"]);
   if (deposit === undefined) return refuse(min !== undefined ? "x402/option-malformed" : "x402/input-missing");
-  if (inputs["maxDeposit"] !== undefined) {
-    const max = bigintOf(inputs["maxDeposit"]);
-    if (max === undefined) return refuse("x402/input-missing");
-    if (deposit > max) return refuse("x402/deposit-above-maximum");
-  }
   return deposit.toString();
 }
 

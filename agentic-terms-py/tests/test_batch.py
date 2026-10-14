@@ -133,12 +133,8 @@ def test_x402_batch_settlement_eip155_b16_other_namespace_and_chain() -> None:
 
 
 def test_x402_batch_settlement_eip155_the_deposit() -> None:
-    """extra.minDeposit when present, the buyer's maximum refused before any fetch; the payer authorizer required."""
+    """extra.minDeposit when present, else the buyer's deposit; the payer authorizer required before any fetch."""
     link = serving(ABC)
-    over = run(lambda c: confirm(EVM_DOC, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, c,
-                                 {**EVM_INPUTS, "maxDeposit": "99999"}), link)  # fmt: skip
-    assert isinstance(over, Declined) and over.code == "no-payable-option"
-    assert over.detail == "x402/deposit-above-maximum"
     no_authorizer = run(lambda c: confirm(EVM_DOC, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, c,
                                           {"deposit": E["deposit"]}), link)  # fmt: skip
     assert isinstance(no_authorizer, Declined) and no_authorizer.detail == "x402/input-missing"
