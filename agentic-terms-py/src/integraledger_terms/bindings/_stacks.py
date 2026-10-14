@@ -10,7 +10,10 @@ uncompressed (0x01), as SIP-005 encodes it.
 The bytes must be exactly one transaction's encoding: a read past the end, bytes after the payload, text (a
 length-prefixed string, a string-utf8 value or a token transfer's memo) that is not well-formed UTF-8 or that begins
 with a byte-order mark, or a tuple whose member names are not in ascending order under the Unicode Collation
-Algorithm's root order (UTS #10) makes them malformed.
+Algorithm's root order (UTS #10) makes them malformed. Payload types 7 and 8 are read as @stacks/transactions 7.6.0
+reads and writes them back: a tenure change's last field, the 20-byte public key hash, is the bytes that remain of it,
+so a transaction that ends within it is one; a Nakamoto coinbase's recipient is none or (some <value>), which is all
+that is written back.
 """
 
 import re
@@ -33,6 +36,9 @@ _CLARITY_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
 _TENURE_CAUSES = frozenset({0, 1, 2, 3, 4, 5, 6})
 _CLARITY_TYPES = range(0, 15)
 CONTRACT_CALL = 2
+# The Clarity type ids of none and (some <value>).
+_NONE = 9
+_SOME = 10
 _MAX_NAME = 128
 _MAX_BODY = 100_000
 _P = 2**256 - 2**32 - 977
@@ -64,6 +70,13 @@ class _Reader:
     def byte(self) -> int | None:
         b = self.read(1)
         return b[0] if b else None
+
+    def peek(self) -> int | None:
+        """The next byte, not read; None when none remains."""
+        return self.data[self.at] if self.at is not None and self.at < len(self.data) else None
+
+    def remaining(self) -> int:
+        return max(0, len(self.data) - self.at) if self.at is not None else 0
 
     def enum(self, members: frozenset[int] | range) -> int:
         value = self.byte()
@@ -278,6 +291,8 @@ def _payload(r: _Reader) -> Call | None:
     elif kind in (4, 5, 8):
         if len(r.read(32)) != 32:
             raise Malformed
+        if kind == 8 and r.peek() not in (_NONE, _SOME):
+            raise Malformed
         if kind != 4:
             clarity_value(r)
         if kind == 8 and len(r.read(80)) != 80:
@@ -290,7 +305,7 @@ def _payload(r: _Reader) -> Call | None:
         r.read(92)
         r.u32()
         r.enum(_TENURE_CAUSES)
-        r.read(20)
+        r.read(min(20, r.remaining()))
     return None
 
 

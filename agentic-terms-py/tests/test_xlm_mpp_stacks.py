@@ -104,3 +104,14 @@ def test_mpp_charge_usdc_stacks_multisig_key_fields() -> None:
     for row in rows:
         out = MPP_CHARGE_USDC_STACKS.bound(credential(bytes.fromhex(row["wire"])))
         assert (out if isinstance(out, str) else out.code) == row["expect"], row["case"]
+
+
+def test_mpp_charge_usdc_stacks_agreed_refusals() -> None:
+    # Each agreedRefusals row is M4's signed transaction with its payload replaced, presented as the credential's
+    # transaction; bound refuses it with the row's code, the outcome @stacks/transactions 7.6.0 gives. The rows are
+    # selected by their input, and the file holds at least one.
+    rows = [r for r in V.get("agreedRefusals", {}).get("rows", []) if isinstance(r.get("wireHex"), str)]
+    assert rows, "mpp-charge-usdc-stacks.json holds no agreedRefusals row with a wireHex"
+    for row in rows:
+        out = MPP_CHARGE_USDC_STACKS.bound(credential(bytes.fromhex(row["wireHex"][2:])))
+        assert (row["case"], out) == (row["case"], Refusal(row["expect"]))

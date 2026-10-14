@@ -16,7 +16,7 @@ import {
   type MppChallenge,
   type MppCredential,
 } from "@integraledger/lcp/mpp";
-import { confirm, transact, type Binding, type SigningRequest } from "../src/index.js";
+import { check, confirm, transact, type Binding, type SigningRequest } from "../src/index.js";
 import { ABC, buildAndSign, counting, fromHex, H, isDeclined, LINK, offered, RECEIPT, serving, toHex, vectors, type Pairing } from "./support.js";
 
 // Vector files are read as loose JSON data; each row names the fields it uses.
@@ -163,6 +163,30 @@ describe("mpp/charge/usdc/stacks", () => {
       });
     });
     expect((signed as MppCredential).source).toBe(p.account);
+  });
+
+  // Each agreedRefusals row is M4's signed transaction with its payload replaced, presented as the credential's
+  // transaction: the pairing's bound refuses it with the row's code, the outcome @stacks/transactions 7.6.0 gives, and
+  // the gate's check declines it. The rows are selected by their input, and the file holds at least one.
+  it("agreedRefusals: each row's transaction is refused with the row's code, and check declines it", async () => {
+    const rows = ((V.agreedRefusals?.rows ?? []) as { case: string; wireHex?: unknown; expect: string }[]).filter(
+      (r) => typeof r.wireHex === "string",
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const transaction = Buffer.from((row.wireHex as string).slice(2), "hex").toString("base64");
+      const presented = {
+        challenge: (p.doc as unknown[])[0],
+        source: p.account,
+        payload: { type: "transaction", transaction, transactionFormat: "stacks_transaction_v1" },
+      };
+      expect([row.case, await chargeUsdcStacks.bound(structuredClone(presented))]).toEqual([
+        row.case,
+        { refused: true, code: row.expect },
+      ]);
+      const out = await check(ABC, structuredClone(presented), p.binding);
+      expect([row.case, isDeclined(out) && out.decline.code]).toEqual([row.case, "signed-not-bound"]);
+    }
   });
 });
 
