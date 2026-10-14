@@ -279,6 +279,34 @@ def test_eb6_kinds_bound_and_plant() -> None:
     assert binding.bound_within(planted) == BV["EB6"]["plant"]["expectBoundWithinMatched"]
 
 
+
+def test_eb9_the_evm_within_refund() -> None:
+    """The file holds EB9 rows. build_within over EB1's channel with EB2's maxClaimableAmount, its one request
+    completed with EB2's signature, gives the row's payment type and amount, or its refusal."""
+    rows = BV.get("EB9", {}).get("rows", [])
+    assert rows, "the vector file holds no EB9 rows"
+    for row in rows:
+        w: dict[str, Any] = {
+            "required": EVM_DOC,
+            "accepted": EVM_DOC["accepts"][0],
+            "channelConfig": E["config"],
+            "maxClaimableAmount": int(BV["EB2"]["maxClaimableAmount"]),
+        }
+        if "refund" in row:
+            refund = copy.deepcopy(row["refund"])
+            if isinstance(refund, dict) and isinstance(refund.get("amount"), str):
+                refund["amount"] = int(refund["amount"])
+            w["refund"] = refund
+        unsigned = X402_BATCH_SETTLEMENT_EIP155.build_within(w, H)
+        if isinstance(unsigned, Refusal):
+            assert {"refused": True, "code": unsigned.code} == row["expect"], row["case"]
+            continue
+        payment = unsigned.complete([BV["EB2"]["signature"]])
+        assert not isinstance(payment, Refusal), row["case"]
+        payload = payment["payload"]
+        assert payload["voucher"]["signature"] == BV["EB2"]["signature"], row["case"]
+        assert {k: payload[k] for k in ("type", "amount") if k in payload} == row["expect"], row["case"]
+
 def test_ec1_cloudflare_bound() -> None:
     binding = X402_BATCH_SETTLEMENT_CLOUDFLARE
     payload = copy.deepcopy(BV["EC1"]["payload"])

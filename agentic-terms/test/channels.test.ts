@@ -310,6 +310,40 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
     }));
 });
 
+// EB9: the protocol package's EVM buildWithin over EB1's channel with EB2's maxClaimableAmount, its one request
+// completed with EB2's signature: the payment's type and amount, or the refusal.
+type Eb9Row = { case: string; refund?: { amount?: string | null } | null; expect: Record<string, unknown> };
+it("x402-batch-settlement.json EB9: the file holds rows, and the EVM within's refund answers each", async () => {
+  const v = vectors<{ fixed: { evm: { config: unknown } }; EB2: { maxClaimableAmount: string; signature: Hex }; EB9?: { rows: Eb9Row[] } }>(
+    "x402-batch-settlement.json",
+  );
+  const rows = v.EB9?.rows ?? [];
+  expect(rows.length, "EB9 rows").toBeGreaterThan(0);
+  for (const r of rows) {
+    const refund =
+      r.refund === undefined || r.refund === null || typeof r.refund.amount !== "string" ? r.refund : { ...r.refund, amount: BigInt(r.refund.amount) };
+    const u = await batchEvm.buildWithin(
+      {
+        required: evmDoc,
+        accepted: evmDoc.accepts[0]!,
+        channelConfig: v.fixed.evm.config as never,
+        maxClaimableAmount: BigInt(v.EB2.maxClaimableAmount),
+        ...(r.refund !== undefined ? { refund: refund as never } : {}),
+      },
+      H as AtrHash,
+    );
+    if ("refused" in u) {
+      expect(u, r.case).toEqual(r.expect);
+      continue;
+    }
+    const p = u.complete([v.EB2.signature]);
+    if ("refused" in p) throw new Error(`${r.case}: ${JSON.stringify(p)}`);
+    const payload = p.payload as { type: string; amount?: string; voucher: { signature: string } };
+    expect(payload.voucher.signature, r.case).toBe(v.EB2.signature);
+    expect({ type: payload.type, ...(payload.amount !== undefined ? { amount: payload.amount } : {}) }, r.case).toEqual(r.expect);
+  }
+});
+
 // ── SVM ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";

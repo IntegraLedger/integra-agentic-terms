@@ -283,7 +283,9 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
 
 
 def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
-    """A later voucher, or a refund, for a channel opened under h: one request, the voucher."""
+    """A later voucher, or a refund, for a channel opened under h: one request, the voucher. A refund member, whatever
+    its value, makes the payment a refund; refund.amount, when the refund is an object holding one, is its amount, a
+    positive integer below 2^128."""
     if not is_object(w):
         return Refusal("x402/not-v2")
     required, accepted = w.get("required"), w.get("accepted")
@@ -300,9 +302,11 @@ def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
     if not _uint(max_claimable, 0):
         return Refusal("x402/option-malformed")
     assert isinstance(max_claimable, int)
+    is_refund = "refund" in w
     refund = w.get("refund")
+    has_amount = is_object(refund) and "amount" in refund
     refund_amount = refund.get("amount") if is_object(refund) else None
-    if refund_amount is not None and not _uint(refund_amount, 1):
+    if has_amount and not _uint(refund_amount, 1):
         return Refusal("x402/option-malformed")
     chain_id = chain_id_of(accepted["network"])
     assert chain_id is not None
@@ -315,11 +319,11 @@ def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
             return Refusal("x402/signature-malformed")
         voucher = {"channelId": channel_id, "maxClaimableAmount": str(max_claimable), "signature": signatures[0]}
         payload: dict[str, Any]
-        if refund is None:
+        if not is_refund:
             payload = {"type": "voucher", "channelConfig": config, "voucher": voucher}
         else:
             payload = {"type": "refund", "channelConfig": config, "voucher": voucher}
-            if refund_amount is not None:
+            if has_amount:
                 payload["amount"] = str(refund_amount)
         return payment_with(required, accepted, payload)
 
