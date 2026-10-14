@@ -1,6 +1,8 @@
-"""The SD-JWT reader and base64url over sd-jwt.json. Every expected value is the file's."""
+"""The SD-JWT reader over sd-jwt.json, base64url, and the JSON reads and measures. Each expected value is the
+file's, or what JSON.parse and JSON.stringify give for the same input."""
 
 import base64
+import math
 from typing import Any
 
 from support import load
@@ -77,3 +79,30 @@ def test_json_forms() -> None:
     assert js_length("a\U0001f600") == 3
     assert json_bytes({"a": "é\U0001f600\ud800"}) == len('{"a":"') + 2 + 4 + 6 + 2
     assert json_bytes([1.5, 1e21, None, True]) == len("[1.5,1e+21,null,true]")
+
+
+def test_json_bytes_measures_as_json_stringify_writes() -> None:
+    """JSON.stringify writes an infinity as null (ECMA-262 SerializeJSONProperty), so an integer past the double
+    range, which JSON.parse reads as Infinity, measures 4; a value nested past 64 levels, the value being level 1,
+    measures infinity, as @integraledger/lcp's jsonBytes measures it; a cycle cannot be written."""
+
+    def arrays(count: int) -> list[Any]:
+        value: list[Any] = []
+        for _ in range(count - 1):
+            value = [value]
+        return value
+
+    assert json_bytes([10**400, -(10**400), 2**1024 - 2**970, 2**1024 - 2**970 - 1]) == len(
+        "[null,null,null,1.7976931348623157e+308]"
+    )
+    assert json_bytes(arrays(64)) == 128
+    assert json_bytes({"a": arrays(63)}) == len('{"a":}') + 126
+    assert json_bytes(arrays(65)) == math.inf
+    assert json_bytes({"a": arrays(64)}) == math.inf
+    assert json_bytes(arrays(100_000)) == math.inf
+    cycle: list[Any] = []
+    cycle.append(cycle)
+    assert json_bytes(cycle) is None
+    shared: list[Any] = []
+    assert json_bytes([shared, shared]) == len("[[],[]]")
+    assert json_bytes({1: "a"}) is None

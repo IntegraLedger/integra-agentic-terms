@@ -205,36 +205,59 @@ def _string_bytes(text: str) -> int:
     return n
 
 
-def _json_bytes(value: Any) -> int:
-    if value is None:
-        return 4
-    if value is True:
-        return 4
-    if value is False:
-        return 5
-    if isinstance(value, str):
-        return _string_bytes(value)
-    if isinstance(value, (int, float)):
-        if isinstance(value, float) and not math.isfinite(value):
+def _number_bytes(value: int | float) -> int:
+    """The length of a number as JSON.stringify writes it. A number outside the double range is the infinity JSON.parse
+    reads for it, and JSON.stringify writes every infinity as null."""
+    if isinstance(value, int) and abs(value) > 2**53:
+        try:
+            value = float(value)
+        except OverflowError:
             return 4
-        return len(es_number(value))
-    if isinstance(value, Mapping):
-        members = [(k, v) for k, v in value.items()]
-        for key, _ in members:
-            if not isinstance(key, str):
-                raise TypeError("not JSON data")
-        return 2 + max(0, len(members) - 1) + sum(_string_bytes(k) + 1 + _json_bytes(v) for k, v in members)
-    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
-        return 2 + max(0, len(value) - 1) + sum(_json_bytes(v) for v in value)
-    raise TypeError("not JSON data")
+    if not math.isfinite(value):
+        return 4
+    return len(es_number(value))
 
 
-def json_bytes(value: Any) -> int | None:
-    """The UTF-8 length of JSON.stringify(value), or None when the value cannot be written as JSON."""
-    try:
-        return _json_bytes(value)
-    except (TypeError, ValueError, RecursionError):
-        return None
+def json_bytes(value: Any) -> float | None:
+    """The UTF-8 length of JSON.stringify(value), or None when the value cannot be written as JSON. A value in which
+    arrays and objects nest more than MAX_JSON_DEPTH levels, the value itself being level 1, measures infinity, over
+    every size limit: the walk stops at the first level past the bound, so the answer never depends on the
+    interpreter's stack."""
+    total = 0
+    path: set[int] = set()
+    stack: list[tuple[Any, int, bool]] = [(value, 1, False)]
+    while stack:
+        item, level, leaving = stack.pop()
+        if leaving:
+            path.discard(id(item))
+        elif item is None or item is True:
+            total += 4
+        elif item is False:
+            total += 5
+        elif isinstance(item, str):
+            total += _string_bytes(item)
+        elif isinstance(item, (int, float)):
+            total += _number_bytes(item)
+        elif isinstance(item, Mapping) or (isinstance(item, Sequence) and not isinstance(item, (bytes, bytearray))):
+            if level > MAX_JSON_DEPTH:
+                return math.inf
+            if id(item) in path:
+                return None
+            path.add(id(item))
+            stack.append((item, level, True))
+            if isinstance(item, Mapping):
+                members = list(item.items())
+                if any(not isinstance(key, str) for key, _ in members):
+                    return None
+                total += 2 + max(0, len(members) - 1) + sum(_string_bytes(key) + 1 for key, _ in members)
+                children = [member for _, member in members]
+            else:
+                children = list(item)
+                total += 2 + max(0, len(children) - 1)
+            stack.extend((child, level + 1, False) for child in reversed(children))
+        else:
+            return None
+    return total
 
 
 def b64u_encode(data: bytes) -> str:

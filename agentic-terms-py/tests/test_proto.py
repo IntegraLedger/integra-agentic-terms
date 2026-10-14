@@ -847,4 +847,9 @@ def test_acp_agreed_refusals(row: dict[str, Any]) -> None:
     out = getattr(binding, fn)(*expand(row["args"]))
     got = {"allowance": out.allowance} if hasattr(out, "allowance") else out
     expect = row["expect"]
-    assert got == (refusal(expect) if isinstance(expect, dict) and "refused" in expect else expect)
+    if isinstance(expect, dict) and "refused" in expect:
+        assert got == refusal(expect)
+    elif isinstance(expect, dict) and "h" in expect:
+        assert got == advertised(expect)
+    else:
+        assert got == expect

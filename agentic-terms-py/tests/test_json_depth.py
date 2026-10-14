@@ -1,14 +1,26 @@
-"""One JSON nesting cap of 64 levels for every read of JSON text by a binding: core-vectors.json's jsonDepth rows, and
-binding reads of text nested 64 and 65 levels deep. The binding codes are those @integraledger/lcp's same reads give
-for the same inputs: its ACK and AP2 read, usdcRequestHash and atrNamesInvoice."""
+"""One JSON nesting cap of 64 levels for every read of JSON text by a binding: core-vectors.json's jsonDepth rows,
+binding reads of text nested 64 and 65 levels deep, and the ACP, UCP and ACK reads, which measure a document as
+JSON.stringify writes it, the document being level 1. The binding codes are those @integraledger/lcp's same reads give
+for the same inputs: its ACK and AP2 read, usdcRequestHash, atrNamesInvoice, and jsonBytes, which measures a value
+nested past 64 levels as over every size limit and writes an integer past the double range, which JSON.parse reads as
+Infinity, as null."""
 
 import base64
 import json
 from typing import Any
 
+import pytest
 from support import load
 
-from integraledger_terms import ACK_PAYMENT_REQUEST, AP2_CHECKOUT_MANDATE, Advertised, Refusal
+from integraledger_terms import (
+    ACK_PAYMENT_REQUEST,
+    ACP_CHECKOUT_DELEGATED,
+    AP2_CHECKOUT_MANDATE,
+    UCP_CHECKOUT_UNSIGNED,
+    Advertised,
+    Binding,
+    Refusal,
+)
 from integraledger_terms.bindings._jose import MAX_JSON_DEPTH, UNPARSED, json_within_depth, parse_json
 from integraledger_terms.bindings.lightning import atr_names_invoice
 from integraledger_terms.bindings.mpp_charge_usdc import usdc_request_hash
@@ -16,6 +28,8 @@ from integraledger_terms.bindings.mpp_charge_usdc import usdc_request_hash
 CORE = load("core-vectors.json")
 ACK = load("ack-payment-request.json")
 AP2 = load("ap2-checkout-mandate.json")
+ACP = load("acp-checkout.json")
+UCP = load("ucp.json")
 
 
 def b64u(data: bytes) -> str:
@@ -86,3 +100,33 @@ def test_lightning_atr_nested_past_64_is_not_read() -> None:
     assert atr_names_invoice(atr(64), "lnbc1") is True
     assert atr_names_invoice(atr(65), "lnbc1") is False
     assert json.loads(atr(64))["x402"]["accepts"][0]["extra"]["invoice"] == "lnbc1"
+
+
+def nested_arrays(count: int) -> list[Any]:
+    """count arrays, each holding the next."""
+    value: list[Any] = []
+    for _ in range(count - 1):
+        value = [value]
+    return value
+
+
+MEASURED = [
+    (ACP_CHECKOUT_DELEGATED, ACP["V2"]["expectSession"], "acp/too-large"),
+    (UCP_CHECKOUT_UNSIGNED, UCP["V2"]["expectCheckout"], "ucp/too-large"),
+    (ACK_PAYMENT_REQUEST, ACK["K2"]["body"], "ack/too-large"),
+]
+
+
+@pytest.mark.parametrize(("binding", "doc", "too_large"), MEASURED, ids=lambda v: getattr(v, "id", ""))
+def test_a_document_nested_past_64_levels_is_too_large(binding: Binding, doc: dict[str, Any], too_large: str) -> None:
+    assert isinstance(binding.read({**doc, "x": nested_arrays(63)}), Advertised)
+    assert binding.read({**doc, "x": nested_arrays(64)}) == Refusal(too_large)
+    assert binding.read({**doc, "x": nested_arrays(99_999)}) == Refusal(too_large)
+
+
+@pytest.mark.parametrize(("binding", "doc", "too_large"), MEASURED, ids=lambda v: getattr(v, "id", ""))
+def test_a_document_holding_an_integer_past_the_double_range_is_read(
+    binding: Binding, doc: dict[str, Any], too_large: str
+) -> None:
+    assert isinstance(binding.read({**doc, "n": 10**399}), Advertised)
+    assert isinstance(binding.read({**doc, "n": -(10**399)}), Advertised)
