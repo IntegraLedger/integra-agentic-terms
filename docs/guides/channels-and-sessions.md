@@ -11,8 +11,10 @@ The gate follows that shape:
 
 1. **Open.** `transact` (or `confirm` and `finish`) compares the ATR and signs the opening, whose signed contents carry
    H. It is a payment like any other.
-2. **Hold.** `openChannel(bytes, opened, binding)` checks that the opening is an opening, carries the hash of the bytes
-   and names its channel, and returns a **hold**: the bytes, the opening and the channel, as JSON you keep.
+2. **Hold.** `openChannel(bytes, opened, binding, landed?)` checks that the opening is an opening, carries the hash of
+   the bytes and names its channel, and returns a **hold**: the bytes, the opening and the channel, as JSON you keep.
+   `landed` is the landed receipt `transact` returned beside the opening, where it returned one. Pass it: a pairing such
+   as `mpp/session/hedera` binds its opening by a log only that receipt carries, and the hold keeps it with the opening.
 3. **Pay within.** For each later request, `within(doc, hold, binding, signer)` signs one voucher from the hold. It
    takes the bytes, the hash and the channel from the hold, and the amount from the seller's new challenge. On x402's
    batch channels it signs only when that challenge advertises the held H and the payment it builds names the held
