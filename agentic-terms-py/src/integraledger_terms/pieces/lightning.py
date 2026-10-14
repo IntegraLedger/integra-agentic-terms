@@ -50,9 +50,9 @@ class LnbtcPiece(BasePiece):
         o = first_option(read, account, "lnbtc", self.pairing)
         if isinstance(o, Refusal):
             return Refusal("x402/no-payable-option")
-        request = inputs.get("request") if isinstance(inputs, Mapping) else None
-        if request is None:
+        if not isinstance(inputs, Mapping) or "request" not in inputs:
             return Refusal("x402/input-missing")
+        request = inputs["request"]
         resource = o.required.get("resource") if isinstance(o.required, Mapping) else None
         url = resource.get("url") if isinstance(resource, Mapping) else None
         checked = check_request_hash(o.accepted, url, request)

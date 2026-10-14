@@ -147,6 +147,14 @@ def test_another_request_is_no_payable_option_before_any_fetch(request_: Any, de
     assert link.calls == 0
 
 
+def test_a_present_null_request_is_a_malformed_binding_before_any_fetch() -> None:
+    # The request input is an object: a present null is not one, and is not an absent input.
+    link = serving(ABC)
+    out = run(lambda c: confirm(DOC, offered(X402_EXACT_LNBTC), ACCOUNT, c, {"request": None}), link)
+    assert out == Declined("no-payable-option", "ln/request-binding-malformed")
+    assert link.calls == 0
+
+
 def test_an_option_whose_request_hash_is_article_bs_over_article_as_invoice_is_refused() -> None:
     option = {**F["O"], "extra": {**F["O"]["extra"], "requestHash": HTTP_B}}
     doc = x402_doc(option, {"url": ARTICLE_B})

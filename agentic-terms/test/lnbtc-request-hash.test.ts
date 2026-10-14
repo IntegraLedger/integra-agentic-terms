@@ -151,6 +151,14 @@ describe("x402/exact/lnbtc: the gate compares the recomputed request hash before
       expect(isDeclined(out) && out.decline.detail).toBe("x402/input-missing");
       expect(fetch.calls).toBe(0);
     }));
+  it("a present null request: no-payable-option, ln/request-binding-malformed, before any fetch", () =>
+    // The request input is an object: a present null is not one, and is not an absent input.
+    at(async () => {
+      const fetch = serving(ABC);
+      const out = await confirm(doc, binding, account, fetch, { request: null });
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "ln/request-binding-malformed" });
+      expect(fetch.calls).toBe(0);
+    }));
   it("an option whose extra.requestHash is article B's, over article A's invoice: refused though the request is B", () =>
     at(async () => {
       const O = { ...V.fixed.O, extra: { ...(V.fixed.O["extra"] as object), requestHash: HTTP_B } };
