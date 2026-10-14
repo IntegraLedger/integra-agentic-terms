@@ -3,8 +3,6 @@ account's network, as MPP's network reads it; the choice the build takes; the bu
 credential the signer's answer completes; and the piece of a pairing
 whose build has nothing for the buyer to sign."""
 
-import base64
-import binascii
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -12,30 +10,19 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Binding, Chosen, Inputs, Json, Refusal, Signature, Step
-from ..bindings._jose import parse_json
 from ..bindings._mpp import network, pairings_of
+from ..bindings._mpp_checks import decode_object
 from ._base import BasePiece
 from ._common import InputKind, account_of, bigint_of, broadcasts, bytes_of, inputs_of
 
 EVM_ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
-_B64_BODY = re.compile(r"[A-Za-z0-9+/]*={0,2}")
 
 Accept = Callable[[Mapping[str, Any]], Refusal | None]
 
 
 def request_of(c: object) -> dict[str, Any] | None:
-    """The request a challenge carries, decoded from base64url JSON, or None."""
-    if not isinstance(c, Mapping) or not isinstance(c.get("request"), str):
-        return None
-    b64 = c["request"].replace("-", "+").replace("_", "/")
-    b64 += "=" * ((4 - len(b64) % 4) % 4)
-    if _B64_BODY.fullmatch(b64) is None:
-        return None
-    try:
-        value = parse_json(base64.b64decode(b64, validate=True).decode("utf-8"))
-    except (binascii.Error, ValueError, UnicodeDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
+    """The request a challenge carries, read by decode_object, or None."""
+    return decode_object(c.get("request")) if isinstance(c, Mapping) else None
 
 
 def pairings_of_placed(c: object) -> tuple[str, ...]:

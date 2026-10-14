@@ -6,9 +6,9 @@
  * MPP's sessions through the binding's `buildWithin`. `recordCharge` records the server's cumulative charge, bounded by
  * what was signed.
  */
-import { canonicalJson, fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
+import { fromLcpString, hash, hashEquals, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
-import { offers, requestOf } from "./pairings/mpp.js";
+import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
 import { fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
 import {
   MAX_ATR_BYTES,
@@ -62,9 +62,6 @@ interface Batch {
 const DECIMAL = /^[0-9]{1,78}$/;
 /** At most this many challenges of a within document are looked at, as the MPP entry point reads a document. */
 const MAX_CHALLENGES = 32;
-/** An `opaque` of at most this many bytes decoded, 8 KiB, is read. */
-const MAX_OPAQUE_BYTES = 8192;
-const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const NOT_BOUND_WITHIN = /\/not-bound-within$/;
 const REF_BYTES = 24;
 const HOLD_KEYS = ["pairing", "network", "channel", "h", "atr", "charged", "signedMax"] as const;
@@ -455,40 +452,12 @@ function legalContextOf(c: MppChallenge): AtrHash | Refusal | undefined {
 }
 
 /**
- * An `opaque` read as MPP's flat string-to-string map: base64url without padding, its final character's unused bits
- * zero, at most 8 KiB decoded; UTF-8 whose leading byte order mark is kept as a character; one JSON object whose
- * members are all strings and that has an RFC 8785 form. Undefined for anything else.
+ * An `opaque` read as MPP's flat string-to-string map: an object `decodeObject` reads, whose members are all strings.
+ * Undefined for anything else.
  */
 function opaqueMap(s: unknown): Record<string, string> | undefined {
-  const bytes = base64UrlBytes(s, MAX_OPAQUE_BYTES);
-  if (bytes === undefined) return undefined;
-  try {
-    const v: unknown = parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
-    if (!isObject(v) || !Object.values(v).every((m) => typeof m === "string")) return undefined;
-    return typeof canonicalJson(v as Json) === "string" ? (v as Record<string, string>) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The bytes of base64url without padding whose final character's unused bits are zero, at most `max` of them. */
-function base64UrlBytes(s: unknown, max: number): Uint8Array | undefined {
-  if (typeof s !== "string" || s.length % 4 === 1 || s.length > Math.ceil((max * 4) / 3)) return undefined;
-  const out = new Uint8Array(Math.floor((s.length * 3) / 4));
-  let acc = 0;
-  let bits = 0;
-  let at = 0;
-  for (let i = 0; i < s.length; i++) {
-    const v = BASE64URL.indexOf(s[i]!);
-    if (v === -1) return undefined;
-    acc = ((acc << 6) | v) & 0xffffff;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out[at++] = (acc >> bits) & 0xff;
-    }
-  }
-  return (acc & ((1 << bits) - 1)) === 0 ? out : undefined;
+  const v = decodeObject(s);
+  return v !== undefined && Object.values(v).every((m) => typeof m === "string") ? (v as Record<string, string>) : undefined;
 }
 
 /**
