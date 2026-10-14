@@ -201,8 +201,6 @@ class Cell:
         return Slice(self)
 
 
-EMPTY = Cell(0, 0)
-
 
 class Builder:
     def __init__(self) -> None:
@@ -315,27 +313,31 @@ class Slice:
 # ── HashmapE ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-def _label_length_bits(n: int) -> int:
-    return math.ceil(math.log2(n + 1))
-
-
-def _hashmap(s: Slice, n: int, value: Callable[[Slice], object]) -> None:
-    """Parses one Hashmap node of key length n: its label (hml_short, hml_long or hml_same), then the value at a
-    leaf or the two children at a fork, each child that is an ordinary cell. A label longer than the key is
-    malformed."""
+def read_label(s: Slice, n: int) -> int:
+    """The length of a HmLabel for key length n, read from the slice: hml_short (unary length, then the bits),
+    hml_long (the length in ceil(log2(n + 1)) bits, then the bits) or hml_same (one bit, then the length). A label
+    longer than the key is Malformed."""
+    width = math.ceil(math.log2(n + 1))
     if not s.bit():
         length = 0
         while s.bit():
             length += 1
         s.uint(length)
     elif not s.bit():
-        length = s.uint(_label_length_bits(n))
+        length = s.uint(width)
         s.uint(length)
     else:
         s.bit()
-        length = s.uint(_label_length_bits(n))
+        length = s.uint(width)
     if length > n:
         raise Malformed
+    return length
+
+
+def _hashmap(s: Slice, n: int, value: Callable[[Slice], object]) -> None:
+    """Parses one Hashmap node of key length n: its label, then the value at a leaf or the two children at a fork,
+    each child that is an ordinary cell."""
+    length = read_label(s, n)
     if n - length == 0:
         value(s)
         return

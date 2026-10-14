@@ -15,11 +15,10 @@ from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_stri
 from ._ton_cell import Builder, Cell, Malformed, parse_boc, serialize_boc
 from ._ton_tlb import (
     Address,
-    StateInit,
+    is_state_init,
     load_address,
     load_maybe_address,
     load_message_relaxed,
-    load_state_init,
     raw_address,
     store_address,
     store_internal_message,
@@ -254,12 +253,13 @@ class TvmUnsigned:
     request: dict[str, Any]
     _request_cell: Cell
     _wallet: Address
-    _init: StateInit | None
+    _init: Cell | None
     _required: Mapping[str, Any]
     _accepted: Mapping[str, Any]
 
     def complete(self, signature: object) -> dict[str, Any] | Refusal:
-        """Takes the 64-byte Ed25519 signature; the payment's settlementBoc is the internal message to the wallet."""
+        """Takes the 64-byte Ed25519 signature; the payment's settlementBoc is the internal message to the wallet,
+        carrying the given state init cell as its init."""
         if not isinstance(signature, bytes) or len(signature) != SIGNATURE_BITS // 8:
             return Refusal("x402/signature-malformed")
         signed = Builder().slice(self._request_cell.slice()).buf(signature).end()
@@ -280,7 +280,9 @@ class X402ExactTvm:
 
     def build(self, c: Json, h: AtrHash) -> TvmUnsigned | Refusal:
         """The W5 request for the chosen option: one Jetton transfer whose forward payload is the hash's comment,
-        which must be the option's extra.forwardPayload."""
+        which must be the option's extra.forwardPayload. A stateInit must be exactly one StateInitWithLibs, as TON
+        validates a message's state init (x402/option-malformed); the settlement message carries that cell as given,
+        so its hash stays the address the wallet derives from it."""
         if not is_object(c):
             return Refusal("x402/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
@@ -343,17 +345,13 @@ class X402ExactTvm:
             .bit(0)
             .end()
         )
-        init: StateInit | None = None
-        if init_cell is not None:
-            try:
-                init = load_state_init(init_cell.slice())
-            except Malformed:
-                return Refusal("x402/option-malformed")
+        if init_cell is not None and not is_state_init(init_cell):
+            return Refusal("x402/option-malformed")
         return TvmUnsigned(
             request={"kind": "ton-w5", "hash": request.hash},
             _request_cell=request,
             _wallet=wallet,
-            _init=init,
+            _init=init_cell,
             _required=required,
             _accepted=accepted,
         )

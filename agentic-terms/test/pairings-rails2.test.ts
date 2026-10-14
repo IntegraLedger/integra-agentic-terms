@@ -616,6 +616,22 @@ describe.each(rows.map((r) => [r.id, r] as const))("%s", (_id, row) => {
     }));
 });
 
+describe("x402/exact/tvm accounts", () => {
+  // addr_std's workchain_id is an int8 (ton-blockchain/ton crypto/block/block.tlb): an account whose raw workchain is
+  // outside [-128, 127] is no TON address, so it has no payable option, and nothing is fetched.
+  it("an account whose raw workchain is outside int8 is no-payable-option with no fetch", () =>
+    at(tvmRow.now, async () => {
+      const hex = TVM.fixed.wallet.split(":")[1]!;
+      for (const workchain of [128, -129]) {
+        const fetch = serving(new TextEncoder().encode("abc"));
+        const account = `${TVM.fixed.O.network}:${workchain}%3A${hex}`;
+        const out = await confirm(tvmRow.p.doc, tvmRow.p.binding, account, fetch, tvmRow.p.inputs);
+        expect([account, code(out)]).toEqual([account, "no-payable-option"]);
+        expect(fetch.calls).toBe(0);
+      }
+    }));
+});
+
 describe("inputs", () => {
   it("a missing or malformed input is no-payable-option with the pairing's input-missing, before any fetch", () =>
     at(nearRow.now, async () => {

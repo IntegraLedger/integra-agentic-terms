@@ -2,11 +2,15 @@
 relaxed message (CommonMsgInfoRelaxed, Maybe StateInit, the body), StateInit, and currency collections."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from ._ton_cell import Builder, Cell, Malformed, Slice, load_dict
+from ._ton_cell import Builder, Cell, Malformed, Slice, load_dict, read_label
 
 _RAW_ADDRESS = re.compile(r"-?[0-9]{1,10}:[0-9a-fA-F]{64}")
+# The cells TON's validation reads of a message's state init, at most (ton-blockchain/ton crypto/tl/tlblib.hpp,
+# default_validate_max_cells).
+STATE_INIT_MAX_READS = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,10 +20,13 @@ class Address:
 
 
 def raw_address(text: object) -> Address | None:
-    """workchain:64 hex digits as an address, or None."""
+    """workchain:64 hex digits as an address, or None. The workchain must fit addr_std's workchain_id:int8, [-128,
+    127]: outside it, no addr_std can hold it, and every address this pairing writes is an addr_std."""
     if not isinstance(text, str) or _RAW_ADDRESS.fullmatch(text) is None:
         return None
     workchain, hex_hash = text.split(":")
+    if not -128 <= int(workchain) <= 127:
+        return None
     return Address(int(workchain), bytes.fromhex(hex_hash))
 
 
@@ -76,34 +83,61 @@ def _library(s: Slice) -> object:
     return s.ref()
 
 
-@dataclass(frozen=True, slots=True)
-class StateInit:
-    split_depth: int | None
-    special: tuple[bool, bool] | None
-    code: Cell | None
-    data: Cell | None
-    libraries: Cell | None
+def load_state_init(s: Slice) -> None:
+    """Reads a StateInit from the slice: Maybe fixed_prefix_length, Maybe TickTock, Maybe ^code, Maybe ^data and the
+    libraries HashmapE 256 SimpleLib, as @ton/core's loadStateInit reads it."""
+    if s.bit():
+        s.uint(5)
+    if s.bit():
+        s.uint(2)
+    s.maybe_ref()
+    s.maybe_ref()
+    load_dict(s, 256, _library)
 
 
-def load_state_init(s: Slice) -> StateInit:
-    split_depth = s.uint(5) if s.bit() else None
-    special = (s.bit(), s.bit()) if s.bit() else None
-    code = s.maybe_ref()
-    data = s.maybe_ref()
-    libraries = load_dict(s, 256, _library)
-    return StateInit(split_depth, special, code, data, libraries)
+def is_state_init(root: Cell) -> bool:
+    """True when the cell is exactly one StateInitWithLibs, the type in which TON validates a message's state init
+    (ton-blockchain/ton crypto/block/transaction.cpp, try_action_send_msg and unpack_input_msg): fixed_prefix_length,
+    special, code, data and library:(HashmapE 256 SimpleLib). As TON's validation does (crypto/tl/tlblib.cpp,
+    TLB::validate_ref_internal), each cell this reads is ordinary and read to its end, with no bit or reference left
+    over, and it reads at most 1,024 cells: the state init's, then each dictionary cell each time a path reaches it.
+    The code, the data and each library's root are any cells and are not read."""
+    reads = STATE_INIT_MAX_READS
 
+    def exact(c: Cell, read: Callable[[Slice], bool]) -> bool:
+        nonlocal reads
+        if reads <= 0:
+            return False
+        reads -= 1
+        s = c.slice()  # Malformed for an exotic cell
+        return read(s) and s.remaining_bits == 0 and s.remaining_refs == 0
 
-def store_state_init(b: Builder, init: StateInit) -> None:
-    if init.split_depth is None:
-        b.bit(0)
-    else:
-        b.bit(1).uint(init.split_depth, 5)
-    if init.special is None:
-        b.bit(0)
-    else:
-        b.bit(1).bit(init.special[0]).bit(init.special[1])
-    b.maybe_ref(init.code).maybe_ref(init.data).maybe_ref(init.libraries)
+    def edge(c: Cell, n: int) -> bool:
+        def read(s: Slice) -> bool:
+            length = read_label(s, n)
+            if length == n:
+                s.bit()
+                s.ref()
+                return True
+            left, right = s.ref(), s.ref()
+            return edge(left, n - length - 1) and edge(right, n - length - 1)
+
+        return exact(c, read)
+
+    def fields(s: Slice) -> bool:
+        if s.bit():
+            s.uint(5)
+        if s.bit():
+            s.uint(2)
+        s.maybe_ref()
+        s.maybe_ref()
+        library = s.maybe_ref()
+        return library is None or edge(library, 256)
+
+    try:
+        return exact(root, fields)
+    except Malformed:
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,10 +175,10 @@ def load_message_relaxed(s: Slice) -> Relaxed:
 
 
 def store_internal_message(
-    b: Builder, *, bounce: bool, dest: Address, coins: int, body: Cell, init: StateInit | None = None
+    b: Builder, *, bounce: bool, dest: Address, coins: int, body: Cell, init: Cell | None = None
 ) -> None:
     """int_msg_info with IHR disabled, no source, no extra currencies, zero fees, lt and time; then the state init
-    and the body, each as a reference."""
+    cell as given and the body, each as a reference."""
     b.bit(0).bit(1).bit(bounce).bit(0)
     store_address(b, None)
     store_address(b, dest)
@@ -152,7 +186,5 @@ def store_internal_message(
     if init is None:
         b.bit(0)
     else:
-        inner = Builder()
-        store_state_init(inner, init)
-        b.bit(1).bit(1).ref(inner.end())
+        b.bit(1).bit(1).ref(init)
     b.bit(1).ref(body)

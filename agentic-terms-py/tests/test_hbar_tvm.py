@@ -3,6 +3,8 @@ one), and the buyer half's vector rows. Expected values are x402-exact-tvm.json'
 
 import base64
 import json
+import math
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -220,6 +222,163 @@ def test_x402_exact_tvm_v2b_undeployed_wallet() -> None:
     assert root.refs[1].refs[0].refs[1].refs[0].hash.hex() == W["expectTransferBodyHash"]
     assert BINDING.bound(signed) == F["H"]
     for row in W["refusals"]:
+        assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
+
+
+def test_x402_exact_tvm_v2b_a_state_init_whose_libraries_label_is_not_its_shortest_form_rides_as_given() -> None:
+    # Every expected value is V2b.nonCanonicalLibraries's: build carries the given cell, so the request and signature
+    # are V2b's and the settlement message's init is that cell, whose hash is the wallet's address.
+    r = W["nonCanonicalLibraries"]
+    given = root_of(r["stateInit"])
+    assert isinstance(given, Cell) and given.hash.hex() == r["expectStateInitHash"]
+    unsigned = BINDING.build(tvm_choice(wallet=r["wallet"], seqno=W["seqno"], stateInit=r["stateInit"]), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    assert unsigned.request["hash"].hex() == W["expectRequestHash"]
+    signature = ed25519.sign(SEED, unsigned.request["hash"])
+    assert signature.hex() == W["expectSignature"]
+    signed = unsigned.complete(signature)
+    assert not isinstance(signed, Refusal)
+    root = settlement_root(signed)
+    assert root.hash.hex() == r["expectSettlementRootHash"]
+    assert root.refs[0].hash.hex() == r["expectStateInitHash"] and f"0:{root.refs[0].hash.hex()}" == r["wallet"]
+    assert BINDING.bound(signed) == F["H"]
+
+
+def _width(n: int) -> int:
+    return math.ceil(math.log2(n + 1))
+
+
+def _v2b_code_and_data() -> tuple[Cell, Cell]:
+    s = parse_boc(base64.b64decode(W["stateInit"]))[0].slice()
+    s.bit()
+    s.bit()
+    code, data = s.maybe_ref(), s.maybe_ref()
+    assert code is not None and data is not None
+    return code, data
+
+
+def _state_init(libraries: Cell | None, edit: Callable[[Builder], Builder] = lambda b: b) -> Cell:
+    """V2b's code and data with the libraries dictionary given: StateInitWithLibs, fixed_prefix_length and special
+    absent."""
+    code, data = _v2b_code_and_data()
+    return edit(Builder().bit(0).bit(0).maybe_ref(code).maybe_ref(data).maybe_ref(libraries)).end()
+
+
+def _simple_lib(b: Builder) -> Builder:
+    """simple_lib public:Bool root:^Cell, private, whose root is V2b's code."""
+    return b.bit(0).ref(_v2b_code_and_data()[0])
+
+
+def _carried(given: Cell) -> bool:
+    unsigned = BINDING.build(tvm_choice(stateInit=boc_of(given)), F["H"])
+    assert not isinstance(unsigned, Refusal), unsigned
+    signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
+    assert not isinstance(signed, Refusal)
+    return settlement_root(signed).refs[0].equals(given)
+
+
+# TON reads a message's ^StateInit as StateInitWithLibs (ton-blockchain/ton crypto/block/block.tlb; transaction.cpp,
+# unpack_input_msg), and TLB::validate_ref_internal (crypto/tl/tlblib.cpp) takes a cell only when it is ordinary and
+# read to its end, for the state init and for each cell of its library:(HashmapE 256 SimpleLib). lcp's build answers
+# each case below so: the well-formed state inits ride as given, and each change is x402/option-malformed.
+def test_x402_exact_tvm_build_takes_only_a_state_init_ton_reads_as_one_state_init_with_libs() -> None:
+    code, _ = _v2b_code_and_data()
+    key = code.hash
+
+    def leaf(n: int, edit: Callable[[Builder], Builder] = lambda b: b) -> Cell:
+        return edit(_simple_lib(Builder().uint(0b10, 2).uint(n, 9).buf(key))).end()
+
+    def fork(edit: Callable[[Builder], Builder] = lambda b: b) -> Cell:
+        # A zero-length label at the root, then two edges whose 255-bit labels end the key past its first bit.
+        half = _simple_lib(Builder().uint(0b10, 2).uint(255, 8).uint(key[0] & 0x7F, 7).buf(key[1:])).end()
+        return edit(Builder().uint(0b10, 2).uint(0, 9).ref(half).ref(half)).end()
+
+    library = Cell((2 << 256) | int.from_bytes(b"\x01" * 32, "big"), 8 + 256, (), True)
+    v2b = root_of(W["stateInit"])
+    assert isinstance(v2b, Cell)
+    for given in [v2b, _state_init(leaf(256)), _state_init(fork())]:
+        assert _carried(given)
+    bad = {
+        "a bit after the fields": _state_init(None, lambda b: b.bit(1)),
+        "a reference after the fields": _state_init(None, lambda b: b.ref(Builder().end())),
+        "fixed_prefix_length cut short": Builder().bit(1).uint(0, 3).end(),
+        "a libraries leaf with a bit after its SimpleLib": _state_init(leaf(256, lambda b: b.bit(1))),
+        "a libraries leaf with a reference after its SimpleLib": _state_init(leaf(256, lambda b: b.ref(Builder().end()))),
+        "a libraries fork with a bit after its two edges": _state_init(fork(lambda b: b.bit(1))),
+        "a libraries label longer than its key": _state_init(leaf(257)),
+        "a libraries cell that is exotic": _state_init(library),
+        "a state init cell that is exotic": library,
+    }
+    for name, given in bad.items():
+        assert BINDING.build(tvm_choice(stateInit=boc_of(given)), F["H"]) == Refusal("x402/option-malformed"), name
+
+
+# TON validates a message's state init reading at most 1,024 cells, the state init's first and each dictionary cell
+# each time a path reaches it (ton-blockchain/ton crypto/tl/tlblib.hpp, default_validate_max_cells; tlblib.cpp,
+# validate_ref_internal). A dictionary whose forks each reference one child twice holds 2^f entries in f + 1 cells,
+# and TON reads 2^(f+1) - 1 of them: 9 levels are 1,024 reads with the state init's, 10 and 30 are past the bound. A
+# dictionary of n entries has 2n - 1 cells on its paths: 512 entries are 1,024 reads, 513 are 1,026. lcp's build
+# answers each so, from TON's own transaction emulator.
+def test_x402_exact_tvm_a_state_init_whose_validation_reads_more_than_1024_cells_is_refused() -> None:
+    code, _ = _v2b_code_and_data()
+
+    def shared(forks: int) -> Cell:
+        node = Builder().uint(0b10, 2).bit(0).ref(code).end()
+        for n in range(1, forks):
+            node = Builder().uint(0b10, 2).uint(0, _width(n)).ref(node).ref(node).end()
+        return _state_init(Builder().uint(0b11, 2).bit(0).uint(256 - forks, _width(256)).ref(node).ref(node).end())
+
+    def edge(keys: list[int], n: int) -> Cell:
+        """keys (each n bits) as a Hashmap edge, every label written hml_long."""
+        if len(keys) == 1:
+            return _simple_lib(Builder().uint(0b10, 2).uint(n, _width(n)).uint(keys[0], n)).end()
+        length = 0
+        while len({k >> (n - 1 - length) for k in keys}) == 1:
+            length += 1
+        rest = n - length - 1
+        sides = [[k & ((1 << rest) - 1) for k in keys if (k >> rest) & 1 == bit] for bit in (0, 1)]
+        label = Builder().uint(0b10, 2).uint(length, _width(n)).uint(keys[0] >> (n - length), length)
+        return label.ref(edge(sides[0], rest)).ref(edge(sides[1], rest)).end()
+
+    def plain(entries: int) -> Cell:
+        return _state_init(edge(list(range(entries)), 256))
+
+    assert _carried(shared(9))
+    assert _carried(plain(512))
+    for name, given in {"10 levels": shared(10), "30 levels": shared(30), "513 entries": plain(513)}.items():
+        assert BINDING.build(tvm_choice(stateInit=boc_of(given)), F["H"]) == Refusal("x402/option-malformed"), name
+
+
+# addr_std's workchain_id is an int8 (ton-blockchain/ton crypto/block/block.tlb): a raw address outside [-128, 127] is
+# no address. The option filter answers tvm/option-malformed, build x402/option-malformed for its own inputs, and
+# the piece pays no account there. lcp's filter and build answer the same.
+def test_x402_exact_tvm_a_raw_address_whose_workchain_is_outside_int8_is_not_an_address() -> None:
+    hex_hash = F["wallet"].split(":")[1]
+    for workchain in (128, -129, 9999999999):
+        address = f"{workchain}:{hex_hash}"
+        placed = F["placed"]
+        for option in (
+            {**placed, "payTo": address},
+            {**placed, "asset": address},
+            {**placed, "extra": {**placed["extra"], "responseDestination": address}},
+        ):
+            required = {"x402Version": 2, "resource": F["resource"], "accepts": [option]}
+            built = BINDING.build(tvm_choice(option, required=required), F["H"])
+            assert built == Refusal("tvm/option-malformed"), option
+        assert BINDING.build(tvm_choice(wallet=address), F["H"]) == Refusal("x402/option-malformed")
+        assert BINDING.build(tvm_choice(jettonWallet=address), F["H"]) == Refusal("x402/option-malformed")
+    for workchain in (-128, 127):
+        address = f"{workchain}:{hex_hash}"
+        assert not isinstance(BINDING.build(tvm_choice(wallet=address), F["H"]), Refusal)
+        assert not isinstance(BINDING.build(tvm_choice(jettonWallet=address), F["H"]), Refusal)
+    b16(TVM, [f"{F['O']['network']}:{caip10(f'{w}:{hex_hash}')}" for w in (128, -129)])
+
+
+def test_x402_exact_tvm_agreed_refusals_with_a_state_init() -> None:
+    # The agreedRefusals rows that give build a stateInit TON does not read as one StateInitWithLibs.
+    rows = [r for r in V["agreedRefusals"]["rows"] if "stateInit" in r]
+    assert len(rows) >= 1
+    for row in rows:
         assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
 
 

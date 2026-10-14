@@ -11,11 +11,20 @@ import { bigintOf, bytesOf, choiceOf, inputsOf, isRefusal, refuse, x402Chosen } 
 import { identified, railOption } from "./x402-account-rails.js";
 
 const PAIRING = "x402/exact/tvm";
-const RAW_ADDRESS = /^-?[0-9]{1,10}:[0-9a-fA-F]{64}$/;
+const RAW_ADDRESS = /^(-?[0-9]{1,10}):[0-9a-fA-F]{64}$/;
+
+/**
+ * A raw `workchain:hex` address whose workchain fits TL-B's `addr_std` `workchain_id:int8`, [-128, 127], as lcp's
+ * TON filter reads one.
+ */
+function isRawAddress(a: string): boolean {
+  const m = RAW_ADDRESS.exec(a);
+  return m !== null && Number(m[1]) >= -128 && Number(m[1]) <= 127;
+}
 
 export const x402ExactTvm: BuyerPiece = Object.freeze({
   choose(read: Read, account: string, inputs: Inputs, now: number, ref: string): Chosen | Refusal {
-    const o = railOption(read, account, ["tvm"], PAIRING, (a) => RAW_ADDRESS.test(a));
+    const o = railOption(read, account, ["tvm"], PAIRING, isRawAddress);
     if (isRefusal(o)) return o;
     const given = inputsOf(inputs, PAIRING, {
       walletId: "uint",
