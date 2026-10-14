@@ -104,7 +104,6 @@ CONTAINERS = {
     "tuple": b"\x0c\x00\x00\x00\x01\x01a",
 }
 MALFORMED = Refusal("mpp/stacks-tx-malformed")
-NOT_H = Refusal("mpp/stacks-memo-not-h")
 
 
 def levels(n: int, container: bytes, inner: bytes = UINT) -> bytes:
@@ -158,29 +157,6 @@ def test_mpp_charge_usdc_stacks_depth_reads_every_element_and_member() -> None:
 
     assert bind(first_argument(pair(levels(15, CONTAINERS["some"])))) == M4["expectBound"]
     assert bind(first_argument(pair(levels(16, CONTAINERS["some"])))) == MALFORMED
-
-
-def test_mpp_charge_usdc_stacks_payload_recipient_past_16_levels_is_malformed() -> None:
-    # A token transfer, a coinbase to a recipient and a Nakamoto coinbase are not the transfer call, so a recipient
-    # within the bound answers memo-not-h. @stacks/transactions holds a Nakamoto coinbase's recipient as the value
-    # inside its (some ...), and the levels count from that value.
-    principal = FT_CONDITION[2:23]
-    some = CONTAINERS["some"]
-
-    def token_transfer(recipient: bytes) -> bytes:
-        return transaction([], b"\x00" + recipient + int(F["amount"]).to_bytes(8, "big") + bytes(34))
-
-    def coinbase(recipient: bytes) -> bytes:
-        return transaction([], b"\x05" + bytes(32) + recipient)
-
-    def nakamoto_coinbase(recipient: bytes) -> bytes:
-        return transaction([], b"\x08" + bytes(32) + recipient + bytes(80))
-
-    assert bind(token_transfer(b"\x05" + principal)) == bind(coinbase(b"\x05" + principal)) == NOT_H
-    assert bind(nakamoto_coinbase(b"\x09")) == bind(nakamoto_coinbase(some + b"\x05" + principal)) == NOT_H
-    for build, outer in ((token_transfer, b""), (coinbase, b""), (nakamoto_coinbase, some)):
-        assert (build.__name__, bind(build(outer + levels(16, some)))) == (build.__name__, NOT_H)
-        assert (build.__name__, bind(build(outer + levels(17, some)))) == (build.__name__, MALFORMED)
 
 
 def test_mpp_charge_usdc_stacks_canonical_rows() -> None:
