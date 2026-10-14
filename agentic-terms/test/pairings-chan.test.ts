@@ -326,7 +326,7 @@ it("x402-batch-settlement.json ES9: the file holds rows, and the timeout is comp
 
 // The vector file's agreedRefusals rows that carry their input: a row with choice runs its pairing's call on that
 // choice with H.
-type AgreedRow = { case: string; expect: string; pairing?: string; call?: "build" | "buildWithin"; choice?: unknown };
+type AgreedRow = { case: string; expect: string; pairing?: string; call?: "build" | "buildWithin"; choice?: unknown; h?: unknown };
 const AGREED = (vectors<{ agreedRefusals: { rows: AgreedRow[] } }>("x402-batch-settlement.json").agreedRefusals.rows);
 const PAIRINGS = {
   "x402/batch-settlement/eip155": batchEvm,
@@ -340,6 +340,29 @@ it("x402-batch-settlement.json agreedRefusals: the file holds rows with a choice
   for (const row of rows) {
     const binding = PAIRINGS[row.pairing as keyof typeof PAIRINGS] as unknown as Record<string, (c: unknown, h: string) => Promise<unknown>>;
     expect(await binding[row.call!]!(row.choice, H), row.case).toEqual({ refused: true, code: row.expect });
+  }
+});
+
+it("x402-batch-settlement.json agreedRefusals: the file holds rows with an h, and the Solana build gives each row's refusal", async () => {
+  const rows = AGREED.filter((r) => "h" in r);
+  expect(rows.length, "agreedRefusals rows that carry an h").toBeGreaterThan(0);
+  const f = BV.fixed.svm;
+  const doc = x402Doc(batchSvm, f.option, BV.fixed.resource);
+  const choice = {
+    required: doc,
+    accepted: doc.accepts[0]!,
+    payer: f.payer,
+    payerAuthorizer: f.payer,
+    deposit: BigInt(f.deposit),
+    salt: BigInt(f.salt),
+    openSlot: BigInt(f.openSlot),
+    tokenProgram: f.tokenProgram,
+    recentBlockhash: f.blockhash,
+  };
+  expect("refused" in (await batchSvm.build(choice, H))).toBe(false);
+  for (const row of rows) {
+    expect([row.pairing, row.call], row.case).toEqual(["x402/batch-settlement/solana", "build"]);
+    expect(await batchSvm.build(choice, row.h as never), row.case).toEqual({ refused: true, code: row.expect });
   }
 });
 

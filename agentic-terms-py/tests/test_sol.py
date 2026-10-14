@@ -575,6 +575,27 @@ def test_x402_batch_settlement_solana_es9_the_timeout_is_compared_only_as_a_numb
         built = BATCH_BINDING.build(batch_choice(x402_doc(with_memo(option), BV["fixed"]["resource"])), H)
         assert (built.code if isinstance(built, Refusal) else None) == row["expectAdvertise"], label
 
+
+def test_x402_batch_settlement_solana_agreed_refusals_with_an_h() -> None:
+    """The file holds agreedRefusals rows that carry an h. The Solana build of the advertised option's choice builds
+    with H, and gives each row's refusal with the row's h."""
+    rows = [r for r in BV["agreedRefusals"]["rows"] if "h" in r]
+    assert rows, "no agreedRefusals row carries an h"
+    choice = batch_choice(x402_doc(with_memo(BS["option"]), BV["fixed"]["resource"]))
+    assert not isinstance(BATCH_BINDING.build(choice, H), Refusal)
+    for row in rows:
+        assert (row["pairing"], row["call"]) == (X402_BATCH_SETTLEMENT_SOLANA.id, "build"), row["case"]
+        assert BATCH_BINDING.build(copy.deepcopy(choice), row["h"]) == Refusal(row["expect"]), row["case"]
+
+
+def test_x402_batch_settlement_solana_es10_the_ed25519_point_rule() -> None:
+    """The file holds ES10's rows: is_point, the rule a program-derived address candidate meets, gives each row's
+    point value for its 32 bytes."""
+    rows = BV.get("ES10", {}).get("rows", [])
+    assert rows, "the vector file holds no ES10 rows"
+    for row in rows:
+        assert _svm.is_point(bytes.fromhex(row["bytesHex"])) == row["point"], row["case"]
+
 def batch_presented(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {"x402Version": 2, "accepted": BV["ES4"]["accepted"], "payload": dict(payload)}
 
