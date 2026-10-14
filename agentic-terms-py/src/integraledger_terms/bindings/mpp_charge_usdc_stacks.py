@@ -109,8 +109,8 @@ class MppChargeUsdcStacks:
             call = _stacks.contract_call(wire)
         except _stacks.Malformed:
             return Refusal("mpp/stacks-tx-malformed")
-        if call is None or call.function != "transfer":
+        if call is None or call.function != "transfer" or len(call.args) < 4:
             return Refusal("mpp/stacks-memo-not-h")
-        if call.fourth != MEMO_PREFIX + bytes.fromhex(e.h[2:]):
+        if call.args[3] != MEMO_PREFIX + bytes.fromhex(e.h[2:]):
             return Refusal("mpp/stacks-memo-not-h")
         return e.h
