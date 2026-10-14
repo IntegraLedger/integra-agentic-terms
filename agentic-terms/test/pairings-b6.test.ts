@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { assemble, type AtrHash } from "@integraledger/lcp";
 import { exactCasper } from "@integraledger/lcp/casper";
 import { exactCcd } from "@integraledger/lcp/ccd";
-import { chargeLightning, exactLnbtc, exactLnbtcNamed, sessionLightning } from "@integraledger/lcp/lightning";
+import { chargeLightning, decodeBolt11, exactLnbtc, exactLnbtcNamed, sessionLightning } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { confirm, finish, transact, type Binding } from "../src/index.js";
@@ -87,6 +87,8 @@ describe("x402/exact/ccd", () => {
 
 type Ln = {
   fixed: { O: PaymentRequirements; resource: object; preimage: string; payee: string };
+  L4: { invoice: string };
+  L7?: { invoice: string; expectAmountMsat: string };
 };
 describe("x402/exact/lnbtc", () => {
   const V = vectors<Ln>("x402-exact-lnbtc.json");
@@ -105,6 +107,16 @@ describe("x402/exact/lnbtc", () => {
         expect(r).toEqual({ kind: "bolt11-pay", invoice: (f.O.extra as { invoice: string }).invoice });
       });
     }));
+  // L7: L4 with its amount written 1 followed by 4300 zeros of nanobitcoin, its checksum recomputed. The amount is the
+  // file's expectAmountMsat; the signature is not verified, so the other fields are L4's.
+  it("L7: an invoice whose amount has 4,301 digits decodes, its amount that integer times 100 millisatoshi", async () => {
+    expect(V.L7, "x402-exact-lnbtc.json holds L7").toBeDefined();
+    const b = await decodeBolt11(V.L7!.invoice);
+    const l4 = await decodeBolt11(V.L4.invoice);
+    if ("refused" in b || "refused" in l4) throw new Error(JSON.stringify([b, l4]));
+    expect(b.amountMsat?.toString()).toBe(V.L7!.expectAmountMsat);
+    expect({ ...b, amountMsat: l4.amountMsat }).toEqual(l4);
+  });
 });
 
 describe("x402/exact/lnbtc/invoice-named", () => {

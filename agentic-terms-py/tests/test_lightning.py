@@ -151,6 +151,18 @@ def test_bolt11_a_description_that_begins_with_a_byte_order_mark_keeps_it() -> N
     assert b.tags.count(13) == 1
 
 
+def test_bolt11_l7_an_amount_of_4301_digits_decodes() -> None:
+    """L7: L4 with its amount written 1 followed by 4300 zeros of nanobitcoin, its checksum recomputed. The amount is
+    the file's expectAmountMsat, read digit by digit; the signature is not verified, so the other fields are L4's."""
+    assert "L7" in V, "x402-exact-lnbtc.json holds L7"
+    b, l4 = decoded(V["L7"]["invoice"]), decoded(V["L4"]["invoice"])
+    expected = 0
+    for digit in V["L7"]["expectAmountMsat"]:
+        expected = expected * 10 + "0123456789".index(digit)
+    assert b.amount_msat == expected
+    assert dataclasses.replace(b, amount_msat=l4.amount_msat) == l4
+
+
 def test_x402_exact_lnbtc_l5_read_build_complete_and_bound() -> None:
     o = F["O"]
     doc = x402_doc(o, F["resource"], F["H"], F["link"])
