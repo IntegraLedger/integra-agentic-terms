@@ -1,4 +1,4 @@
-"""The buyer rows B1-B17 and B2b against the gate."""
+"""The buyer rows B1-B17 and B2b, and the finish rows, against the gate."""
 
 import asyncio
 import json
@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
+import integraledger_terms as terms
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from integraledger_terms import (
     MAX_ATR_BYTES,
@@ -30,6 +31,7 @@ from integraledger_terms.bindings._lcp import is_https_link
 from support import (
     A,
     ACCOUNT,
+    BUYER,
     C,
     D,
     HASH_A,
@@ -284,6 +286,52 @@ def test_b17_pairing_not_supported() -> None:
     b17 = row("B17")
     stub = StubBinding(BINDING, id=b17["input"]["stubBindingId"])
     assert declined(run_transact(document(), serving(A), binding=stub), b17["expect"]["decline"])
+
+
+# buyer.json's finish rows: finish called with the chosen payment one pairing's confirm gives and the binding of another
+# pairing. Each row names its document, the pairing and the served bytes behind the chosen payment, the binding and the
+# signature, and expects its decline before the binding builds anything. The rows are selected by their input, and the
+# file holds at least one.
+BY_ID: dict[str, Any] = {
+    v.id: v for n in dir(terms) if n.isupper() and hasattr(v := getattr(terms, n), "id") and hasattr(v, "bound")
+}
+FINISH_ROWS = [
+    r
+    for r in BUYER["rows"]
+    if isinstance(r.get("input"), dict) and r["input"].get("entry") == "finish" and isinstance(r["input"].get("binding"), str)
+]
+
+
+def chosen_of(text: str) -> tuple[str, bytes]:
+    """The one pairing id a row's chosen text names, and the fixed bytes its link serves."""
+    ids = [t for t in re.split(r"[\s,]+", text) if t in BY_ID]
+    serves = re.search(r"\bserving (\w+)", text)
+    assert len(ids) == 1 and serves is not None, text
+    return ids[0], bytes.fromhex(BUYER["fixed"][serves.group(1)])
+
+
+def signature_of(text: str) -> str:
+    """The signature a row names as another row's: that row's finish signature."""
+    named = re.fullmatch(r"(\w+)'s signature", text)
+    assert named is not None, text
+    signature: str = row(named.group(1))["input"]["then"]["finish"]["signature"]
+    return signature
+
+
+def test_finish_rows_decline_another_pairings_chosen_payment_before_any_build() -> None:
+    assert FINISH_ROWS, "buyer.json holds no finish row"
+    for r in FINISH_ROWS:
+        given = r["input"]
+        pairing, served = chosen_of(given["chosen"])
+        confirmed = run_confirm(BUYER["fixed"][given["doc"]], serving(served), binding=BY_ID[pairing])
+        assert isinstance(confirmed, Confirmed), (r["name"], confirmed)
+        counted = StubBinding(BY_ID[given["binding"]], id=given["binding"])
+        out = finish(served, confirmed.chosen, signature_of(given["signature"]), counted)
+        assert (r["name"], isinstance(out, Declined) and out.code, len(counted.built)) == (
+            r["name"],
+            r["expect"]["decline"],
+            0,
+        )
 
 
 # The one https-link rule, over core-vectors.json's shared links rows: an accepted link is fetched, a refused one is

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashTypedData, recoverTypedDataAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { hash, type AtrHash } from "@integraledger/lcp";
+import { BINDINGS, hash, type AtrHash } from "@integraledger/lcp";
 import {
   exactEip3009,
   type Eip3009Payment,
@@ -463,6 +463,55 @@ describe("buyer rows", () => {
     expect(code(await transact(D, stubbed, counting(), fetch))).toBe(r.expect.decline);
     expect(code(await finish(A, {} as never, "0x", stubbed))).toBe(r.expect.decline);
     expect(fetch.calls.length).toBe(0);
+  });
+});
+
+// buyer.json's finish rows: `finish` called with the chosen payment one pairing's `confirm` gives and the binding of
+// another pairing. Each row names its document, the pairing and the served bytes behind the chosen payment, the
+// binding and the signature, and expects its decline before the binding builds anything. The rows are selected by
+// their input, and the file holds at least one.
+describe("finish rows", () => {
+  type FinishRow = {
+    name: string;
+    input: { entry?: unknown; doc: string; chosen: string; binding?: unknown; signature: string };
+    expect: { decline: string };
+  };
+  const bindingOf = (id: string): Binding => {
+    const b = BINDINGS.find((x) => x.id === id);
+    if (b === undefined) throw new Error(`no pairing ${id}`);
+    return b as unknown as Binding;
+  };
+  /** The one pairing id the row's chosen text names, and the fixed bytes its link serves. */
+  const chosenOf = (text: string): { pairing: string; serves: string } => {
+    const ids = text.split(/[\s,]+/).filter((t) => BINDINGS.some((b) => b.id === t));
+    const serves = /\bserving (\w+)/.exec(text)?.[1];
+    if (ids.length !== 1 || serves === undefined) throw new Error(`the chosen text names no one pairing: ${text}`);
+    return { pairing: ids[0]!, serves };
+  };
+  /** The signature a row names as another row's: that row's `finish` signature. */
+  const signatureOf = (text: string): `0x${string}` => {
+    const name = /^(\w+)'s signature$/.exec(text)?.[1];
+    const signature = B.rows.find((r: { name: string }) => r.name === name)?.input?.then?.finish?.signature;
+    if (typeof signature !== "string") throw new Error(`no signature: ${text}`);
+    return signature as `0x${string}`;
+  };
+
+  it("each row's chosen payment, finished with another pairing's binding, declines before any build", async () => {
+    const rows = (B.rows as FinishRow[]).filter(
+      (r) => r.input?.entry === "finish" && typeof r.input.binding === "string",
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      const chosen = chosenOf(r.input.chosen);
+      const bytes = fromHex(B.fixed[chosen.serves]);
+      const confirmed = await confirm(B.fixed[r.input.doc], bindingOf(chosen.pairing), ACCOUNT, serving(bytes));
+      if (isDeclined(confirmed)) throw new Error(`${r.name}: ${confirmed.decline.code}`);
+      const other = bindingOf(r.input.binding as string) as unknown as { build: (...a: unknown[]) => unknown };
+      let builds = 0;
+      const counted = { ...other, build: (...a: unknown[]) => (builds++, other.build(...a)) } as unknown as Binding;
+      const out = await finish(bytes, confirmed.chosen, signatureOf(r.input.signature), counted);
+      expect([r.name, code(out), builds]).toEqual([r.name, r.expect.decline, 0]);
+    }
   });
 });
 
