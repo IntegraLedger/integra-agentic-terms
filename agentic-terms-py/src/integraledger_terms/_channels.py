@@ -197,9 +197,9 @@ async def within(
     from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge that names another
     channel or another hash is declined, and one with no legal context is signed under the held hash. A voucher's
     maxClaimableAmount is the recorded charge plus the option's amount; a refund's is the recorded charge. inputs are
-    the buyer's own chain values a refund's build takes. Before the signer is called, the channel the built payment
-    would name must be the held one. What was signed must be of the expected kind and belong to the held channel, or
-    it is dropped."""
+    the buyer's own chain values a refund's build takes; inputs that are not a mapping are declined no-payable-option
+    with <namespace>/input-malformed. Before the signer is called, the channel the built payment would name must be the
+    held one. What was signed must be of the expected kind and belong to the held channel, or it is dropped."""
     if not _has_channel(binding):
         return _declined("pairing-not-supported", "The pairing has no channel.")
     ns = binding.id.split("/")[0]
@@ -217,6 +217,8 @@ async def within(
         ):
             return _declined("no-payable-option", f"{ns}/input-missing")
         refund_amount = int(amount) if isinstance(amount, str) else None
+    if inputs is not None and not isinstance(inputs, Mapping):
+        return _declined("no-payable-option", f"{ns}/input-malformed")
 
     atr = _atr_of(hold)
     if atr is None or len(atr) > MAX_ATR_BYTES:
@@ -266,7 +268,7 @@ async def within(
     }
     if refund is not None:
         w["refund"] = {} if refund_amount is None else {"amount": refund_amount}
-        w.update(_refund_inputs(inputs if isinstance(inputs, Mapping) else {}))
+        w.update(_refund_inputs(inputs if inputs is not None else {}))
     unsigned = _guarded(lambda: binding.build_within(w, h))
     if isinstance(unsigned, Refusal):
         return _declined("offer-unreadable", unsigned.code)

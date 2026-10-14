@@ -22,6 +22,7 @@ from integraledger_terms import (
     X402_EXACT_SOLANA,
     X402_UPTO_SOLANA,
     BatchUnsigned,
+    ChannelHold,
     ChannelRef,
     Confirmed,
     Declined,
@@ -763,6 +764,31 @@ def test_x402_batch_settlement_solana_a_full_refund_hands_build_within_refund_an
     assert signer.requests == [{"kind": "batch", "requests": [{"kind": "solana-message", "message": "0x010203"}]}]
     assert BATCH_BINDING.channel_kind(out.signed) == "close"
     assert BATCH_BINDING.channel_ref(out.signed) == ChannelRef(**BV["ES4"]["expectRef"])
+
+
+def batch_hold() -> tuple[Any, ChannelHold]:
+    """The batch pairing's document, and a channel opened through the gate over abc and held."""
+    p = batch_pairing()
+    opened = run(lambda c: transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, Recording(BATCH_ACCOUNT, batch_answer), c,
+                                    inputs=p.inputs), serving(ABC))  # fmt: skip
+    assert isinstance(opened, Transacted) and opened.signed is not None, opened
+    hold = open_channel(opened.atr_bytes, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
+    assert not isinstance(hold, Declined), hold
+    return p.doc, hold
+
+
+@pytest.mark.parametrize("inputs", ["x", 5, []], ids=["a string", "a number", "a list"])
+def test_x402_batch_settlement_solana_within_declines_inputs_that_are_not_a_mapping(inputs: Any) -> None:
+    """buyer.json's BW4: within declines inputs given and not a mapping with no-payable-option and
+    x402/input-malformed, for a refund and for a voucher, before the build and the signer call."""
+    doc, hold = batch_hold()
+    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    signer = Recording(BATCH_ACCOUNT, batch_answer)
+    refunds: tuple[dict[str, Any] | None, ...] = ({}, None)
+    for refund in refunds:
+        out = asyncio.run(within(doc, hold, binding, signer, refund, inputs))
+        assert out == Declined("no-payable-option", "x402/input-malformed"), refund
+    assert (binding.handed, signer.requests) == ([], [])
 
 
 # ── mpp/charge/solana ───────────────────────────────────────────────────────────────────────────────────────────

@@ -219,7 +219,8 @@ function cancel(s: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint
  * Reads the offer, chooses the option, fetches the ATR and compares its SHA-256 with the advertised hash. Only on a
  * match does it build, with the hash it computed. A pairing whose build has nothing for the buyer to sign returns
  * `request: null`: the comparison is the whole of the buyer's step. For a pairing whose payment is not itself a public
- * proof, `chosen.agreement` is the agreement URL the offer names.
+ * proof, `chosen.agreement` is the agreement URL the offer names. `inputs` that is not an object is declined
+ * `no-payable-option` with `<namespace>/input-malformed` before the offer is read.
  */
 export async function confirm(
   doc: unknown,
@@ -230,6 +231,7 @@ export async function confirm(
 ): Promise<{ chosen: Chosen; request: SigningRequest | null; bytes: Uint8Array; h: AtrHash } | Declined> {
   const piece = pieceOf(binding);
   if (piece === undefined) return unsupported(binding);
+  if (!isObject(inputs)) return declined("no-payable-option", `${namespaceOf(binding)}/input-malformed`);
   const b = steps(binding);
 
   const read = b.read(doc);
@@ -239,7 +241,7 @@ export async function confirm(
     return declined("offer-unreadable", "The offer names an agreement URL that is not a string.");
   }
 
-  const choice = await piece.choose(read, account, isObject(inputs) ? inputs : {}, Math.floor(Date.now() / 1000), newRef(), doc);
+  const choice = await piece.choose(read, account, inputs, Math.floor(Date.now() / 1000), newRef(), doc);
   if (isRefusal(choice)) return declined("no-payable-option", choice.code);
   const chosen: Chosen = agreement === undefined ? choice : { ...choice, agreement };
 

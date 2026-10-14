@@ -339,6 +339,16 @@ def _bounds(option: Mapping[str, Any]) -> tuple[int, int] | None:
     return min(t, EXCHANGE_CAP_S) + SETTLE_S + VERIFY_S, t + WINDOW_EXTRA_S
 
 
+def _is_agreement_payment(value: object) -> bool:
+    """Whether value has the form of an agreement payment: an agreement URL, an option and a payment request."""
+    return (
+        isinstance(value, AgreementPayment)
+        and isinstance(value.url, str)
+        and isinstance(value.option, Mapping)
+        and isinstance(value.required, Mapping)
+    )
+
+
 def _paying(
     required: Mapping[str, Any], h: AtrHash, account: str, inputs: Inputs
 ) -> tuple[_Selected, tuple[int, int]] | Declined:
@@ -367,7 +377,9 @@ async def agree(
     """Without approved: ask the agreement URL for its challenge and return the agreement payment to approve, signing
     nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
     signer, send it to url, and return the receipt once recorded. atr_bytes are the ATR the gate compared, whose hash
-    the agreement payment carries; inputs are the buyer's own chain values; setting signal ends the exchange."""
+    the agreement payment carries; inputs are the buyer's own chain values; setting signal ends the exchange. An
+    approved value that is not of the agreement payment's form, inputs that are not a mapping, or a signal that is not
+    an asyncio.Event is declined no-payable-option with x402/input-malformed before any fetch or signer call."""
     return await exchange(atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, signal=signal, ns=None)
 
 
@@ -389,11 +401,13 @@ async def exchange(
             return Declined("link-not-https", "The agreement URL is not an https URL.")
         fault = "link-not-https" if is_other_scheme_link(url) else "legal-context-malformed"
         return Declined("link-not-https", f"{ns}/{fault}")
-    if (approved is not None and not isinstance(approved, AgreementPayment)) or (
-        signal is not None and not isinstance(signal, asyncio.Event)
+    if (
+        (approved is not None and not _is_agreement_payment(approved))
+        or (inputs is not None and not isinstance(inputs, Mapping))
+        or (signal is not None and not isinstance(signal, asyncio.Event))
     ):
         return Declined("no-payable-option", f"{ns if ns is not None else 'x402'}/input-malformed")
-    given: Inputs = inputs if isinstance(inputs, Mapping) else {}
+    given: Inputs = inputs if inputs is not None else {}
     if _is_ended(signal):
         return _ended()
     h = hash_of(atr_bytes)
@@ -401,10 +415,8 @@ async def exchange(
         return await _offer(atr_bytes, h, url, signer, fetch, given, signal)
     if approved.url != url:
         return _failed("The approved agreement payment names another agreement URL.")
-    if not isinstance(approved.option, Mapping) or not isinstance(approved.required, Mapping):
-        return Declined("no-payable-option", f"{ns if ns is not None else 'x402'}/input-malformed")
 
-    found = _paying({**approved.required, "accepts": [approved.option]}, h, signer.account, given)
+    found = _paying({**approved.required, "accepts": [approved.option]}, h, _gate._account(signer), given)
     if isinstance(found, Declined):
         return found
     selected, (request_s, exchange_s) = found
@@ -473,7 +485,7 @@ async def _offer(
     required = None if unpaid.payment_required is None else _from_base64_json(unpaid.payment_required)
     if not isinstance(required, Mapping):
         return _failed("The agreement URL answered 402 without a readable PAYMENT-REQUIRED.")
-    found = _paying(required, h, signer.account, inputs)
+    found = _paying(required, h, _gate._account(signer), inputs)
     if isinstance(found, Declined):
         return found
     selected, _limits = found

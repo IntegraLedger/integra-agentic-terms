@@ -337,7 +337,9 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * Without `approved`: asks the agreement URL for its challenge and returns the agreement payment to approve, signing
  * nothing, or the receipt where the agreement is already recorded. With `approved`: signs exactly that payment with
  * `signer`, sends it to `url`, and returns the receipt once recorded. `bytes` are the ATR the gate compared, whose hash
- * the agreement payment carries; `inputs` are the buyer's own chain values; `signal` ends the exchange.
+ * the agreement payment carries; `inputs` are the buyer's own chain values; `signal` ends the exchange. An `approved`
+ * that is not of the agreement payment's form, or `inputs` that is not an object, is declined `no-payable-option` with
+ * `x402/input-malformed` before any fetch or signer call.
  */
 export function agree(
   bytes: Uint8Array,
@@ -365,9 +367,8 @@ export async function exchange(
     const fault = isOtherSchemeLink(url) ? "link-not-https" : "legal-context-malformed";
     return declined("link-not-https", ns === undefined ? "The agreement URL is not an https URL." : `${ns}/${fault}`);
   }
-  const { approved, signal } = options;
-  const inputs: Inputs = isObject(options.inputs) ? options.inputs : {};
-  if (approved !== undefined && !isAgreementPayment(approved)) {
+  const { approved, signal, inputs = {} } = options;
+  if ((approved !== undefined && !isAgreementPayment(approved)) || !isObject(inputs)) {
     return declined("no-payable-option", `${ns ?? "x402"}/input-malformed`);
   }
   if (isEnded(signal)) return ended();

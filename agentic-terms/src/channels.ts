@@ -235,9 +235,10 @@ export async function openChannel(
  * channel are re-derived from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge
  * that names another channel or another hash is declined, and one with no legal context is signed under the held
  * hash. A voucher's `maxClaimableAmount` is the recorded charge plus the option's amount; a refund's is the recorded
- * charge. `inputs` are the buyer's own chain values a refund's build takes. Before the signer is called, the channel
- * the built payment would name must be the held one. What was signed must be of the expected kind and belong to the
- * held channel, or it is dropped.
+ * charge. `inputs` are the buyer's own chain values a refund's build takes; `inputs` that is not an object is declined
+ * `no-payable-option` with `<namespace>/input-malformed`. Before the signer is called, the channel the built payment
+ * would name must be the held one. What was signed must be of the expected kind and belong to the held channel, or it
+ * is dropped.
  */
 export async function within(
   doc: unknown,
@@ -264,6 +265,7 @@ export async function within(
     }
     refundAmount = refund.amount === undefined ? undefined : BigInt(refund.amount);
   }
+  if (!isObject(inputs)) return declined("no-payable-option", `${ns}/input-malformed`);
   const channel = b.channel;
 
   const bytes = fromBase64(hold.atr);
@@ -306,7 +308,7 @@ export async function within(
         channelConfig,
         maxClaimableAmount,
         ...(refund !== undefined ? { refund: refundAmount === undefined ? {} : { amount: refundAmount } } : {}),
-        ...(refund !== undefined ? refundInputs(isObject(inputs) ? inputs : {}) : {}),
+        ...(refund !== undefined ? refundInputs(inputs) : {}),
       },
       h,
     ),

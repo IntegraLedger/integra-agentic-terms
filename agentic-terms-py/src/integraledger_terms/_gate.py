@@ -72,6 +72,11 @@ def _piece(binding: Binding) -> Piece | None:
     return PIECES.get(binding_id) if isinstance(binding_id, str) else None
 
 
+def _account(signer: object) -> Any:
+    """The signer's account as it gives it; None for a signer with none, which no option's payer is."""
+    return getattr(signer, "account", None)
+
+
 def _unsupported(binding: Binding) -> Declined:
     return Declined("pairing-not-supported", f"The gate has no buyer piece for the pairing {getattr(binding, 'id', None)}.")
 
@@ -163,17 +168,20 @@ async def confirm(
     """Read the offer (the seller's document as given: an object, a list of challenges, or a string), choose the
     option, fetch the ATR and compare hashes. Only on a match build, with the hash
     computed. A pairing whose build has nothing for the buyer to sign returns request None. For a pairing whose payment
-    is not itself a public proof, chosen.agreement is the agreement URL the offer names."""
+    is not itself a public proof, chosen.agreement is the agreement URL the offer names. Inputs that are not a mapping
+    are declined no-payable-option with <namespace>/input-malformed before the offer is read."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
+    if inputs is not None and not isinstance(inputs, Mapping):
+        return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
     advertised = binding.read(doc)
     if isinstance(advertised, Refusal):
         return Declined("offer-unreadable", advertised.code)
     agreement = None if _public_proof(binding) else advertised.agreement
     if agreement is not None and not isinstance(agreement, str):
         return Declined("offer-unreadable", "The offer names an agreement URL that is not a string.")
-    given = inputs if isinstance(inputs, Mapping) else {}
+    given = inputs if inputs is not None else {}
     choice = piece.choose(advertised, account, given, _now(), _ref(), doc)
     if isinstance(choice, Refusal):
         return Declined("no-payable-option", choice.code)
@@ -333,7 +341,7 @@ async def transact(
     ):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
     given = inputs if inputs is not None else {}
-    confirmed = await confirm(doc, binding, signer.account, fetch, given)
+    confirmed = await confirm(doc, binding, _account(signer), fetch, given)
     if isinstance(confirmed, Declined):
         return confirmed
     atr_bytes, chosen = confirmed.atr_bytes, confirmed.chosen

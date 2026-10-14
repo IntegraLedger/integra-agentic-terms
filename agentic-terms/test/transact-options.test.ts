@@ -1,13 +1,15 @@
 // `transact`'s options object holds only `inputs`, `agreementSigner`, `approved` and `signal`. An options object
 // holding any other key, or one that is not an object, is refused before any fetch or signer call, so a buyer's inputs
 // are never silently dropped. The decline is the gate's closed `no-payable-option` with the namespace's
-// `input-malformed` detail, the form the gate gives a malformed input. The document, the ATR and the signer are buyer.json's.
+// `input-malformed` detail, the form the gate gives a malformed input. `confirm` and `agree` decline inputs that are not
+// an object, and `agree` an approved payment not of the agreement payment's form, the same way. The document, the ATR
+// and the signer are buyer.json's.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import type { hashTypedData } from "viem";
 import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
-import { transact, type Fetch, type Signer, type SigningRequest } from "../src/index.js";
+import { agree, check, confirm, finish, transact, type Fetch, type Signer, type SigningRequest } from "../src/index.js";
 import { isDeclined } from "./support.js";
 
 const B = JSON.parse(readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"));
@@ -63,5 +65,61 @@ describe("transact's options object", () => {
     const out = await transact(D, exactEip3009, signer, fetch, options as never);
     expect(isDeclined(out)).toBe(false);
     expect(signer.calls).toBe(1);
+  });
+});
+
+describe("inputs and payments the other entry points are given", () => {
+  // buyer.json's B20 (confirm) and BA16 (agree): no-payable-option with x402/input-malformed, 0 fetches and 0 signer
+  // calls, as transact declines them.
+  it.each([
+    ["a string", "x"],
+    ["a number", 5],
+    ["a list", []],
+    ["null", null],
+  ])("inputs that are %s: confirm and agree decline before any fetch or signer call", async (_, inputs) => {
+    const { fetch, signer } = fixture();
+    const confirmed = await confirm(D, exactEip3009, signer.account, fetch, inputs as never);
+    const agreed = await agree(A, B.fixed.agreement.url, signer, fetch, { inputs: inputs as never });
+    for (const out of [confirmed, agreed]) {
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
+    }
+    expect([fetch.calls, signer.calls]).toEqual([0, 0]);
+  });
+
+  it("an approved payment whose url is not a string: agree declines before any fetch or signer call", async () => {
+    const { fetch, signer } = fixture();
+    const approved = { url: 5, option: B.fixed.agreement.option, required: B.fixed.agreement.required };
+    const out = await agree(A, B.fixed.agreement.url, signer, fetch, { approved: approved as never });
+    expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
+    expect([fetch.calls, signer.calls]).toEqual([0, 0]);
+  });
+
+  // A signer with no account: no x402 option's payer is undefined, so neither the payment nor the agreement payment is
+  // payable, and nothing is signed.
+  it("a signer with no account: transact and agree decline no-payable-option", async () => {
+    const header = Buffer.from(JSON.stringify(B.fixed.agreement.required)).toString("base64");
+    let fetches = 0;
+    const fetch = (async () => {
+      fetches++;
+      return new Response(null, { status: 402, headers: { "payment-required": header } });
+    }) as unknown as Fetch;
+    let signs = 0;
+    const signer = { sign: async () => (signs++, "0x") } as unknown as Signer;
+    const transacted = await transact(D, exactEip3009, signer, fetch);
+    const agreed = await agree(A, B.fixed.agreement.url, signer, fetch);
+    for (const out of [transacted, agreed]) {
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/no-payable-option" });
+    }
+    expect([fetches, signs]).toEqual([1, 0]);
+  });
+
+  // @integraledger/lcp's hash rejects a value that is not a Uint8Array with TypeError, and the gate passes it on.
+  it("an ATR that is not bytes: finish, check and agree reject with TypeError, and nothing is fetched or signed", async () => {
+    const { fetch, signer } = fixture();
+    const chosen = { pairing: exactEip3009.id, choice: {}, ref: "r" };
+    await expect(finish("abc" as never, chosen, null, exactEip3009)).rejects.toThrow(TypeError);
+    await expect(check("abc" as never, {}, exactEip3009)).rejects.toThrow(TypeError);
+    await expect(agree("abc" as never, B.fixed.agreement.url, signer, fetch)).rejects.toThrow(TypeError);
+    expect([fetch.calls, signer.calls]).toEqual([0, 0]);
   });
 });

@@ -497,6 +497,29 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
     expect(batchSvm.channel.kind(out.signed as never)).toBe("close");
     expect(await batchSvm.channel.ref(out.signed as never)).toEqual(BV.ES4.expectRef);
   });
+
+  // buyer.json's BW4: within declines inputs given and not an object with no-payable-option and x402/input-malformed,
+  // for a refund and for a voucher, before the build and the signer call.
+  it.each([
+    ["a string", "x"],
+    ["a number", 5],
+    ["a list", []],
+    ["null", null],
+  ])("inputs that are %s: within declines before the build and the signer call", async (_, given) => {
+    const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
+    const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
+    let builds = 0;
+    const binding = {
+      ...batchSvm,
+      buildWithin: (...args: Parameters<typeof batchSvm.buildWithin>) => (builds++, batchSvm.buildWithin(...args)),
+    } as unknown as typeof batchSvm;
+    const signer = counting(account, answer);
+    for (const refund of [{}, undefined]) {
+      const out = await within(doc, hold, binding, signer, refund, given as never);
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
+    }
+    expect([builds, signer.requests.length]).toEqual([0, 0]);
+  });
 });
 
 // ── MPP session ──────────────────────────────────────────────────────────────────────────────────────────────────────
