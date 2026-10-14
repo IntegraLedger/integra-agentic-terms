@@ -105,7 +105,8 @@ def read_shown(doc: object) -> Advertised | Refusal:
 
 
 def _checkout_payload(doc: object) -> dict[str, Any] | Refusal:
-    """The payload of a checkout_jwt, its second segment base64url-decoded and JSON-parsed, with a legalContext."""
+    """The payload of a checkout_jwt, its second segment base64url-decoded and JSON-parsed, with a legalContext. Each
+    segment is base64url without padding in its canonical form (RFC 4648 §3.5), or the JWT is card/vi-malformed."""
     if not isinstance(doc, str):
         return Refusal("card/vi-malformed")
     if js_length(doc) > MAX_CHECKOUT_JWT:
@@ -313,8 +314,11 @@ def _jwk_of(cnf: object) -> Mapping[str, Any] | None:
 
 def verify_es256(jws: str, jwk: Mapping[str, Any]) -> bool | Refusal:
     """ES256 over the ASCII header.payload of a compact JWS, with a 64-byte r||s signature, under an EC P-256 public
-    JWK. A key that is not a point of P-256 given as two 32-byte coordinates is card/vi-key-malformed; any other
-    failure is card/vi-signature-invalid."""
+    JWK. The JWK's x and y must each be base64url without padding of exactly 32 bytes, the full size of a P-256
+    coordinate (RFC 7518 §6.2.1.2-3), in its canonical form (RFC 4648 §3.5). Coordinates of another form, a last
+    character carrying a bit past the 32 bytes included, or a key that is not a point of P-256, are
+    card/vi-key-malformed; any other failure, a signature not in canonical base64url included, is
+    card/vi-signature-invalid."""
     x, y = b64u_decode(jwk["x"]), b64u_decode(jwk["y"])
     if x is None or y is None or len(x) != 32 or len(y) != 32:
         return Refusal("card/vi-key-malformed")

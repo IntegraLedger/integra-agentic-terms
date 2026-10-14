@@ -28,8 +28,9 @@ MAX_LINK = 2048
 
 
 def token_payload(token: object) -> dict[str, Any] | None:
-    """The JSON object in a compact JWS's second segment, decoded as unpadded base64url, strict UTF-8 and JSON and
-    nested at most 64 levels deep, or None. The signature is not checked."""
+    """The JSON object in a compact JWS's second segment, decoded as base64url without padding, strict UTF-8 and JSON
+    and nested at most 64 levels deep, or None for anything else, a segment not in canonical base64url form (RFC 4648
+    §3.5) included. The signature is not checked."""
     if not isinstance(token, str) or js_length(token) > MAX_TOKEN:
         return None
     segments = jws_segments(token)

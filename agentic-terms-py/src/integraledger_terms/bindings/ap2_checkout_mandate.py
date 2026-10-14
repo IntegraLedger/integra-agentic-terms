@@ -42,7 +42,9 @@ MANDATE_CODES = SdJwtCodes(
 
 
 def jws_payload(jwt: object) -> dict[str, Any] | Refusal:
-    """The payload of a compact JWS, decoded as one JSON object. The signature is never verified."""
+    """The payload of a compact JWS, decoded as one JSON object. Each segment is base64url without padding in its
+    canonical form (RFC 7515 §2, RFC 4648 §3.5); a JWS with a segment in another form is ap2/jws-malformed. The
+    signature is never verified."""
     if not isinstance(jwt, str):
         return Refusal("ap2/jws-malformed")
     if js_length(jwt) > MIB:
@@ -95,8 +97,9 @@ def read_mandate(m: object) -> MandateContent | Refusal:
     by ~~ (at most these two hops, each an SD-JWT): exactly one resolved object of the last SD-JWT whose vct is
     mandate.checkout.1, its checkout_hash, and its checkout_jwt when disclosed. No signature is verified, nor the open
     mandate's cnf delegation to the closed mandate's signer, nor the closed mandate's sd_hash or issuer_jwt_hash link
-    to the open one; the open mandate's constraints are not read. A hop whose payload, with each disclosed value where
-    its reference sits, nests more than 64 levels is ap2/too-large."""
+    to the open one; the open mandate's constraints are not read. Each JWS segment and disclosure is base64url without
+    padding in its canonical form (RFC 4648 §3.5), or the mandate is ap2/mandate-malformed. A hop whose payload, with
+    each disclosed value where its reference sits, nests more than 64 levels is ap2/too-large."""
     sd = _closed_hop(m)
     if isinstance(sd, Refusal):
         return sd

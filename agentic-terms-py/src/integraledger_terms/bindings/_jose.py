@@ -1,7 +1,7 @@
 """JSON and compact-JWS reading as the bindings do it: JSON.parse's result (members in ECMAScript property order),
-JSON.stringify's UTF-8 length, string lengths in UTF-16 code units, unpadded base64url, the three segments of a
-compact JWS, and the SD-JWT reader of RFC 9901 §7.1 steps 1 and 3-5, without step 2's signature check. Nothing here
-verifies a signature.
+JSON.stringify's UTF-8 length, string lengths in UTF-16 code units, base64url without padding read in its canonical
+form, the three segments of a compact JWS, and the SD-JWT reader of RFC 9901 §7.1 steps 1 and 3-5, without step 2's
+signature check. Nothing here verifies a signature.
 
 Every read of JSON text by a binding goes through parse_json or decode_json_segment, which parse only text whose
 arrays and objects nest at most MAX_JSON_DEPTH levels deep, counted over the text's brackets outside strings."""
@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._types import Refusal
+from . import _codec
 from ._codec import es_number
 
 MAX_JSON_DEPTH = 64
@@ -23,7 +24,6 @@ RESOLUTION_DEPTH = 16
 MIB = 1_048_576
 
 _PRESENTATION = re.compile(r"[A-Za-z0-9_.~-]*")
-_SEGMENT = re.compile(r"[A-Za-z0-9_-]*")
 _ARRAY_INDEX = re.compile(r"0|[1-9][0-9]*")
 _LONE_SURROGATE = re.compile(r"[\ud800-\udfff]")
 _ARRAY_INDEX_LIMIT = 2**32 - 1
@@ -272,11 +272,10 @@ def b64u_encode(data: bytes) -> str:
 
 
 def b64u_decode(text: object) -> bytes | None:
-    """Unpadded base64url: only the alphabet and a length that is not 1 mod 4; bits past the last whole byte are
-    dropped."""
-    if not isinstance(text, str) or _SEGMENT.fullmatch(text) is None or len(text) % 4 == 1:
-        return None
-    return base64.urlsafe_b64decode(text + "=" * ((4 - len(text) % 4) % 4))
+    """Base64url without padding in its canonical form (RFC 7515 §2, RFC 4648 §3.5), read through _codec.b64u_decode:
+    None for padding, a character outside the alphabet, a length of 1 mod 4, or a last character with a bit set past
+    the last whole byte, which spells the same bytes in another form."""
+    return _codec.b64u_decode(text)
 
 
 def disclosure_digest(text: str) -> str:
@@ -285,8 +284,8 @@ def disclosure_digest(text: str) -> str:
 
 
 def decode_json_segment(text: str) -> Any:
-    """The JSON value that unpadded base64url text decodes to as UTF-8, or UNPARSED. JSON nested past the cap comes
-    back as a value that within_depth refuses."""
+    """The JSON value that base64url text without padding, in its canonical form, decodes to as UTF-8, or UNPARSED.
+    JSON nested past the cap comes back as a value that within_depth refuses."""
     data = b64u_decode(text)
     if data is None:
         return UNPARSED
@@ -300,14 +299,16 @@ def decode_json_segment(text: str) -> Any:
 
 
 def jws_segments(text: object) -> tuple[str, str, str] | None:
-    """The three segments of a compact JWS, each unpadded base64url, or None."""
+    """The three segments of a compact JWS, each base64url without padding in its canonical form (RFC 7515 §2, RFC 4648
+    §3.5), or None. A segment whose last character carries a bit past its last byte is None, the signature's
+    included."""
     if not isinstance(text, str):
         return None
     parts = text.split(".")
     if len(parts) != 3:
         return None
     for part in parts:
-        if _SEGMENT.fullmatch(part) is None or len(part) % 4 == 1:
+        if not _codec.is_b64u(part):
             return None
     return parts[0], parts[1], parts[2]
 
@@ -474,7 +475,9 @@ def read_sd_jwt(token: object, codes: SdJwtCodes, bounds: SdJwtBounds = DEFAULT_
     referenced twice; a digest in an object's _sd that does not name a three-element disclosure, whether it names a
     two-element disclosure or none, is ignored at its first _sd listing, and a second _sd listing of it is malformed
     (RFC 9901 section 7.1 step 4). A resolved payload that, with each disclosed value where its reference sits, nests
-    more than MAX_JSON_DEPTH levels is too_large. No signature is verified."""
+    more than MAX_JSON_DEPTH levels is too_large. Each JWS segment and each disclosure is base64url without padding in
+    its canonical form (RFC 7515 §2, RFC 4648 §3.5): one whose last character carries a bit past its last byte is
+    malformed. No signature is verified."""
     malformed = Refusal(codes.malformed)
     if not isinstance(token, str):
         return malformed

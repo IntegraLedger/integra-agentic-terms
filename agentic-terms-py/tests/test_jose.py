@@ -18,6 +18,7 @@ from integraledger_terms.bindings._jose import (
     disclosure_digest,
     js_length,
     json_bytes,
+    jws_segments,
     member_names,
     parse_json,
     read_sd_jwt,
@@ -75,6 +76,22 @@ def test_sd_jwt_c8_a_digest_that_names_no_disclosure_is_listed_once() -> None:
             assert r == Refusal(row["expect"]), row["case"]
         else:
             assert isinstance(r, SdJwt) and r.resolved == row["expectResolved"], row["case"]
+
+
+def test_sd_jwt_c9_a_segment_or_disclosure_with_a_pad_bit_set_is_malformed() -> None:
+    # The reader takes RFC 7515 section 2's base64url in its canonical form only (RFC 4648 section 3.5). Each C9 row
+    # spells C8's control with one segment, or its disclosure, with a pad bit set, and is malformed; a row's control,
+    # the same presentation in canonical form, resolves as C8's control does. Every row runs before the test answers.
+    rows = V["C9"]["rows"]
+    assert rows
+    wrong = [row["case"] for row in rows if read_sd_jwt(row["presentation"], CODES) != Refusal(row["expect"])]
+    control = V["C8"]["rows"][2]["expectResolved"]
+    for row in rows:
+        if "control" in row:
+            r = read_sd_jwt(row["control"], CODES)
+            if not isinstance(r, SdJwt) or r.resolved != control:
+                wrong.append(f"{row['case']}: its control")
+    assert wrong == []
 
 
 def test_sd_jwt_a_two_element_disclosure_listed_in_sd_is_ignored_once() -> None:
@@ -136,6 +153,23 @@ def test_base64url_round_trip_over_every_byte_value() -> None:
     assert b64u_decode("A") is None
     assert b64u_decode("AA==") is None
     assert b64u_decode("A+") is None
+
+
+def test_base64url_reads_the_canonical_form_only() -> None:
+    # RFC 4648 section 3.5: the bits past the last whole byte are zero in the canonical form. base64.urlsafe_b64encode
+    # writes the byte 0x41 as "QQ" and the text {} as "e30"; "QR", "QS" and "e31" spell the same bytes with a pad bit
+    # set.
+    assert (b64u_decode("QQ"), b64u_decode("e30")) == (b"A", b"{}")
+    for text in ("QR", "QS", "e31"):
+        assert b64u_decode(text) is None, text
+
+
+def test_jws_segments_take_each_segment_in_its_canonical_form_only() -> None:
+    # RFC 7515 section 2: each segment of a compact JWS is base64url without padding, read in its canonical form (RFC
+    # 4648 section 3.5), the signature's included. The cases and answers are @integraledger/lcp's jwsSegments test's.
+    assert jws_segments("e30.e30.QQ") == ("e30", "e30", "QQ")
+    for text in ("e31.e30.QQ", "e30.e31.QQ", "e30.e30.QR", "e30.e30.QQ==", "e30.e30.Q", "e30.e30.Q+"):
+        assert jws_segments(text) is None, text
 
 
 def test_json_forms() -> None:

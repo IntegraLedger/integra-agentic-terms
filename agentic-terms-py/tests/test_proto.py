@@ -63,6 +63,7 @@ from integraledger_terms import (
 )
 from integraledger_terms.bindings._jose import disclosure_digest
 from integraledger_terms.bindings.ap2_checkout_mandate import checkout_binding, checkout_jwt_of, read_mandate
+from integraledger_terms.bindings.card import verify_es256
 from integraledger_terms.pieces import PIECES
 
 BUYER = "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -413,41 +414,58 @@ def _b64u_bytes(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
+B64U_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def _pad_bit(text: str) -> str:
+    """text, base64url without padding, with its last character's lowest pad bit set: the same bytes in a form that is
+    not canonical (RFC 4648 section 3.5). Its length is 2 or 3 mod 4, so that the last character has pad bits."""
+    assert len(text) % 4 >= 2, text
+    return text[:-1] + B64U_ALPHABET[B64U_ALPHABET.index(text[-1]) | 1]
+
+
+def _parts(layer: str) -> list[str]:
+    """The three segments of a layer's JWS."""
+    return layer.split("~")[0].split(".")
+
+
+def _rest(layer: str) -> str:
+    """A layer from its first ~: its disclosures and what follows them."""
+    return layer[layer.index("~") :]
+
+
+def _decoded(segment: str) -> Any:
+    return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+
+
+def _encoded(value: Any) -> str:
+    return _b64u_bytes(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+
+
 def _vi_resigned(user: Any = None, agent: Any = None) -> dict[str, str]:
     """C7's presented chain with L1's cnf.jwk set to user and the cnf.jwk of L2's open checkout mandate to agent, where
     given, and every sd_hash re-pointed: L2 signed again under USER and L3b under AGENT, so the chain differs from
     C7's only in the keys it names."""
     presented = CARD["C7"]["bound"]["presented"]
-
-    def parts(layer: str) -> list[str]:
-        return layer.split("~")[0].split(".")
-
-    def decoded(segment: str) -> Any:
-        return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
-
-    def enc(value: Any) -> str:
-        return _b64u_bytes(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
-
-    l1_payload = decoded(parts(presented["l1"])[1])
+    l1_payload = _decoded(_parts(presented["l1"])[1])
     if user is not None:
         l1_payload["cnf"]["jwk"] = user
     l1_head, _, l1_sig = presented["l1"][:-1].split(".")
-    l1 = f"{l1_head}.{enc(l1_payload)}.{l1_sig}~"
-    l2_payload = decoded(parts(presented["l2"])[1])
+    l1 = f"{l1_head}.{_encoded(l1_payload)}.{l1_sig}~"
+    l2_payload = _decoded(_parts(presented["l2"])[1])
     discs = presented["l2"].split("~")[1:-1]
     if agent is not None:
-        opened = next(d for d in discs if decoded(d)[1].get("vct") == "mandate.checkout.open.1")
-        salt, value = decoded(opened)
-        swapped = enc([salt, {**value, "cnf": {"jwk": agent}}])
+        opened = next(d for d in discs if _decoded(d)[1].get("vct") == "mandate.checkout.open.1")
+        salt, value = _decoded(opened)
+        swapped = _encoded([salt, {**value, "cnf": {"jwk": agent}}])
         old, new = disclosure_digest(opened), disclosure_digest(swapped)
         l2_payload["_sd"] = [new if d == old else d for d in l2_payload["_sd"]]
         l2_payload["delegate_payload"] = [{"...": new if e["..."] == old else e["..."]} for e in l2_payload["delegate_payload"]]
         discs = [swapped if d == opened else d for d in discs]
     l2_payload["sd_hash"] = disclosure_digest(l1)
-    l2 = _recipe_sign("lcp-test/user", f"{parts(presented['l2'])[0]}.{enc(l2_payload)}") + "~" + "".join(f"{d}~" for d in discs)
-    l3_payload = {**decoded(parts(presented["l3b"])[1]), "sd_hash": disclosure_digest(l2)}
-    rest = presented["l3b"][presented["l3b"].index("~") :]
-    l3b = _recipe_sign("lcp-test/agent", f"{parts(presented['l3b'])[0]}.{enc(l3_payload)}") + rest
+    l2 = _recipe_sign("lcp-test/user", f"{_parts(presented['l2'])[0]}.{_encoded(l2_payload)}") + "~" + "".join(f"{d}~" for d in discs)
+    l3_payload = {**_decoded(_parts(presented["l3b"])[1]), "sd_hash": disclosure_digest(l2)}
+    l3b = _recipe_sign("lcp-test/agent", f"{_parts(presented['l3b'])[0]}.{_encoded(l3_payload)}") + _rest(presented["l3b"])
     return {"l1": l1, "l2": l2, "l3b": l3b}
 
 
@@ -480,10 +498,59 @@ def _key_coordinate_not_32_bytes() -> list[object]:
     ]
 
 
-# card.json's agreedRefusals rows that the buyer's bound reads, by case: each builds the inputs its row describes.
+def _key_coordinate_with_a_pad_bit() -> list[object]:
+    user, agent = CARD["fixed"]["USER"], CARD["fixed"]["AGENT"]
+    return [
+        CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(**keys))
+        for keys in (
+            {"user": {**user, "x": _pad_bit(user["x"])}},
+            {"user": {**user, "y": _pad_bit(user["y"])}},
+            {"agent": {**agent, "x": _pad_bit(agent["x"])}},
+        )
+    ]
+
+
+def _segment_or_disclosure_with_a_pad_bit() -> list[object]:
+    presented = CARD["C7"]["bound"]["presented"]
+    ch, cp, cs = CJ.split(".")
+    h3, p3, s3 = _parts(presented["l3b"])
+    h2, p2, s2 = _parts(presented["l2"])
+    # L2's signature with a pad bit set: L3b's sd_hash names L2's text, so L3b is re-pointed and signed again.
+    l2 = f"{h2}.{p2}.{_pad_bit(s2)}{_rest(presented['l2'])}"
+    l3_payload = {**_decoded(p3), "sd_hash": disclosure_digest(l2)}
+    l3b = _recipe_sign("lcp-test/agent", f"{h3}.{_encoded(l3_payload)}") + _rest(presented["l3b"])
+    # L3b's checkout mandate disclosure with a pad bit set, listed by that text's digest, and L3b signed again.
+    discs = presented["l3b"].split("~")[1:-1]
+    mandate = next(d for d in discs if _decoded(d)[1].get("vct") == "mandate.checkout.1")
+    old, new = disclosure_digest(mandate), disclosure_digest(_pad_bit(mandate))
+    swapped = _decoded(p3)
+    if isinstance(swapped.get("_sd"), list):
+        swapped["_sd"] = [new if d == old else d for d in swapped["_sd"]]
+    swapped["delegate_payload"] = [{"...": new if e["..."] == old else e["..."]} for e in swapped["delegate_payload"]]
+    listed = "".join(f"{_pad_bit(d) if d == mandate else d}~" for d in discs)
+    l3b_disclosure = _recipe_sign("lcp-test/agent", f"{h3}.{_encoded(swapped)}") + "~" + listed
+    bound = CARD_MASTERCARD_VI_AUTONOMOUS.bound
+    return [
+        CARD_MASTERCARD_VI_IMMEDIATE.read(f"{_pad_bit(ch)}.{cp}.{cs}"),
+        CARD_MASTERCARD_VI_IMMEDIATE.read(f"{ch}.{_pad_bit(cp)}.{cs}"),
+        CARD_MASTERCARD_VI_IMMEDIATE.read(f"{ch}.{cp}.{_pad_bit(cs)}"),
+        bound({**presented, "l3b": f"{h3}.{p3}.{_pad_bit(s3)}{_rest(presented['l3b'])}"}),
+        bound({**presented, "l2": l2, "l3b": l3b}),
+        bound({**presented, "l3b": l3b_disclosure}),
+    ]
+
+
+# card.json's agreedRefusals rows that the buyer's bound reads, by case: each builds the inputs its row describes, as
+# @integraledger/lcp's card test builds them.
 CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
     "VI Autonomous bound with an L1 or L2 cnf.jwk whose x or y is not unpadded base64url of 32 bytes": (
         _key_coordinate_not_32_bytes
+    ),
+    "VI Autonomous bound with an L1 or L2 cnf.jwk whose x or y has a pad bit set in its last character": (
+        _key_coordinate_with_a_pad_bit
+    ),
+    "VI read or bound with a checkout_jwt or layer segment, or a disclosure, that has a pad bit set in its last character": (
+        _segment_or_disclosure_with_a_pad_bit
     ),
 }
 
@@ -497,6 +564,19 @@ def test_card_agreed_refusals(case: str) -> None:
     for row in rows:
         for answer in answers:
             assert answer == Refusal(row["expect"])
+
+
+def test_card_verify_es256_reads_the_key_and_the_signature_in_canonical_base64url_only() -> None:
+    # @integraledger/lcp's verifyEs256 reads x, y and the signature as base64url in its canonical form (RFC 4648 section
+    # 3.5): a key coordinate with a pad bit set is card/vi-key-malformed, and a signature with one is
+    # card/vi-signature-invalid. C7's L2 verifies under USER as given (card.json).
+    user = CARD["fixed"]["USER"]
+    jws = CARD["C7"]["bound"]["presented"]["l2"].split("~")[0]
+    head, payload, signature = jws.split(".")
+    assert verify_es256(jws, user) is True
+    assert verify_es256(jws, {**user, "x": _pad_bit(user["x"])}) == Refusal("card/vi-key-malformed")
+    assert verify_es256(jws, {**user, "y": _pad_bit(user["y"])}) == Refusal("card/vi-key-malformed")
+    assert verify_es256(f"{head}.{payload}.{_pad_bit(signature)}", user) == Refusal("card/vi-signature-invalid")
 
 
 def test_card_seller_reference_b6_confirm_only() -> None:

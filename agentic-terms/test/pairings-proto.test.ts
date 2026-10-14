@@ -281,6 +281,8 @@ describe("card.json agreedRefusals: the rows the buyer's bound reads", () => {
   const segments = (layer: string) => layer.split("~")[0]!.split(".") as [string, string, string];
   const decoded = (segment: string): V => JSON.parse(Buffer.from(segment, "base64url").toString("utf8"));
   const encoded = (value: unknown): string => b64u(JSON.stringify(value));
+  /** A layer from its first `~`: its disclosures and what follows them. */
+  const rest = (layer: string): string => layer.slice(layer.indexOf("~"));
   /**
    * C7's presented chain with L1's `cnf.jwk` set to `user` and the `cnf.jwk` of L2's open checkout mandate to `agent`,
    * where given, and every sd_hash re-pointed: L2 signed again under USER and L3b under AGENT, so the chain differs
@@ -305,10 +307,19 @@ describe("card.json agreedRefusals: the rows the buyer's bound reads", () => {
     l2Payload.sd_hash = sha256b64u(l1);
     const l2 = `${recipeSign("lcp-test/user", `${segments(presented.l2)[0]}.${encoded(l2Payload)}`)}~${disclosures.map((d) => `${d}~`).join("")}`;
     const l3Payload = { ...decoded(segments(presented.l3b)[1]), sd_hash: sha256b64u(l2) };
-    const l3b = `${recipeSign("lcp-test/agent", `${segments(presented.l3b)[0]}.${encoded(l3Payload)}`)}${presented.l3b.slice(presented.l3b.indexOf("~"))}`;
+    const l3b = `${recipeSign("lcp-test/agent", `${segments(presented.l3b)[0]}.${encoded(l3Payload)}`)}${rest(presented.l3b)}`;
     return { l1, l2, l3b };
   };
   const bound = (keys: { user?: unknown; agent?: unknown }) => viAutonomous.bound(resigned(keys) as never);
+  const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  /**
+   * `s`, base64url without padding, with its last character's lowest pad bit set: the same bytes in a form that is not
+   * canonical (RFC 4648 section 3.5). Its length is 2 or 3 mod 4, so that the last character has pad bits.
+   */
+  const padBit = (s: string): string => {
+    expect(s.length % 4).toBeGreaterThanOrEqual(2);
+    return s.slice(0, -1) + ALPHABET[ALPHABET.indexOf(s.at(-1)!) | 1];
+  };
 
   // The keys card.json's USER and AGENT name, so a chain re-signed under them as given is bound to H and each chain a
   // case below refuses differs from it in its key alone.
@@ -335,6 +346,38 @@ describe("card.json agreedRefusals: the rows the buyer's bound reads", () => {
         bound({ user: { ...USER, y: y.subarray(1).toString("base64url") } }),
         bound({ agent: { ...AGENT, x: `${AGENT.x}=` } }),
       ]);
+    },
+    "VI Autonomous bound with an L1 or L2 cnf.jwk whose x or y has a pad bit set in its last character": () =>
+      Promise.all([
+        bound({ user: { ...USER, x: padBit(USER.x) } }),
+        bound({ user: { ...USER, y: padBit(USER.y) } }),
+        bound({ agent: { ...AGENT, x: padBit(AGENT.x) } }),
+      ]),
+    "VI read or bound with a checkout_jwt or layer segment, or a disclosure, that has a pad bit set in its last character": async () => {
+      const [ch, cp, cs] = CJ.split(".") as [string, string, string];
+      const [h3, p3, s3] = segments(presented.l3b);
+      const [h2, p2, s2] = segments(presented.l2);
+      // L2's signature with a pad bit set: L3b's sd_hash names L2's text, so L3b is re-pointed and signed again.
+      const l2 = `${h2}.${p2}.${padBit(s2)}${rest(presented.l2)}`;
+      const l3b = `${recipeSign("lcp-test/agent", `${h3}.${encoded({ ...decoded(p3), sd_hash: sha256b64u(l2) })}`)}${rest(presented.l3b)}`;
+      // L3b's checkout mandate disclosure with a pad bit set, listed by that text's digest, and L3b signed again.
+      const disclosures = presented.l3b.split("~").slice(1, -1);
+      const mandate = disclosures.find((d) => decoded(d)[1].vct === "mandate.checkout.1")!;
+      const [from, to] = [sha256b64u(mandate), sha256b64u(padBit(mandate))];
+      const swap = (d: string) => (d === from ? to : d);
+      const swapped = decoded(p3);
+      if (Array.isArray(swapped._sd)) swapped._sd = swapped._sd.map(swap);
+      swapped.delegate_payload = swapped.delegate_payload.map((e: { "...": string }) => ({ "...": swap(e["..."]) }));
+      const listed = disclosures.map((d) => `${d === mandate ? padBit(d) : d}~`).join("");
+      const l3bDisclosure = `${recipeSign("lcp-test/agent", `${h3}.${encoded(swapped)}`)}~${listed}`;
+      return [
+        viImmediate.read(`${padBit(ch)}.${cp}.${cs}` as never),
+        viImmediate.read(`${ch}.${padBit(cp)}.${cs}` as never),
+        viImmediate.read(`${ch}.${cp}.${padBit(cs)}` as never),
+        await viAutonomous.bound({ ...presented, l3b: `${h3}.${p3}.${padBit(s3)}${rest(presented.l3b)}` } as never),
+        await viAutonomous.bound({ ...presented, l2, l3b } as never),
+        await viAutonomous.bound({ ...presented, l3b: l3bDisclosure } as never),
+      ];
     },
   };
   it.each(Object.keys(cases))("%s", async (c) => {
