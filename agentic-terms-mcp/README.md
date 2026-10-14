@@ -188,7 +188,7 @@ UTF-8), integers as decimal strings, byte strings as `0x` hex.
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
 | `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
-| `atr_finish` | `pairing`, `atr` (base64), `chosen`, `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash` and `next` for a pairing signed in steps | read-only |
+| `atr_finish` | `pairing`, `atr` (base64), `chosen` (exactly as returned), `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash` and `next` for a pairing signed in steps | read-only |
 | `atr_check` | `pairing`, `atr` (base64), `presented` | `atrHash` when the payment carries the hash of those bytes | read-only |
 | `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening) and `mac`, exactly as returned | `atrHash` and `hold`, with its `mac` | read-only |
 | `atr_channel_record_charge` | `hold` (exactly as returned), `charged` (decimal) | `atrHash` and the updated `hold` | read-only |
@@ -207,7 +207,7 @@ When `atr_confirm` returns `chosen.agreement`, it returns no `request` until the
 `atr_agree` is offered when the host wires a signer or an agreement signer. It reads the agreement URL from `chosen`,
 never from an argument of its own. `chosen` carries a `mac` under the server process's key, as the channel holds do, and
 `atr_agree` declines a `chosen` whose `mac` does not verify with `chosen-unverified`, before anything is fetched or
-signed. The agreement payment is a payment like any other: `approve.option` shows its
+signed. So does `atr_finish` for a pairing with a channel, before the gate is called. The agreement payment is a payment like any other: `approve.option` shows its
 `amount`, `asset`, `payTo` and `network`, and it is signed only when the agent calls again with `approved` set to
 `approve`, unchanged. A client's `notifications/cancelled` for a call ends its agreement exchange.
 
@@ -220,7 +220,8 @@ A channel opening that `atr_transact` or `atr_finish` returns comes with `mac` b
 returns carries `mac` among its members: an HMAC-SHA-256 under a key the server process generates on first use and
 never exports, logs or returns. `atr_channel_open` takes an opening only with its `mac`, and declines any other with
 `opening-unverified`; `atr_channel_record_charge` and `atr_channel_within` use a hold only when its `mac` verifies, and
-decline any other with `hold-unverified`. Both declines come before the gate is called, for one with a member changed,
+decline any other with `hold-unverified`. An opening comes only from a `chosen` that verifies: for a pairing with a
+channel, `atr_finish` declines any other `chosen` with `chosen-unverified`. Both declines come before the gate is called, for one with a member changed,
 added or removed, or one another server process returned, including one from before a restart. The agent passes each
 back exactly as returned. After a restart it opens a new channel; an earlier channel's host closes it with
 `@integraledger/terms`'s `within` and `refund: {}`, over the hold without its `mac`.

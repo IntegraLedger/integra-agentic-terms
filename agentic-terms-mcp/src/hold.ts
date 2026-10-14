@@ -2,8 +2,9 @@
  * The seals on what the tools take back. A channel hold's `mac` member, the `mac` returned beside a channel pairing's
  * signed opening, and the `mac` member of the `chosen` that `atr_confirm` returns, are each an HMAC-SHA-256 keyed with a
  * key this process generates on first use, cannot export, and never logs or returns. Each is over a label naming what
- * is sealed and the sealed members. A hold, an opening or a `chosen` passed back is used only when its `mac` verifies,
- * so one with any member changed, added or removed, or one another process sealed, is not used.
+ * is sealed and the sealed members. A hold or an opening passed back is used only when its `mac` verifies, and so is a
+ * `chosen` passed to `atr_agree`, or to `atr_finish` for a pairing with a channel: one with any member changed, added or
+ * removed, or one another process sealed, is not used.
  */
 import type { Json } from "@integraledger/lcp";
 

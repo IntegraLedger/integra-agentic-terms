@@ -219,38 +219,135 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     expect(signer.requests).toHaveLength(1);
   });
 
-  it("an opening and a hold the terms-mcp binary returned in its own process are declined here, and accepted by that process", async () => {
-    const confirmer = connect({ fetch });
-    const confirmed = await call(confirmer, "atr_confirm", { pairing, document: document(), account, inputs });
-    await confirmer.close();
+  it("a chosen, an opening and a hold this process returned are declined by the terms-mcp binary in its own process, and used here", async () => {
+    const c = connect({ fetch, signer: recording() });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, inputs });
+    const chosen = at(confirmed, "result.structuredContent.chosen");
+    const { signed, mac } = await openedOn(c);
+    const hold = await holdFrom(c);
     const other = spawnBin();
-    const finished = await call(other, "atr_finish", {
-      pairing,
-      atr,
-      chosen: at(confirmed, "result.structuredContent.chosen"),
-      signature: [BV.EB3.signature, BV.EB2.signature],
-    });
-    expect(at(finished, "result.isError")).toBeUndefined();
-    const opening = { pairing, atr, signed: at(finished, "result.structuredContent.signed"), mac: at(finished, "result.structuredContent.mac") };
-    const held = await call(other, "atr_channel_open", opening);
-    const hold = at(held, "result.structuredContent.hold") as Record<string, unknown>;
-    const there = await call(other, "atr_channel_record_charge", { hold, charged: "0" });
+    const finished = await call(other, "atr_finish", { pairing, atr, chosen, signature: [BV.EB3.signature, BV.EB2.signature] });
+    const opened = await call(other, "atr_channel_open", { pairing, atr, signed, mac });
+    const recorded = await call(other, "atr_channel_record_charge", { hold, charged: "0" });
     await other.close();
-    expect(at(held, "result.isError")).toBeUndefined();
-    expect(at(there, "result.isError")).toBeUndefined();
+    expect(at(finished, "result.structuredContent.decline.code")).toBe("chosen-unverified");
+    expect(at(opened, "result.structuredContent.decline.code")).toBe("opening-unverified");
+    expect(at(recorded, "result.structuredContent.decline.code")).toBe("hold-unverified");
 
-    const c0 = connect({ fetch });
-    const here = await call(c0, "atr_channel_open", opening);
-    await c0.close();
-    expect(at(here, "result.structuredContent.decline.code")).toBe("opening-unverified");
-
-    const signer = recording();
-    const c = connect({ fetch, signer });
-    const within = await call(c, "atr_channel_within", { pairing, hold, document: document() });
-    const record = await call(c, "atr_channel_record_charge", { hold, charged: "0" });
+    const here = await call(c, "atr_finish", { pairing, atr, chosen, signature: [BV.EB3.signature, BV.EB2.signature] });
+    const kept = await call(c, "atr_channel_record_charge", { hold, charged: "0" });
     await c.close();
-    expect(at(within, "result.structuredContent.decline.code")).toBe("hold-unverified");
-    expect(at(record, "result.structuredContent.decline.code")).toBe("hold-unverified");
-    expect(signer.requests).toHaveLength(0);
+    expect(at(here, "result.isError")).toBeUndefined();
+    expect(at(kept, "result.isError")).toBeUndefined();
+  });
+});
+
+// `chosen` carries this process's `mac` too. For a pairing with a channel, `atr_finish` returns the opening with a
+// `mac` that `atr_channel_open` holds, and a hold's `signedMax` bounds the vouchers signed later in the channel, so
+// `atr_finish` reads such a `chosen` only when its `mac` verifies: a `chosen` with its amount, deposit or payee
+// changed, or with its `mac` replaced or removed, is declined `chosen-unverified` before the gate is called, and no
+// opening or `mac` is returned. The unchanged `chosen` opens the channel EB2's voucher opened: `signedMax` is EB2's
+// `maxClaimableAmount`.
+describe("atr_finish of a channel pairing reads chosen only when its mac verifies", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(EV.now * 1000);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  type Choice = { accepted: Record<string, unknown>; required: { accepts: unknown[] }; deposit: string };
+  type Chosen = { choice: Choice; mac: string } & Record<string, unknown>;
+  /** `chosen` with the option it pays changed the same way where the choice holds it and in the document beside it. */
+  const withOption = (chosen: Chosen, change: Record<string, unknown>): Chosen => {
+    const accepted = { ...chosen.choice.accepted, ...change };
+    return { ...chosen, choice: { ...chosen.choice, accepted, required: { ...chosen.choice.required, accepts: [accepted] } } };
+  };
+  const signature = [BV.EB3.signature, BV.EB2.signature];
+
+  async function chosenOn(c: Connection): Promise<Chosen> {
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, inputs });
+    expect(at(confirmed, "result.isError")).toBeUndefined();
+    return at(confirmed, "result.structuredContent.chosen") as Chosen;
+  }
+
+  it("the chosen atr_confirm returned, unchanged: the opening and its mac, held with EB2's signedMax", async () => {
+    const c = connect({ fetch });
+    const chosen = await chosenOn(c);
+    const finished = await call(c, "atr_finish", { pairing, atr, chosen, signature });
+    expect(at(finished, "result.isError")).toBeUndefined();
+    const { signed, mac } = at(finished, "result.structuredContent") as Opened;
+    const held = await call(c, "atr_channel_open", { pairing, atr, signed, mac });
+    await c.close();
+    expect(at(held, "result.structuredContent.hold.signedMax")).toBe(BV.EB2.maxClaimableAmount);
+  });
+
+  it("a chosen with its amount, deposit or payee changed, its mac kept, is declined chosen-unverified with no opening", async () => {
+    const c = connect({ fetch });
+    const chosen = await chosenOn(c);
+    expect(chosen.choice.accepted["amount"]).toBe(EV.option.amount);
+    expect(chosen.choice.deposit).toBe(EV.deposit);
+    expect(chosen.choice.accepted["payTo"]).toBe(EV.option.payTo);
+    const edits: Chosen[] = [
+      withOption(chosen, { amount: "999999999999" }),
+      { ...chosen, choice: { ...chosen.choice, deposit: "999999999999" } },
+      withOption(chosen, { payTo: EV.payer }),
+    ];
+    const answers = [];
+    for (const edited of edits) answers.push(await call(c, "atr_finish", { pairing, atr, chosen: edited, signature }));
+    await c.close();
+    for (const m of answers) {
+      expect(at(m, "result.isError")).toBe(true);
+      expect(at(m, "result.structuredContent.decline.code")).toBe("chosen-unverified");
+      expect(at(m, "result.structuredContent")).not.toHaveProperty("signed");
+      expect(at(m, "result.structuredContent")).not.toHaveProperty("mac");
+    }
+  });
+
+  it("a chosen whose mac is replaced or removed is declined chosen-unverified", async () => {
+    const c = connect({ fetch });
+    const { mac: _mac, ...bare } = await chosenOn(c);
+    const forged = await call(c, "atr_finish", { pairing, atr, chosen: { ...bare, mac: `0x${"00".repeat(32)}` }, signature });
+    const missing = await call(c, "atr_finish", { pairing, atr, chosen: bare, signature });
+    await c.close();
+    expect(at(forged, "result.structuredContent.decline.code")).toBe("chosen-unverified");
+    expect(at(missing, "result.structuredContent.decline.code")).toBe("chosen-unverified");
+  });
+
+  it("mpp/session/evm: a chosen with its deposit changed is declined chosen-unverified at each step; the unchanged one opens", async () => {
+    const SE = vectors("mpp-session-evm.json");
+    const MC = vectors("mpp-challenge.json");
+    const session = "mpp/session/evm";
+    const issued = {
+      realm: MC.fixed.realm,
+      method: "evm",
+      intent: "session",
+      request: Buffer.from(SE.fixed.request, "utf8").toString("base64url"),
+      expires: MC.fixed.expires,
+    };
+    const doc = (BINDINGS.find((b) => b.id === session) as unknown as Advertises).advertise([issued], H_ABC, LINK_ABC, issued);
+    const sessionInputs = { deposit: SE.fixed.deposit, credentialType: "authorization", tokenDomain: SE.fixed.tokenDomain };
+    /** A 65-byte answer of the form the funding and the voucher take; no signature is verified by the gate. */
+    const answer = `0x${"11".repeat(65)}`;
+    vi.setSystemTime(SE.fixed.now * 1000);
+    const c = connect({ fetch });
+    const confirmed = await call(c, "atr_confirm", {
+      pairing: session,
+      document: doc,
+      account: `eip155:84532:${SE.fixed.payer}`,
+      inputs: sessionInputs,
+    });
+    const chosen = at(confirmed, "result.structuredContent.chosen") as Chosen;
+    expect(chosen.choice.deposit).toBe(SE.fixed.deposit);
+    const edited = { ...chosen, choice: { ...chosen.choice, deposit: "999999999999" } };
+    const first = await call(c, "atr_finish", { pairing: session, atr, chosen: edited, signature: answer });
+    const second = await call(c, "atr_finish", { pairing: session, atr, chosen: edited, signature: [answer, answer] });
+    const next = await call(c, "atr_finish", { pairing: session, atr, chosen, signature: answer });
+    const opened = await call(c, "atr_finish", { pairing: session, atr, chosen, signature: [answer, answer] });
+    await c.close();
+    expect(at(first, "result.structuredContent.decline.code")).toBe("chosen-unverified");
+    expect(at(second, "result.structuredContent.decline.code")).toBe("chosen-unverified");
+    expect(at(next, "result.structuredContent.next.kind")).toBe("eip712");
+    expect(at(opened, "result.isError")).toBeUndefined();
+    expect(at(opened, "result.structuredContent.mac")).toMatch(/^0x[0-9a-f]{64}$/);
   });
 });

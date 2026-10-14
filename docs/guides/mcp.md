@@ -155,7 +155,8 @@ with `approved` set to `approve`.
 - `atr_finish` returns `signed` only when what was signed carries the hash of the bytes it was given.
 - `terms-mcp` holds no keys. With a host signer, only the host's code signs, and only after a match.
 - `atr_channel_open` holds only an opening, and `atr_channel_within` signs and `atr_channel_record_charge` records only
-  from a hold, that this server process returned, unchanged. Each carries a `mac` under a key the process generates and
+  from a hold, that this server process returned, unchanged. For a pairing with a channel, `atr_finish` reads only a
+  `chosen` that this server process returned, unchanged. Each carries a `mac` under a key the process generates and
   never exports.
 - `terms-mcp` fetches only from public addresses: a link on a loopback, private-use, link-local or unique-local
   address, or a host name that resolves to one, is declined `atr-unfetchable` before any connection.

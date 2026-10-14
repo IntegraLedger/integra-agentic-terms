@@ -56,6 +56,9 @@ returns. Objects are taken in sorted key order, so the order their members arriv
 - **The opening.** For a pairing with a channel, `atr_transact` and `atr_finish` return `mac` beside `signed`, over the
   pairing and the signed opening. `atr_channel_open` takes the opening only with that `mac`, and declines any other
   opening `opening-unverified` before the gate is called.
+- **The chosen payment.** For a pairing with a channel, `atr_finish` reads `chosen` only when the `mac` `atr_confirm`
+  returned in it verifies, and declines any other `chosen` `chosen-unverified` before the gate is called, so an opening
+  and its `mac` come only from a `chosen` this server process returned, unchanged.
 - **The hold.** Every `hold` a tool returns is the gate's
   [channel hold](../guides/channels-and-sessions.md#the-hold) with one more member, `mac`, over the other members.
   `atr_channel_record_charge` and `atr_channel_within` use a hold only when its `mac` verifies, and decline any other
@@ -102,14 +105,14 @@ declined `agreement-failed`. Annotations: read-only, open-world.
 
 ### `atr_finish`
 
-Rebuilds the payment from `chosen` and the ATR bytes, joins the wallet's signature, and confirms H is inside what was
-signed.
+Rebuilds the payment from `chosen` and the ATR bytes, and joins the wallet's signature. Returns `signed` only when the
+pairing reads H from what was signed, or, where the proof is the agreement payment, without that reading.
 
 | Argument | Type | |
 | --- | --- | --- |
 | `pairing` | string | The pairing. |
 | `atr` | base64 | The ATR's bytes, `atr.base64` from `atr_confirm`. |
-| `chosen` | object | `chosen` from `atr_confirm`, unchanged. Its `mac` is not read here: `finish` rebuilds the payment from `chosen` and trusts nothing it did not rebuild. |
+| `chosen` | object | `chosen` from `atr_confirm`, exactly as returned, `mac` included. For a pairing with a channel, a `chosen` whose `mac` does not verify is declined `chosen-unverified`. For any other pairing its `mac` is not read: `finish` rebuilds the payment from `chosen` and trusts nothing it did not rebuild. |
 | `signature` | JSON | The wallet's answer; a list, in order, for a payment signed in steps. |
 
 Returns `atrHash` and `signed` (and `landed`, where there is one), or `atrHash` and `next`. For a pairing with a channel,

@@ -2,8 +2,9 @@
  * The buyer gate's operations as MCP tools: `atr_confirm`, `atr_finish`, `atr_check`, `atr_channel_open` and
  * `atr_channel_record_charge`; where the host wires its own signer, `atr_transact` and `atr_channel_within`; and where
  * it wires a signer or an agreement signer, `atr_agree`. Each tool call is one call of the gate; this package adds
- * transport and words, and seals each `chosen`, channel hold and channel opening it returns so that one passed back is
- * used only unchanged.
+ * transport and words, and seals each `chosen`, channel hold and channel opening it returns. A channel hold or opening
+ * passed back is used only unchanged, and so is a `chosen` passed to `atr_agree`, or to `atr_finish` for a pairing
+ * with a channel.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
@@ -43,8 +44,10 @@ const DESCRIPTIONS = {
     "`chosen.agreement` names an agreement URL, the signing request is returned only when you pass that agreement's " +
     "`receipt` for this ATR hash.",
   atr_finish:
-    "Rebuilds the payment from `chosen` and the ATR bytes, joins your wallet's signature, and confirms the ATR hash is " +
-    "inside what was signed. Send only the `signed` payment it returns.",
+    "Rebuilds the payment from `chosen` and the ATR bytes and joins your wallet's signature. Returns `signed` only " +
+    "when the pairing reads the ATR hash from what was signed, or, where the proof is the agreement payment, without " +
+    "that reading. For a pairing with a channel, pass `chosen` exactly as atr_confirm returned it, `mac` included: a " +
+    "changed `chosen` is declined. Send only the `signed` payment it returns.",
   atr_check: "Confirms that a payment carries, inside what was signed, the SHA-256 of the given ATR bytes.",
   atr_transact:
     "Confirms the ATR hash and, only on a match, signs the payment carrying it with this host's signer. Returns the " +
@@ -192,6 +195,12 @@ function isReceiptFor(receipt: unknown, h: string): boolean {
   );
 }
 
+/** Whether the pairing has a channel: its opening is held, and later payments are signed in it. */
+function hasChannel(binding: Binding): boolean {
+  const channel = (binding as unknown as { channel?: unknown }).channel;
+  return typeof channel === "object" && channel !== null;
+}
+
 /**
  * The payment and, where `finish` or `transact` returned one, the landed receipt beside it; for a pairing with a
  * channel, the `mac` of the pairing and the payment that `atr_channel_open` takes with it.
@@ -202,8 +211,7 @@ async function signedOf(
 ): Promise<{ signed: Json; landed?: Json; mac?: string }> {
   const signed = jsonOf(out.signed);
   const landed = out.landed === undefined ? {} : { landed: jsonOf(out.landed) };
-  const channel = (binding as unknown as { channel?: unknown }).channel;
-  if (typeof channel !== "object" || channel === null || out.signed === null) return { signed, ...landed };
+  if (!hasChannel(binding) || out.signed === null) return { signed, ...landed };
   return { signed, ...landed, mac: await macOf("opening", { pairing: binding.id, signed }) };
 }
 
@@ -250,11 +258,14 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
-      const { mac: _mac, ...chosen } = a.chosen;
-      const out = await finish(bytesOf(a.atr), chosen as unknown as Chosen, a.signature as Signature, bindingOf(a.pairing));
+      const binding = bindingOf(a.pairing);
+      const { mac: _mac, ...members } = a.chosen;
+      const chosen = hasChannel(binding) ? await unsealChosen(a.chosen) : members;
+      if (chosen === undefined) return chosenUnverified();
+      const out = await finish(bytesOf(a.atr), chosen as unknown as Chosen, a.signature as Signature, binding);
       if ("decline" in out) return declinedResult(out);
       if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next) });
-      return result({ atrHash: out.h, ...(await signedOf(out, bindingOf(a.pairing))) });
+      return result({ atrHash: out.h, ...(await signedOf(out, binding)) });
     },
   );
 

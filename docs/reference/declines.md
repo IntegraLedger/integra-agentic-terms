@@ -44,7 +44,7 @@ The MCP server adds three codes of its own:
 | --- | --- | --- |
 | `hold-unverified` | A channel hold passed to `atr_channel_record_charge` or `atr_channel_within` is not one this server process returned, unchanged: its `mac` does not verify. See [channel holds](./mcp.md#channel-holds). | No |
 | `opening-unverified` | A channel opening passed to `atr_channel_open` is not one this server process returned, unchanged: the `mac` beside it does not verify. See [channel holds](./mcp.md#channel-holds). | No |
-| `chosen-unverified` | The `chosen` passed to `atr_agree` is not one `atr_confirm` returned in this server process, unchanged: its `mac` does not verify. Nothing is fetched. See [`atr_agree`](./mcp.md#atr_agree). | No |
+| `chosen-unverified` | The `chosen` passed to `atr_agree`, or to `atr_finish` for a pairing with a channel, is not one `atr_confirm` returned in this server process, unchanged: its `mac` does not verify. Nothing is fetched. See [`atr_agree`](./mcp.md#atr_agree) and [channel holds](./mcp.md#channel-holds). | No |
 
 ## `moved`
 
