@@ -206,13 +206,22 @@ def test_json_bytes_measures_a_surrogate_pair_as_the_character_it_forms() -> Non
 
 def test_an_integer_literal_reads_as_json_parse_reads_it() -> None:
     """JSON.parse on Node 26.10.0 reads an integer literal of 4,301 or 400 digits as Infinity, and one of 309 digits,
-    inside the double range, as a number."""
+    inside the double range, as the double 1e308. On Node 26.11.1, BigInt(JSON.parse(text).n) for 2^53 + 1, 2^53 + 3,
+    -(2^53 + 1) and 2^64 - 1 is 2^53, 2^53 + 4, -(2^53) and 2^64: past 2^53 a literal reads as the double nearest it."""
     for digits in (4301, 400):
         text = '{"n":1' + "0" * (digits - 1) + "}"
         assert parse_json(text) == {"n": math.inf}, digits
         assert member_names(text) == ["n"], digits
     assert parse_json('{"n":-1' + "0" * 399 + "}") == {"n": -math.inf}
-    assert parse_json('{"n":1' + "0" * 308 + "}") == {"n": 10**308}
+    assert parse_json('{"n":1' + "0" * 308 + "}") == {"n": 1e308}
+    for literal, value in (
+        ("9007199254740993", 2**53),
+        ("9007199254740995", 2**53 + 4),
+        ("-9007199254740993", -(2**53)),
+        ("18446744073709551615", 2**64),
+    ):
+        read = parse_json('{"n":' + literal + "}")["n"]
+        assert type(read) is int and read == value, literal
 
 
 def test_json_bytes_measures_as_json_stringify_writes() -> None:

@@ -55,10 +55,11 @@ def _no_constant(name: str) -> Any:
 
 
 def _js_integer(text: str) -> int | float:
-    """An integer literal as JSON.parse reads it, whatever its digits: infinity when it is outside the double range,
-    and the integer otherwise."""
+    """An integer literal as JSON.parse reads it, whatever its digits: the double nearest to it (ECMA-262
+    StringToNumber), held as the integer that double is, or infinity when the literal is outside the double range. Past
+    2^53 the double differs from the literal: 9007199254740993 reads as 9007199254740992."""
     value = float(text)
-    return value if math.isinf(value) else int(text)
+    return value if math.isinf(value) else int(value)
 
 
 class _Unparsed:

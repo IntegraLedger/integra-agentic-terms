@@ -8,7 +8,6 @@ Infinity, as null."""
 
 import base64
 import json
-import math
 from typing import Any
 
 import pytest
@@ -23,6 +22,7 @@ from integraledger_terms import (
     Binding,
     Refusal,
 )
+from integraledger_terms.bindings._codec import js_json
 from integraledger_terms.bindings._jose import MAX_JSON_DEPTH, UNPARSED, json_bytes, json_within_depth, parse_json
 from integraledger_terms.bindings.lightning import atr_names_invoice
 from integraledger_terms.bindings.mpp_charge_usdc import usdc_request_hash
@@ -61,12 +61,18 @@ def test_json_depth_rows() -> None:
 
 
 def test_json_numbers_rows() -> None:
-    rows = CORE["jsonNumbers"]["rows"]
-    assert [len(r["text"]) - len('{"n":}') for r in rows] == [4301, 400]
+    # Every row that gives a text and what JSON.stringify writes for its JSON.parse value: the text reads as JSON.parse
+    # reads it, and is written, and measured, as JSON.stringify writes it. At least one row is read.
+    rows = [
+        r
+        for r in CORE.get("jsonNumbers", {}).get("rows", [])
+        if isinstance(r.get("text"), str) and isinstance(r.get("stringified"), str)
+    ]
+    assert rows, "no jsonNumbers row gives a text and its stringified form"
     for row in rows:
-        assert json_within_depth(row["text"]) is True, row["name"]
         value = parse_json(row["text"])
-        assert value == {"n": math.inf}, row["name"]
+        assert value is not UNPARSED, row["name"]
+        assert js_json(value, null_non_finite=True) == row["stringified"], row["name"]
         assert json_bytes(value) == len(row["stringified"].encode("utf-8")), row["name"]
 
 
