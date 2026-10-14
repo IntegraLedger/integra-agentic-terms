@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 keywords = ["agentic-commerce", "ai-agents", "legal-context-protocol", "lcp", "atr", "x402", "mpp", "payments", "sha256", "buyer"]
 requires-python = ">=3.11"
-dependencies = ["httpx>=0.28.1,<0.29", "cryptography==50.0.1"]
+dependencies = ["httpx>=0.28.1,<0.29", "cryptography==50.0.2"]
 
 [project.urls]
 Homepage = "https://github.com/IntegraLedger/integra-agentic-terms/tree/main/agentic-terms-py#readme"
@@ -18,7 +18,7 @@ Repository = "https://github.com/IntegraLedger/integra-agentic-terms"
 Issues = "https://github.com/IntegraLedger/integra-agentic-terms/issues"
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "mypy==2.3.1", "eth-account==0.14.0"]
+dev = ["pytest==9.1.1", "mypy==2.4.0", "eth-account==0.14.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/integraledger_terms"]
