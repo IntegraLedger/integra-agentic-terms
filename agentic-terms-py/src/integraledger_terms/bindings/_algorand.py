@@ -186,11 +186,6 @@ def unpack(data: bytes) -> Any:
 # ── addresses ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-def encode_address(public_key: bytes) -> str:
-    """Base32 of the 32-byte key and the last 4 bytes of its SHA-512/256, without padding."""
-    return base64.b32encode(public_key + sha512_256(public_key)[-4:]).decode("ascii").rstrip("=")[:ADDRESS_LENGTH]
-
-
 def decode_address(address: object) -> bytes | None:
     """The 32-byte key of a 58-character address whose checksum holds, or None."""
     if not isinstance(address, str) or len(address) != ADDRESS_LENGTH or _BASE32.fullmatch(address) is None:

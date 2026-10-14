@@ -3,6 +3,7 @@ values are the vector file's; the payer signs with the Ed25519 seed the file nam
 
 import base64
 import copy
+import hashlib
 from typing import Any
 
 from integraledger_terms import X402_EXACT_ALGORAND, Refusal
@@ -45,8 +46,15 @@ def built(option: dict[str, Any]) -> AvmUnsigned:
     return unsigned
 
 
+def encode_address(public_key: bytes) -> str:
+    """Base32 of the 32-byte key and the last 4 bytes of its SHA-512/256, without padding: Algorand's address form."""
+    checksum = hashlib.new("sha512_256", public_key).digest()[-4:]
+    return base64.b32encode(public_key + checksum).decode("ascii").rstrip("=")
+
+
 def test_x402_exact_algorand_payer_key_is_the_vector_payer() -> None:
-    assert _algorand.encode_address(ed25519.public_key(SEED)) == F["payer"]
+    assert encode_address(ed25519.public_key(SEED)) == F["payer"]
+
 
 def test_x402_exact_algorand_b6_bytes_to_sign_and_payment_group_are_v2() -> None:
     def inspect(request: Any) -> None:
