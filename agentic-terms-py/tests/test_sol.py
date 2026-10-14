@@ -7,7 +7,7 @@ import base64
 import copy
 import hashlib
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import pytest
@@ -21,7 +21,6 @@ from integraledger_terms import (
     X402_BATCH_SETTLEMENT_SOLANA,
     X402_EXACT_SOLANA,
     X402_UPTO_SOLANA,
-    BatchUnsigned,
     ChannelHold,
     ChannelRef,
     Confirmed,
@@ -732,14 +731,12 @@ RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable"
 # The request_close message inside ES4's close wire: its signature count, the signatures, then the message.
 _CLOSE_WIRE = base64.b64decode(BV["ES4"]["closeWireBase64"])
 CLOSE_MESSAGE = _CLOSE_WIRE[1 + 64 * _CLOSE_WIRE[0] :]
+# A recent blockhash other than the opening's: any 32 bytes, in base58.
+OTHER_BLOCKHASH = b58_encode(bytes(range(1, 33)))
 
 
-class RefundWithin:
-    """The batch binding with a build_within that stands in for the protocol package's refund, in both of its forms
-    (@integraledger/lcp's svmBuildWithin): it records what the gate hands it and builds the voucher for the held
-    channel at w's maxClaimableAmount, one ed25519-raw request by the payer authorizer, completing the payload {type,
-    channelConfig, voucher}. Given a recentBlockhash, a solana-message request over ES4's request_close message comes
-    first, and the payload also carries the transaction."""
+class Handed:
+    """The package's batch binding, recording each w the gate hands its build_within before the binding builds it."""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
@@ -748,28 +745,21 @@ class RefundWithin:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
 
-    def build_within(self, w: dict[str, Any], h: str) -> BatchUnsigned:
+    def build_within(self, w: dict[str, Any], h: str) -> Any:
         self.handed.append(w)
-        channel = BV["ES1"]["channelPda"]
-        message = _svm.channel_voucher_message(channel, w["maxClaimableAmount"], 0)
-        voucher_request = {"kind": "ed25519-raw", "message": message, "signer": BS["payer"]}
-        taken_again = "recentBlockhash" in w
-        close = [{"kind": "solana-message", "message": CLOSE_MESSAGE}] if taken_again else []
-
-        def complete(signatures: Sequence[str]) -> dict[str, Any]:
-            voucher = {"channelId": channel, "maxClaimableAmount": str(w["maxClaimableAmount"]), "expiresAt": 0,
-                       "signature": signatures[-1]}  # fmt: skip
-            payload: dict[str, Any] = {"type": "refund", "channelConfig": w["channelConfig"], "voucher": voucher}
-            if taken_again:
-                payload["transaction"] = BV["ES4"]["closeWireBase64"]
-            return {"x402Version": 2, "accepted": w["accepted"], "payload": payload}
-
-        return BatchUnsigned(requests=[*close, voucher_request], complete=complete)
+        return self._inner.build_within(w, h)
 
 
 def answer_each(request: Any) -> list[str]:
-    """A signer's answer of one 64-byte signature, in base58, per request of the batch."""
-    return ["1" * 64] * len(request["requests"])
+    """The payer's answer, who is also the payer authorizer: its Ed25519 signature, in base58, over each request of
+    the batch."""
+    return [b58_encode(sign(bytes.fromhex(BS["payerSeed"]), hexb(r["message"]))) for r in request["requests"]]
+
+
+def compute_budget(limit: int, price: int) -> list[str]:
+    """The data of the two Compute Budget instructions: SetComputeUnitLimit (02, u32 LE) and SetComputeUnitPrice (03,
+    u64 LE), as Solana's Compute Budget program reads them."""
+    return ["02" + limit.to_bytes(4, "little").hex(), "03" + price.to_bytes(8, "little").hex()]
 
 
 def charged_1000() -> tuple[Any, ChannelHold]:
@@ -788,27 +778,43 @@ def refund_form(out: Any, signer: Recording) -> tuple[list[str], list[str]]:
 
 
 def test_x402_batch_settlement_solana_a_full_refund_hands_build_within_the_request_close_values_only_when_taken_again() -> None:
-    """The Solana batch-settlement refund (x402's scheme_batch_settlement_svm.md, the vectors' ES6): within(doc, hold,
-    binding, signer, {}) hands build_within refund {} and none of the buyer's request_close values, so the refund is
-    the voucher alone, ES6.cooperative's form; under a payment request whose error is
-    invalid_batch_settlement_svm_receiver_binding_unavailable it hands all three, and the refund also carries the
-    payer-signed request_close, ES6.withMemo's form. At a recorded charge of 1000 the voucher's message is ES3's. The
-    gate checks that each completion's kind is close and that it names the held channel."""
+    """The Solana batch-settlement refund (x402's scheme_batch_settlement_svm.md, the vectors' ES6), through the gate
+    and the package's binding: within(doc, hold, binding, signer, {}) hands build_within refund {} and none of the
+    buyer's request_close values, so the refund is the voucher alone, ES6.cooperative's form; under a payment request
+    whose error is invalid_batch_settlement_svm_receiver_binding_unavailable it hands all three, and the refund also
+    carries the payer-signed request_close, ES6.withMemo's form, built with them. At a recorded charge of 1000 the
+    voucher's message is ES3's, and the request_close holds ES4's close instructions with the given Compute Budget
+    values. The gate checks that each completion's kind is close and that it names the held channel."""
     doc, hold = charged_1000()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     given = {"recentBlockhash": BS["blockhash"], "computeUnitLimit": 300000, "computeUnitPrice": "2"}
     forms = (
         (doc, ["ed25519-raw"], BV["ES6"]["cooperative"]),
         ({**doc, "error": RETRY}, ["solana-message", "ed25519-raw"], BV["ES6"]["withMemo"]),
     )
+    seed = bytes.fromhex(BS["payerSeed"])
     for d, kinds, form in forms:
         signer = Recording(BATCH_ACCOUNT, answer_each)
         out = asyncio.run(within(d, hold, binding, signer, {}, given))
         assert refund_form(out, signer) == (kinds, sorted(form["payloadMembers"]))
         assert isinstance(out, Within)
-        assert hexb(signer.requests[0]["requests"][-1]["message"]).hex() == BV["ES3"]["message"]
+        requests = signer.requests[0]["requests"]
+        voucher_message = hexb(requests[-1]["message"])
+        assert voucher_message.hex() == BV["ES3"]["message"] and requests[-1]["signer"] == BS["payer"]
+        voucher = out.signed["payload"]["voucher"]
+        assert voucher == {"channelId": BV["ES1"]["channelPda"], "maxClaimableAmount": "1000", "expiresAt": 0,
+                           "signature": b58_encode(sign(seed, voucher_message))}  # fmt: skip
         assert BATCH_BINDING.channel_kind(out.signed) == form["expectKind"]
         assert BATCH_BINDING.channel_ref(out.signed) == ChannelRef(**BV["ES4"]["expectRef"])
+    message = hexb(requests[0]["message"])
+    close = decompile(CLOSE_MESSAGE)
+    assert decompile(message) == {**close, "instructions": [
+        *({"program": _svm.COMPUTE_BUDGET, "accounts": [], "data": x} for x in compute_budget(300000, 2)),
+        *close["instructions"][2:],
+    ]}  # fmt: skip
+    assert isinstance(out, Within)
+    wire = base64.b64decode(out.signed["payload"]["transaction"])
+    assert wire[:65] == bytes([2]) + bytes(64) and wire[65:129] == sign(seed, message) and wire[129:] == message
     values = ("recentBlockhash", "computeUnitLimit", "computeUnitPrice")
     assert [(w["refund"], [w.get(k) for k in values]) for w in binding.handed] == [
         ({}, [None, None, None]),
@@ -849,23 +855,43 @@ def test_x402_batch_settlement_solana_the_refund_is_taken_again_on_the_paymentre
     invalid_batch_settlement_svm_receiver_binding_unavailable, read first, or else when the 402 payment request's error
     does (x402's TypeScript client, client/refund.ts; its Go client, refund.go, reads the error only when no
     PAYMENT-RESPONSE is given, so a PAYMENT-RESPONSE without errorReason follows refund.ts). refund's paymentResponse
-    carries the decoded PAYMENT-RESPONSE. Taken again, the refund is ES6.withMemo's form, built with the given
-    recentBlockhash; else it is the voucher alone."""
+    carries the decoded PAYMENT-RESPONSE. Taken again, the refund is ES6.withMemo's form, its request_close built with
+    the given recentBlockhash; else it is the voucher alone."""
     doc, hold = charged_1000()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, answer_each)
     d = doc if error is None else {**doc, "error": error}
     out = asyncio.run(within(d, hold, binding, signer, {"paymentResponse": settle_failure(error_reason)},
-                             {"recentBlockhash": BS["blockhash"]}))  # fmt: skip
+                             {"recentBlockhash": OTHER_BLOCKHASH}))  # fmt: skip
     form = BV["ES6"]["withMemo"] if taken_again else BV["ES6"]["cooperative"]
     kinds = ["solana-message", "ed25519-raw"] if taken_again else ["ed25519-raw"]
     assert refund_form(out, signer) == (kinds, sorted(form["payloadMembers"]))
-    assert binding.handed[0].get("recentBlockhash") == (BS["blockhash"] if taken_again else None)
+    assert binding.handed[0].get("recentBlockhash") == (OTHER_BLOCKHASH if taken_again else None)
+    if taken_again:
+        assert decompile(hexb(signer.requests[0]["requests"][0]["message"]))["blockhash"] == OTHER_BLOCKHASH
+
+
+def test_x402_batch_settlement_solana_a_refund_never_reads_the_offers_recent_blockhash() -> None:
+    """An option may offer extra.recentBlockhash for the opening; the refund reads only the blockhash the caller gives
+    for the refund taken again (@integraledger/lcp's svmBuildWithin reads w.recentBlockhash alone). Under such an
+    option the first refund is the voucher alone, ES6.cooperative's form, and the refund taken again carries the
+    request_close built with the given blockhash."""
+    doc, hold = charged_1000()
+    offered = copy.deepcopy(doc)
+    offered["accepts"][0]["extra"]["recentBlockhash"] = OTHER_BLOCKHASH
+    signer = Recording(BATCH_ACCOUNT, answer_each)
+    out = asyncio.run(within(offered, hold, X402_BATCH_SETTLEMENT_SOLANA, signer, {}, {}))
+    assert refund_form(out, signer) == (["ed25519-raw"], sorted(BV["ES6"]["cooperative"]["payloadMembers"]))
+    signer = Recording(BATCH_ACCOUNT, answer_each)
+    retry = {**offered, "error": RETRY}
+    out = asyncio.run(within(retry, hold, X402_BATCH_SETTLEMENT_SOLANA, signer, {}, {"recentBlockhash": BS["blockhash"]}))
+    assert refund_form(out, signer) == (["solana-message", "ed25519-raw"], sorted(BV["ES6"]["withMemo"]["payloadMembers"]))
+    assert decompile(hexb(signer.requests[0]["requests"][0]["message"]))["blockhash"] == BS["blockhash"]
 
 
 def test_x402_batch_settlement_solana_the_code_in_the_errorreason_with_no_blockhash_is_input_missing() -> None:
     doc, hold = charged_1000()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, answer_each)
     out = asyncio.run(within(doc, hold, binding, signer, {"paymentResponse": settle_failure(RETRY)}, {}))
     assert out == Declined("no-payable-option", "x402/input-missing")
@@ -875,7 +901,7 @@ def test_x402_batch_settlement_solana_the_code_in_the_errorreason_with_no_blockh
 @pytest.mark.parametrize("response", ["eyJzdWNjZXNzIjpmYWxzZX0=", None, []], ids=["a string", "None", "a list"])
 def test_x402_batch_settlement_solana_a_paymentresponse_that_is_not_a_mapping_is_input_malformed(response: Any) -> None:
     doc, hold = charged_1000()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, answer_each)
     out = asyncio.run(within(doc, hold, binding, signer, {"paymentResponse": response}, {"recentBlockhash": BS["blockhash"]}))
     assert out == Declined("no-payable-option", "x402/input-malformed")
@@ -890,7 +916,7 @@ def test_x402_batch_settlement_solana_an_errorreason_that_is_not_a_string_is_inp
     another form is declined as every other refund value in another form is, though the payment request's error
     carries the code."""
     doc, hold = charged_1000()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, answer_each)
     response = {**settle_failure(None), "errorReason": reason}
     out = asyncio.run(within({**doc, "error": RETRY}, hold, binding, signer, {"paymentResponse": response},
@@ -901,7 +927,7 @@ def test_x402_batch_settlement_solana_an_errorreason_that_is_not_a_string_is_inp
 
 def test_x402_batch_settlement_solana_the_refund_taken_again_with_no_blockhash_is_input_missing() -> None:
     doc, hold = batch_hold()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, batch_answer)
     out = asyncio.run(within({**doc, "error": RETRY}, hold, binding, signer, {}, {"computeUnitLimit": 200000}))
     assert out == Declined("no-payable-option", "x402/input-missing")
@@ -940,7 +966,7 @@ def test_x402_batch_settlement_solana_a_refund_value_in_another_form_is_input_ma
     with x402/input-malformed, before the build and the signer call, never dropped. The forms are the rail's: a base58
     blockhash, a u32 computeUnitLimit and a u64 computeUnitPrice written in decimal."""
     doc, hold = batch_hold()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, batch_answer)
     for d in (doc, {**doc, "error": RETRY}):
         out = asyncio.run(within(d, hold, binding, signer, {}, given))
@@ -949,13 +975,18 @@ def test_x402_batch_settlement_solana_a_refund_value_in_another_form_is_input_ma
 
 
 def test_x402_batch_settlement_solana_bw3s_control_signs_the_refund_once() -> None:
+    """BW3's control: each value in its rail form, the limit as a float with an integral value, which JSON reads as
+    that integer. The package's binding builds the request_close with them, and the refund is signed once."""
     doc, hold = batch_hold()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, answer_each)
-    given = {"computeUnitLimit": 200000.0, "computeUnitPrice": "1", "recentBlockhash": "EZ3rST5dvHmbanh75jc4PuLfV96vp9fEYBVeNk4FfM1k"}
+    given = {"computeUnitLimit": 200000.0, "computeUnitPrice": "1", "recentBlockhash": OTHER_BLOCKHASH}
     assert isinstance(asyncio.run(within({**doc, "error": RETRY}, hold, binding, signer, {}, given)), Within)
     assert len(signer.requests) == 1
     assert binding.handed[0]["computeUnitLimit"] == 200000 and isinstance(binding.handed[0]["computeUnitLimit"], int)
+    built = decompile(hexb(signer.requests[0]["requests"][0]["message"]))
+    assert built["blockhash"] == OTHER_BLOCKHASH
+    assert [ix["data"] for ix in built["instructions"][:2]] == compute_budget(200000, 1)
 
 
 def batch_hold() -> tuple[Any, ChannelHold]:
@@ -974,7 +1005,7 @@ def test_x402_batch_settlement_solana_within_declines_inputs_that_are_not_a_mapp
     """buyer.json's BW4: within declines inputs given and not a mapping with no-payable-option and
     x402/input-malformed, for a refund and for a voucher, before the build and the signer call."""
     doc, hold = batch_hold()
-    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    binding = Handed(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, batch_answer)
     refunds: tuple[dict[str, Any] | None, ...] = ({}, None)
     for refund in refunds:
@@ -1392,6 +1423,33 @@ def test_x402_batch_settlement_solana_es6_a_full_refund_carries_the_voucher_and_
     assert build(with_memo, refund={"amount": 5}) == Refusal(s6["refundWithAmount"]["expect"])
     lone = {**with_memo, "extra": {**with_memo["extra"], "memo": s6["loneSurrogateMemo"]["memo"]}}
     assert build(lone, recentBlockhash=svm["blockhash"]) == Refusal(s6["loneSurrogateMemo"]["expect"])
+
+
+def test_x402_batch_settlement_solana_a_refunds_voucher_is_the_payer_authorizers_and_its_request_close_the_payers() -> None:
+    """With a payer authorizer other than the payer, as x402's scheme lets a channel name: the refund's voucher is a
+    request for the payer authorizer over the channel the config names, and the request_close is signed by the payer,
+    in the payer's signer slot (@integraledger/lcp's svmBuildWithin: the voucher request's signer is the config's
+    payerAuthorizer, the wire the payer's)."""
+    svm = BV["fixed"]["svm"]
+    config = {**BV["ES4"]["config"], "payerAuthorizer": svm["receiverAuthorizer"]}
+    accepted = BV["ES4"]["accepted"]
+    channel = _svm.channel_pda(config["payer"], svm["feePayer"], config["token"], config["payerAuthorizer"], 42, config["openSlot"])
+    assert isinstance(channel, str) and channel != BV["ES1"]["channelPda"]
+    w = {"required": {"x402Version": 2, "accepts": [accepted]}, "accepted": accepted, "channelConfig": config,
+         "maxClaimableAmount": 1000, "refund": {}, "recentBlockhash": svm["blockhash"]}  # fmt: skip
+    binding: Any = X402_BATCH_SETTLEMENT_SOLANA
+    u = binding.build_within(w, H)
+    assert not isinstance(u, Refusal), u
+    assert [(r["kind"], r.get("signer")) for r in u.requests] == [("solana-message", None), ("ed25519-raw", config["payerAuthorizer"])]
+    assert u.requests[1]["message"] == _svm.channel_voucher_message(channel, 1000, 0)
+    tx_sig, voucher_sig = bytes([7]) * 64, bytes([9]) * 64
+    p = u.complete([b58_encode(tx_sig), b58_encode(voucher_sig)])
+    assert not isinstance(p, Refusal), p
+    tx = _svm.decode_svm_tx(base64.b64decode(p["payload"]["transaction"]))
+    assert not isinstance(tx, Refusal), tx
+    signers = [b58_encode(k) for k in tx.keys[: tx.required_signatures]]
+    assert tx.signatures[signers.index(config["payer"])] == tx_sig
+    assert p["payload"]["voucher"]["channelId"] == channel and p["payload"]["voucher"]["signature"] == b58_encode(voucher_sig)
 
 
 def test_x402_batch_settlement_solana_es8_the_opening_carries_one_binding_memo_and_one_other() -> None:

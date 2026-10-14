@@ -257,10 +257,11 @@ class X402BatchSettlementSolana:
         )
 
     def build_within(self, w: Json, h: AtrHash) -> BatchUnsigned | Refusal:
-        """A later voucher, or a full refund, for a channel this buyer opened. The refund is a request_close message
-        for the payer: the Compute Budget prefix, request_close with the payer (read-only signer) and the channel
-        (writable), then one Memo v3 with extra.memo when the option carries one. Its payload carries no amount and no
-        voucher."""
+        """A later voucher, or a full refund, for a channel this buyer opened. Each carries the voucher for
+        maxClaimableAmount, signed by the payer authorizer, with expiresAt 0. A refund carries no amount; with
+        w's recentBlockhash it also carries a request_close message for the payer, signed first: the Compute Budget
+        prefix, request_close with the payer (read-only signer) and the channel (writable), then one Memo v3 with
+        extra.memo when the option carries one."""
         if not is_object(w):
             return Refusal("x402/not-v2")
         required, accepted = w.get("required"), w.get("accepted")
@@ -278,16 +279,36 @@ class X402BatchSettlementSolana:
         )  # fmt: skip
         if isinstance(channel, Refusal):
             return channel
+        max_claimable = w.get("maxClaimableAmount")
+        if not isinstance(max_claimable, int) or isinstance(max_claimable, bool) or not 0 <= max_claimable < U64_LIMIT:
+            return Refusal("svm/input-malformed")
+        voucher_message = channel_voucher_message(channel, max_claimable, 0)
+        assert voucher_message is not None
+        voucher_request = {"kind": "ed25519-raw", "message": voucher_message, "signer": config.payer_authorizer}
+
+        def voucher_of(signature: bytes) -> dict[str, Any]:
+            return {
+                "channelId": channel,
+                "maxClaimableAmount": str(max_claimable),
+                "expiresAt": 0,
+                "signature": key_string(signature),
+            }
+
         if "refund" in w:
             refund = w["refund"]
             if not is_object(refund) or "amount" in refund:
                 return Refusal("svm/input-malformed")
+            if "recentBlockhash" not in w:
+
+                def cooperative(signatures: object) -> dict[str, Any] | Refusal:
+                    sigs = _signatures(signatures, 1)
+                    if sigs is None:
+                        return Refusal("svm/input-malformed")
+                    payload = {"type": "refund", "channelConfig": channel_config, "voucher": voucher_of(sigs[0])}
+                    return payment_with(required, accepted, payload)
+
+                return BatchUnsigned([voucher_request], cooperative)
             extra = accepted["extra"]
-            blockhash = extra.get("recentBlockhash")
-            if not isinstance(blockhash, str):
-                blockhash = w.get("recentBlockhash")
-            if not isinstance(blockhash, str):
-                return Refusal("svm/input-malformed")
             memo = extra.get("memo")
             limit, price = w.get("computeUnitLimit"), w.get("computeUnitPrice")
             refund_tx = build_channel_message(
@@ -296,7 +317,7 @@ class X402BatchSettlementSolana:
                     payer=config.payer,
                     mint=config.token,
                     token_program=extra["tokenProgram"],
-                    recent_blockhash=blockhash,
+                    recent_blockhash=w["recentBlockhash"],
                     memo=memo if isinstance(memo, str) else None,
                     compute_unit_limit=200_000 if limit is None else integer_of(limit),
                     compute_unit_price=1 if price is None else price,
@@ -307,45 +328,30 @@ class X402BatchSettlementSolana:
                 return refund_tx
 
             def close(signatures: object) -> dict[str, Any] | Refusal:
-                sigs = _signatures(signatures, 1)
+                sigs = _signatures(signatures, 2)
                 if sigs is None:
                     return Refusal("svm/input-malformed")
                 wire = signed_wire(refund_tx, config.payer, sigs[0])
                 if isinstance(wire, Refusal):
                     return wire
-                return payment_with(
-                    required,
-                    accepted,
-                    {"type": "refund", "channelConfig": channel_config, "transaction": to_base64(wire)},
-                )
+                payload = {
+                    "type": "refund",
+                    "channelConfig": channel_config,
+                    "voucher": voucher_of(sigs[1]),
+                    "transaction": to_base64(wire),
+                }
+                return payment_with(required, accepted, payload)
 
-            return BatchUnsigned([{"kind": "solana-message", "message": refund_tx}], close)
-        max_claimable = w.get("maxClaimableAmount")
-        if not isinstance(max_claimable, int) or isinstance(max_claimable, bool) or not 0 <= max_claimable < U64_LIMIT:
-            return Refusal("svm/input-malformed")
-        message = channel_voucher_message(channel, max_claimable, 0)
-        assert message is not None
+            return BatchUnsigned([{"kind": "solana-message", "message": refund_tx}, voucher_request], close)
 
         def voucher(signatures: object) -> dict[str, Any] | Refusal:
             sigs = _signatures(signatures, 1)
             if sigs is None:
                 return Refusal("svm/input-malformed")
-            return payment_with(
-                required,
-                accepted,
-                {
-                    "type": "voucher",
-                    "channelConfig": channel_config,
-                    "voucher": {
-                        "channelId": channel,
-                        "maxClaimableAmount": str(max_claimable),
-                        "expiresAt": 0,
-                        "signature": key_string(sigs[0]),
-                    },
-                },
-            )
+            payload = {"type": "voucher", "channelConfig": channel_config, "voucher": voucher_of(sigs[0])}
+            return payment_with(required, accepted, payload)
 
-        return BatchUnsigned([{"kind": "ed25519-raw", "message": message, "signer": config.payer_authorizer}], voucher)
+        return BatchUnsigned([voucher_request], voucher)
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open for a deposit whose channel instruction is open; within for a top_up deposit or a voucher; close
