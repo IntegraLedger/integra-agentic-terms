@@ -98,6 +98,8 @@ def test_mcp_metadata_absent_and_null_hash_as_the_specifications() -> None:
         ("a URL whose host is 1.2.3.4.5", "http:1", {"headers": []}, {"method": "GET", "url": "https://1.2.3.4.5/article/A"}, "ln/request-binding-malformed"),
         ("x402/payment bound", "mcp:1", {"server": SERVER, "metadata": ["x402/payment"]}, {"server": SERVER, "name": "get_article"}, "ln/request-binding-malformed"),
         ("null arguments", "mcp:1", {"server": SERVER, "metadata": []}, {"server": SERVER, "name": "get_article", "arguments": None}, "ln/request-binding-malformed"),
+        # The WHATWG URL Standard's basic URL parser fails a port past 65535.
+        ("an MCP server with port 65536", "mcp:1", {"server": "https://api.example.com:65536/mcp", "metadata": []}, {"server": "https://api.example.com:65536/mcp", "name": "get_article"}, "ln/request-binding-malformed"),
         ("another server", "mcp:1", {"server": "https://other.example.com/mcp", "metadata": []}, {"server": SERVER, "name": "get_article"}, "ln/request-server-mismatch"),
     ],
 )

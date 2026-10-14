@@ -58,11 +58,14 @@ def _is_target_uri(url: object) -> bool:
 
 
 def _is_absolute_uri(value: object) -> bool:
+    """An absolute URI in ASCII syntax, with no user information and no fragment, that the WHATWG URL Standard's basic
+    URL parser reads."""
     return (
         isinstance(value, str)
         and _ASCII_URI.fullmatch(value) is not None
         and _ABSOLUTE_URI.fullmatch(value) is not None
         and _USERINFO.match(value) is None
+        and url_scheme(value) is not None
     )
 
 
