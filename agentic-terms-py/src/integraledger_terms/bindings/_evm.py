@@ -355,9 +355,11 @@ class Delegation:
 
 
 def decode_permission_context(ctx: object) -> list[Delegation] | Refusal:
-    """Decodes abi.encode(Delegation[]), strictly: every offset and length lies inside the input and is 32-byte
-    aligned, address words carry 12 zero bytes, and there are at most 8 delegations, 16 caveats each, and 8 KiB per
-    bytes. The list is returned in the input's order, leaf first. An empty array decodes to []."""
+    """Decodes abi.encode(Delegation[]) of at most 32 KiB, strictly: the input is a non-empty multiple of 32 bytes,
+    every offset and length word lies inside it at a 32-byte-aligned position, every offset is a multiple of 32,
+    address words carry 12 zero bytes, and there are at most 8 delegations, 16 caveats each, and 8 KiB per bytes; the
+    padding after a bytes value is not read. The list is returned in the input's order, leaf first. An empty array
+    decodes to []."""
     data = bytes_of(ctx, MAX_CONTEXT_BYTES)
     if data is None or len(data) == 0 or len(data) % 32 != 0:
         return Refusal("evm/field-malformed")
