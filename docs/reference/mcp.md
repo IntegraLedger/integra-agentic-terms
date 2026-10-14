@@ -121,7 +121,8 @@ also returns `mac`, which `atr_channel_open` takes with the opening and `landed`
 
 ### `atr_check`
 
-Confirms that a payment carries, inside what was signed, the SHA-256 of the given ATR bytes.
+Confirms that the H the pairing reads from a payment is the SHA-256 of the given ATR bytes. A payment from which the
+pairing reads no H is declined `signed-not-bound`.
 
 | Argument | Type | |
 | --- | --- | --- |

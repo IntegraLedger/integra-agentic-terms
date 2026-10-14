@@ -38,8 +38,8 @@ export const BINDINGS: readonly Binding[] = LCP_BINDINGS;
 const DESCRIPTIONS = {
   atr_confirm:
     "Before approving a payment: reads the ATR hash the seller advertised, fetches the ATR from the seller's link and " +
-    "confirms its SHA-256 matches. On a match returns the ATR's exact bytes, `chosen`, and the signing request that " +
-    "carries the hash; sign exactly that request, then call atr_finish with `chosen` and the signature. On a mismatch " +
+    "confirms its SHA-256 matches. On a match returns the ATR's exact bytes, `chosen`, and the signing request built " +
+    "with that hash; sign exactly that request, then call atr_finish with `chosen` and the signature. On a mismatch " +
     "returns an error and nothing to sign. `chosen` is opaque: pass it back exactly as returned, `mac` included. Where " +
     "`chosen.agreement` names an agreement URL, the signing request is returned only when you pass that agreement's " +
     "`receipt` for this ATR hash.",
@@ -48,7 +48,9 @@ const DESCRIPTIONS = {
     "when the pairing reads the ATR hash from what was signed, or, where the proof is the agreement payment, without " +
     "that reading. For a pairing with a channel, pass `chosen` exactly as atr_confirm returned it, `mac` included: a " +
     "changed `chosen` is declined. Send only the `signed` payment it returns.",
-  atr_check: "Confirms that a payment carries, inside what was signed, the SHA-256 of the given ATR bytes.",
+  atr_check:
+    "Confirms that the ATR hash the pairing reads from a payment is the SHA-256 of the given ATR bytes. A payment " +
+    "from which the pairing reads no ATR hash is declined.",
   atr_transact:
     "Confirms the ATR hash and, only on a match, signs the payment carrying it with this host's signer. Returns the " +
     "payment to send and the ATR's exact bytes to keep. Where the pairing needs an agreement payment first, returns it " +
