@@ -11,23 +11,24 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
-from ._batch import SCHEME, U128_LIMIT, is_decimal, is_delay, is_hex_signature, payable, payload_of
+from ._batch import SCHEME, U128_LIMIT, is_delay, is_hex_signature, payable, payload_of
 from ._batch_evm import (
     ERC3009_DEPOSIT_COLLECTOR,
     PERMIT2_DEPOSIT_COLLECTOR,
     batch_channel_id,
     erc3009_deposit_nonce,
-    is_channel_config,
+    is_deposit_config,
     is_hash32,
+    non_zero_address,
     voucher_request,
 )
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._evm import Witness, bytes_of, eip3009_typed_data, permit2_typed_data
-from ._lcp import chain_id_of, is_address, is_object, normal_hash, safe_int
+from ._lcp import UINT256_LIMIT, chain_id_of, is_address, is_object, normal_hash, safe_int
+from ._rail_bytes import decimal_below
 from ._x402 import chosen, filter_of, payment_with, read_for
 
 ID = "x402/batch-settlement/eip155"
-_ZERO = "0x" + "0" * 40
 
 
 def _non_empty(value: object) -> bool:
@@ -45,8 +46,7 @@ def is_pairing(option: Mapping[str, Any]) -> bool:
         return False
     if not is_address(option.get("asset")) or not is_address(option.get("payTo")):
         return False
-    receiver_authorizer = extra.get("receiverAuthorizer")
-    if not is_address(receiver_authorizer) or receiver_authorizer.lower() == _ZERO:
+    if not non_zero_address(extra.get("receiverAuthorizer")):
         return False
     if not is_delay(extra.get("withdrawDelay")):
         return False
@@ -68,13 +68,14 @@ def _same_bytes(a: object, b: object) -> bool:
 
 
 def channel_ref(presented: object) -> ChannelRef | Refusal:
-    """The channel id of a payment's config, which must equal its voucher's channel id, lower-case."""
+    """The channel id of a payment's config, which must equal its voucher's channel id, lower-case. A config the
+    channel contract's deposit refuses is x402/payload-malformed."""
     got = payload_of(presented, is_pairing)
     if isinstance(got, Refusal):
         return got
     accepted, payload = got
     config = payload.get("channelConfig")
-    if not is_channel_config(config):
+    if not is_deposit_config(config):
         return Refusal("x402/payload-malformed")
     voucher = payload.get("voucher")
     if not is_object(voucher) or not isinstance(voucher.get("channelId"), str):
@@ -90,7 +91,9 @@ def channel_ref(presented: object) -> ChannelRef | Refusal:
 
 
 def channel_kind(presented: object) -> ChannelKind | Refusal:
-    """deposit is the opening; voucher, and a refund naming an amount, are within; a full refund is the close."""
+    """deposit is the opening and voucher is within. A refund with no amount is the close; one with an amount is
+    within, where that amount is a positive decimal below 2^128, as the channel contract's refund and
+    refundWithSignature take a uint128 and refuse 0. Any other amount is x402/payload-malformed."""
     got = payload_of(presented, is_pairing)
     if isinstance(got, Refusal):
         return got
@@ -101,14 +104,23 @@ def channel_kind(presented: object) -> ChannelKind | Refusal:
     if kind == "voucher":
         return "within"
     if kind == "refund":
-        return "close" if "amount" not in payload else "within"
+        if "amount" not in payload:
+            return "close"
+        amount = decimal_below(payload["amount"], U128_LIMIT)
+        return Refusal("x402/payload-malformed") if amount is None or amount == 0 else "within"
     return Refusal("x402/channel-kind-unknown")
 
 
 def _deposit_of(payload: Mapping[str, Any]) -> Refusal | None:
-    """The opening's deposit: a decimal amount and exactly one of the ERC-3009 and Permit2 authorizations."""
+    """The opening's deposit: its amount, a positive decimal below 2^128, as the channel contract's deposit takes a
+    uint128 and refuses 0, and its authorization, exactly one of the ERC-3009 and Permit2 forms. The authorization's
+    time bound, the ERC-3009 validBefore or the Permit2 deadline, is a decimal below 2^256, the uint256 the deposit
+    collectors decode it as. Each decimal is read by its value, in at most 78 digits."""
     deposit = payload.get("deposit")
-    if not is_object(deposit) or not is_decimal(deposit.get("amount")):
+    if not is_object(deposit):
+        return Refusal("x402/payload-malformed")
+    amount = decimal_below(deposit.get("amount"), U128_LIMIT)
+    if amount is None or amount == 0:
         return Refusal("x402/payload-malformed")
     authorization = deposit.get("authorization")
     if not is_object(authorization):
@@ -117,11 +129,13 @@ def _deposit_of(payload: Mapping[str, Any]) -> Refusal | None:
         return Refusal("x402/deposit-authorization")
     if "erc3009Authorization" in authorization:
         e = authorization["erc3009Authorization"]
-        if not is_object(e) or not is_decimal(e.get("validBefore")) or not is_hash32(e.get("salt")):
+        valid_before = decimal_below(e.get("validBefore"), UINT256_LIMIT) if is_object(e) else None
+        if valid_before is None or not is_hash32(e.get("salt")):
             return Refusal("x402/payload-malformed")
         return None
     p = authorization["permit2Authorization"]
-    if not is_object(p) or not is_decimal(p.get("deadline")):
+    deadline = decimal_below(p.get("deadline"), UINT256_LIMIT) if is_object(p) else None
+    if deadline is None:
         return Refusal("x402/payload-malformed")
     return None
 
@@ -133,14 +147,16 @@ def _salt(payload: Mapping[str, Any]) -> AtrHash:
 
 
 def bound(presented: object) -> AtrHash | Refusal:
-    """The opening's salt, once its config hashes to the voucher's channel id. No signature is verified here."""
+    """The opening's salt, once its config hashes to the voucher's channel id. No signature is verified here. A config
+    the channel contract's deposit refuses, or a deposit amount that is not a positive decimal below 2^128, as that
+    deposit takes a uint128 and refuses 0, is x402/payload-malformed."""
     got = payload_of(presented, is_pairing)
     if isinstance(got, Refusal):
         return got
     payload = got[1]
     if payload.get("type") != "deposit":
         return Refusal("x402/not-an-opening")
-    if not is_channel_config(payload.get("channelConfig")):
+    if not is_deposit_config(payload.get("channelConfig")):
         return Refusal("x402/payload-malformed")
     deposit = _deposit_of(payload)
     if deposit is not None:
@@ -166,7 +182,9 @@ def _uint(value: object, low: int) -> bool:
 
 
 def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
-    """The opening's two requests, in order: the deposit's token authorization, then the first voucher."""
+    """The opening's two requests, in order: the deposit's token authorization, then the first voucher. A from, or an
+    option's payTo or asset, that is the zero address is x402/option-malformed: the channel contract's deposit refuses
+    a configuration whose payer, receiver or token is."""
     if not is_object(c):
         return Refusal("x402/not-v2")
     required, accepted = c.get("required"), c.get("accepted")
@@ -199,6 +217,8 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
         "withdrawDelay": int(extra["withdrawDelay"]),
         "salt": salt,
     }
+    if not is_deposit_config(config):
+        return Refusal("x402/option-malformed")
     channel_id = batch_channel_id(chain_id, config)
     if isinstance(channel_id, Refusal):
         return channel_id
@@ -285,7 +305,8 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
 def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
     """A later voucher, or a refund, for a channel opened under h: one request, the voucher. A refund member, whatever
     its value, makes the payment a refund; refund.amount, when the refund is an object holding one, is its amount, a
-    positive integer below 2^128."""
+    positive integer below 2^128. A channelConfig the channel contract's deposit refuses is
+    x402/payload-malformed."""
     if not is_object(w):
         return Refusal("x402/not-v2")
     required, accepted = w.get("required"), w.get("accepted")
@@ -294,7 +315,7 @@ def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         return ok
     assert is_object(required) and is_object(accepted)
     config = w.get("channelConfig")
-    if not is_channel_config(config):
+    if not is_deposit_config(config):
         return Refusal("x402/payload-malformed")
     if normal_hash(config["salt"]) != normal_hash(h):
         return Refusal("x402/channel-id-mismatch")

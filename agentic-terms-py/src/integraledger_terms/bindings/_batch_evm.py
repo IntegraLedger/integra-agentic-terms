@@ -7,6 +7,7 @@ from typing import Any, TypeGuard
 
 from .._keccak import keccak256
 from .._types import Refusal
+from ._batch import is_delay
 from ._evm import address_word, bytes32_word, hex_of, uint_word
 from ._lcp import is_address, is_object, safe_int
 
@@ -20,11 +21,17 @@ DOMAIN_VERSION = "1"
 _DOMAIN_TYPEHASH = keccak256(b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
 _U40_LIMIT = 1 << 40
 _HASH32 = re.compile(r"0x[0-9a-fA-F]{64}")
+_ZERO = "0x" + "0" * 40
 _ADDRESSES = ("payer", "payerAuthorizer", "receiver", "receiverAuthorizer", "token")
 
 
 def is_hash32(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and _HASH32.fullmatch(value) is not None
+
+
+def non_zero_address(value: object) -> TypeGuard[str]:
+    """An address that is not the zero address."""
+    return is_address(value) and value.lower() != _ZERO
 
 
 def is_channel_config(c: object) -> TypeGuard[Mapping[str, Any]]:
@@ -33,6 +40,17 @@ def is_channel_config(c: object) -> TypeGuard[Mapping[str, Any]]:
         return False
     delay = safe_int(c.get("withdrawDelay"))
     return delay is not None and 0 <= delay < _U40_LIMIT and is_hash32(c.get("salt"))
+
+
+def is_deposit_config(c: object) -> TypeGuard[Mapping[str, Any]]:
+    """A channel configuration the channel contract's deposit takes: a payer, receiver, receiverAuthorizer and token
+    that are not the zero address, else it reverts InvalidChannel, and a withdrawDelay from 900 to 2 592 000 seconds,
+    else WithdrawDelayOutOfRange. A zero payerAuthorizer it takes: the payer then signs the vouchers."""
+    return (
+        is_channel_config(c)
+        and all(non_zero_address(c[k]) for k in ("payer", "receiver", "receiverAuthorizer", "token"))
+        and is_delay(c["withdrawDelay"])
+    )
 
 
 def _domain_separator(chain_id: int) -> bytes:
