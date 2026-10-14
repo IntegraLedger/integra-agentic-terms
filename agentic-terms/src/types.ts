@@ -194,7 +194,7 @@ export interface Read {
 /**
  * The agreement payment, for the buyer's agent to approve before anything is signed: the agreement URL; `option`, the
  * option of the agreement URL's payment request that the gate pays, whose `amount`, `asset`, `payTo` and `network` are
- * what the payment moves; and `required`, that payment request as the agreement URL served it.
+ * the terms the agent approves; and `required`, that payment request as the agreement URL served it.
  */
 export interface AgreementPayment {
   readonly url: string;

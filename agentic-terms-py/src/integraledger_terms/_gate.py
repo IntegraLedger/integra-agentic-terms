@@ -1,7 +1,7 @@
 """The buyer gate: fetch the ATR, compare its hash with the advertised one, build the payment with that hash, pay the
 agreement the buyer's agent approved when the pairing's payment is not itself a public proof, sign only on a match, and
-confirm the hash inside what was signed, or, for a pairing whose proof is the agreement payment, complete the payment
-without that reading."""
+return the payment only when the ATR hash the pairing reads from the completed payment is the hash of the bytes, or, for
+a pairing whose proof is the agreement payment, complete the payment without that reading."""
 
 import asyncio
 import re
@@ -180,11 +180,12 @@ def _bound(binding: Binding, presented: Any) -> AtrHash | Refusal:
 async def confirm(
     doc: Any, binding: Binding, account: str, fetch: httpx.AsyncClient, inputs: Inputs | None = None
 ) -> Confirmed | Declined:
-    """Read the offer (the seller's document as given: an object, a list of challenges, or a string), choose the
-    option, fetch the ATR and compare hashes. Only on a match build, with the hash
-    computed. A pairing whose build has nothing for the buyer to sign returns request None. For a pairing whose payment
-    is not itself a public proof, chosen.agreement is the agreement URL the offer names. Inputs that are not a mapping
-    are declined no-payable-option with <namespace>/input-malformed before the offer is read."""
+    """Read the offer (the seller's document as given: an object, a list of challenges, or a string), choose the option,
+    fetch the ATR and compare hashes. Only on a match build, with the hash computed. request is what the signer is
+    handed, or None when nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build is
+    itself the payment, which finish completes with no signature. For a pairing whose payment is not itself a public
+    proof, chosen.agreement is the agreement URL the offer names. Inputs that are not a mapping are declined
+    no-payable-option with <namespace>/input-malformed before the offer is read."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
@@ -225,11 +226,11 @@ async def confirm(
 
 
 def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding) -> Finished | Next | Declined:
-    """Rebuild the payment from chosen and the bytes, join the signer's answer, and return the payment only when what
-    was signed carries the hash of these bytes. For a pairing whose payment is not a public proof and whose bound finds
-    no signed place for the hash, the proof is the agreement payment, and the completed payment is returned as it is. A
-    payment signed in steps returns the next request. Where the signer moved the payment itself, a decline keeps it as
-    moved."""
+    """Rebuild the payment from chosen and the bytes, join the signer's answer, and return the payment only when the
+    pairing's bound reads the hash of these bytes from the completed payment. For a pairing whose payment is not a
+    public proof and whose bound finds no signed place for the hash, the proof is the agreement payment, and the
+    completed payment is returned as it is. A payment signed in steps returns the next request. Where the signer moved
+    the payment itself, a decline keeps it as moved."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
@@ -340,13 +341,14 @@ async def transact(
     """confirm, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer, then
     finish. Without approved, an agreement not yet recorded is returned as ToApprove, the agreement payment for the
     agent to approve, and nothing is signed; with approved, that payment is signed and paid, and the resource's payment
-    is signed only with the agreement's receipt in hand. The signer is called once, or once per step for a payment
-    signed in steps, and never on a decline before it. Where the pairing has nothing for the buyer to sign, signed is
-    None after the comparison. agreement is the agreement's receipt, where the pairing needs one. Setting signal ends
-    the agreement exchange. Inputs that are not a mapping, an agreement signer with no sign method, an approved value
-    that is not an AgreementPayment, a signal that is not an asyncio.Event, or a signer or agreement signer whose
-    account is not a string are declined no-payable-option with <namespace>/input-malformed before any fetch or signer
-    call."""
+    is signed only with the agreement's receipt in hand. The signer is called once for the payment, or once per step for
+    a payment signed in steps, and, when no agreement_signer is given, first for the approved agreement payment; it is
+    never called on a decline before it. Where the build is itself the payment the signer is not called for it; where
+    the pairing has nothing for the buyer to sign, signed is None after the comparison. agreement is the agreement's
+    receipt, where the pairing needs one. Setting signal ends the agreement exchange. Inputs that are not a mapping, an
+    agreement signer with no sign method, an approved value that is not an AgreementPayment, a signal that is not an
+    asyncio.Event, or a signer or agreement signer whose account is not a string are declined no-payable-option with
+    <namespace>/input-malformed before any fetch or signer call."""
     if _piece(binding) is None:
         return _unsupported(binding)
     agreement_signer_ok = agreement_signer is None or (

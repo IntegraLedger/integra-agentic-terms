@@ -129,8 +129,9 @@ def _to_base64(value: object) -> str:
 
 
 def _from_base64_json(header: str) -> object | None:
-    """The JSON value a header carries as padded standard base64 (RFC 4648 section 4) whose final character's unused
-    bits are zero, of UTF-8 JSON text whose leading byte order mark is kept as a character; None for anything else."""
+    """The JSON value a header of at most 64 KiB carries as padded standard base64 (RFC 4648 section 4) whose final
+    character's unused bits are zero, of UTF-8 JSON text nested at most 64 levels deep whose leading byte order mark is
+    kept as a character; None for anything else."""
     if len(header) > MAX_ANSWER_BYTES:
         return None
     try:
@@ -144,7 +145,8 @@ def _from_base64_json(header: str) -> object | None:
 
 
 def _retry_seconds(header: str | None) -> int:
-    """retry-after in whole seconds, at least 1; 2 when absent or not a number of seconds."""
+    """retry-after as one to nine decimal digits of seconds, surrounding whitespace aside, at least 1; 2 for any other
+    value or none."""
     value = header.strip() if header is not None else None
     if value is None or _DECIMAL.fullmatch(value) is None:
         return RETRY_DEFAULT_S

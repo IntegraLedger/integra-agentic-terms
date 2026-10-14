@@ -3,9 +3,10 @@ title: Pay with the gate
 description: Compare, then build and sign, then finish. One call with transact, or two with confirm and finish when your signer lives elsewhere.
 ---
 
-Every payment through the gate follows the same order: compare the served bytes with H, build the payment with the
-hash the gate computed, have your signer sign exactly that request, and finish only when what was signed carries H.
-You can run the whole order with one call, `transact`, or split it with `confirm` and `finish`.
+Every payment through the gate follows the same order: compare the served bytes with H, build the payment with the hash
+the gate computed, have your signer sign exactly that request, and finish only when the pairing reads H from the
+completed payment, or the proof is the agreement payment. You can run the whole order with one call, `transact`, or
+split it with `confirm` and `finish`.
 
 ## What you pass
 
@@ -51,8 +52,8 @@ if ("decline" in result) {
 }
 ```
 
-The signer is called only after the comparison matched, and only for this pairing's requests. On any decline before
-it, the signer is never called.
+The signer is called only after the comparison matched: for this pairing's requests, and, without `agreementSigner`,
+first for the approved agreement payment. On any decline before it, the signer is never called.
 
 `transact`'s options take four members, all optional:
 
@@ -75,8 +76,8 @@ When the key lives somewhere else (a hardware wallet, a signing service, another
    request built with H, together with `chosen` and the ATR's bytes.
 2. Your signer signs `request`, exactly as given.
 3. `finish(bytes, chosen, signature, binding)` rebuilds the same payment from `chosen` and the bytes, joins the
-   signature, and returns the payment only when the pairing reads the hash of those bytes from what was signed, or,
-   where the proof is the agreement payment, without that reading.
+   signature, and returns the payment only when the pairing reads the hash of those bytes from the completed payment,
+   or, where the proof is the agreement payment, without that reading.
 
 `chosen` is plain JSON and the bytes are bytes, so both cross process boundaries. `finish` does not trust anything it
 did not rebuild: it recomputes H from the bytes you hand back.
@@ -139,9 +140,12 @@ nonce is H: true
 ### A request of `null`
 
 Some pairings give the buyer nothing to sign: the seller's own flow completes the payment (an MPP `card` or `stripe`
-charge, an ACP checkout without delegation, a UCP checkout without a mandate). For these, `confirm` returns
-`request: null` after the comparison, and `transact` returns `signed: null`. The comparison was the whole of your step;
-complete the payment through the protocol's own flow.
+charge, an ACP checkout without delegation, a UCP checkout without a mandate). For these, `confirm` returns `request:
+null` after the comparison, and `transact` returns `signed: null`. The comparison was the whole of your step; complete
+the payment through the protocol's own flow.
+
+For a pairing whose build is itself the payment (`x402/batch-settlement/cloudflare`), `confirm` also returns `request:
+null`: call `finish` with a `null` signature, and it completes the payment with no signer call, as `transact` does.
 
 ### Payments signed in steps
 

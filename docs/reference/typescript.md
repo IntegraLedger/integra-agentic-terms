@@ -65,9 +65,10 @@ declare function confirm(
 ```
 
 Reads the offer, chooses the option for `account`, fetches the ATR and compares its SHA-256 with the advertised hash.
-Only on a match does it build, with the hash it computed. `request` is what the signer signs, or `null` when the pairing
-has nothing for the buyer to sign. `chosen.agreement` is the agreement URL, for a pairing whose payment is not a public
-proof.
+Only on a match does it build, with the hash it computed. `request` is what the signer is handed, or `null` when nothing
+is handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment, which
+`finish` completes with no signature. `chosen.agreement` is the agreement URL, for a pairing whose payment is not a
+public proof.
 
 ### `finish`
 
@@ -83,12 +84,12 @@ declare function finish(
 ): Promise<{ signed: Presented; landed?: unknown; h: AtrHash } | { next: SigningRequest; h: AtrHash } | Declined>;
 ```
 
-Rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and returns the payment only when what was
-signed carries the hash of these bytes. For a pairing signed in steps, returns `next`; call `finish` again with every
-answer so far, in order, as a list. For a pairing whose payment is not a public proof and whose signed contents have no
-place for H, the proof is the agreement payment, and the completed payment is returned as it is. Where the signer moved
-the payment itself, a decline keeps it as `moved`. `landed` is a landed receipt the completion carried and the payment
-leaves out, as JSON, each integer a decimal string.
+Rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and returns the payment only when the
+pairing's `bound` reads the hash of these bytes from the completed payment. For a pairing signed in steps, returns
+`next`; call `finish` again with every answer so far, in order, as a list. For a pairing whose payment is not a public
+proof and whose `bound` finds no signed place for H, the proof is the agreement payment, and the completed payment is
+returned as it is. Where the signer moved the payment itself, a decline keeps it as `moved`. `landed` is a landed
+receipt the completion carried and the payment leaves out, as JSON, each integer a decimal string.
 
 ### `check`
 

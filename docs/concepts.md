@@ -47,8 +47,9 @@ process, with your network client and your signer, in four steps:
    the gate declines with `hash-mismatch`, and your signer is never called.
 3. **Build.** Only on a match does the gate build the payment, and it builds it with the hash it computed, not the
    string the seller advertised. The result is a signing request: exactly what your signer signs.
-4. **Finish.** When your signer answers, the gate completes the payment and reads H back out of what was signed. It
-   returns the payment only when that value is the hash of the bytes it compared.
+4. **Finish.** When your signer answers, the gate completes the payment, and the pairing reads H back from it. The gate
+   returns the payment only when that value is the hash of the bytes it compared, or, where the proof is the agreement
+   payment, without that reading.
 
 ```mermaid
 sequenceDiagram
@@ -66,7 +67,7 @@ sequenceDiagram
     A->>W: sign(request)
     W-->>A: The signature
     A->>G: finish(bytes, chosen, signature)
-    G-->>A: The payment, only when what was signed carries H
+    G-->>A: The payment, only when the pairing reads H from it, or the proof is the agreement payment
     A->>S: Send the payment
 ```
 

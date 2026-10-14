@@ -8,8 +8,9 @@ from ._core import AtrHash
 
 Json = Mapping[str, Any]
 
-# The signer's answer, as JSON: a hex signature for the kinds whose payment takes one signature, an object for the
-# kinds whose payment takes several values, and a list, in order, for a payment signed in steps.
+# The signer's answer, as JSON: a signature for the kinds whose payment takes one signature, an object for the kinds
+# whose payment takes several values, and a list, in order, for a payment signed in steps. Byte strings are 0x hex,
+# except where the signers guide names another form for the kind: base58, base64, or hex digits without 0x.
 Signature = Any
 
 # The buyer's own values a pairing's build needs beside the offer, such as a recent block or an account nonce.
@@ -63,8 +64,9 @@ class Chosen:
 
 @dataclass(frozen=True, slots=True)
 class Confirmed:
-    """The comparison passed. `request` is what the signer is handed, or None when the pairing has nothing for the
-    buyer to sign and the comparison is the whole of the buyer's step."""
+    """The comparison passed. `request` is what the signer is handed, or None when nothing is handed to the signer: the
+    pairing has nothing for the buyer to sign, or the build is itself the payment, which finish completes with no
+    signature."""
 
     chosen: Chosen
     request: dict[str, Any] | None
@@ -100,8 +102,8 @@ class Step:
 @dataclass(frozen=True, slots=True)
 class AgreementPayment:
     """The agreement payment, for the buyer's agent to approve before anything is signed: the agreement URL; option, the
-    option of the agreement URL's payment request that the gate pays, whose amount, asset, payTo and network are what
-    the payment moves; and required, that payment request as the agreement URL served it."""
+    option of the agreement URL's payment request that the gate pays, whose amount, asset, payTo and network are the
+    terms the agent approves; and required, that payment request as the agreement URL served it."""
 
     url: str
     option: dict[str, Any]

@@ -87,8 +87,9 @@ function toBase64(text: string): string {
 }
 
 /**
- * The JSON value a header carries as padded standard base64 (RFC 4648 section 4) whose final character's unused bits
- * are zero, of UTF-8 JSON text whose leading byte order mark is kept as a character; undefined for anything else.
+ * The JSON value a header of at most 64 KiB carries as padded standard base64 (RFC 4648 section 4) whose final
+ * character's unused bits are zero, of UTF-8 JSON text nested at most 64 levels deep whose leading byte order mark is
+ * kept as a character; undefined for anything else.
  */
 function fromBase64Json(header: string): unknown {
   if (header.length > MAX_ANSWER_BYTES || !BASE64.test(header)) return undefined;
@@ -102,7 +103,10 @@ function fromBase64Json(header: string): unknown {
   }
 }
 
-/** `retry-after` in whole seconds, at least 1; 2 when absent or not a number of seconds. */
+/**
+ * `retry-after` as one to nine decimal digits of seconds, surrounding whitespace aside, at least 1; 2 for any other
+ * value or none.
+ */
 function retrySeconds(header: string | null): number {
   const v = header?.trim();
   if (v === undefined || !DECIMAL.test(v)) return RETRY_DEFAULT_S;

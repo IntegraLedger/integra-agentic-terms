@@ -14,7 +14,8 @@ wallet signs anything:
 1. fetches the ATR from the seller's `https` link, once and within bounds;
 2. computes SHA-256 over the exact bytes it received and compares it with H;
 3. only on a match, builds the payment with that hash and hands it to your signer;
-4. reads H back out of what your signer signed, and returns the payment only if it is still the hash of those bytes.
+4. reads H back from the completed payment, and returns the payment only if it is the hash of those bytes, or, where the
+   proof is the agreement payment, without that reading.
 
 It works across x402, MPP, card, AP2, UCP, ACP and ACK payments, on EVM chains, Tempo, Solana, Stellar, the XRP Ledger,
 Hedera, Algorand, Aptos, Sui, NEAR, Starknet, Polkadot, TRON, TON, Cardano, Casper, Concordium, Stacks and Lightning.

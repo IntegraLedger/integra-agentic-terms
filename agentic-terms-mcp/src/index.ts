@@ -45,9 +45,9 @@ const DESCRIPTIONS = {
     "`receipt` for this ATR hash.",
   atr_finish:
     "Rebuilds the payment from `chosen` and the ATR bytes and joins your wallet's signature. Returns `signed` only " +
-    "when the pairing reads the ATR hash from what was signed, or, where the proof is the agreement payment, without " +
-    "that reading. For a pairing with a channel, pass `chosen` exactly as atr_confirm returned it, `mac` included: a " +
-    "changed `chosen` is declined. Send only the `signed` payment it returns.",
+    "when the pairing reads the ATR hash from the completed payment, or, where the proof is the agreement payment, " +
+    "without that reading. For a pairing with a channel, pass `chosen` exactly as atr_confirm returned it, `mac` " +
+    "included: a changed `chosen` is declined. Send only the `signed` payment it returns.",
   atr_check:
     "Confirms that the ATR hash the pairing reads from a payment is the SHA-256 of the given ATR bytes. A payment " +
     "from which the pairing reads no ATR hash is declined.",

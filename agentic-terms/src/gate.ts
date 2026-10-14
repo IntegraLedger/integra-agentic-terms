@@ -1,9 +1,9 @@
 /**
  * The buyer gate. `confirm` reads the offer, fetches the ATR from the seller's link, compares its SHA-256 with the
  * advertised hash, and only on a match builds the signing request with the hash it computed. `finish` completes the
- * payment with the signature and returns it only when what was signed carries the hash of these bytes, or, for a pairing
- * whose proof is the agreement payment, completes it without that reading. `check` confirms a payment held later against
- * kept bytes.
+ * payment with the signature and returns it only when the pairing's `bound` reads the hash of these bytes from the
+ * completed payment, or, for a pairing whose proof is the agreement payment, completes it without that reading. `check`
+ * confirms a payment held later against kept bytes.
  */
 import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { fromBinding, isRefusal, refuse } from "./pairings/common.js";
@@ -222,10 +222,11 @@ function cancel(s: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint
 
 /**
  * Reads the offer, chooses the option, fetches the ATR and compares its SHA-256 with the advertised hash. Only on a
- * match does it build, with the hash it computed. A pairing whose build has nothing for the buyer to sign returns
- * `request: null`: the comparison is the whole of the buyer's step. For a pairing whose payment is not itself a public
- * proof, `chosen.agreement` is the agreement URL the offer names. `inputs` that is not an object is declined
- * `no-payable-option` with `<namespace>/input-malformed` before the offer is read.
+ * match does it build, with the hash it computed. `request` is what the signer is handed, or `null` when nothing is
+ * handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment, which
+ * `finish` completes with no signature. For a pairing whose payment is not itself a public proof, `chosen.agreement` is
+ * the agreement URL the offer names. `inputs` that is not an object is declined `no-payable-option` with
+ * `<namespace>/input-malformed` before the offer is read.
  */
 export async function confirm(
   doc: unknown,
@@ -285,12 +286,13 @@ async function buildWith(piece: BuyerPiece, b: Steps, chosen: Chosen, h: AtrHash
 }
 
 /**
- * Rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and returns the payment only when what
- * was signed carries the hash of these bytes. For a pairing whose payment is not a public proof and whose `bound` finds
- * no signed place for the hash, the proof is the agreement payment, and the completed payment is returned as it is.
- * Where the signer moved the payment itself, a decline keeps it as `moved`. Where the completion carried the landed
- * receipt `bound` reads and the payment sent leaves it out, `landed` is returned beside the payment as JSON, each integer
- * a decimal string, so `check` and `openChannel` can later read the payment with it.
+ * Rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and returns the payment only when the
+ * pairing's `bound` reads the hash of these bytes from the completed payment. For a pairing whose payment is not a
+ * public proof and whose `bound` finds no signed place for the hash, the proof is the agreement payment, and the
+ * completed payment is returned as it is. Where the signer moved the payment itself, a decline keeps it as `moved`.
+ * Where the completion carried the landed receipt `bound` reads and the payment sent leaves it out, `landed` is
+ * returned beside the payment as JSON, each integer a decimal string, so `check` and `openChannel` can later read the
+ * payment with it.
  */
 export async function finish(
   bytes: Uint8Array,

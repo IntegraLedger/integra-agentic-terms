@@ -75,7 +75,8 @@ With the server and the skill installed, the agent's flow for an x402 payment is
    request for the wallet to sign, with H inside it.
 3. The agent's wallet signs `request` unchanged. The agent calls `atr_finish` with the ATR's bytes, `chosen` and the
    signature.
-4. `atr_finish` returns `signed` only when what was signed carries H. The agent sends that payment.
+4. `atr_finish` returns `signed` only when the pairing reads H from the completed payment, or, where the proof is the
+   agreement payment, without that reading. The agent sends that payment.
 
 The same exchange, run in-process against a local stand-in for the seller, so you can see exactly what an agent
 receives. It uses the ATR and document of the shared vectors:
@@ -363,7 +364,7 @@ Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. Pa
 - **The tools compare before anything is signed.** `atr_confirm` returns a `request` only after SHA-256 of the served
   bytes equals the advertised H, and builds it with the hash it computed.
 - **`atr_finish` reads H back.** It returns `signed` only when the pairing reads the hash of the bytes it was given from
-  what was signed, or, where the proof is the agreement payment, without that reading.
+  the completed payment, or, where the proof is the agreement payment, without that reading.
 - **No keys in `terms-mcp`.** The binary has no signer. With a host signer, only the host's code signs, and only after a
   match.
 - **One bounded fetch per confirmation:** `https` only, no redirect, 10 seconds, at most 1 MiB, asking for

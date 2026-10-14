@@ -47,7 +47,8 @@ With `terms-mcp`, the agent's own wallet signs. For one payment:
    `chosen`, and `request`, the exact thing to sign.
 2. **Sign.** Have the wallet sign `request` unchanged. The [signers guide](./signers.md) lists every kind.
 3. **Finish.** Call `atr_finish` with the `pairing`, `atr.base64`, `chosen` unchanged, and the wallet's answer as
-   `signature`. The result is `signed`, the payment to send, only when what was signed carries H.
+   `signature`. The result is `signed`, the payment to send, only when the pairing reads H from the completed payment,
+   or, where the proof is the agreement payment, without that reading.
 4. **Send** `signed` as the protocol sends a payment.
 
 A confirmed result, abridged (the long `typedData.types` and the echoed document are shortened):
@@ -152,8 +153,8 @@ with `approved` set to `approve`.
 
 - `atr_confirm` returns a `request` only after SHA-256 of the served bytes equals the advertised H, built with the hash
   it computed.
-- `atr_finish` returns `signed` only when the pairing reads the hash of the bytes it was given from what was signed, or,
-  where the proof is the agreement payment, without that reading.
+- `atr_finish` returns `signed` only when the pairing reads the hash of the bytes it was given from the completed
+  payment, or, where the proof is the agreement payment, without that reading.
 - `terms-mcp` holds no keys. With a host signer, only the host's code signs, and only after a match.
 - `atr_channel_open` holds only an opening, and `atr_channel_within` signs and `atr_channel_record_charge` records only
   from a hold, that this server process returned, unchanged. For a pairing with a channel, `atr_finish` reads only a

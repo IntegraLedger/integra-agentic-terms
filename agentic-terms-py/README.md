@@ -15,8 +15,9 @@ that hash, so paying is agreeing to that exact record.
 
 That only holds if the hash in the payment is the hash of the record you can read. This package is the check that makes
 sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, and only on a
-match hands your signer a request built with that hash. After your signer answers, it reads the hash back out of what
-was signed and returns the payment only if it is still the hash of the bytes you received.
+match hands your signer a request built with that hash. After your signer answers, the pairing reads the hash back from
+the completed payment, and the payment is returned only if it is the hash of the bytes you received, or, where the proof
+is the agreement payment, without that reading.
 
 It is the Python implementation of the same gate as the TypeScript package
 [`@integraledger/terms`](https://www.npmjs.com/package/@integraledger/terms). Both run the same rules and pass the same
@@ -144,8 +145,9 @@ If the link had served one byte more, less or different, `transact` would have r
 2. **Compare.** The gate fetches the link once, with your `httpx.AsyncClient`, and hashes the bytes it received. No
    match: a `Declined`, and no signer call.
 3. **Build.** On a match, the gate builds the payment with the hash it computed, not the string the seller advertised.
-4. **Finish.** The gate joins your signer's answer, reads H back out of what was signed, and returns the payment only
-   when it is the hash of the compared bytes.
+4. **Finish.** The gate joins your signer's answer and returns the payment only when the pairing reads H back from the
+   completed payment as the hash of the compared bytes, or, where the proof is the agreement payment, without that
+   reading.
 
 Every function returns a value and never raises for a protocol outcome: either its result, or a `Declined`.
 
@@ -431,7 +433,7 @@ Everything below is exported from `integraledger_terms`.
 | --- | --- | --- |
 | `transact` | `async (doc, binding, signer, fetch, *, inputs=None, agreement_signer=None, approved=None, signal=None) -> Transacted \| ToApprove \| Declined` | Compare, pay the approved agreement first where needed, sign, finish. |
 | `confirm` | `async (doc, binding, account, fetch, inputs=None) -> Confirmed \| Declined` | Read, fetch, compare, and build the signing request with H. `request` is `None` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
-| `finish` | `(atr_bytes, chosen, signature, binding) -> Finished \| Next \| Declined` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when what was signed carries H. |
+| `finish` | `(atr_bytes, chosen, signature, binding) -> Finished \| Next \| Declined` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. |
 | `check` | `(atr_bytes, presented, binding) -> Checked \| Declined` | Confirm a held payment carries the hash of the kept bytes. |
 | `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, signal=None) -> ToApprove \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt. |
 | `open_channel` | `(atr_bytes, opened, binding, landed=None) -> ChannelHold \| Declined` | Hold a channel opened for the compared ATR. |
@@ -565,9 +567,10 @@ What the gate guarantees, in the code:
 - **Nothing is signed before the comparison.** The signer is called only after SHA-256 of the served bytes equals the
   advertised H, compared as 32 decoded bytes.
 - **The payment carries the computed hash.** The build takes the hash the gate computed, not the advertised string.
-- **What was signed is read back.** `finish` returns a payment only when the binding reads, from what was signed, the
-  hash of the compared bytes. For a pairing whose payment is not a public proof, the payment is returned only after the
-  agreement's receipt for that hash.
+- **The hash is read back from the payment.** `finish` returns a payment only when the binding reads, from the completed
+  payment, the hash of the compared bytes, or, where the proof is the agreement payment, without that reading. For a
+  pairing whose payment is not a public proof, `transact` signs the payment only after the agreement's receipt for that
+  hash.
 - **Every payment is shown before it is signed.** The agreement payment is returned for your agent's approval, with its
   amount, asset, payee and network, and is signed only when a second call carries it back.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most

@@ -1,5 +1,6 @@
 """The Python buyer gate: before a buyer signs, confirm that the advertised ATR hash is the SHA-256 of the bytes the
-seller's link serves, build the payment with that hash, and confirm the hash inside what was signed."""
+seller's link serves, build the payment with that hash, and return the payment only when the ATR hash the pairing reads
+from it is that hash, or, for a pairing whose proof is the agreement payment, without that reading."""
 
 from ._agreement import agree
 from ._channels import ChannelHold, Within, open_channel, record_charge, within

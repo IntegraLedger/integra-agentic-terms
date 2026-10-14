@@ -56,7 +56,7 @@ sequenceDiagram
    | Member | What it is |
    | --- | --- |
    | `url` | The agreement URL. |
-   | `option` | The option the gate pays: its `amount` (in the asset's atomic units), `asset`, `payTo` and `network` are what the payment moves. |
+   | `option` | The option the gate pays: its `amount` (in the asset's atomic units), `asset`, `payTo` and `network` are the terms the agent approves. |
    | `required` | The agreement URL's payment request, as it served it. |
 
    Your agent approves it as it approves any payment, or does not. To approve it, call again with `approved` set to

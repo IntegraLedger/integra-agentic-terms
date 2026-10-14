@@ -10,10 +10,11 @@ Record (ATR)**, at an `https` link, and advertises its SHA-256, the **ATR hash (
 payment the buyer approves carries H, so paying is agreeing to that exact record.
 
 The packages here are the buyer's half of that pattern. Their centre is the **buyer gate**: it fetches the ATR, compares
-the SHA-256 of the served bytes with H, and only on a match builds the payment with that hash for the buyer's own signer.
-After the signer answers, it reads H back out of what was signed, and returns the payment only if it is still the hash
-of the bytes received. The gate holds no keys, reads none of the record's content, and carries no business or legal
-logic: what the record says is for the buyer and its principal to judge.
+the SHA-256 of the served bytes with H, and only on a match builds the payment with that hash for the buyer's own
+signer. After the signer answers, the pairing reads H back from the completed payment, and the gate returns the payment
+only if it is the hash of the bytes received, or, where the proof is the agreement payment, without that reading. The
+gate holds no keys, reads none of the record's content, and carries no business or legal logic: what the record says is
+for the buyer and its principal to judge.
 
 It works across payment protocols and rails. Each **pairing** of protocol, scheme and rail (such as
 `x402/exact/eip155/eip3009`: x402's `exact` scheme on an EVM chain, paid with an EIP-3009 authorization) has a

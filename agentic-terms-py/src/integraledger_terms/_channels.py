@@ -84,7 +84,8 @@ def _has_channel(binding: Any) -> bool:
 
 
 def _as_json(value: object) -> Any:
-    """The value as plain JSON, or None when it holds anything JSON does not carry."""
+    """The value as plain JSON, as json.dumps writes it with allow_nan=False and json.loads reads it back; None when
+    json.dumps cannot write it."""
     try:
         return json.loads(json.dumps(value, allow_nan=False))
     except (TypeError, ValueError):
@@ -245,8 +246,10 @@ async def within(
     no-payable-option with x402/input-malformed, and the refund taken again without a recentBlockhash with
     x402/input-missing. No other pairing's refund reads these values or this code.
 
-    Before the signer is called, the channel the built payment would name must be the held one. The signed payment
-    must be of the expected kind and belong to the held channel, or it is dropped."""
+    On x402's batch channels, the channel the built payment would name must be the held one before the signer is called.
+    On MPP's sessions, a channel the challenge names must be the held one and a legal context, where present, must name
+    the held hash, before the signer is called, and the voucher is built from the held opening. In both, the signed
+    payment must then be of the expected kind and name the held channel, or it is dropped."""
     if not _has_channel(binding):
         return _declined("pairing-not-supported", "The pairing has no channel.")
     ns = binding.id.split("/")[0]

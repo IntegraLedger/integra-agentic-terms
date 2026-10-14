@@ -107,7 +107,7 @@ declined `agreement-failed`. Annotations: read-only, open-world.
 ### `atr_finish`
 
 Rebuilds the payment from `chosen` and the ATR bytes, and joins the wallet's signature. Returns `signed` only when the
-pairing reads H from what was signed, or, where the proof is the agreement payment, without that reading.
+pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading.
 
 | Argument | Type | |
 | --- | --- | --- |
