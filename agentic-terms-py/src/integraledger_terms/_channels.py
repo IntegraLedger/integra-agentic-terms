@@ -1,9 +1,10 @@
 """The buyer's channel steps. One ATR covers a whole channel: the gate compares it once, at the opening, and the caller
 keeps the result as a channel hold, the ATR's bytes together with the signed opening and the channel it names.
-within signs a later voucher only for a channel held this way, re-deriving everything from the hold and never from the
-new challenge, and only when that challenge advertises the held ATR's hash. It serves x402's batch channels and MPP's
-sessions through the binding's build_within. record_charge records the server's cumulative charge, bounded by what was
-signed.
+within signs a later voucher only for a channel held this way: the ATR's bytes, its hash and the channel come from the
+hold, and the amount from the new challenge. On x402's batch channels that challenge must advertise the held ATR's hash.
+On MPP's sessions a challenge that names another channel or another hash is declined, and one with no legal context is
+signed under the held hash. Both are served through the binding's build_within. record_charge records the server's
+cumulative charge, bounded by what was signed.
 
 The channel members come from the pairing's binding (build_within, channel_kind, channel_ref, bound_within)."""
 
@@ -192,7 +193,8 @@ async def within(
 ) -> Within | Declined:
     """Signs one later voucher, or a refund, in a held channel. doc is the seller's document as given: an x402
     document, or MPP's list of challenges. The ATR bytes, the opening's hash and the opening's channel are re-derived
-    from the hold, and the challenge must advertise the held hash. A voucher's
+    from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge that names another
+    channel or another hash is declined, and one with no legal context is signed under the held hash. A voucher's
     maxClaimableAmount is the recorded charge plus the option's amount; a refund's is the recorded charge. inputs are
     the buyer's own chain values a refund's build takes. Before the signer is called, the channel the built payment
     would name must be the held one. What was signed must be of the expected kind and belong to the held channel, or

@@ -1,10 +1,11 @@
 /**
  * The buyer's channel steps. One ATR covers a whole channel: the gate compares it once, at the opening, and the caller
  * keeps the result as a `ChannelHold`, the ATR's bytes together with the signed opening and the channel it names.
- * `within` signs a later voucher only for a channel held this way, re-deriving everything from the hold and never from
- * the new challenge, and only when that challenge advertises the held ATR's hash. It serves x402's batch channels and
- * MPP's sessions through the binding's `buildWithin`. `recordCharge` records the server's cumulative charge, bounded by
- * what was signed.
+ * `within` signs a later voucher only for a channel held this way: the ATR's bytes, its hash and the channel come from
+ * the hold, and the amount from the new challenge. On x402's batch channels that challenge must advertise the held
+ * ATR's hash. On MPP's sessions a challenge that names another channel or another hash is declined, and one with no
+ * legal context is signed under the held hash. Both are served through the binding's `buildWithin`. `recordCharge`
+ * records the server's cumulative charge, bounded by what was signed.
  */
 import { fromLcpString, hash, hashEquals, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
@@ -221,11 +222,12 @@ export async function openChannel(
 
 /**
  * Signs one later voucher, or a refund, in a held channel. The ATR bytes, the opening's hash and the opening's
- * channel are re-derived from the hold, and the challenge must advertise the held hash. A voucher's
- * `maxClaimableAmount` is the recorded charge plus the option's amount; a refund's is the recorded charge. `inputs`
- * are the buyer's own chain values a refund's build takes. Before the signer is called, the channel the built payment
- * would name must be the held one. What was signed must be of the expected kind and belong to the held channel, or it
- * is dropped.
+ * channel are re-derived from the hold. An x402 challenge must advertise the held hash. An MPP session's challenge
+ * that names another channel or another hash is declined, and one with no legal context is signed under the held
+ * hash. A voucher's `maxClaimableAmount` is the recorded charge plus the option's amount; a refund's is the recorded
+ * charge. `inputs` are the buyer's own chain values a refund's build takes. Before the signer is called, the channel
+ * the built payment would name must be the held one. What was signed must be of the expected kind and belong to the
+ * held channel, or it is dropped.
  */
 export async function within(
   doc: unknown,

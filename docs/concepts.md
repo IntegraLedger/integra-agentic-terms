@@ -109,8 +109,9 @@ If such a pairing's offer names no agreement URL, the gate declines with `agreem
 
 In a payment channel (x402 batch settlement) or a session (an MPP session), one ATR covers the whole channel. The gate
 compares it once, at the opening. You keep the result as a **channel hold**: the ATR's bytes, the signed opening and the
-channel it names. Each later voucher is signed from the hold, and only when the seller's new challenge advertises the
-held hash. See [channels and sessions](./guides/channels-and-sessions.md).
+channel it names. Each later voucher is signed from the hold, under the held hash: an x402 challenge must advertise it,
+and an MPP session challenge that names another hash or another channel is declined. See
+[channels and sessions](./guides/channels-and-sessions.md).
 
 ## The parties
 

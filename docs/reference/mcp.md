@@ -202,8 +202,10 @@ library's `signal` does.
 
 ### `atr_channel_within`
 
-Offered with a host `signer`. Signs one later payment in a held channel, only when the seller's document advertises the
-held H and the payment names the held channel.
+Offered with a host `signer`. Signs one later payment in a held channel. The ATR, H and the channel come from the hold,
+and the amount from the seller's new document, with no limit applied. On an x402 channel, the document must advertise
+the held H and the payment must name the held channel. On an MPP session, a challenge that names another channel or
+another H is declined, and one with no legal context is signed under the held H.
 
 | Argument | Type | |
 | --- | --- | --- |

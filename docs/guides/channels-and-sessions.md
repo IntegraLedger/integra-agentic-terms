@@ -14,8 +14,10 @@ The gate follows that shape:
 2. **Hold.** `openChannel(bytes, opened, binding)` checks that the opening is an opening, carries the hash of the bytes
    and names its channel, and returns a **hold**: the bytes, the opening and the channel, as JSON you keep.
 3. **Pay within.** For each later request, `within(doc, hold, binding, signer)` signs one voucher from the hold. It
-   re-derives the bytes, the hash and the channel from the hold, never from the seller's new challenge, and signs only
-   when that challenge advertises the held H and the payment it builds names the held channel.
+   takes the bytes, the hash and the channel from the hold, and the amount from the seller's new challenge. On x402's
+   batch channels it signs only when that challenge advertises the held H and the payment it builds names the held
+   channel. On an MPP session it declines a challenge that names another channel or another H, and signs one with no
+   legal context under the held H.
 4. **Record the charge.** When the seller reports its cumulative charge, `recordCharge(hold, charged)` records it. The
    charge may not fall below the last one recorded, nor rise above the largest amount you signed.
 

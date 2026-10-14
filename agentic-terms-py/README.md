@@ -388,9 +388,10 @@ voucher up to 2000
 
 The channel id is the one the TypeScript gate computes for the same inputs: both languages build the same payment.
 
-The hold is a plain `dict`: store it, and pass the latest one to each call. `within` re-derives everything from the
-hold, never from the new challenge, and signs only when that challenge advertises the held H and the payment it builds
-names the held channel.
+The hold is a plain `dict`: store it, and pass the latest one to each call. `within` takes the bytes, H and the
+channel from the hold, and the amount from the new challenge. On x402's batch channels it signs only when that
+challenge advertises the held H and the payment it builds names the held channel. On an MPP session it declines a
+challenge that names another channel or another H, and signs one with no legal context under the held H.
 
 ### Confirm a payment later: `check`
 

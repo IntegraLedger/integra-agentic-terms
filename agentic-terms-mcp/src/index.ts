@@ -67,9 +67,12 @@ const DESCRIPTIONS = {
     "returns the channel `hold` to keep and pass to the other channel tools. The hold is opaque: pass it back exactly " +
     "as returned.",
   atr_channel_within:
-    "Signs one later payment in a held channel with this host's signer, only when the seller's document advertises " +
-    "the held ATR hash. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the payment " +
-    "to send and the updated `hold`.",
+    "Signs one later payment in a held channel with this host's signer. The ATR, its hash and the channel come from " +
+    "the `hold`, and the amount from the seller's new document, with no limit applied. On an x402 channel the " +
+    "document must advertise the held ATR hash, and the payment must name the held channel. On an MPP session a " +
+    "challenge that names another channel or another ATR hash is declined, and one with no legal context is signed " +
+    "under the held ATR hash. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the " +
+    "payment to send and the updated `hold`.",
   atr_channel_record_charge:
     "Records the seller's cumulative charge in a held channel, no lower than the last recorded and no higher than " +
     "what was signed. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the updated " +

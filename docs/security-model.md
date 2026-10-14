@@ -18,7 +18,7 @@ guarantees, how, and what it does not do.
 | Every payment is shown before it is signed. | The agreement payment is returned to the buyer's agent with its amount, asset, payee and network, and signed only when a second call carries it back. The gate applies no spending limit: what to approve is the agent's decision. |
 | The fetch is bounded. | One `GET` of an `https` link, with no redirect, one 10-second deadline over headers and body, and at most 1 MiB read. A declared or streamed length over the bound cancels the body. |
 | The bytes hashed are the bytes sent. | Every request asks for `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding (gzip, br, a stacked list) is declined with its body unread. Nothing is decompressed, so the bounds apply to the bytes on the wire. The agreement receipt is read the same way, at most 64 KiB. |
-| A channel pays under its ATR. | `within` re-derives every value from the hold, never from the seller's new challenge, and signs only when that challenge advertises the held H. A recorded charge cannot exceed what was signed. |
+| A channel pays under its ATR. | `within` takes the ATR's bytes, H and the channel from the hold, and only the amount from the seller's new challenge. An x402 challenge must advertise the held H. An MPP session challenge that names another channel or another H is declined, and one with no legal context is signed under the held H. A recorded charge cannot exceed what was signed. |
 | The gate holds nothing that signs. | It hands requests to your signer and never sees a key. |
 | Your network policy applies. | Every request goes through the `fetch` (or `httpx.AsyncClient`) you pass. |
 

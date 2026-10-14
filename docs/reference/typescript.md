@@ -154,10 +154,12 @@ declare function within(
 ): Promise<{ signed: Presented; hold: ChannelHold } | Declined>;
 ```
 
-Signs one later voucher, or a refund, in a held channel. Everything is re-derived from the hold, the challenge must
-advertise the held hash, and the payment the build returns must name the held channel before the signer is called. A
-voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the recorded charge. See
-[channels and sessions](../guides/channels-and-sessions.md).
+Signs one later voucher, or a refund, in a held channel. The ATR's bytes, its hash and the channel come from the hold,
+and the amount from the new challenge. On x402's batch channels the challenge must advertise the held hash, and the
+payment the build returns must name the held channel before the signer is called. On an MPP session, a challenge that
+names another channel or another hash is declined before the signer is called, and one with no legal context is signed
+under the held hash. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
+recorded charge. See [channels and sessions](../guides/channels-and-sessions.md).
 
 ### `recordCharge`
 
