@@ -5,7 +5,7 @@
  */
 import type { AtrHash } from "@integraledger/lcp";
 import { exchange } from "./agreement.js";
-import { confirm, declined, isObject, namespaceOf, pieceOf, signSteps, unsupported } from "./gate.js";
+import { confirm, declined, hasAccount, isObject, namespaceOf, pieceOf, signSteps, unsupported } from "./gate.js";
 import type { AgreementReceipt, Binding, Declined, Fetch, Presented, Signer, ToApprove, TransactOptions } from "./types.js";
 
 /**
@@ -16,7 +16,8 @@ import type { AgreementReceipt, Binding, Declined, Fetch, Presented, Signer, ToA
  * the build is itself the payment the signer is not called; where the pairing has nothing for the buyer to sign,
  * `signed` is null after the comparison. `agreement` is the agreement's receipt, where the pairing needs one. `landed`
  * is `finish`'s, where it gives one. `signal` ends the agreement exchange. Options holding anything but `inputs`,
- * `agreementSigner`, `approved` and `signal` are declined before any fetch or signer call.
+ * `agreementSigner`, `approved` and `signal`, or a signer or agreement signer whose `account` is not a string, are
+ * declined `no-payable-option` with `<namespace>/input-malformed` before any fetch or signer call.
  */
 export async function transact(
   doc: unknown,
@@ -31,7 +32,7 @@ export async function transact(
 > {
   if (pieceOf(binding) === undefined) return unsupported(binding);
   const ns = namespaceOf(binding);
-  if (!optionsOk(options)) return declined("no-payable-option", `${ns}/input-malformed`);
+  if (!optionsOk(options) || !hasAccount(signer)) return declined("no-payable-option", `${ns}/input-malformed`);
   const { inputs = {}, agreementSigner, approved, signal } = options ?? {};
   const confirmed = await confirm(doc, binding, signer.account, fetch, inputs);
   if ("decline" in confirmed) return confirmed;
@@ -54,8 +55,8 @@ const OPTION_KEYS: readonly string[] = ["inputs", "agreementSigner", "approved",
 
 /**
  * Whether `transact`'s options are absent, or an object holding only `inputs` (an object, or undefined),
- * `agreementSigner` (an object with a `sign` function, or undefined), `approved` (an object, or undefined) and `signal`
- * (an `AbortSignal`, or undefined).
+ * `agreementSigner` (an object with a `sign` function and a string `account`, or undefined), `approved` (an object, or
+ * undefined) and `signal` (an `AbortSignal`, or undefined).
  */
 function optionsOk(options: unknown): options is TransactOptions | undefined {
   if (options === undefined) return true;
@@ -64,5 +65,6 @@ function optionsOk(options: unknown): options is TransactOptions | undefined {
   if (inputs !== undefined && !isObject(inputs)) return false;
   if (approved !== undefined && !isObject(approved)) return false;
   if (signal !== undefined && !(signal instanceof AbortSignal)) return false;
-  return agreementSigner === undefined || (isObject(agreementSigner) && typeof agreementSigner["sign"] === "function");
+  if (agreementSigner === undefined) return true;
+  return isObject(agreementSigner) && typeof agreementSigner["sign"] === "function" && hasAccount(agreementSigner);
 }

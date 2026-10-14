@@ -46,7 +46,8 @@ unchanged, that payment is signed and paid, and the payment for the resource is 
 receipt in hand. On a decline before the signer, the signer is never called. `signed` is `null` when the pairing gives
 the buyer nothing to sign. `agreement` is the agreement's receipt, where the pairing needs one; `landed` where `finish`
 gives one. `options.signal` ends the agreement exchange. Options holding anything but `inputs`, `agreementSigner`,
-`approved` and `signal`, or a member of the wrong kind, are declined before any fetch.
+`approved` and `signal`, or a member of the wrong kind, and a `signer` or `agreementSigner` whose `account` is not a
+string, are declined before any fetch.
 
 ### `confirm`
 
@@ -121,7 +122,8 @@ payment request and returns `{ approve, bytes, h }`, signing nothing; where the 
 its receipt. With `options.approved`, the value of `approve` carried back unchanged, signs exactly that payment with
 `signer`, sends it, and returns the receipt once recorded. The option paid is the first, in document order, that
 `signer` can pay with a pairing whose payment is itself a public proof. `options.inputs` are the buyer's own chain
-values; `options.signal` ends the exchange. See [agreement payments](../guides/agreement-payments.md).
+values; `options.signal` ends the exchange. A `signer` whose `account` is not a string is declined before any fetch.
+See [agreement payments](../guides/agreement-payments.md).
 
 ### `openChannel`
 

@@ -84,6 +84,11 @@ export function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** Whether a signer's `account` is a string, the form every pairing reads its payer from. */
+export function hasAccount(signer: unknown): boolean {
+  return typeof (signer as { account?: unknown } | null | undefined)?.account === "string";
+}
+
 /** The pairing's namespace: its id up to the first `/`. */
 export function namespaceOf(binding: Binding): string {
   return String(binding.id).split("/")[0]!;

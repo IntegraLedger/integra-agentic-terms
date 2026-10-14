@@ -3,7 +3,8 @@ raises before any fetch or signer call, as a keyword-only signature does; inputs
 signer with no sign method, an approved value that is not an AgreementPayment, or a signal that is not an asyncio.Event
 are declined no-payable-option with the namespace's input-malformed detail before any fetch or signer call, as the
 TypeScript gate declines them. confirm and agree decline inputs that are not a mapping, and agree an approved payment
-not of the agreement payment's form, the same way. The document, the ATR and the signer are buyer.json's."""
+not of the agreement payment's form, the same way; transact and agree decline a signer, and transact an agreement
+signer, whose account is not a string the same way. The document, the ATR and the signer are buyer.json's."""
 
 import asyncio
 import base64
@@ -18,6 +19,22 @@ from integraledger_terms import AgreementPayment, Chosen, Declined, _gate, agree
 from support import ACCOUNT, BUYER, NOW, A, CountingSigner, D, Link, serving
 
 AGREEMENT = BUYER["fixed"]["agreement"]
+
+
+class OddAccount:
+    """A signer with no account, or with an account that is not a string."""
+
+    def __init__(self, **account: Any) -> None:
+        self.__dict__.update(account)
+        self.requests: list[Any] = []
+
+    async def sign(self, request: Any) -> str:
+        self.requests.append(request)
+        return "0x" + "11" * 65
+
+
+ODD_ACCOUNTS = [{}, {"account": 7}, {"account": None}]
+ODD_ACCOUNT_IDS = ["no account", "an account that is a number", "an account that is None"]
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +79,8 @@ def test_inputs_given_positionally_raise() -> None:
         {"inputs": "recentBlockhash"},
         {"inputs": ["recentBlockhash"]},
         {"agreement_signer": {"account": ACCOUNT}},
+        {"agreement_signer": OddAccount()},
+        {"agreement_signer": OddAccount(account=7)},
         {"approved": {"url": "https://api.seller.example/agreement"}},
         {"signal": object()},
     ],
@@ -118,23 +137,15 @@ def test_agree_declines_an_approved_payment_whose_url_is_not_a_string() -> None:
     assert (link.calls, signer.requests) == (0, [])
 
 
-class NoAccount:
-    """A signer with no account."""
-
-    def __init__(self) -> None:
-        self.requests: list[Any] = []
-
-    async def sign(self, request: Any) -> str:
-        self.requests.append(request)
-        return "0x" + "11" * 65
-
-
-def test_a_signer_with_no_account_pays_no_option() -> None:
-    # The TypeScript gate reads the account of such a signer as undefined, which no x402 option's payer can be: transact
-    # and agree decline no-payable-option with x402/no-payable-option, and nothing is signed.
+@pytest.mark.parametrize("account", ODD_ACCOUNTS, ids=ODD_ACCOUNT_IDS)
+def test_a_signer_whose_account_is_not_a_string_is_declined_before_any_fetch_or_signer_call(
+    account: dict[str, Any],
+) -> None:
+    # As the TypeScript gate declines it: transact and agree answer no-payable-option with x402/input-malformed before
+    # any fetch or signer call. The agreement URL would answer 402 with its payment request.
     header = base64.b64encode(json.dumps(AGREEMENT["required"]).encode("utf-8")).decode("ascii")
     link = Link(lambda request: httpx.Response(402, headers={"payment-required": header}))
-    signer = NoAccount()
+    signer = OddAccount(**account)
 
     async def go() -> tuple[Any, Any]:
         async with link.client() as client:
@@ -143,8 +154,8 @@ def test_a_signer_with_no_account_pays_no_option() -> None:
             return transacted, agreed
 
     for out in asyncio.run(go()):
-        assert out == Declined("no-payable-option", "x402/no-payable-option")
-    assert (link.calls, signer.requests) == (1, [])
+        assert out == Declined("no-payable-option", "x402/input-malformed")
+    assert (link.calls, signer.requests) == (0, [])
 
 
 def test_an_atr_that_is_not_bytes_raises_type_error() -> None:

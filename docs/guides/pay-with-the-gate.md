@@ -64,7 +64,8 @@ it, the signer is never called.
 - `signal`: an `AbortSignal` that ends the agreement exchange.
 
 Any other member, or a member of the wrong kind, is declined with `no-payable-option` and the detail
-`<protocol>/input-malformed`, before any fetch.
+`<protocol>/input-malformed`, before any fetch, and so is a `signer` or `agreementSigner` whose `account` is not a
+string.
 
 ## Two calls: `confirm`, then `finish`
 

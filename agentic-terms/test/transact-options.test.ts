@@ -2,8 +2,8 @@
 // holding any other key, or one that is not an object, is refused before any fetch or signer call, so a buyer's inputs
 // are never silently dropped. The decline is the gate's closed `no-payable-option` with the namespace's
 // `input-malformed` detail, the form the gate gives a malformed input. `confirm` and `agree` decline inputs that are not
-// an object, and `agree` an approved payment not of the agreement payment's form, the same way. The document, the ATR
-// and the signer are buyer.json's.
+// an object, and `agree` an approved payment not of the agreement payment's form, the same way; `transact` and `agree`
+// decline a signer whose account is not a string the same way. The document, the ATR and the signer are buyer.json's.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
@@ -45,6 +45,11 @@ describe("transact's options object", () => {
     ["a string", "inputs"],
     ["inputs that are not an object", { inputs: "recentBlockhash" }],
     ["an agreement signer with no sign function", { agreementSigner: { account: B.fixed.account } }],
+    ["an agreement signer with no account", { agreementSigner: { sign: async (): Promise<string> => "0x" } }],
+    [
+      "an agreement signer whose account is a number",
+      { agreementSigner: { account: 7, sign: async (): Promise<string> => "0x" } },
+    ],
     ["an approved payment that is not an object", { approved: "yes" }],
     ["a signal that is not an AbortSignal", { signal: { aborted: false } }],
   ])("%s is refused before any fetch or signer call", async (_, options) => {
@@ -94,9 +99,14 @@ describe("inputs and payments the other entry points are given", () => {
     expect([fetch.calls, signer.calls]).toEqual([0, 0]);
   });
 
-  // A signer with no account: no x402 option's payer is undefined, so neither the payment nor the agreement payment is
-  // payable, and nothing is signed.
-  it("a signer with no account: transact and agree decline no-payable-option", async () => {
+  // A signer whose account is not a string: transact and agree decline no-payable-option with x402/input-malformed
+  // before any fetch or signer call, as they decline a malformed input. The agreement URL would answer 402 with its
+  // payment request.
+  it.each([
+    ["no account", {}],
+    ["an account that is a number", { account: 7 }],
+    ["an account that is null", { account: null }],
+  ])("a signer with %s: transact and agree decline before any fetch or signer call", async (_, member) => {
     const header = Buffer.from(JSON.stringify(B.fixed.agreement.required)).toString("base64");
     let fetches = 0;
     const fetch = (async () => {
@@ -104,13 +114,13 @@ describe("inputs and payments the other entry points are given", () => {
       return new Response(null, { status: 402, headers: { "payment-required": header } });
     }) as unknown as Fetch;
     let signs = 0;
-    const signer = { sign: async () => (signs++, "0x") } as unknown as Signer;
+    const signer = { ...member, sign: async () => (signs++, "0x") } as unknown as Signer;
     const transacted = await transact(D, exactEip3009, signer, fetch);
     const agreed = await agree(A, B.fixed.agreement.url, signer, fetch);
     for (const out of [transacted, agreed]) {
-      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/no-payable-option" });
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
     }
-    expect([fetches, signs]).toEqual([1, 0]);
+    expect([fetches, signs]).toEqual([0, 0]);
   });
 
   // @integraledger/lcp's hash rejects a value that is not a Uint8Array with TypeError, and the gate passes it on.

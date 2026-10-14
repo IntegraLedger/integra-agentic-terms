@@ -20,7 +20,7 @@ import {
   type Refusal,
 } from "@integraledger/lcp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import { IDENTITY, isIdentity, newRef, pay, pieceOf, redirected } from "./gate.js";
+import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected } from "./gate.js";
 import { isRefusal } from "./pairings/common.js";
 import type {
   AgreeOptions,
@@ -338,10 +338,10 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * nothing, or the receipt where the agreement is already recorded. With `approved`: signs exactly that payment with
  * `signer`, sends it to `url`, and returns the receipt once recorded. `bytes` are the ATR the gate compared, whose hash
  * the agreement payment carries; `inputs` are the buyer's own chain values; `signal` ends the exchange. An `approved`
- * that is not of the agreement payment's form, or `inputs` that is not an object, is declined `no-payable-option` with
- * `x402/input-malformed` before any fetch or signer call. A `url` that is not an https URL is declined `link-not-https`
- * with `x402/link-not-https` for an absolute URL of another scheme and `x402/legal-context-malformed` for any other
- * value, before any fetch.
+ * that is not of the agreement payment's form, `inputs` that is not an object, or a signer whose `account` is not a
+ * string, is declined `no-payable-option` with `x402/input-malformed` before any fetch or signer call. A `url` that is
+ * not an https URL is declined `link-not-https` with `x402/link-not-https` for an absolute URL of another scheme and
+ * `x402/legal-context-malformed` for any other value, before any fetch.
  */
 export function agree(
   bytes: Uint8Array,
@@ -371,7 +371,7 @@ export async function exchange(
     return declined("link-not-https", `${ns ?? "x402"}/${fault}`);
   }
   const { approved, signal, inputs = {} } = options;
-  if ((approved !== undefined && !isAgreementPayment(approved)) || !isObject(inputs)) {
+  if ((approved !== undefined && !isAgreementPayment(approved)) || !isObject(inputs) || !hasAccount(signer)) {
     return declined("no-payable-option", `${ns ?? "x402"}/input-malformed`);
   }
   if (isEnded(signal)) return ended();

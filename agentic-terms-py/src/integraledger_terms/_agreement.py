@@ -155,9 +155,9 @@ async def _get(
     fetch: httpx.AsyncClient, url: str, signature: str | None, seconds: float
 ) -> _Answer | _Unanswered | Declined:
     """One GET of the agreement URL, asking for the identity coding, with no redirect and a deadline of seconds over
-    headers and body, which is also the request's own httpx timeout. A 200 or a 402, the answers the exchange reads, whose Content-Encoding names any coding is
-    agreement-failed with its body unread; a 200 body is read as sent, up to 64 KiB, and nothing is decoded; any other
-    body is left unread."""
+    headers and body, which is also the request's own httpx timeout. A 200 or a 402, the answers the exchange reads,
+    whose Content-Encoding names any coding is agreement-failed with its body unread; a 200 body is read as sent, up to
+    64 KiB, and nothing is decoded; any other body is left unread."""
     headers = dict(_gate.IDENTITY) if signature is None else {**_gate.IDENTITY, "PAYMENT-SIGNATURE": signature}
     too_large = _failed("The agreement receipt is larger than 64 KiB.")
     try:
@@ -377,10 +377,10 @@ async def agree(
     nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
     signer, send it to url, and return the receipt once recorded. atr_bytes are the ATR the gate compared, whose hash
     the agreement payment carries; inputs are the buyer's own chain values; setting signal ends the exchange. An
-    approved value that is not of the agreement payment's form, inputs that are not a mapping, or a signal that is not
-    an asyncio.Event is declined no-payable-option with x402/input-malformed before any fetch or signer call. A url
-    that is not an https URL is declined link-not-https with x402/link-not-https for an absolute URL of another scheme
-    and x402/legal-context-malformed for any other value, before any fetch."""
+    approved value that is not of the agreement payment's form, inputs that are not a mapping, a signal that is not an
+    asyncio.Event, or a signer whose account is not a string is declined no-payable-option with x402/input-malformed
+    before any fetch or signer call. A url that is not an https URL is declined link-not-https with x402/link-not-https
+    for an absolute URL of another scheme and x402/legal-context-malformed for any other value, before any fetch."""
     return await exchange(atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, signal=signal, ns=None)
 
 
@@ -405,6 +405,7 @@ async def exchange(
         (approved is not None and not _is_agreement_payment(approved))
         or (inputs is not None and not isinstance(inputs, Mapping))
         or (signal is not None and not isinstance(signal, asyncio.Event))
+        or not isinstance(_gate._account(signer), str)
     ):
         return Declined("no-payable-option", f"{ns if ns is not None else 'x402'}/input-malformed")
     given: Inputs = inputs if inputs is not None else {}

@@ -74,7 +74,8 @@ def _piece(binding: Binding) -> Piece | None:
 
 
 def _account(signer: object) -> Any:
-    """The signer's account as it gives it; None for a signer with none, which no option's payer is."""
+    """The signer's account as it gives it; None for a signer with none. transact and the agreement exchange decline a
+    signer whose account is not a string."""
     return getattr(signer, "account", None)
 
 
@@ -108,8 +109,9 @@ def is_identity(content_encoding: str | None) -> bool:
 
 async def _fetch(fetch: httpx.AsyncClient, link: str) -> bytes | Declined:
     """One GET asking for the identity coding, no redirect, one deadline over headers and body that is also the
-    request's own httpx timeout, and at most MAX_ATR_BYTES read as sent. A 200 whose Content-Encoding names any coding is declined with its body unread: nothing
-    is decoded. A response the client's transport has already read in whole is taken as read."""
+    request's own httpx timeout, and at most MAX_ATR_BYTES read as sent. A 200 whose Content-Encoding names any coding
+    is declined with its body unread: nothing is decoded. A response the client's transport has already read in whole
+    is taken as read."""
     try:
         async with asyncio.timeout(FETCH_DEADLINE_S):
             async with fetch.stream(
@@ -342,15 +344,20 @@ async def transact(
     signed in steps, and never on a decline before it. Where the pairing has nothing for the buyer to sign, signed is
     None after the comparison. agreement is the agreement's receipt, where the pairing needs one. Setting signal ends
     the agreement exchange. Inputs that are not a mapping, an agreement signer with no sign method, an approved value
-    that is not an AgreementPayment, or a signal that is not an asyncio.Event are declined before any fetch or signer
+    that is not an AgreementPayment, a signal that is not an asyncio.Event, or a signer or agreement signer whose
+    account is not a string are declined no-payable-option with <namespace>/input-malformed before any fetch or signer
     call."""
     if _piece(binding) is None:
         return _unsupported(binding)
+    agreement_signer_ok = agreement_signer is None or (
+        callable(getattr(agreement_signer, "sign", None)) and isinstance(_account(agreement_signer), str)
+    )
     if (
         (inputs is not None and not isinstance(inputs, Mapping))
-        or (agreement_signer is not None and not callable(getattr(agreement_signer, "sign", None)))
+        or not agreement_signer_ok
         or (approved is not None and not isinstance(approved, AgreementPayment))
         or (signal is not None and not isinstance(signal, asyncio.Event))
+        or not isinstance(_account(signer), str)
     ):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
     given = inputs if inputs is not None else {}
