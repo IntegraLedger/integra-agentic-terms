@@ -74,7 +74,8 @@ When the key lives somewhere else (a hardware wallet, a signing service, another
    request built with H, together with `chosen` and the ATR's bytes.
 2. Your signer signs `request`, exactly as given.
 3. `finish(bytes, chosen, signature, binding)` rebuilds the same payment from `chosen` and the bytes, joins the
-   signature, and returns the payment only when what was signed carries the hash of those bytes.
+   signature, and returns the payment only when the pairing reads the hash of those bytes from what was signed, or,
+   where the proof is the agreement payment, without that reading.
 
 `chosen` is plain JSON and the bytes are bytes, so both cross process boundaries. `finish` does not trust anything it
 did not rebuild: it recomputes H from the bytes you hand back.

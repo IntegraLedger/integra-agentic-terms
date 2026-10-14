@@ -362,7 +362,8 @@ Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. Pa
 
 - **The tools compare before anything is signed.** `atr_confirm` returns a `request` only after SHA-256 of the served
   bytes equals the advertised H, and builds it with the hash it computed.
-- **`atr_finish` reads H back.** It returns `signed` only when what was signed carries the hash of the bytes it was given.
+- **`atr_finish` reads H back.** It returns `signed` only when the pairing reads the hash of the bytes it was given from
+  what was signed, or, where the proof is the agreement payment, without that reading.
 - **No keys in `terms-mcp`.** The binary has no signer. With a host signer, only the host's code signs, and only after a
   match.
 - **One bounded fetch per confirmation:** `https` only, no redirect, 10 seconds, at most 1 MiB, asking for
