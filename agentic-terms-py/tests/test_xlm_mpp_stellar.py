@@ -99,7 +99,9 @@ def test_mpp_charge_stellar_v3_bound_plant_and_refusals() -> None:
     plant_tx = {"type": "transaction", "transaction": V["plant"]["envelope"]}
     assert MPP_CHARGE_STELLAR.bound(credential(plant_tx)) == Refusal(V["plant"]["expect"])
     rows = V["refusals"]
-    assert MPP_CHARGE_STELLAR.bound(credential(rows[0]["payload"])) == Refusal(rows[0]["expect"])
+    assert MPP_CHARGE_STELLAR.bound(credential(rows[0]["payload"], challenge_named(rows[0]["challenge"]))) == Refusal(
+        rows[0]["expect"]
+    )
     # The echoed challenge names H2 while its recipient is the muxed address of H's first 8 bytes.
     h2_doc = place_carrier([V["challenge"]], F["H2"], LINK, V["challenge"], lambda issued_value: F["muxed"])
     assert isinstance(h2_doc, list)
@@ -188,12 +190,20 @@ def test_mpp_charge_stellar_source_account_push_reads_fee_payer_as_a_boolean(fee
     assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == Refusal("stellar/option-malformed")
 
 
+def challenge_named(name: str) -> dict[str, Any]:
+    """The challenge a row names: the place section's placed challenge (feePayer true), or a section's own."""
+    challenge: dict[str, Any] = V["place"]["expect"] if name == "place" else V[name]["challenge"]
+    return challenge
+
+
 def test_mpp_charge_stellar_source_account_refusals() -> None:
-    """sourceAccount.refusals under the section's own challenge: each row's credential (its type, its envelope and hash,
-    or the section's) is refused with the row's code, and each row's envelope is what its write says. x402, whose
-    entries must be address credentials, refuses the section's envelope stellar/no-address-auth."""
-    rows = [row for row in SA["refusals"] if row["challenge"] == "sourceAccount"]
-    assert rows, "mpp-charge-stellar.json sourceAccount holds no refusal row under its own challenge"
+    """sourceAccount.refusals: each row's credential (its type, its envelope and hash, or the section's) under the
+    challenge it names is refused with the row's code, and each row's envelope is what its write says. Under the
+    place section's challenge, whose feePayer is true, the hash credential is mpp/credential-type before any read
+    (the section's about), whatever its transaction carries and when it carries none yet. x402, whose entries must be
+    address credentials, refuses the section's envelope stellar/no-address-auth."""
+    rows = SA["refusals"]
+    assert {row["challenge"] for row in rows} == {"place", "sourceAccount"}, [row["challenge"] for row in rows]
     for row in rows:
         envelope = row.get("envelope", SA["envelope"])
         if "write" in row:
@@ -201,7 +211,10 @@ def test_mpp_charge_stellar_source_account_refusals() -> None:
         payload: dict[str, Any] = {"type": row["type"], "transaction": envelope}
         if row["type"] == "hash":
             payload["hash"] = row.get("hash", SA["hash"])
-        assert MPP_CHARGE_STELLAR.bound(credential(payload, SA["challenge"])) == Refusal(row["expect"]), row["case"]
+        challenge = challenge_named(row["challenge"])
+        assert MPP_CHARGE_STELLAR.bound(credential(payload, challenge)) == Refusal(row["expect"]), row["case"]
+    unfetched = {"type": "hash", "hash": SA["hash"]}
+    assert MPP_CHARGE_STELLAR.bound(credential(unfetched, challenge_named("place"))) == Refusal("mpp/credential-type")
     x402 = {"x402Version": 2, "accepted": X["V3"]["accepted"], "payload": {"transaction": SA["envelope"]}}
     assert X402_EXACT_STELLAR.bound({**x402, "extensions": X["V3"]["extensions"]}) == Refusal("stellar/no-address-auth")
 

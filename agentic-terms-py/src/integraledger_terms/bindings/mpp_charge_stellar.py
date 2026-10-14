@@ -98,8 +98,10 @@ class MppChargeStellar:
         stellar/option-malformed. For a transaction credential, not yet submitted, the operation carries exactly one
         address-credential entry of the payer. For a hash credential, whose transaction landed, the entry is the
         payer's first address-credential entry whose root invocation is the operation's transfer, byte for byte; other
-        entries of the payer are not read. A hash credential whose transaction carries no address entry of the payer,
-        under a request with feePayer false or absent, binds H when the payer is the source account of the transaction
+        entries of the payer are not read. Under a request with feePayer true, a hash credential is
+        mpp/credential-type, fetched or not, whatever its entries: MPP's Stellar charge forbids push mode when the
+        server sponsors the fee. A hash credential whose transaction carries no address entry of the payer, under a
+        request with feePayer false or absent, binds H when the payer is the source account of the transaction
         and of its operation and an entry with source-account credentials is that transfer: the payer signed the whole
         transaction, to included. That transaction is the instrument, so the credential's hash must name it: 64 hex
         digits, else mpp/credential-malformed. There feePayer is read as pairings_of reads it: one that is present and
@@ -117,6 +119,8 @@ class MppChargeStellar:
             return Refusal("stellar/option-malformed")
         if not is_stellar_recipient(e.checked.request.get("recipient")):
             return Refusal("stellar/option-malformed")
+        if e.payload.get("type") == "hash" and e.checked.details.get("feePayer") is True:
+            return Refusal("mpp/credential-type")
         xdr = _presented_xdr(e.payload)
         if isinstance(xdr, Refusal):
             return xdr
@@ -124,12 +128,7 @@ class MppChargeStellar:
         signed = _stellar.read_signed_transfer(xdr, network, landed)
         read: tuple[_stellar.Payment | _stellar.SourcePayment, bool] | Refusal
         read = signed if isinstance(signed, Refusal) else (signed.payment, signed.agrees)
-        if (
-            isinstance(read, Refusal)
-            and read.code == "stellar/no-address-auth"
-            and landed
-            and e.checked.details.get("feePayer") is not True
-        ):
+        if isinstance(read, Refusal) and read.code == "stellar/no-address-auth" and landed:
             if not is_fee_payer(e.checked.details):
                 return Refusal("stellar/option-malformed")
             source = _stellar.read_source_transfer(xdr, network)
