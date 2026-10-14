@@ -445,6 +445,11 @@ redirect, and reads the body as sent, stopping at the size bound. A `200` whose 
 declined with its body unread, so nothing is decompressed and the bytes hashed are the bytes sent. The agreement URL is
 asked the same way, and its receipt read as sent, at most 64 KiB.
 
+`httpx` refuses some hosts the gate accepts in an `https` link: an `xn--` label that is not valid Punycode, such as
+`xn--zz`, and a label IDNA 2008 does not allow, such as `xn--a` or `xn--ls8h`. An ATR link on such a host is declined
+`atr-unfetchable`, and an agreement URL on one is declined `agreement-failed`; nothing is fetched. The TypeScript gate
+passes such a link to its `fetch`.
+
 ### Results and types
 
 | Export | What it is |

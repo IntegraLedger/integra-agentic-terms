@@ -27,6 +27,11 @@ Python `>=3.11`. It depends on `httpx` and `cryptography`, and is fully typed.
 | Byte strings in a signing request | `Uint8Array`, as built | `0x` and lower-case hex |
 | Channel functions | `openChannel`, `within`, `recordCharge` | `open_channel`, `within`, `record_charge` |
 
+The HTTP clients also differ on some hosts that both gates accept in an `https` link. `httpx` refuses an `xn--` label
+that is not valid Punycode, such as `xn--zz`, and a label IDNA 2008 does not allow, such as `xn--a` or `xn--ls8h`. In
+the Python gate, an ATR link on such a host is declined `atr-unfetchable`, and an agreement URL on one is declined
+`agreement-failed`; nothing is fetched. The TypeScript gate passes such a link to its `fetch`.
+
 Everything else is the same: the order of the steps, the bounds of the fetch, the identity-only content coding, the
 twelve decline codes, the agreement
 exchange and its timings, the channel hold's members.
