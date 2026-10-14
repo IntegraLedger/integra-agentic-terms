@@ -24,7 +24,6 @@ from integraledger_terms import (
     _gate,
 )
 from integraledger_terms.bindings import _evm
-from integraledger_terms.bindings.x402_evm import pairing_of_payment
 
 from breadth import ABD, H, LINK, Pairing, build_and_sign, plant, x402_doc
 from support import load
@@ -205,15 +204,11 @@ def erc7710_inspect(request: Any) -> None:
 
 def test_x402_exact_eip155_erc7710_salt_b6_build_and_sign(monkeypatch: pytest.MonkeyPatch) -> None:
     frozen(monkeypatch, SALT_FIXED)
-    signed, _ = build_and_sign(
-        erc7710_pairing(X402_EXACT_EIP155_ERC7710_SALT, SALT_FIXED["delegationManager"]), erc7710_inspect
-    )
-    assert pairing_of_payment(signed) == EV8["expectPairingOfPayment"]
+    build_and_sign(erc7710_pairing(X402_EXACT_EIP155_ERC7710_SALT, SALT_FIXED["delegationManager"]), erc7710_inspect)
 
 def test_x402_exact_eip155_erc7710_b6_build_and_sign(monkeypatch: pytest.MonkeyPatch) -> None:
     frozen(monkeypatch, ERC7710["fixed"])
     signed, _ = build_and_sign(erc7710_pairing(X402_EXACT_EIP155_ERC7710, ERC7710["EV7"]["otherManager"]), erc7710_inspect)
-    assert pairing_of_payment(signed) == ERC7710["EV7"]["expectPairingOfPayment"]
     assert X402_EXACT_EIP155_ERC7710.bound(signed) == ERC7710["EV7"]["expectBound"]
 
 
@@ -459,7 +454,6 @@ def leaf_context(salt: int) -> str:
 def test_ev7_erc7710_unsigned_level_reads_the_echo() -> None:
     fixed, ev7 = ERC7710["fixed"], ERC7710["EV7"]
     presented = delegation_payment(ev7["otherManager"], leaf_context(int(H, 16)), fixed)
-    assert pairing_of_payment(presented) == ev7["expectPairingOfPayment"]
     assert X402_EXACT_EIP155_ERC7710.bound(presented) == ev7["expectBound"]
     del presented["extensions"]["legalContext"]
     assert X402_EXACT_EIP155_ERC7710.bound(presented) == Refusal(ev7["withoutExtension"]["expect"]["code"])
@@ -468,11 +462,9 @@ def test_ev7_erc7710_unsigned_level_reads_the_echo() -> None:
 def test_ev8_erc7710_salt_level() -> None:
     context = leaf_context(int(H, 16))
     presented = delegation_payment(SALT_FIXED["delegationManager"], context)
-    assert pairing_of_payment(presented) == EV8["expectPairingOfPayment"]
     assert X402_EXACT_EIP155_ERC7710_SALT.bound(presented) == EV8["expectBound"]
 
     other = delegation_payment(EV8["otherManager"]["manager"], context)
-    assert pairing_of_payment(other) == EV8["otherManager"]["expectPairingOfPayment"]
     assert X402_EXACT_EIP155_ERC7710_SALT.bound(other) == Refusal(EV8["otherManager"]["expectSaltBound"]["code"])
 
     empty = delegation_payment(SALT_FIXED["delegationManager"], EV8["emptyContext"]["context"])

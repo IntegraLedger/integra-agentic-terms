@@ -185,20 +185,6 @@ def pairing_of(option: object) -> str | None:
     return named if isinstance(named, str) else None
 
 
-def pairing_of_payment(presented: object) -> str | None:
-    """The pairing that serves a presented payment: pairing_of its accepted, except that an erc7710 payment whose
-    delegation manager is MetaMask's reference DelegationManager, on a chain where it is deployed, is the salt level."""
-    if not is_object(presented) or not is_object(presented.get("accepted")):
-        return None
-    accepted = presented["accepted"]
-    named = pairing_of(accepted)
-    if named != EXACT_ERC7710:
-        return named
-    payload = presented.get("payload")
-    manager = payload.get("delegationManager") if is_object(payload) else None
-    return EXACT_ERC7710_SALT if is_reference_manager(manager, accepted.get("network")) else EXACT_ERC7710
-
-
 def _non_empty(value: object) -> bool:
     return isinstance(value, str) and value != ""
 
