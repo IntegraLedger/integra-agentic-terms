@@ -15,10 +15,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Fetch pnpm
+        run: |
+          set -eu
+          curl -fsSL -o "$RUNNER_TEMP/pnpm-12.11.2.tgz" https://registry.npmjs.org/pnpm/-/pnpm-12.11.2.tgz
+          curl -fsSL -o "$RUNNER_TEMP/pnpm-exe.linux-x64-12.11.2.tgz" https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.11.2.tgz
+          echo "25a51652a196785af5f28bda6dfe8dc582ebefa4ac1d180221ce1390231c5fb76637822ea4b6e4633ce74acdcb0a77f725af11bad38177fdeddaee818a955cb9  $RUNNER_TEMP/pnpm-12.11.2.tgz" | sha512sum -c -
+          echo "14aed029edb8018829a49c0ede6a68a18a6d76ebaf206a8a24f8b969cecc7675a48d4cb8e8905f621096d20ae7916282f1839fd31faf1af8ae42a2448f74a941  $RUNNER_TEMP/pnpm-exe.linux-x64-12.11.2.tgz" | sha512sum -c -
+          mkdir "$RUNNER_TEMP/pnpm"
+          tar -xzf "$RUNNER_TEMP/pnpm-exe.linux-x64-12.11.2.tgz" -C "$RUNNER_TEMP/pnpm" --strip-components=1 package/pnpm
+          tar -xzf "$RUNNER_TEMP/pnpm-12.11.2.tgz" -C "$RUNNER_TEMP/pnpm" --strip-components=1 package/dist
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
+      - name: The shared vectors, which the Python tests read from agentic-terms/node_modules/@integraledger/lcp
+        run: pnpm install --frozen-lockfile
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: 0.12.24
           enable-cache: false
+      - name: The Python gate's tests, and the shared vectors through it, on Python 3.11
+        working-directory: agentic-terms-py
+        run: uv run --locked --python 3.11 pytest -q
+      - name: The Python gate's tests, and the shared vectors through it, on Python 3.14
+        working-directory: agentic-terms-py
+        run: uv run --locked --python 3.14 pytest -q
+      - name: The Python gate's types
+        working-directory: agentic-terms-py
+        run: uv run --locked --python 3.14 mypy --strict src tests
       - name: Build
         working-directory: agentic-terms-py
         run: uv build
