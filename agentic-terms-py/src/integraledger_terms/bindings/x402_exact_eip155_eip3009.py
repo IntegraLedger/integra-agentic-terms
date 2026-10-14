@@ -110,7 +110,8 @@ class X402ExactEip155Eip3009:
     public_proof: bool = True
 
     def read(self, doc: Json) -> Advertised | Refusal:
-        """H, the link, and the options this pairing can pay, in document order."""
+        """H, the link, the agreement URL when the legal context names one, and the options that name this pairing, in
+        document order."""
         return _READ(doc)
 
     def build(self, choice: Json, h: AtrHash) -> _Unsigned | Refusal:

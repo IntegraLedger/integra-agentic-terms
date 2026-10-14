@@ -687,7 +687,7 @@ class X402EvmBinding:
     public_proof: bool
 
     def read(self, doc: Json) -> Advertised | Refusal:
-        """H, the link, the agreement URL when the legal context names one, and the options this pairing can pay, in
+        """H, the link, the agreement URL when the legal context names one, and the options that name this pairing, in
         document order."""
         return read_for(_reads(self.id))(doc)
 
