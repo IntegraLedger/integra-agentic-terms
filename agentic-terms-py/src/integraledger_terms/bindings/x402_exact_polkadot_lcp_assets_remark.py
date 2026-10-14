@@ -41,8 +41,24 @@ def _decimal_below(value: object, limit: int) -> int | None:
     return n if n < limit else None
 
 
+def _below(value: object, limit: int) -> bool:
+    """An int, not a bool, from 0 to limit - 1."""
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < limit
+
+
 def encode_profile_call(asset_id: int, dest: bytes, amount: int, remark: bytes) -> bytes:
-    """batch_all([transfer_keep_alive(assetId, Id(dest), amount), remark_with_event(remark)])"""
+    """batch_all([transfer_keep_alive(assetId, Id(dest), amount), remark_with_event(remark)]), the inverse of
+    decode_profile_call. Raises TypeError on a call decode_profile_call never gives: asset_id must be an int from 0 to
+    2^32 - 1, dest 32 bytes, amount an int from 0 to 2^128 - 1, and remark 77 bytes."""
+    if not (
+        _below(asset_id, _U32_LIMIT)
+        and isinstance(dest, bytes)
+        and len(dest) == 32
+        and _below(amount, _U128_LIMIT)
+        and isinstance(remark, bytes)
+        and len(remark) == REMARK_LENGTH
+    ):
+        raise TypeError("not a profile call")
     return (
         BATCH_ALL + b"\x08" + TRANSFER_KEEP_ALIVE + compact(asset_id) + b"\x00" + dest + compact(amount)
         + REMARK_WITH_EVENT + compact(len(remark)) + remark

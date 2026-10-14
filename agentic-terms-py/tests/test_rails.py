@@ -21,7 +21,8 @@ from integraledger_terms.bindings.x402_exact_cardano import LCP_MARKER, auxiliar
 from integraledger_terms.bindings.x402_exact_ccd import account_bytes, ccd_memo, memo_carrier, plt_memo
 from integraledger_terms.bindings.x402_exact_aptos import aptos_option_check, decode_aptos_tx
 from integraledger_terms.bindings._ss58 import ss58_decode
-from integraledger_terms.bindings.x402_exact_polkadot_lcp_assets_remark import split_signed
+from integraledger_terms.bindings._lcp import to_lcp_string
+from integraledger_terms.bindings.x402_exact_polkadot_lcp_assets_remark import decode_profile_call, encode_profile_call, split_signed
 from integraledger_terms.bindings.x402_exact_sui import decode_sui_tx, sui_carrier, sui_option_check
 from integraledger_terms.bindings.x402_exact_starknet import MASK_250, SELECTOR_TRANSFER, sn_nonce
 
@@ -602,6 +603,42 @@ def test_polkadot_v2_builds_call_and_the_payees_account() -> None:
     assert len(r["call"]) == DOT["V2"]["expectCallLength"]
     dest = ss58_decode(DOT_F["O"]["payTo"])
     assert dest is not None and "0x" + dest.hex() == DOT["V2"]["expectDest"]
+
+
+def test_polkadot_encode_profile_call_takes_only_what_decode_profile_call_gives() -> None:
+    # SCALE's Compact<u32> and Compact<u128> hold unsigned integers below 2^32 and 2^128, an AccountId32 is 32 bytes,
+    # and the profile's remark is 77 bytes. The protocol package's encodeProfileCall encodes V2's call from V2's values
+    # and throws TypeError("not a profile call") on any other member.
+    dest = ss58_decode(DOT_F["O"]["payTo"])
+    assert dest is not None
+    remark = to_lcp_string(DOT_F["H"]).encode()
+    asset, amount = int(DOT_F["O"]["asset"]), int(DOT_F["O"]["amount"])
+    assert "0x" + encode_profile_call(asset, dest, amount, remark).hex() == DOT["V2"]["expectCall"]
+    for a, n in ((2**32 - 1, amount), (asset, 2**128 - 1), (0, 0)):
+        back = decode_profile_call(encode_profile_call(a, dest, n, remark))
+        assert not isinstance(back, Refusal) and (back[0], back[2]) == (a, n)
+    outside: dict[str, tuple[Any, Any, Any, Any]] = {
+        "amount -1": (asset, dest, -1, remark),
+        "amount -64": (asset, dest, -64, remark),
+        "amount 2^128": (asset, dest, 2**128, remark),
+        "amount a float": (asset, dest, float(amount), remark),
+        "amount True": (asset, dest, True, remark),
+        "asset id -1": (-1, dest, amount, remark),
+        "asset id 2^32": (2**32, dest, amount, remark),
+        "asset id 1.5": (1.5, dest, amount, remark),
+        "asset id True": (True, dest, amount, remark),
+        "asset id None": (None, dest, amount, remark),
+        "dest of 31 bytes": (asset, dest[1:], amount, remark),
+        "dest of 33 bytes": (asset, dest + b"\x00", amount, remark),
+        "dest as hex": (asset, dest.hex(), amount, remark),
+        "remark of 76 bytes": (asset, dest, amount, remark[1:]),
+        "remark of 78 bytes": (asset, dest, amount, remark + b"\x00"),
+        "remark as text": (asset, dest, amount, remark.decode()),
+    }
+    for name, args in outside.items():
+        with pytest.raises(TypeError, match="^not a profile call$"):
+            encode_profile_call(*args)
+            pytest.fail(name)
 
 
 def test_polkadot_v3_complete_bound_and_the_refusals() -> None:
