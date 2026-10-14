@@ -221,10 +221,10 @@ returns carries `mac` among its members: an HMAC-SHA-256 under a key the server 
 never exports, logs or returns. `atr_channel_open` takes an opening only with its `mac`, and declines any other with
 `opening-unverified`; `atr_channel_record_charge` and `atr_channel_within` use a hold only when its `mac` verifies, and
 decline any other with `hold-unverified`. An opening comes only from a `chosen` that verifies: for a pairing with a
-channel, `atr_finish` declines any other `chosen` with `chosen-unverified`. Both declines come before the gate is called, for one with a member changed,
-added or removed, or one another server process returned, including one from before a restart. The agent passes each
-back exactly as returned. After a restart it opens a new channel; an earlier channel's host closes it with
-`@integraledger/terms`'s `within` and `refund: {}`, over the hold without its `mac`.
+channel, `atr_finish` declines any other `chosen` with `chosen-unverified`. Each decline comes before the gate is
+called, for one with a member changed, added or removed, or one another server process returned, including one from
+before a restart. The agent passes each back exactly as returned. After a restart it opens a new channel; an earlier
+channel's host closes it with `@integraledger/terms`'s `within` and `refund: {}`, over the hold without its `mac`.
 
 ## The skill
 
