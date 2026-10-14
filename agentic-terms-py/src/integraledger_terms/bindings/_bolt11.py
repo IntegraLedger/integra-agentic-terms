@@ -188,10 +188,11 @@ def decode(invoice: object) -> Bolt11 | Refusal:
     d = first.get(FIELD["d"])
     if x is not None and len(x) > 10:
         return Refusal("ln/invoice-malformed")
+    # The d field's text: strict UTF-8, a leading byte-order mark kept as a character.
     description = None
     if d is not None:
         try:
-            description = _to_bytes(d).decode("utf-8").removeprefix("\ufeff")
+            description = _to_bytes(d).decode("utf-8")
         except UnicodeDecodeError:
             return Refusal("ln/invoice-malformed")
     return Bolt11(

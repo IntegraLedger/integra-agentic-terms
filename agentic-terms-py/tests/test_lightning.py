@@ -139,6 +139,18 @@ def test_bolt11_an_amount_past_ints_digit_limit_decodes(digits: int) -> None:
     assert dataclasses.replace(b, amount_msat=l4.amount_msat) == l4
 
 
+# BOLT 11's d field is "UTF-8 encoded". This invoice is written and signed by bolt11 1.4.1 with BOLT 11's example
+# private key, its d field EF BB BF then "coffee"; bolt11's decode reads U+FEFF then "coffee". Strict UTF-8 reads EF BB BF
+# as U+FEFF, a character of the text.
+BOM_DESCRIPTION_INVOICE = "lnbc10u1p4tzwuqpp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsdq0a7am7cm0venx2egxqrrsscqpfjhxnxlmzw3nq29r9jq8rweq8unw77yu64wzlpm3025qnkhxm2aexpc6j6qx55n9cwzz24w2vua8cs2w6jckznektf28re3w0mf229qqqn4826u"
+
+
+def test_bolt11_a_description_that_begins_with_a_byte_order_mark_keeps_it() -> None:
+    b = decoded(BOM_DESCRIPTION_INVOICE)
+    assert b.description == "\ufeffcoffee"
+    assert b.tags.count(13) == 1
+
+
 def test_x402_exact_lnbtc_l5_read_build_complete_and_bound() -> None:
     o = F["O"]
     doc = x402_doc(o, F["resource"], F["H"], F["link"])
