@@ -431,7 +431,7 @@ def _erc7710_presented(pairing: str, presented: object) -> tuple[Mapping[str, An
     if (
         _strings(payload, ("delegationManager", "delegator")) is None
         or not isinstance(ctx, str)
-        or len(ctx) > 2 + 2 * MAX_CONTEXT_BYTES
+        or js_length(ctx) > 2 + 2 * MAX_CONTEXT_BYTES
     ):
         return Refusal("x402/payload-malformed")
     return p, payload

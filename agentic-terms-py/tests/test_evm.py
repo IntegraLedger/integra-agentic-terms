@@ -297,6 +297,22 @@ def test_payment_members_are_bounded_in_utf16_code_units() -> None:
     assert X402_EXACT_EIP155_ERC7710.bound(delegated) == malformed
 
 
+def test_permission_context_is_bounded_in_utf16_code_units() -> None:
+    """A permissionContext holds at most 0x and the hex digits of 32 KiB, 65,538 UTF-16 code units. 32,770 U+10000 are
+    65,540 units, and the payment is x402/payload-malformed at both levels; 32,769 are 65,538 units, and the unsigned
+    level reads H from the echo. @integraledger/lcp's bound counts the context's length as JavaScript's String length
+    does, and answers each case so."""
+    over, at_bound = "\U00010000" * 32770, "\U00010000" * 32769
+    unsigned = delegation_payment(ERC7710["EV7"]["otherManager"], leaf_context(int(H, 16)), ERC7710["fixed"])
+    salted = delegation_payment(SALT_FIXED["delegationManager"], leaf_context(int(H, 16)))
+    for binding, presented in ((X402_EXACT_EIP155_ERC7710, unsigned), (X402_EXACT_EIP155_ERC7710_SALT, salted)):
+        changed = copy.deepcopy(presented)
+        changed["payload"]["permissionContext"] = over
+        assert binding.bound(changed) == Refusal("x402/payload-malformed"), binding.id
+    unsigned["payload"]["permissionContext"] = at_bound
+    assert X402_EXACT_EIP155_ERC7710.bound(unsigned) == ERC7710["EV7"]["expectBound"]
+
+
 # ── EV3 and EV4 (auth-capture).
 
 
