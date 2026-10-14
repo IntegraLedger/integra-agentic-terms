@@ -211,13 +211,18 @@ def test_ack_payment_request_k5_build_and_bound_refuse() -> None:
     assert ACK["K5"]["pattern"]["buyerSigns"] is False
 
 
-def test_ack_payment_request_agreed_refusals_read() -> None:
-    rows = [r for r in ACK["agreedRefusals"]["rows"] if r["call"] == "paymentRequest.read"]
-    assert rows
-    for row in rows:
-        out = ACK_PAYMENT_REQUEST.read(expand(row["args"][0]))
-        expect = row["expect"]
-        assert out == (refusal(expect) if "refused" in expect else advertised(expect)), row["case"]
+ACK_READ_ROWS = [r for r in ACK["agreedRefusals"]["rows"] if r["call"] == "paymentRequest.read"]
+
+
+def test_ack_payment_request_agreed_refusals_has_read_rows() -> None:
+    assert ACK_READ_ROWS
+
+
+@pytest.mark.parametrize("row", ACK_READ_ROWS, ids=lambda r: str(r["case"]))
+def test_ack_payment_request_agreed_refusals_read(row: dict[str, Any]) -> None:
+    out = ACK_PAYMENT_REQUEST.read(expand(row["args"][0]))
+    expect = row["expect"]
+    assert out == (refusal(expect) if "refused" in expect else advertised(expect))
 
 
 def test_ack_payment_request_plant_through_the_gate_never_reads_the_unsigned_copy() -> None:
