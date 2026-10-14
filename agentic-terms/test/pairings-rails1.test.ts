@@ -456,6 +456,7 @@ describe("x402/exact/algorand", () => {
     fixed: { O: Option; payer: string; resource: { url: string }; params: Record<string, string>; signature: string };
     V2: { expectBytesToSign: string; expectPaymentGroup: string[]; expectPaymentIndex: number };
     V3: {
+      presentedOptions: { case: string; accepted: Option; expectBound: string }[];
       refusals: { case: string; paymentGroup: string[]; paymentIndex: number; expect?: string }[];
     };
   }>("x402-exact-algorand.json");
@@ -484,6 +485,15 @@ describe("x402/exact/algorand", () => {
     });
   });
   refusals(p, [EVM_ACCOUNT, `algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73k:${f.payer}`]);
+
+  const v2 = { paymentIndex: A.V2.expectPaymentIndex, paymentGroup: A.V2.expectPaymentGroup };
+  it("V3.presentedOptions: bound reads the signed transaction, not the echoed option's amount or timeout", async () => {
+    expect(A.V3.presentedOptions.length).toBeGreaterThan(0);
+    for (const r of A.V3.presentedOptions) {
+      const presented = { x402Version: 2, resource: f.resource, accepted: r.accepted, payload: v2 };
+      expect(await exactAvm.bound(presented), r.case).toBe(r.expectBound);
+    }
+  });
 
   // The V3.refusals rows whose payment entry, read as msgpack by algosdk, carries msig, lsig or pqsig, or a
   // transaction with hb, sp or spmsg.
