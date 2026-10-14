@@ -51,6 +51,7 @@ const READ_STATUSES: readonly number[] = [200, 402];
 const RETRY_DEFAULT_S = 2;
 const RETRY_MIN_S = 1;
 const DECIMAL = /^[0-9]{1,9}$/;
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 interface Answer {
   status: number;
@@ -85,13 +86,17 @@ function toBase64(text: string): string {
   return btoa(binary);
 }
 
-/** The JSON value a base64 header carries, or undefined when it is not base64 of UTF-8 JSON. */
+/**
+ * The JSON value a header carries as padded standard base64 (RFC 4648 section 4) whose final character's unused bits
+ * are zero, of UTF-8 JSON text whose leading byte order mark is kept as a character; undefined for anything else.
+ */
 function fromBase64Json(header: string): unknown {
-  if (header.length > MAX_ANSWER_BYTES) return undefined;
+  if (header.length > MAX_ANSWER_BYTES || !BASE64.test(header)) return undefined;
   try {
     const binary = atob(header);
+    if (btoa(binary) !== header) return undefined;
     const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-    return parseJson(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    return parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
   } catch {
     return undefined;
   }
@@ -219,11 +224,14 @@ function cancel(s: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint
   }
 }
 
-/** The receipt a 200 carries, when it is the agreement receipt for `h`. */
+/**
+ * The receipt a 200 carries, read as UTF-8 JSON text whose leading byte order mark is kept as a character, when it is
+ * the agreement receipt for `h`.
+ */
 function receiptOf(body: Uint8Array | null, h: AtrHash): { receipt: AgreementReceipt } | Declined {
   let parsed: unknown;
   try {
-    parsed = parseJson(new TextDecoder("utf-8", { fatal: true }).decode(body ?? new Uint8Array(0)));
+    parsed = parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body ?? new Uint8Array(0)));
   } catch {
     return failed("The agreement URL answered 200 without a JSON receipt.");
   }

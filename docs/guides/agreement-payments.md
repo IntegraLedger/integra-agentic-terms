@@ -43,7 +43,8 @@ sequenceDiagram
    `agreement-failed`, its body unread.
    - `200`: the agreement is already recorded. The body must be the receipt for this H, and the gate goes on to step 7.
    - `202`: another agreement payment for this ATR is settling. The gate declines `agreement-pending` and signs nothing.
-   - `402`: the `PAYMENT-REQUIRED` header, base64 of an x402 document, is the agreement's payment request.
+   - `402`: the `PAYMENT-REQUIRED` header, padded standard base64 (RFC 4648 section 4) of an x402 document, is the
+     agreement's payment request.
    - anything else: `agreement-failed`.
 3. **Choose the option.** The gate reads the request's options in document order and takes the first one your signer
    can pay with a pairing whose payment is itself a public proof, the same rule as for the payment's own options. Its

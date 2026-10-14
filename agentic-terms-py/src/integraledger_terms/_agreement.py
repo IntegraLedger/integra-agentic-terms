@@ -129,11 +129,15 @@ def _to_base64(value: object) -> str:
 
 
 def _from_base64_json(header: str) -> object | None:
-    """The JSON value a base64 header carries, or None when it is not base64 of UTF-8 JSON."""
+    """The JSON value a header carries as padded standard base64 (RFC 4648 section 4) whose final character's unused
+    bits are zero, of UTF-8 JSON text whose leading byte order mark is kept as a character; None for anything else."""
     if len(header) > MAX_ANSWER_BYTES:
         return None
     try:
-        loaded: object = parse_json(base64.b64decode(header, validate=True).decode("utf-8"))
+        raw = base64.b64decode(header, validate=True)
+        if base64.b64encode(raw).decode("ascii") != header:
+            return None
+        loaded: object = parse_json(raw.decode("utf-8"))
     except (binascii.Error, UnicodeDecodeError, ValueError):
         return None
     return None if loaded is UNPARSED else loaded
