@@ -293,6 +293,29 @@ def test_x402_exact_hedera_a_null_transfer_method_is_malformed() -> None:
     assert X402_EXACT_HEDERA_TRANSFER_EXECUTOR.bound(echoed) == Refusal("hedera/option-malformed")
 
 
+def test_x402_exact_hedera_null_transfer_method_refusal_rows() -> None:
+    """The refusals rows whose option names assetTransferMethod null: each pairing's read finds no payable option in a
+    document offering it (the row's expectRead), and each pairing's build refuses it with the row's code. The rows are
+    selected by their input, and the file holds at least one."""
+    rows = [
+        row
+        for row in E["refusals"]
+        if isinstance(row.get("option"), dict)
+        and isinstance(row["option"].get("extra"), dict)
+        and "assetTransferMethod" in row["option"]["extra"]
+        and row["option"]["extra"]["assetTransferMethod"] is None
+    ]
+    assert rows, "x402-exact-hedera.json holds no refusals row whose option names assetTransferMethod null"
+    for row in rows:
+        option = row["option"]
+        doc = x402_doc(option, F["resource"])
+        for binding in (X402_EXACT_HEDERA, X402_EXACT_HEDERA_TRANSFER_EXECUTOR):
+            assert binding.read(doc) == Refusal(row["expectRead"]), row["case"]
+        assert X402_EXACT_HEDERA.build(hedera_choice(option), F["H"]) == Refusal(row["expect"]), row["case"]
+        choice = {"required": doc, "accepted": option, "now": XF["now"]}
+        assert X402_EXACT_HEDERA_TRANSFER_EXECUTOR.build(choice, F["H"]) == Refusal(row["expect"]), row["case"]
+
+
 def executor_unsigned() -> Any:
     unsigned = X402_EXACT_HEDERA_TRANSFER_EXECUTOR.build(
         {"required": EXECUTOR.doc, "accepted": XF["O"], "now": XF["now"]}, F["H"]

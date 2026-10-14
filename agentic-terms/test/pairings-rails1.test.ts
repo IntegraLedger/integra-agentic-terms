@@ -426,6 +426,36 @@ describe("x402/exact/hedera", () => {
     const ext = (signed as { extensions: Record<string, { info: { id?: string } }> }).extensions;
     expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
   });
+
+  // The refusals rows whose option names assetTransferMethod null, which is neither absent, cryptoTransfer nor
+  // transferExecutor: each pairing's advertise and build refuse the option with the row's code, and each pairing's read
+  // finds no payable option in a document offering it (the row's expectRead). The rows are selected by their input, and
+  // the file holds at least one.
+  it("refusals: an option whose assetTransferMethod is null is refused by both pairings", async () => {
+    type Row = { case: string; option?: Option; expect: string; expectRead?: string };
+    const methodOf = (o: Option) => (o.extra as Record<string, unknown> | undefined)?.["assetTransferMethod"];
+    const rows = vectors<{ refusals: Row[] }>("x402-exact-hedera.json").refusals.filter(
+      (r) => r.option !== undefined && methodOf(r.option) === null,
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    const now = vectors<{ fixed: { now: number } }>("x402-exact-hedera-transfer-executor.json").fixed.now;
+    for (const row of rows) {
+      const option = row.option!;
+      const doc = { ...(p.doc as PaymentRequired), accepts: [option] };
+      const refused = { refused: true, code: row.expect };
+      for (const binding of [exactHedera, exactHederaExecutor]) {
+        const bare = { x402Version: 2, resource: f.resource, accepts: [option] } as PaymentRequired;
+        expect([row.case, binding.advertise(bare, H, LINK, option)]).toEqual([row.case, refused]);
+        expect([row.case, binding.read(doc)]).toEqual([row.case, { refused: true, code: row.expectRead }]);
+      }
+      const validStart = { seconds: BigInt(f.validStart.seconds), nanos: f.validStart.nanos };
+      const maxFee = BigInt(f.maxFee);
+      const exact = { required: doc, accepted: option, payer: f.payer, node: f.node, validStart, maxFee };
+      expect([row.case, await exactHedera.build(exact, H)]).toEqual([row.case, refused]);
+      const executor = { required: doc, accepted: option, now };
+      expect([row.case, await exactHederaExecutor.build(executor, H)]).toEqual([row.case, refused]);
+    }
+  });
   refusals(p, [EVM_ACCOUNT, `hedera:mainnet:${f.payer}`]);
 });
 
