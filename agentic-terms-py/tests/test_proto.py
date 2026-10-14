@@ -7,6 +7,7 @@ import dataclasses
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 import ed25519
@@ -394,11 +395,16 @@ def test_card_c7_l2_bound_to_another_l1_or_a_kid_not_the_delegated_keys_is_refus
     assert CARD_MASTERCARD_VI_AUTONOMOUS.bound({"l1": l1, "l2": l2, "l3b": other_kid}) == Refusal("card/vi-kid-mismatch")
 
 
-def _recipe_sign(name: str, signing_input: str) -> str:
-    """ES256 under a key of card.json's VI recipe, SHA-256(name) mod n on P-256: "lcp-test/user" is USER's private key
-    and "lcp-test/agent" AGENT's."""
+def _recipe_key(name: str) -> ec.EllipticCurvePrivateKey:
+    """The P-256 key derived as SHA-256(name) mod n, as @integraledger/lcp's card test derives its keys."""
     n = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
-    key = ec.derive_private_key(int.from_bytes(hashlib.sha256(name.encode("ascii")).digest(), "big") % n, ec.SECP256R1())
+    return ec.derive_private_key(int.from_bytes(hashlib.sha256(name.encode("ascii")).digest(), "big") % n, ec.SECP256R1())
+
+
+def _recipe_sign(name: str, signing_input: str) -> str:
+    """ES256 under a key derived as SHA-256(name) mod n on P-256, as @integraledger/lcp's card test derives them; the
+    test checks that "lcp-test/user" and "lcp-test/agent" give card.json's USER and AGENT."""
+    key = _recipe_key(name)
     r, s = decode_dss_signature(key.sign(signing_input.encode("ascii"), ec.ECDSA(hashes.SHA256())))
     return f"{signing_input}.{_b64u_bytes(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}"
 
@@ -445,30 +451,52 @@ def _vi_resigned(user: Any = None, agent: Any = None) -> dict[str, str]:
     return {"l1": l1, "l2": l2, "l3b": l3b}
 
 
-def test_card_vi_autonomous_a_key_coordinate_not_32_bytes_is_key_malformed() -> None:
-    # RFC 7518 section 6.2.1.2-3: x and y are the full 32-byte P-256 coordinates, base64url-encoded, and RFC 7515
-    # section 2 omits the padding. A chain re-signed under the recipe keys as given is bound to H, so each refused chain
-    # differs in its key alone; an L1 or L2 cnf.jwk whose x or y is not unpadded base64url of 32 bytes is
-    # card/vi-key-malformed, card.json's agreed refusal for it.
+def test_card_vi_recipe_keys_are_user_and_agent_and_a_chain_re_signed_under_them_is_bound() -> None:
+    # The keys card.json's USER and AGENT name, so a chain re-signed under them as given is bound to H and each chain
+    # the card runner refuses differs from it in its key alone.
     user, agent = CARD["fixed"]["USER"], CARD["fixed"]["AGENT"]
     for name, jwk in (("lcp-test/user", user), ("lcp-test/agent", agent)):
-        n = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
-        d = int.from_bytes(hashlib.sha256(name.encode("ascii")).digest(), "big") % n
-        public = ec.derive_private_key(d, ec.SECP256R1()).public_key().public_numbers()
+        public = _recipe_key(name).public_key().public_numbers()
         assert (_b64u_bytes(public.x.to_bytes(32, "big")), _b64u_bytes(public.y.to_bytes(32, "big"))) == (jwk["x"], jwk["y"])
-    bound = CARD_MASTERCARD_VI_AUTONOMOUS.bound
     h = CARD["C7"]["bound"]["expect"]
-    assert bound(_vi_resigned(user=user)) == h
-    assert bound(_vi_resigned(agent=agent)) == h
+    assert CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(user=user)) == h
+    assert CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(agent=agent)) == h
+
+
+def _key_coordinate_not_32_bytes() -> list[object]:
+    # RFC 7518 section 6.2.1.2-3: x and y are the full 32-byte P-256 coordinates, base64url-encoded, and RFC 7515
+    # section 2 omits the padding.
+    user, agent = CARD["fixed"]["USER"], CARD["fixed"]["AGENT"]
     x, y = base64.urlsafe_b64decode(user["x"] + "="), base64.urlsafe_b64decode(user["y"] + "=")
-    for keys in (
-        {"user": {**user, "x": user["x"] + "="}},
-        {"user": {**user, "y": user["y"] + "="}},
-        {"user": {**user, "x": _b64u_bytes(b"\0" + x)}},
-        {"user": {**user, "y": _b64u_bytes(y[1:])}},
-        {"agent": {**agent, "x": agent["x"] + "="}},
-    ):
-        assert bound(_vi_resigned(**keys)) == Refusal("card/vi-key-malformed"), keys
+    return [
+        CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(**keys))
+        for keys in (
+            {"user": {**user, "x": user["x"] + "="}},
+            {"user": {**user, "y": user["y"] + "="}},
+            {"user": {**user, "x": _b64u_bytes(b"\0" + x)}},
+            {"user": {**user, "y": _b64u_bytes(y[1:])}},
+            {"agent": {**agent, "x": agent["x"] + "="}},
+        )
+    ]
+
+
+# card.json's agreedRefusals rows that the buyer's bound reads, by case: each builds the inputs its row describes.
+CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
+    "VI Autonomous bound with an L1 or L2 cnf.jwk whose x or y is not unpadded base64url of 32 bytes": (
+        _key_coordinate_not_32_bytes
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(CARD_REFUSALS))
+def test_card_agreed_refusals(case: str) -> None:
+    rows = [r for r in CARD["agreedRefusals"]["rows"] if r["case"] == case]
+    assert rows, case
+    answers = CARD_REFUSALS[case]()
+    assert answers
+    for row in rows:
+        for answer in answers:
+            assert answer == Refusal(row["expect"])
 
 
 def test_card_seller_reference_b6_confirm_only() -> None:

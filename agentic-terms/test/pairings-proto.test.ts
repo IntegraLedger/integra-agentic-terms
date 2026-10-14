@@ -2,7 +2,7 @@
 // and bound hash is the vector files' (card.json, ap2-checkout-mandate.json, ucp.json, acp-checkout.json,
 // ack-payment-request.json). The card documents are the vectors' own and advertise H = SHA-256("abc"); the AP2, UCP and
 // ACP documents advertise the vectors' own H, over the vectors' own ATR bytes.
-import { createHash, createPublicKey, verify } from "node:crypto";
+import { createECDH, createHash, createPrivateKey, createPublicKey, sign as signWith, verify } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Refusal } from "@integraledger/lcp";
 import { binding as a2aBinding } from "@integraledger/lcp/a2a";
@@ -255,6 +255,94 @@ describe("card: through the gate", () => {
   });
   it("card/seller-reference B6: confirm-only; no request, no payment, the signer never called", async () => {
     expect(await confirmsOnly(card.sellerReference, ABC, H)).toMatchObject({ choice: { doc: tapDoc } });
+  });
+});
+
+describe("card.json agreedRefusals: the rows the buyer's bound reads", () => {
+  const presented = CARD.C7.bound.presented as { l1: string; l2: string; l3b: string };
+  const USER = CARD.fixed.USER as { x: string; y: string };
+  const AGENT = CARD.fixed.AGENT as { x: string; y: string };
+  const N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+  /** The P-256 key derived as SHA-256(name) mod n, as @integraledger/lcp's card test derives its keys, as a JWK. */
+  const recipeKey = (name: string) => {
+    const d = BigInt(`0x${createHash("sha256").update(name, "ascii").digest("hex")}`) % N;
+    const ecdh = createECDH("prime256v1");
+    ecdh.setPrivateKey(Buffer.from(d.toString(16).padStart(64, "0"), "hex"));
+    const point = ecdh.getPublicKey();
+    const coordinate = (from: number) => point.subarray(from, from + 32).toString("base64url");
+    return { kty: "EC", crv: "P-256", d: ecdh.getPrivateKey().toString("base64url"), x: coordinate(1), y: coordinate(33) };
+  };
+  /** A compact JWS over the ASCII signing input, ES256 under the key `name` derives. */
+  const recipeSign = (name: string, signingInput: string): string => {
+    const key = createPrivateKey({ key: recipeKey(name), format: "jwk" });
+    const signature = signWith("sha256", Buffer.from(signingInput, "ascii"), { key, dsaEncoding: "ieee-p1363" });
+    return `${signingInput}.${signature.toString("base64url")}`;
+  };
+  const segments = (layer: string) => layer.split("~")[0]!.split(".") as [string, string, string];
+  const decoded = (segment: string): V => JSON.parse(Buffer.from(segment, "base64url").toString("utf8"));
+  const encoded = (value: unknown): string => b64u(JSON.stringify(value));
+  /**
+   * C7's presented chain with L1's `cnf.jwk` set to `user` and the `cnf.jwk` of L2's open checkout mandate to `agent`,
+   * where given, and every sd_hash re-pointed: L2 signed again under USER and L3b under AGENT, so the chain differs
+   * from C7's only in the keys it names.
+   */
+  const resigned = (keys: { user?: unknown; agent?: unknown }) => {
+    const l1Payload = decoded(segments(presented.l1)[1]);
+    if (keys.user !== undefined) l1Payload.cnf.jwk = keys.user;
+    const [l1Head, , l1Signature] = presented.l1.slice(0, -1).split(".");
+    const l1 = `${l1Head}.${encoded(l1Payload)}.${l1Signature}~`;
+    const l2Payload = decoded(segments(presented.l2)[1]);
+    let disclosures = presented.l2.split("~").slice(1, -1);
+    if (keys.agent !== undefined) {
+      const opened = disclosures.find((d) => decoded(d)[1].vct === "mandate.checkout.open.1")!;
+      const [salt, value] = decoded(opened);
+      const swapped = encoded([salt, { ...value, cnf: { jwk: keys.agent } }]);
+      const [from, to] = [sha256b64u(opened), sha256b64u(swapped)];
+      l2Payload._sd = l2Payload._sd.map((s: string) => (s === from ? to : s));
+      l2Payload.delegate_payload = l2Payload.delegate_payload.map((e: { "...": string }) => ({ "...": e["..."] === from ? to : e["..."] }));
+      disclosures = disclosures.map((d) => (d === opened ? swapped : d));
+    }
+    l2Payload.sd_hash = sha256b64u(l1);
+    const l2 = `${recipeSign("lcp-test/user", `${segments(presented.l2)[0]}.${encoded(l2Payload)}`)}~${disclosures.map((d) => `${d}~`).join("")}`;
+    const l3Payload = { ...decoded(segments(presented.l3b)[1]), sd_hash: sha256b64u(l2) };
+    const l3b = `${recipeSign("lcp-test/agent", `${segments(presented.l3b)[0]}.${encoded(l3Payload)}`)}${presented.l3b.slice(presented.l3b.indexOf("~"))}`;
+    return { l1, l2, l3b };
+  };
+  const bound = (keys: { user?: unknown; agent?: unknown }) => viAutonomous.bound(resigned(keys) as never);
+
+  // The keys card.json's USER and AGENT name, so a chain re-signed under them as given is bound to H and each chain a
+  // case below refuses differs from it in its key alone.
+  it("the derived keys are card.json's USER and AGENT, and a chain re-signed under them as given is bound to H", async () => {
+    for (const [name, jwk] of [["lcp-test/user", USER], ["lcp-test/agent", AGENT]] as const) {
+      const { x, y } = recipeKey(name);
+      expect({ x, y }).toEqual({ x: jwk.x, y: jwk.y });
+    }
+    expect(await bound({ user: USER })).toBe(CARD.C7.bound.expect);
+    expect(await bound({ agent: AGENT })).toBe(CARD.C7.bound.expect);
+  });
+
+  /** Each case builds the inputs its row describes. */
+  const cases: Record<string, () => Promise<unknown[]>> = {
+    // RFC 7518 section 6.2.1.2-3: x and y are the full 32-byte P-256 coordinates, base64url-encoded, and RFC 7515
+    // section 2 omits the padding.
+    "VI Autonomous bound with an L1 or L2 cnf.jwk whose x or y is not unpadded base64url of 32 bytes": () => {
+      const x = Buffer.from(USER.x, "base64url");
+      const y = Buffer.from(USER.y, "base64url");
+      return Promise.all([
+        bound({ user: { ...USER, x: `${USER.x}=` } }),
+        bound({ user: { ...USER, y: `${USER.y}=` } }),
+        bound({ user: { ...USER, x: Buffer.concat([Buffer.of(0), x]).toString("base64url") } }),
+        bound({ user: { ...USER, y: y.subarray(1).toString("base64url") } }),
+        bound({ agent: { ...AGENT, x: `${AGENT.x}=` } }),
+      ]);
+    },
+  };
+  it.each(Object.keys(cases))("%s", async (c) => {
+    const rows = (CARD.agreedRefusals.rows as V[]).filter((r) => r.case === c);
+    expect(rows.length).toBeGreaterThan(0);
+    const answers = await cases[c]!();
+    expect(answers.length).toBeGreaterThan(0);
+    for (const row of rows) for (const answer of answers) expect(answer).toEqual({ refused: true, code: row.expect });
   });
 });
 
