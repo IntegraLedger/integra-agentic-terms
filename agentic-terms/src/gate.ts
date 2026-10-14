@@ -330,7 +330,10 @@ export async function finish(
   const inside = await boundOf(b, signed);
   const onAgreement = !isPublicProof(binding) && isRefusal(inside) && NOTHING_TO_SIGN.test(inside.code);
   if (!onAgreement && (isRefusal(inside) || !hashEquals(inside, h))) {
-    return keep(declined("signed-not-bound", "What was signed does not carry the hash of these bytes."), sent);
+    return keep(
+      declined("signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment."),
+      sent,
+    );
   }
   const landed = sent !== signed && isObject(signed) ? jsonSafe((signed as { landed?: unknown }).landed) : undefined;
   return landed === undefined ? { signed: sent, h } : { signed: sent, landed, h };

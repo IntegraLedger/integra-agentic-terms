@@ -312,7 +312,7 @@ def test_card_piece_keeps_the_document_and_completes_a_payment_bound_to_h(p: Pai
 
 def test_card_visa_tap_payment_carries_the_lines_the_signer_sent() -> None:
     # C2's repeated field is refused, an upper-case line is read, another hash is not bound, and an answer without
-    # lcpHash is malformed.
+    # lcpHash is malformed. finish declines the repeated field's payment, from which the pairing reads no hash.
     piece, chosen, unsigned = _through(CARD_TAP, TAP_DOC)
     c2 = CARD["C2"]
     answer = {"signatureInput": c2["request"]["signatureInput"], "signature": c2["request"]["signature"]}
@@ -324,6 +324,8 @@ def test_card_visa_tap_payment_carries_the_lines_the_signer_sent() -> None:
     other = piece.complete(unsigned, {**answer, "lcpHash": ["0x" + "11" * 32]}, chosen)
     assert code(check(ABC, other, CARD_VISA_TAP)) == "signed-not-bound"
     assert piece.complete(unsigned, answer, chosen) == Refusal("card/signature-malformed")
+    out = finish(ABC, chosen, {**answer, "lcpHash": c2["repeatedField"]["lcpHash"]}, CARD_VISA_TAP)
+    assert out == Declined("signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.")
 
 
 def test_card_visa_tap_payment_carries_the_one_line_and_the_signer_fields() -> None:

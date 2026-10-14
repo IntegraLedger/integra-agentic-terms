@@ -394,7 +394,7 @@ it again rather than signing a new payment.
 | `atr-too-large` | The ATR is larger than 1 MiB (1,048,576 bytes). |
 | `hash-mismatch` | The served bytes do not hash to the advertised H; the agreement URL or a later channel challenge advertises another H; or a hold's bytes do not hash to its H. Nothing was signed. |
 | `signer-failed` | Your signer threw. |
-| `signed-not-bound` | What was signed does not carry the hash of the compared bytes. The payment is not returned. |
+| `signed-not-bound` | The pairing does not read the hash of the compared bytes from the payment. The payment is not returned. |
 | `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
 | `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
 | `agreement-failed` | The agreement URL could not be reached, answered `200` or `402` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. |

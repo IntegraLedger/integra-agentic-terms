@@ -200,7 +200,7 @@ describe("card: the pieces over the vectors' requests and answers", () => {
 
     const signer = counting(BUYER, async () => ({ ...answer, lcpHash: CARD.C2.repeatedField.lcpHash }));
     const out = await finish(ABC, chosen, await signer.sign((pc.request(u) as SigningRequest)), card.tap.binding);
-    expect(isDeclined(out) && out.decline).toEqual({ code: "signed-not-bound", detail: "What was signed does not carry the hash of these bytes." });
+    expect(isDeclined(out) && out.decline).toEqual({ code: "signed-not-bound", detail: "The pairing does not read the hash of the compared bytes from the payment." });
   });
 
   it("card/visa-tap: the payment carries the one lcp-hash line the build gave, and the signer's two fields", async () => {

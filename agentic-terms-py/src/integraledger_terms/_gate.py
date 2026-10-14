@@ -261,7 +261,9 @@ def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bind
     bound = _bound(binding, signed)
     on_agreement = not _public_proof(binding) and isinstance(bound, Refusal) and _NOTHING_TO_SIGN.fullmatch(bound.code)
     if not on_agreement and (isinstance(bound, Refusal) or not hash_equals(bound, h)):
-        return keep("signed-not-bound", "What was signed does not carry the hash of these bytes.", sent)
+        return keep(
+            "signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.", sent
+        )
     landed = signed.get("landed") if sent is not signed and isinstance(signed, Mapping) else None
     return Finished(signed=sent, h=h, landed=landed)
 
