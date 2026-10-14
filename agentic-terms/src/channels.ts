@@ -9,7 +9,7 @@
 import { fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { offers, requestOf } from "./pairings/mpp.js";
-import { isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
+import { fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
 import {
   MAX_ATR_BYTES,
   type Binding,
@@ -88,10 +88,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 const stepsOf = (binding: Binding): ChannelSteps => binding as unknown as ChannelSteps;
 
-/** Calls a binding member, reading a throw as a refusal. */
+/** Calls a binding member, reading a throw as a refusal and its answer at the binding boundary (`fromBinding`). */
 async function guarded<T>(run: () => Promise<T> | T): Promise<T | Refusal> {
   try {
-    return await run();
+    return fromBinding(await run()) as T | Refusal;
   } catch {
     return refuse("member-failed");
   }
