@@ -847,8 +847,10 @@ def test_x402_batch_settlement_solana_the_refund_is_taken_again_on_the_paymentre
 ) -> None:
     """x402's reference client takes the refund again when the settle failure's PAYMENT-RESPONSE carries errorReason
     invalid_batch_settlement_svm_receiver_binding_unavailable, read first, or else when the 402 payment request's error
-    does (x402's client refund.ts and refund.go). refund's paymentResponse carries the decoded PAYMENT-RESPONSE. Taken
-    again, the refund is ES6.withMemo's form, built with the given recentBlockhash; else it is the voucher alone."""
+    does (x402's TypeScript client, client/refund.ts; its Go client, refund.go, reads the error only when no
+    PAYMENT-RESPONSE is given, so a PAYMENT-RESPONSE without errorReason follows refund.ts). refund's paymentResponse
+    carries the decoded PAYMENT-RESPONSE. Taken again, the refund is ES6.withMemo's form, built with the given
+    recentBlockhash; else it is the voucher alone."""
     doc, hold = charged_1000()
     binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, answer_each)
@@ -876,6 +878,23 @@ def test_x402_batch_settlement_solana_a_paymentresponse_that_is_not_a_mapping_is
     binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
     signer = Recording(BATCH_ACCOUNT, answer_each)
     out = asyncio.run(within(doc, hold, binding, signer, {"paymentResponse": response}, {"recentBlockhash": BS["blockhash"]}))
+    assert out == Declined("no-payable-option", "x402/input-malformed")
+    assert (binding.handed, signer.requests) == ([], [])
+
+
+@pytest.mark.parametrize(
+    "reason", [5, True, [RETRY], {"code": RETRY}], ids=["a number", "a bool", "a list", "a mapping"]
+)
+def test_x402_batch_settlement_solana_an_errorreason_that_is_not_a_string_is_input_malformed(reason: Any) -> None:
+    """A SettlementResponse's errorReason is a string where it is given (x402's core specification v2, §5.3.2). One in
+    another form is declined as every other refund value in another form is, though the payment request's error
+    carries the code."""
+    doc, hold = charged_1000()
+    binding = RefundWithin(X402_BATCH_SETTLEMENT_SOLANA)
+    signer = Recording(BATCH_ACCOUNT, answer_each)
+    response = {**settle_failure(None), "errorReason": reason}
+    out = asyncio.run(within({**doc, "error": RETRY}, hold, binding, signer, {"paymentResponse": response},
+                             {"recentBlockhash": BS["blockhash"]}))  # fmt: skip
     assert out == Declined("no-payable-option", "x402/input-malformed")
     assert (binding.handed, signer.requests) == ([], [])
 

@@ -169,8 +169,8 @@ Pass `refund` to `within` to sign a refund instead of a voucher. Its `maxClaimab
   `errorReason` of a settle failure's `PAYMENT-RESPONSE`, which you pass decoded as `refund.paymentResponse`
   (`refund: { paymentResponse }`), read first; or else the `error` of the payment request you pass as the document.
 - Without `recentBlockhash` the refund taken again is declined `no-payable-option` with `x402/input-missing`. A value
-  given in another form, or a `paymentResponse` that is not an object, is declined with `x402/input-malformed`. No
-  other pairing's refund reads these values or this code.
+  given in another form, or a `paymentResponse` that is not an object or whose `errorReason` is not a string, is
+  declined with `x402/input-malformed`. No other pairing's refund reads these values or this code.
 
 An MPP session closes with `refund: {}`; a partial refund in a session is declined with
 `mpp/within-action-not-built`.

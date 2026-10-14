@@ -542,8 +542,9 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
 
   // x402's reference client takes the refund again when the settle failure's PAYMENT-RESPONSE carries `errorReason`
   // invalid_batch_settlement_svm_receiver_binding_unavailable, read first, or else when the 402 payment request's
-  // `error` does (x402's client refund.ts and refund.go). `refund.paymentResponse` carries the decoded
-  // PAYMENT-RESPONSE, here in the HTTP transport's settle-failure form.
+  // `error` does (x402's TypeScript client, `client/refund.ts`; its Go client, `refund.go`, reads the `error` only when
+  // no PAYMENT-RESPONSE is given, so a PAYMENT-RESPONSE without `errorReason` follows `refund.ts`).
+  // `refund.paymentResponse` carries the decoded PAYMENT-RESPONSE, here in the HTTP transport's settle-failure form.
   const failure = (errorReason?: string) => ({
     success: false,
     ...(errorReason === undefined ? {} : { errorReason }),
@@ -601,6 +602,21 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
     const hold = await charged1000();
     const signer = counting(account, answer);
     const out = await within(doc, hold, batchSvm, signer, { paymentResponse: given as never }, inputs);
+    expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
+    expect(signer.requests.length).toBe(0);
+  });
+
+  // A SettlementResponse's `errorReason` is a string where it is given (x402's core specification v2, §5.3.2).
+  it.each([
+    ["a number", 5],
+    ["a boolean", true],
+    ["a list", [RETRY]],
+    ["an object", { code: RETRY }],
+  ])("an errorReason that is %s, with the code in the error: no-payable-option, x402/input-malformed, and nothing is signed", async (_, given) => {
+    const hold = await charged1000();
+    const signer = counting(account, answer);
+    const refund = { paymentResponse: { ...failure(), errorReason: given } };
+    const out = await within({ ...doc, error: RETRY }, hold, batchSvm, signer, refund as never, inputs);
     expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
     expect(signer.requests.length).toBe(0);
   });

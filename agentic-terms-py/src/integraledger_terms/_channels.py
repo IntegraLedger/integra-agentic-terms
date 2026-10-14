@@ -185,11 +185,13 @@ def _taken_again(refund: Mapping[str, Any], required: object) -> bool | None:
     """Whether a Solana refund is taken again after the receiver's binding is unavailable, as x402's reference client
     decides it: the errorReason of refund's paymentResponse, the settle failure's decoded PAYMENT-RESPONSE, read first,
     or else the payment request's error, is _BINDING_UNAVAILABLE. None when paymentResponse is given and is not a
-    mapping."""
+    mapping, or its errorReason is given and is not a string."""
     response = refund.get("paymentResponse")
     if "paymentResponse" in refund and not isinstance(response, Mapping):
         return None
     reason = response.get("errorReason") if isinstance(response, Mapping) else None
+    if reason is not None and not isinstance(reason, str):
+        return None
     if reason is None and isinstance(required, Mapping):
         reason = required.get("error")
     return reason == _BINDING_UNAVAILABLE
@@ -239,9 +241,9 @@ async def within(
     payer-signed request_close, built with the recentBlockhash, computeUnitLimit and computeUnitPrice of inputs: when
     the errorReason of refund's paymentResponse, the settle failure's decoded PAYMENT-RESPONSE, read first, or else
     the challenge's error, is invalid_batch_settlement_svm_receiver_binding_unavailable. A Solana refund value given in
-    another form, or a paymentResponse that is not a mapping, is declined no-payable-option with x402/input-malformed,
-    and the refund taken again without a recentBlockhash with x402/input-missing. No other pairing's refund reads these
-    values or this code.
+    another form, or a paymentResponse that is not a mapping or whose errorReason is not a string, is declined
+    no-payable-option with x402/input-malformed, and the refund taken again without a recentBlockhash with
+    x402/input-missing. No other pairing's refund reads these values or this code.
 
     Before the signer is called, the channel the built payment would name must be the held one. The signed payment
     must be of the expected kind and belong to the held channel, or it is dropped."""

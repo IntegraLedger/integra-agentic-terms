@@ -209,12 +209,13 @@ function refundInputs(inputs: Inputs): RefundInputs | undefined {
  * Whether a Solana refund is taken again after the receiver's binding is unavailable, as x402's reference client
  * decides it: the `errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read
  * first, or else the payment request's `error`, is `BINDING_UNAVAILABLE`. Undefined when `paymentResponse` is given
- * and is not an object.
+ * and is not an object, or its `errorReason` is given and is not a string.
  */
 function takenAgain(refund: { paymentResponse?: unknown }, required: unknown): boolean | undefined {
   const response = refund.paymentResponse;
   if (response !== undefined && !isObject(response)) return undefined;
   const settled = isObject(response) ? response["errorReason"] : undefined;
+  if (settled !== undefined && settled !== null && typeof settled !== "string") return undefined;
   return (settled ?? (isObject(required) ? required["error"] : undefined)) === BINDING_UNAVAILABLE;
 }
 
@@ -288,9 +289,9 @@ export async function openChannel(
  * payer-signed `request_close`, built with the `recentBlockhash`, `computeUnitLimit` and `computeUnitPrice` of
  * `inputs`: when the `errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read
  * first, or else the challenge's `error`, is `invalid_batch_settlement_svm_receiver_binding_unavailable`. A Solana
- * refund value given in another form, or a `paymentResponse` that is not an object, is declined `no-payable-option`
- * with `x402/input-malformed`, and the refund taken again without a `recentBlockhash` with `x402/input-missing`. No
- * other pairing's refund reads these values or this code.
+ * refund value given in another form, or a `paymentResponse` that is not an object or whose `errorReason` is not a
+ * string, is declined `no-payable-option` with `x402/input-malformed`, and the refund taken again without a
+ * `recentBlockhash` with `x402/input-missing`. No other pairing's refund reads these values or this code.
  *
  * Before the signer is called, the channel the built payment would name must be the held one. The signed payment must
  * be of the expected kind and belong to the held channel, or it is dropped.
