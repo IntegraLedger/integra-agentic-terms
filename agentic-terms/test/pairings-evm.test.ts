@@ -5,6 +5,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   authCaptureEip3009,
   authCapturePermit2,
+  exactEip3009,
   exactErc7710,
   exactErc7710Salt,
   exactPermit2,
@@ -217,6 +218,32 @@ it("agreedRefusals: each file holds rows, and each row's input gives the row's r
       });
     } else {
       throw new Error(`no input this runner reads: ${row.case}`);
+    }
+    expect(got, row.case).toEqual({ refused: true, code: row.expect });
+  }
+});
+
+// x402-exact-eip155-eip3009.json's agreedRefusals rows that carry a choice, an info or a legalContext: a choice is
+// build's choice, with H; an info replaces V5's document's extensions.legalContext.info, and a legalContext that
+// document's extensions.legalContext, for read.
+it("x402/exact/eip155/eip3009 agreedRefusals: each row's choice, info or legalContext gives the row's refusal", async () => {
+  type Row = { case: string; expect: string; choice?: unknown; info?: unknown; legalContext?: unknown };
+  const v = vectors<{ fixed: { H: string }; V5: { expectDocument: unknown }; agreedRefusals: { rows: Row[] } }>(
+    "x402-exact-eip155-eip3009.json",
+  );
+  const rows = v.agreedRefusals.rows.filter((r) => "choice" in r || "info" in r || "legalContext" in r);
+  expect(rows.length, "eip3009 agreedRefusals rows that carry an input").toBeGreaterThan(0);
+  for (const row of rows) {
+    const doc = structuredClone(v.V5.expectDocument) as { extensions: { legalContext: unknown } };
+    let got: unknown;
+    if ("choice" in row) {
+      got = await exactEip3009.build(row.choice as never, v.fixed.H as never);
+    } else if ("info" in row) {
+      doc.extensions.legalContext = { ...(doc.extensions.legalContext as object), info: row.info };
+      got = await exactEip3009.read(doc as never);
+    } else {
+      doc.extensions.legalContext = row.legalContext;
+      got = await exactEip3009.read(doc as never);
     }
     expect(got, row.case).toEqual({ refused: true, code: row.expect });
   }
