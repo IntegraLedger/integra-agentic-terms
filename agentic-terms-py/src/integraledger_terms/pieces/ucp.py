@@ -1,6 +1,7 @@
 """The buyer pieces of the UCP pairings. The build input is the offer read gives, {"checkout": ...}. Under the AP2
 Mandates extension the checkout goes, unchanged, to the buyer's mandate issuer, which answers the checkout mandate as
-issued, an SD-JWT string. Without it the gate confirms only."""
+issued, an SD-JWT string, or AP2's chained presentation of the open and closed mandates joined by ~~. Without it the
+gate confirms only."""
 
 from collections.abc import Mapping
 from typing import Any

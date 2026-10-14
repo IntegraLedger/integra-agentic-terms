@@ -1,7 +1,7 @@
 /**
  * The buyer piece for `ap2/checkout-mandate`: the build input is the offer `read` gives (the merchant's `checkout_jwt`
  * and its payload); the closed Checkout Mandate's claims go to the buyer's mandate signer, which answers the mandate
- * as issued, an SD-JWT string.
+ * as issued, an SD-JWT string, or AP2's chained presentation of the open and closed mandates joined by `~~`.
  */
 import type { Json, Refusal } from "@integraledger/lcp";
 import type { Unsigned } from "@integraledger/lcp/ap2";
