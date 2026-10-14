@@ -292,22 +292,27 @@ class X402ExactHederaExecutor:
 
     def build(self, c: Json, h: AtrHash) -> ExecutorUnsigned | Refusal:
         """The request {kind hedera-executor, network, executors, asset, payTo, amount, validBefore}, validBefore being
-        now plus the option's maxTimeoutSeconds."""
+        now plus the option's maxTimeoutSeconds. A now that is not a non-negative safe integer, or whose sum with
+        maxTimeoutSeconds is not a safe integer, is hedera/option-malformed."""
         if not is_object(c):
             return Refusal("hedera/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, check_executor)
         if ok is not True:
             return ok
+        assert is_object(required) and is_object(accepted)
         now = safe_int(c.get("now"))
         if now is None or now < 0:
             return Refusal("hedera/option-malformed")
+        timeout = safe_int(accepted.get("maxTimeoutSeconds"))
+        assert timeout is not None
+        valid_before = safe_int(now + timeout)
+        if valid_before is None:
+            return Refusal("hedera/option-malformed")
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
-        assert is_object(required) and is_object(accepted)
         executors = executors_of(accepted)
-        timeout = safe_int(accepted.get("maxTimeoutSeconds"))
-        assert executors is not None and timeout is not None
+        assert executors is not None
         request = {
             "kind": "hedera-executor",
             "network": accepted["network"],
@@ -315,7 +320,7 @@ class X402ExactHederaExecutor:
             "asset": accepted["asset"],
             "payTo": accepted["payTo"],
             "amount": accepted["amount"],
-            "validBefore": now + timeout,
+            "validBefore": valid_before,
         }
         return ExecutorUnsigned(request=request, _required=required, _accepted=accepted)
 
