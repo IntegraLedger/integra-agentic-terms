@@ -133,8 +133,10 @@ def test_the_issued_checks_of_step_2() -> None:
     assert pairings_of(_md({"credentialTypes": ["permit2", "card"]})) == refused("mpp/credential-types")
     assert pairings_of(_md({"credentialTypes": []})) == refused("mpp/credential-types")
     assert pairings_of(_md({"credentialTypes": ["permit2"], "splits": []})) == refused("mpp/splits-malformed")
+    # A split of amount 0 is accepted, as @integraledger/lcp's pairingsOf reads it: the recipient and the decimal form
+    # are checked.
     zero = [{"recipient": "0x8Ba1f109551bD432803012645Ac136ddd64DBA72", "amount": "0"}]
-    assert pairings_of(_md({"credentialTypes": ["permit2"], "splits": zero})) == refused("mpp/splits-malformed")
+    assert pairings_of(_md({"credentialTypes": ["permit2"], "splits": zero})) == ("mpp/charge/evm/permit2",)
     eleven = [{"recipient": "0x8Ba1f109551bD432803012645Ac136ddd64DBA72", "amount": "1"}] * 11
     assert pairings_of(_md({"credentialTypes": ["permit2"], "splits": eleven})) == refused("mpp/splits-malformed")
     assert pairings_of({**C_E, "opaque": b64u(json.dumps({"legalContext": "x"}))}) == refused("mpp/carrier-taken")
@@ -149,6 +151,42 @@ def test_the_issued_checks_of_step_2() -> None:
     assert pairings_of(memo) == refused("mpp/carrier-taken")
     push_only = issued("tempo", "charge", json.dumps({**tempo, "methodDetails": {"supportedModes": ["push"], "feePayer": True}}))
     assert pairings_of(push_only) == refused("mpp/modes-pull-only")
+
+
+_A1, _A2, _A3 = "0x" + "11" * 20, "0x" + "22" * 20, "0x" + "33" * 20
+_EVM = {"amount": "1000", "currency": _A1, "recipient": _A2}
+_NEAR = {"originNetwork": "near:mainnet"}
+
+# Each request's pairings as @integraledger/lcp's pairingsOf names them for the same challenge (expires present): a
+# check reads only the members its pairing's build reads or carries H in.
+_READS_ONLY_WHAT_IS_BUILT: list[tuple[str, str, dict[str, Any], tuple[str, ...] | str]] = [
+    ("evm", "transaction and hash, permit2Address 7", {**_EVM, "methodDetails": {"chainId": 1, "permit2Address": 7}},
+     ("mpp/charge/evm/transaction", "mpp/charge/evm/hash")),
+    ("evm", "transaction and hash, externalId 7", {**_EVM, "externalId": 7, "methodDetails": {"chainId": 1}},
+     ("mpp/charge/evm/transaction", "mpp/charge/evm/hash")),
+    ("evm", "permit2, externalId 7", {**_EVM, "externalId": 7, "methodDetails": {"chainId": 1, "credentialTypes": ["permit2"]}},
+     "mpp/request-malformed"),
+    ("hedera", "a split of 0", {"amount": "100", "currency": "0.0.456858", "recipient": "0.0.1234",
+     "splits": [{"recipient": "0.0.5678", "amount": "0"}]}, ("mpp/charge/hedera",)),
+    ("card", "amount abc, currency empty", {"amount": "abc", "currency": ""}, ("mpp/charge/card",)),
+    ("card", "externalId 7", {"amount": "1", "currency": "usd", "externalId": 7}, "mpp/request-malformed"),
+    ("stripe", "externalId 7, no currency", {"amount": "1", "externalId": 7}, ("mpp/charge/stripe",)),
+    ("usdc", "evm, credentialTypes x", {**_EVM, "amount": "1", "methodDetails": {"type": "evm", "evm": {"chainId": 1, "credentialTypes": ["x"]}}},
+     ("mpp/charge/usdc/evm",)),
+    ("usdc", "gateway, no details", {"amount": "1", "recipient": "r", "methodDetails": {"type": "gateway", "gateway": {}}},
+     ("mpp/charge/usdc/gateway",)),
+    ("nearintents", "origin network only", {"methodDetails": _NEAR}, ("mpp/charge/nearintents",)),
+    ("nearintents", "credentialTypes x", {"methodDetails": {**_NEAR, "credentialTypes": ["x"]}}, ("mpp/charge/nearintents",)),
+    ("nearintents", "origin network not CAIP-2", {"methodDetails": {"originNetwork": "near"}}, "mpp/request-malformed"),
+    ("nearintents", "externalId 7", {"externalId": 7, "methodDetails": _NEAR}, "mpp/request-malformed"),
+]
+
+
+def test_each_charge_check_reads_only_what_its_build_reads() -> None:
+    assert len(_READS_ONLY_WHAT_IS_BUILT) == 13
+    for method, case, request, expect in _READS_ONLY_WHAT_IS_BUILT:
+        out = pairings_of(issued(method, "charge", json.dumps(request)))
+        assert (case, out) == (case, expect if isinstance(expect, tuple) else refused(expect))
 
 
 def test_read_refusals() -> None:

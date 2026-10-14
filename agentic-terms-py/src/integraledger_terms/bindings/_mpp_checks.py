@@ -47,7 +47,6 @@ _HEDERA_AMOUNT = re.compile(r"(0|[1-9][0-9]{0,18})")
 _HEDERA_MAX_SPLITS = 9
 _EVM_MAX_SPLITS = 10
 _MAX_MEMO_BYTES = 566
-_NEAR_MAX_STRING = 256
 
 EVM_CREDENTIAL_TYPES: Mapping[str, str] = {
     "permit2": "mpp/charge/evm/permit2",
@@ -269,10 +268,6 @@ def evm_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         or not is_decimal(r.get("amount"))
     ):
         return Refusal("mpp/request-malformed")
-    if _has(d, "permit2Address") and not is_address(d["permit2Address"]):
-        return Refusal("mpp/request-malformed")
-    if _has(r, "externalId") and not isinstance(r["externalId"], str):
-        return Refusal("mpp/request-malformed")
     listed: list[str]
     if not _has(d, "credentialTypes"):
         listed = ["mpp/charge/evm/transaction", "mpp/charge/evm/hash"]
@@ -292,15 +287,19 @@ def evm_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         if not is_list(splits) or not 1 <= len(splits) <= _EVM_MAX_SPLITS:
             return Refusal("mpp/splits-malformed")
         for s in splits:
-            if (
-                not is_object(s)
-                or not is_address(s.get("recipient"))
-                or not is_decimal(s.get("amount"))
-                or int(s["amount"]) == 0
-            ):
+            if not is_object(s) or not is_address(s.get("recipient")) or not is_decimal(s.get("amount")):
                 return Refusal("mpp/splits-malformed")
         listed = [p for p in listed if p == "mpp/charge/evm/permit2"]
-    return Refusal("mpp/credential-types") if not listed else listed
+    if not listed:
+        return Refusal("mpp/credential-types")
+    # The Permit2 build writes permit2Address as the verifying contract and externalId into the signed witness; without
+    # expires no Permit2 pairing is offered.
+    if "mpp/charge/evm/permit2" in listed and "expires" in c:
+        if _has(d, "permit2Address") and not is_address(d["permit2Address"]):
+            return Refusal("mpp/request-malformed")
+        if _has(r, "externalId") and not isinstance(r["externalId"], str):
+            return Refusal("mpp/request-malformed")
+    return listed
 
 
 def tempo_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
@@ -308,6 +307,10 @@ def tempo_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         return Refusal("mpp/request-malformed")
     if _has(d, "chainId") and positive_int(d["chainId"]) is None:
         return Refusal("mpp/request-malformed")
+    # A charge of amount 0 is paid with a proof credential, which moves no money, so no pairing binds it;
+    # supportedModes does not apply to it.
+    if int(r["amount"]) == 0:
+        return []
     if _has(d, "memo"):
         return Refusal("mpp/carrier-taken")
     pull = push = True
@@ -408,11 +411,17 @@ def lightning_pairings(pairing: str) -> PairingCheck:
 
 
 def _hedera_amount(value: object) -> int | None:
-    """A positive decimal below 2^63."""
+    """A decimal below 2^63, zero included."""
     if not isinstance(value, str) or _HEDERA_AMOUNT.fullmatch(value) is None:
         return None
     number = int(value)
-    return number if 0 < number < INT64_LIMIT else None
+    return number if number < INT64_LIMIT else None
+
+
+def _hedera_positive_amount(value: object) -> int | None:
+    """A positive decimal below 2^63: the charge's amount."""
+    number = _hedera_amount(value)
+    return number if number is not None and number > 0 else None
 
 
 def _hedera_entity(value: object) -> bool:
@@ -421,8 +430,8 @@ def _hedera_entity(value: object) -> bool:
 
 def hedera_charge_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] | Refusal:
     """The currency, the amount and the transfer legs of an MPP Hedera charge: the recipient's remainder and each
-    split, every account distinct."""
-    amount = _hedera_amount(request.get("amount"))
+    split, every account distinct. The amount is positive; a split's amount may be zero."""
+    amount = _hedera_positive_amount(request.get("amount"))
     currency, recipient = request.get("currency"), request.get("recipient")
     if amount is None or not _hedera_entity(currency) or not _hedera_entity(recipient):
         return Refusal("hedera/option-malformed")
@@ -551,22 +560,9 @@ def xrpl_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 
 
 def near_intents_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    if _has(d, "credentialTypes"):
-        types = d["credentialTypes"]
-        if not (is_list(types) and len(types) == 1 and types[0] == "hash" and isinstance(types[0], str)):
-            return Refusal("mpp/credential-types")
-    strings = [r.get("currency"), r.get("recipient"), d.get("destinationAsset"), d.get("destinationRecipient"), d.get("refundTo")]
-    memo = d.get("depositMemo")
-    if (
-        not is_decimal(r.get("amount"))
-        or not is_decimal(d.get("amountOut"))
-        or not is_decimal(d.get("minAmountIn"))
-        or not all(isinstance(s, str) and 0 < utf16_length(s) <= _NEAR_MAX_STRING for s in strings)
-        or not is_caip2(d.get("originNetwork"))
-        or not is_caip2(d.get("destinationNetwork"))
-        or (_has(r, "externalId") and not isinstance(r["externalId"], str))
-        or (_has(d, "depositMemo") and memo is not None and not isinstance(memo, str))
-    ):
+    """methodDetails.originNetwork CAIP-2, which network() returns, and externalId, where H rides, absent or a string.
+    No other request member is read."""
+    if not is_caip2(d.get("originNetwork")) or (_has(r, "externalId") and not isinstance(r["externalId"], str)):
         return Refusal("mpp/request-malformed")
     return ["mpp/charge/nearintents"]
 
@@ -643,24 +639,16 @@ def stripe_metadata_valid(m: object, present: bool, extra: int = 0) -> Refusal |
     return None
 
 
-def _charge_shape(r: Obj) -> Refusal | None:
-    """The charge intent's shared members: amount a decimal string, currency a string, externalId absent or a
-    string."""
-    currency = r.get("currency")
-    if not is_decimal(r.get("amount")) or not isinstance(currency, str) or currency == "":
-        return Refusal("mpp/request-malformed")
+def card_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    """charge on card: externalId, the member that carries H, absent or a string."""
     if _has(r, "externalId") and not isinstance(r["externalId"], str):
         return Refusal("mpp/request-malformed")
-    return None
-
-
-def card_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    refused = _charge_shape(r)
-    return refused if refused is not None else ["mpp/charge/card"]
+    return ["mpp/charge/card"]
 
 
 def stripe_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    refused = _charge_shape(r) or stripe_metadata_valid(d.get("metadata"), _has(d, "metadata"))
+    """charge on stripe: methodDetails.metadata, which holds the member that carries H, within Stripe's bounds."""
+    refused = stripe_metadata_valid(d.get("metadata"), _has(d, "metadata"))
     return refused if refused is not None else ["mpp/charge/stripe"]
 
 
@@ -684,10 +672,6 @@ def usdc_profile(d: Obj) -> tuple[str, Obj] | Refusal:
     return kind, details
 
 
-def _only(types: object, allowed: str) -> bool:
-    return is_list(types) and len(types) > 0 and all(t == allowed and isinstance(t, str) for t in types)
-
-
 def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     profile = usdc_profile(d)
     if isinstance(profile, Refusal):
@@ -701,8 +685,6 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     if kind == "evm":
         if positive_int(p.get("chainId")) is None or not is_address(r.get("currency")) or not is_address(r.get("recipient")):
             return Refusal("mpp/request-malformed")
-        if _has(p, "credentialTypes") and not _only(p["credentialTypes"], "authorization"):
-            return Refusal("mpp/credential-types")
         return ["mpp/charge/usdc/evm"]
     if kind == "solana":
         network = solana_network_of(p, True)
@@ -721,17 +703,6 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         if not isinstance(name, str) or utf16_length(name) > 128 or _STACKS_NAME.fullmatch(name) is None:
             return Refusal("mpp/request-malformed")
         return ["mpp/charge/usdc/stacks"]
-    sources = p.get("acceptedSources")
-    if not is_list(sources) or not 1 <= len(sources) <= 32:
-        return Refusal("mpp/request-malformed")
-    if not all(is_caip2(s) for s in sources):
-        return Refusal("mpp/request-malformed")
-    if not is_caip2(p.get("destinationNetwork")):
-        return Refusal("mpp/request-malformed")
-    if not is_decimal(p.get("maxFee")):
-        return Refusal("mpp/request-malformed")
-    if _has(p, "credentialTypes") and not _only(p["credentialTypes"], "transfer"):
-        return Refusal("mpp/credential-types")
     return ["mpp/charge/usdc/gateway"]
 
 

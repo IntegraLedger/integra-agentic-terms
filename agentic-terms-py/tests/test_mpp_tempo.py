@@ -13,6 +13,7 @@ import pytest
 from integraledger_terms import (
     MPP_CHARGE_TEMPO_MEMO,
     MPP_CHARGE_TEMPO_PUSH,
+    Refusal,
     Binding,
     Checked,
     Confirmed,
@@ -24,6 +25,7 @@ from integraledger_terms import (
     transact,
 )
 from integraledger_terms import _gate
+from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
 
 from breadth import ABC, ABD, H, LINK, Pairing, Recording, build_and_sign, code, plant, run
@@ -47,6 +49,19 @@ def account(fixed: dict[str, Any]) -> str:
 
 def doc_of(request_json: str) -> list[dict[str, Any]]:
     return placed_doc(issued("tempo", "charge", request_json), H, LINK)
+
+
+@pytest.mark.parametrize(("v", "binding"), [(MEMO, MPP_CHARGE_TEMPO_MEMO), (PUSH, MPP_CHARGE_TEMPO_PUSH)], ids=["memo", "push"])
+def test_a_tempo_charge_of_amount_0_names_no_pairing(v: dict[str, Any], binding: Any) -> None:
+    # The vector file's zeroAmount rows ("0", "00", and "0" with supportedModes) name no pairing, and the pairing's
+    # build answers the row's code.
+    rows = v["zeroAmount"]
+    assert len(rows["requests"]) == 3
+    for request_json in rows["requests"]:
+        named = pairings_of(issued("tempo", "charge", request_json))
+        assert not isinstance(named, Refusal) and list(named) == rows["expectPairings"]
+        out = binding.build({"challenge": doc_of(request_json)[0], "from": v["fixed"]["payer"]}, H)
+        assert out == Refusal(rows["expect"]["code"])
 
 
 def _b(hex_text: str) -> bytes:
