@@ -74,7 +74,8 @@ def _agreement_link(c: Mapping[str, Any]) -> str | None | Refusal:
 
 
 def _checkout_of(doc: object) -> Mapping[str, Any] | Refusal:
-    """The checkout's shape as the pairings read it: an object of at most 1 MiB as JSON, with an id of 1-256."""
+    """The checkout's shape as the pairings read it: an object of at most 1 MiB as JSON, nested at most 64 levels, with
+    an id of 1-256."""
     if not is_object(doc):
         return Refusal("ucp/checkout-malformed")
     size = json_bytes(doc)
