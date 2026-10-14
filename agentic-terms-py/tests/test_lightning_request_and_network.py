@@ -18,7 +18,16 @@ from breadth import ABC, H, LINK, offered, run, x402_doc
 from mpp_docs import placed_doc
 from support import load, serving
 
-from integraledger_terms import X402_EXACT_LNBTC, MPP_SESSION_LIGHTNING, Confirmed, Declined, _gate, confirm
+from integraledger_terms import (
+    MPP_CHARGE_LIGHTNING,
+    MPP_SESSION_LIGHTNING,
+    X402_EXACT_LNBTC,
+    Confirmed,
+    Declined,
+    Refusal,
+    _gate,
+    confirm,
+)
 from integraledger_terms.bindings._codec import b64u_encode
 from integraledger_terms.pieces._lnbtc_request import binding_of, request_hash_of
 
@@ -191,3 +200,66 @@ def test_no_invoice_on_the_accounts_network_is_no_payable_option_before_any_fetc
     out = run(lambda c: confirm(doc, offered(MPP_SESSION_LIGHTNING), account(network), c, SESSION_INPUTS), link)
     assert out == Declined("no-payable-option", "mpp/no-payable-option")
     assert link.calls == 0
+
+
+# ── MPP Lightning: bound holds the echoed challenge's network to the invoice, as build does ──
+
+# draft-lightning-charge-00's network: "MUST be one of "mainnet", "regtest", or "signet". If present, MUST match the
+# network implied by the invoice's human-readable prefix." draft-lightning-session-00 names no network, so the session
+# reads methodDetails.network by the charge's rule. A methodDetails that is not an object has no network to read: bound
+# and build answer it mpp/request-malformed. The echo keeps the placed id and opaque, so only the request differs.
+OPEN = {"action": "open", "preimage": S["fixed"]["preimage"], "returnInvoice": S["fixed"]["returnInvoice"]}
+NAMED_NETWORK_ROWS = [
+    ("network bogus", {"network": "bogus"}, "ln/currency-network"),
+    ("network 5", {"network": 5}, "ln/currency-network"),
+    ("network testnet, which MPP Lightning does not name", {"network": "testnet"}, "ln/currency-network"),
+    ("network signet for an lnbc invoice", {"network": "signet"}, "ln/currency-network"),
+    ("network regtest for an lnbc invoice", {"network": "regtest"}, "ln/currency-network"),
+]
+
+
+def echoed(placed: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+    return {**placed, "request": b64u_encode(json.dumps(request, separators=(",", ":")).encode("utf-8"))}
+
+
+@pytest.mark.parametrize(
+    ("case", "details", "expected"),
+    [*NAMED_NETWORK_ROWS, ("methodDetails the string mainnet", "mainnet", "mpp/request-malformed")],
+)
+def test_mpp_session_lightning_bound_and_build_read_the_named_network_alike(case: str, details: object, expected: str) -> None:
+    challenge = echoed(challenge_with(MAINNET_INVOICE), {**S["S1"]["request"], "methodDetails": details})
+    assert MPP_SESSION_LIGHTNING.bound({"challenge": challenge, "payload": OPEN}) == Refusal(expected)
+    binding: Any = MPP_SESSION_LIGHTNING
+    assert binding.build({"challenge": challenge, **SESSION_INPUTS}, H) == Refusal(expected)
+
+
+def test_mpp_session_lightning_a_regtest_invoice_echoed_naming_regtest_binds_h() -> None:
+    request = {**S["S1"]["request"], "depositInvoice": INVOICES["bcrt"], "methodDetails": {"network": "regtest"}}
+    challenge = echoed(challenge_with(MAINNET_INVOICE), request)
+    assert MPP_SESSION_LIGHTNING.bound({"challenge": challenge, "payload": OPEN}) == H
+
+
+def charge_placed() -> dict[str, Any]:
+    row = C["L3"]
+    issued = {**row["challenge"], "request": b64u_encode(json.dumps(row["request"], separators=(",", ":")).encode("utf-8"))}
+    placed: dict[str, Any] = placed_doc(issued, H, LINK)[0]
+    return placed
+
+
+@pytest.mark.parametrize(
+    ("case", "details", "expected"),
+    [*NAMED_NETWORK_ROWS, ("methodDetails the string mainnet", "mainnet", "mpp/request-malformed")],
+)
+def test_mpp_charge_lightning_bound_and_build_read_the_named_network_alike(case: str, details: object, expected: str) -> None:
+    md = C["L3"]["request"]["methodDetails"]
+    request = {**C["L3"]["request"], "methodDetails": {**md, **details} if isinstance(details, dict) else details}
+    challenge = echoed(charge_placed(), request)
+    assert MPP_CHARGE_LIGHTNING.bound({"challenge": challenge, "payload": {"preimage": C["fixed"]["preimage"]}}) == Refusal(expected)
+    binding: Any = MPP_CHARGE_LIGHTNING
+    assert binding.build({"challenge": challenge}, H) == Refusal(expected)
+
+
+def test_mpp_charge_lightning_with_no_network_binds_h() -> None:
+    md = {k: v for k, v in C["L3"]["request"]["methodDetails"].items() if k != "network"}
+    challenge = echoed(charge_placed(), {**C["L3"]["request"], "methodDetails": md})
+    assert MPP_CHARGE_LIGHTNING.bound({"challenge": challenge, "payload": {"preimage": C["fixed"]["preimage"]}}) == H

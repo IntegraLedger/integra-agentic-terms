@@ -311,17 +311,32 @@ def test_mpp_charge_lightning_l3_build_complete_and_bound() -> None:
     assert binding.bound(credential) == C["L3"]["expectBound"]
 
 
+def refused_challenge(vector: dict[str, Any], link: str, row: dict[str, Any]) -> dict[str, Any]:
+    """The vector's placed challenge with a refusal row's challengeSet and requestSet applied, a null value removing
+    the member."""
+    challenge = placed(vector, link)
+    request = vector["request"]
+    for path, value in row.get("requestSet", {}).items():
+        request = _without(request, path) if value is None else with_set(request, {path: value})
+    return {**with_set(challenge, row.get("challengeSet", {})), "request": b64u_encode(canonical_json(request).encode("utf-8"))}
+
+
 @pytest.mark.parametrize("row", C["L3"]["refusals"], ids=lambda r: str(r["case"]))
 def test_mpp_charge_lightning_l3_checks_refuse_in_build(row: dict[str, Any]) -> None:
     """The checks of what the seller's node wrote, which build repeats on the challenge received."""
-    challenge = placed(C["L3"], C["fixed"]["link"])
-    changes = row.get("requestSet", {})
-    request = C["L3"]["request"]
-    for path, value in changes.items():
-        request = _without(request, path) if value is None else with_set(request, {path: value})
-    bad = {**with_set(challenge, row.get("challengeSet", {})), "request": b64u_encode(canonical_json(request).encode("utf-8"))}
+    bad = refused_challenge(C["L3"], C["fixed"]["link"], row)
     binding: Any = MPP_CHARGE_LIGHTNING
     assert binding.build({"challenge": bad}, H) == refusal(row["expect"])
+
+
+def test_mpp_charge_lightning_bound_reads_the_echoed_network_as_build_does() -> None:
+    """L3's network rows, echoed with the placed id and opaque, are refused by bound with the row's code."""
+    rows = [r for r in C["L3"]["refusals"] if r["expect"]["code"] == "ln/currency-network" and "challengeSet" not in r]
+    assert len(rows) > 0
+    for row in rows:
+        bad = refused_challenge(C["L3"], C["fixed"]["link"], row)
+        credential = {"challenge": bad, "payload": {"preimage": C["fixed"]["preimage"]}}
+        assert MPP_CHARGE_LIGHTNING.bound(credential) == refusal(row["expect"])
 
 
 def test_mpp_charge_lightning_plant1_an_echo_whose_invoice_does_not_carry_the_hash_is_never_bound() -> None:
@@ -350,6 +365,22 @@ def test_mpp_session_lightning_rows(row: dict[str, Any]) -> None:
     out = MPP_SESSION_LIGHTNING.bound({"challenge": placed(S["S1"], S["fixed"]["link"]), "payload": row["payload"]})
     expect = row["expect"]
     assert out == (refusal(expect) if isinstance(expect, dict) else expect)
+
+
+def test_mpp_session_lightning_s1_refusals_hold_a_network_row() -> None:
+    assert any(r["expect"]["code"] == "ln/currency-network" for r in S["S1"]["refusals"])
+
+
+@pytest.mark.parametrize("row", S["S1"]["refusals"], ids=lambda r: str(r["case"]))
+def test_mpp_session_lightning_s1_checks_refuse_in_build_and_bound(row: dict[str, Any]) -> None:
+    """The checks of what the seller's node wrote, which build repeats on the challenge received; bound answers a
+    network row, echoed with the placed id and opaque, as build does."""
+    bad = refused_challenge(S["S1"], S["fixed"]["link"], row)
+    binding: Any = MPP_SESSION_LIGHTNING
+    assert binding.build({"challenge": bad, "returnInvoice": S["fixed"]["returnInvoice"]}, H) == refusal(row["expect"])
+    if row["expect"]["code"] == "ln/currency-network" and "challengeSet" not in row:
+        payload = {"action": "open", "preimage": S["fixed"]["preimage"], "returnInvoice": S["fixed"]["returnInvoice"]}
+        assert binding.bound({"challenge": bad, "payload": payload}) == refusal(row["expect"])
 
 
 @pytest.mark.parametrize("row", S["S1"]["returnInvoiceRows"], ids=lambda r: str(r["case"]))

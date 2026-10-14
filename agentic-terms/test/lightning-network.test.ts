@@ -10,8 +10,8 @@
 import { describe, expect, it } from "vitest";
 import { sessionLightning } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
-import { confirm, type Binding } from "../src/index.js";
-import { ABC, code, H, isDeclined, LINK, offered, serving, vectors } from "./support.js";
+import { confirm, transact, type Binding } from "../src/index.js";
+import { ABC, code, counting, H, isDeclined, LINK, offered, serving, vectors } from "./support.js";
 
 const NOW = 1_790_000_000;
 async function at<T>(run: () => Promise<T>): Promise<T> {
@@ -93,5 +93,47 @@ describe("mpp/session/lightning: the invoice's BOLT11 currency is the account's 
       expect(code(out)).toBe("no-payable-option");
       expect(isDeclined(out) && out.decline.detail).toBe("mpp/no-payable-option");
       expect(fetch.calls).toBe(0);
+    }));
+});
+
+// mpp-session-lightning.json S1's refusals, each row's source given there: draft-lightning-charge-00's network "MUST
+// match the network implied by the invoice's human-readable prefix", and draft-lightning-session-00 names no network, so
+// the session reads methodDetails.network by the charge's rule. Each row's challenge is S1's as the seller's placement
+// wrote it, with the row's members set, so the id and opaque name H; the gate declines with the row's code before the
+// node is asked to pay.
+describe("mpp/session/lightning: S1's refusals decline before the node is asked to pay", () => {
+  type Row = { case: string; requestSet?: Record<string, unknown>; challengeSet?: Record<string, unknown>; expect: { code: string } };
+  const C = vectors<{ fixed: { payee: string } }>("mpp-charge-lightning.json");
+  const S = vectors<{ fixed: { preimage: string; returnInvoice: string }; S1: LnMpp & { refusals: Row[] } }>(
+    "mpp-session-lightning.json",
+  );
+  const account = `${NETWORKS.mainnet}:${C.fixed.payee}`;
+  const set = (base: object, changes: Record<string, unknown>): Record<string, unknown> => {
+    const copy = structuredClone(base) as Record<string, unknown>;
+    for (const [path, value] of Object.entries(changes)) {
+      const keys = path.split(".");
+      let at = copy;
+      for (const k of keys.slice(0, -1)) at = at[k] as Record<string, unknown>;
+      if (value === null) delete at[keys[keys.length - 1]!];
+      else at[keys[keys.length - 1]!] = value;
+    }
+    return copy;
+  };
+
+  it("the file holds S1's refusals, a currency-network row among them", () => {
+    expect(S.S1.refusals.some((r) => r.expect.code === "ln/currency-network")).toBe(true);
+  });
+
+  it.each(S.S1.refusals.map((r) => [r.case, r] as const))("%s", (_case, row) =>
+    at(async () => {
+      const placed = challengeWith(sessionLightning as unknown as Binding, S.S1, S.S1.request.depositInvoice);
+      const request = set(S.S1.request, row.requestSet ?? {});
+      const doc = [{ ...set(placed, row.challengeSet ?? {}), request: b64u(JSON.stringify(request)) } as MppChallenge];
+      const node = counting(account, async () => S.fixed.preimage);
+      const out = await transact(doc, offered(sessionLightning as unknown as Binding), node, serving(ABC), {
+        inputs: { returnInvoice: S.fixed.returnInvoice },
+      });
+      expect(isDeclined(out) && out.decline.detail).toBe(row.expect.code);
+      expect(node.requests).toEqual([]);
     }));
 });
