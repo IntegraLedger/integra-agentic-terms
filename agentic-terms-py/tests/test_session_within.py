@@ -113,6 +113,28 @@ def test_hedera_build_within_at_zero_is_hs2s_voucher() -> None:
     assert digest(build(MPP_SESSION_HEDERA, opening, 0).requests[0]["typedData"]) == HS["HS2"]["expectVoucherDigest"]
 
 
+def compact(signature: str) -> str:
+    """EIP-2098's 64-byte form of a 65-byte r ‖ s ‖ v signature: r, then s with the y parity (v - 27) in its top bit."""
+    raw = bytes.fromhex(signature[2:])
+    assert len(raw) == 65 and raw[64] in (27, 28), signature
+    vs = int.from_bytes(raw[32:64], "big") | (raw[64] - 27) << 255
+    return "0x" + raw[:32].hex() + vs.to_bytes(32, "big").hex()
+
+
+def test_hedera_within_complete_takes_a_signature_of_one_byte_or_more() -> None:
+    # The voucher is signed by the payer and passed on unverified, as the other MPP completes do: EIP-2098's 64-byte form
+    # of the voucher's signature is a signature too, and one of no bytes is not (@integraledger/lcp's buildWithin).
+    opening = hedera_opened().signed
+    assert opening is not None
+    unsigned = build(MPP_SESSION_HEDERA, opening, 25)
+    signature = sign_typed(unsigned.requests[0]["typedData"])
+    for answer in (signature, compact(signature), "0x11"):
+        out = unsigned.complete([answer])
+        assert isinstance(out, dict) and out["payload"]["signature"] == answer, (answer, out)
+    for answer in ("0x", "11", "0x1", "0xzz"):
+        assert (answer, unsigned.complete([answer])) == (answer, Refusal("mpp/credential-malformed"))
+
+
 SOLANA_OPENING = {
     "challenge": HS["SS1"]["solana"]["placed"],
     "payload": {"action": "open", "channelId": HS["SV2"]["channel"], "transaction": HS["SV2"]["wireBase64"]},

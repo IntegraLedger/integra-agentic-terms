@@ -281,7 +281,7 @@ class MppSessionHedera:
         def complete(signatures: Any) -> dict[str, Any] | Refusal:
             signature = signatures[0] if isinstance(signatures, (list, tuple)) and len(signatures) == 1 else None
             data = bytes_of(signature) if isinstance(signature, str) else None
-            if data is None or len(data) < 65:
+            if data is None or len(data) < 1:
                 return Refusal("mpp/credential-malformed")
             return {"challenge": challenge, "payload": {"action": action, "channelId": channel, "cumulativeAmount": amount, "signature": signature}}
 
