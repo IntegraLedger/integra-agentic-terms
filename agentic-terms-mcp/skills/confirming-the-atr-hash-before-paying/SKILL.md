@@ -46,13 +46,13 @@ is for you and your principal to judge.
 8. If the seller answers that the payment is still settling, send the same `signed` payment again to collect the
    result. Do not sign a new one.
 9. For a channel or a session, call `atr_channel_open` after the opening payment, with the pairing, `atr.base64`, the
-   `signed` opening, the `landed` receipt where one was returned beside it, and the `mac`, all unchanged, and keep the `hold` it returns. For each later payment in the channel, if this host offers
-   `atr_channel_within`, call it with the pairing, the `hold` and the seller's new document; it signs only in the held
-   channel and under the held hash, and declines a document that names another hash or would take the payment to
-   another channel. An x402 document must advertise the held hash; an MPP session's challenge with no legal context is
-   signed under it. The amount comes from the seller's new document. When the seller reports its cumulative charge,
-   call `atr_channel_record_charge`
-   with the `hold` and that charge. Always keep the latest `hold`. The `hold` is opaque: pass it back exactly as the
+   `signed` opening, the `landed` receipt where one was returned beside it, and the `mac`, all unchanged, and keep the
+   `hold` it returns. For each later payment in the channel, if this host offers `atr_channel_within`, call it with the
+   pairing, the `hold` and the seller's new document; it signs only in the held channel and under the held hash, and
+   declines a document that names another hash or would take the payment to another channel. An x402 document must
+   advertise the held hash; an MPP session's challenge with no legal context is signed under it. The amount comes from
+   the seller's new document. When the seller reports its cumulative charge, call `atr_channel_record_charge` with the
+   `hold` and that charge. Always keep the latest `hold`. The `hold` is opaque: pass it back exactly as the
    last tool returned it, changing nothing, not even its `mac`. A changed hold, or one another server process returned,
    is declined `hold-unverified`, and nothing is signed; a changed opening is declined `opening-unverified`. After the
    server restarts, it declines every earlier hold and opening, and these tools cannot sign in those channels again:
