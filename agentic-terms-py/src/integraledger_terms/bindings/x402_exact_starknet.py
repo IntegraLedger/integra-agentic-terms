@@ -68,7 +68,9 @@ def _short_string(text: str) -> int | None:
 
 
 def chain_id_felt(network: str) -> str:
-    """The network's reference as a short-string felt."""
+    """The network's reference as a short-string felt. Raises TypeError on a network not in NETWORKS."""
+    if network not in NETWORKS:
+        raise TypeError("not a Starknet network")
     value = _short_string(network[len("starknet:") :])
     assert value is not None
     return felt_of(value)

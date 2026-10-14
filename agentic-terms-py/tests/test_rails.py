@@ -24,7 +24,7 @@ from integraledger_terms.bindings._ss58 import ss58_decode
 from integraledger_terms.bindings._lcp import to_lcp_string
 from integraledger_terms.bindings.x402_exact_polkadot_lcp_assets_remark import decode_profile_call, encode_profile_call, split_signed
 from integraledger_terms.bindings.x402_exact_sui import decode_sui_tx, sui_carrier, sui_option_check
-from integraledger_terms.bindings.x402_exact_starknet import MASK_250, SELECTOR_TRANSFER, sn_nonce
+from integraledger_terms.bindings.x402_exact_starknet import MASK_250, SELECTOR_TRANSFER, chain_id_felt, sn_nonce
 
 import ed25519
 from breadth import ABC, LINK, Pairing, Recording, build_and_sign, code, link_calls, offered, plant, run, x402_doc
@@ -231,6 +231,19 @@ def test_starknet_bound_measures_the_typed_data_as_json_within_16_kib_and_64_lev
     cycle["self"] = cycle
     for x in (cycle, b"\x00", {1, 2}):
         assert X402_EXACT_STARKNET.bound(with_x(x)) == malformed
+
+
+def test_starknet_chain_id_felt_takes_only_the_two_networks() -> None:
+    # The SNIP-12 domain's chainId is the network reference as a short string; the protocol package's chainIdFelt
+    # throws TypeError("not a Starknet network") for any network but starknet:SN_MAIN and starknet:SN_SEPOLIA.
+    assert int(chain_id_felt(SN_F["O"]["network"]), 16) == int(SN["S3"]["expectChainId"], 16)
+    assert chain_id_felt("starknet:SN_MAIN") == "0x" + b"SN_MAIN".hex()
+    assert chain_id_felt("starknet:SN_SEPOLIA") == "0x" + b"SN_SEPOLIA".hex()
+    others: list[Any] = ["starknet:SN_GOERLI", "starknet:sn_main", "starknet:SN_MAIN ", "starknet:", "eip155:1", 5, None]
+    for network in others:
+        with pytest.raises(TypeError, match="^not a Starknet network$"):
+            chain_id_felt(network)
+            pytest.fail(repr(network))
 
 
 def test_starknet_agreed_refusals() -> None:
