@@ -16,7 +16,7 @@ from integraledger_terms.bindings._stellar import StellarUnsigned
 import ed25519
 from breadth import ABC, H, Pairing, build_and_sign, link_calls, plant, run, x402_doc
 from support import CountingSigner, hexb, load, serving
-from xlm_support import EVM_ACCOUNT, REF, b10, b16, with_identifier
+from xlm_support import EVM_ACCOUNT, REF, b10, b16, muxed_for, with_identifier
 
 T = load("x402-exact-stellar.json")
 F: dict[str, Any] = T["fixed"]
@@ -100,7 +100,7 @@ def test_x402_exact_stellar_an_option_whose_network_is_not_a_string_has_no_payab
 def test_x402_exact_stellar_v1_muxed_carrier() -> None:
     assert _stellar.muxed_id(H) == int(T["V1"]["muxedId"])
     assert _stellar.muxed_id(H).to_bytes(8, "big").hex() == T["V1"]["muxedIdHex"]
-    m = _stellar.muxed_for(F["seller"], H)
+    m = muxed_for(F["seller"], H)
     assert m == T["V1"]["M"] and len(m) == T["V1"]["Mlength"]
     unmuxed = _stellar.unmux(m)
     assert unmuxed is not None and unmuxed.base == F["seller"] and unmuxed.id == int(T["V1"]["muxedId"])

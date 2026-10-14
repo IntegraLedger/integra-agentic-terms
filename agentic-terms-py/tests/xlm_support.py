@@ -6,11 +6,21 @@ import re
 from typing import Any
 
 from integraledger_terms import Declined
+from integraledger_terms.bindings import _stellar
 
 from breadth import Pairing, link_calls
 
 EVM_ACCOUNT = "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 REF = re.compile(r"[A-Za-z0-9_-]{32}")
+
+
+def muxed_for(base: str, h: str) -> str:
+    """The seller's placement: the M strkey of a G account and the muxed id of h's first 8 bytes. Raises ValueError
+    when base is not a G strkey."""
+    key = _stellar.decode_strkey(_stellar._ACCOUNT, base)
+    if key is None:
+        raise ValueError("not a G account strkey")
+    return _stellar.muxed(key, _stellar.muxed_id(h))
 
 
 def http_doc(doc: Any) -> Any:

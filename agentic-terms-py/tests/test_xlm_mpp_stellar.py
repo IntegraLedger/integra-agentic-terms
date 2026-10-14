@@ -17,7 +17,7 @@ import ed25519
 from breadth import H, LINK, Pairing, build_and_sign, plant
 from mpp_docs import issued, place_carrier
 from support import hexb, load
-from xlm_support import EVM_ACCOUNT, b16, mpp_b10
+from xlm_support import EVM_ACCOUNT, b16, mpp_b10, muxed_for
 
 V = load("mpp-charge-stellar.json")
 X = load("x402-exact-stellar.json")
@@ -33,7 +33,7 @@ def muxed_carrier(h: str) -> Any:
         if _stellar.unmux(value) is not None:
             return Refusal("stellar/carrier-occupied")
         try:
-            return _stellar.muxed_for(value, h)
+            return muxed_for(value, h)
         except ValueError:
             return Refusal("stellar/option-malformed")
 
@@ -93,7 +93,7 @@ def credential(payload: dict[str, Any], challenge: Any = None) -> dict[str, Any]
 
 
 def test_mpp_charge_stellar_v3_bound_plant_and_refusals() -> None:
-    assert F["muxed"] == _stellar.muxed_for(F["request"]["recipient"], H)
+    assert F["muxed"] == muxed_for(F["request"]["recipient"], H)
     tx = {"type": "transaction", "transaction": V["V3"]["envelope"]}
     assert MPP_CHARGE_STELLAR.bound(credential(tx)) == V["V3"]["expectBound"]
     plant_tx = {"type": "transaction", "transaction": V["plant"]["envelope"]}

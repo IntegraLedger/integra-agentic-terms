@@ -102,14 +102,6 @@ def muxed_id(h: AtrHash) -> int:
     return int.from_bytes(bytes.fromhex(h[2:18]), "big")
 
 
-def muxed_for(base: str, h: AtrHash) -> str:
-    """The M strkey of a G account and muxed_id(h). Raises ValueError when base is not a G strkey."""
-    key = decode_strkey(_ACCOUNT, base)
-    if key is None:
-        raise ValueError("not a G account strkey")
-    return muxed(key, muxed_id(h))
-
-
 # ── envelopes ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 

@@ -28,6 +28,7 @@ import ed25519
 from breadth import ABC, H, LINK, Recording, run, x402_doc
 from mpp_docs import place_carrier
 from support import load, serving
+from xlm_support import muxed_for
 
 CASES: dict[str, Any] = json.loads((Path(__file__).parent / "stellar_transfers.json").read_text())
 X = load("x402-exact-stellar.json")
@@ -41,7 +42,7 @@ MPP_NOW = int(datetime.fromisoformat(M["fixed"]["expires"].replace("Z", "+00:00"
 
 def mpp_doc() -> Any:
     def carrier(value: Any) -> str | Refusal:
-        return _stellar.muxed_for(value, H)
+        return muxed_for(value, H)
 
     return place_carrier([M["challenge"]], H, LINK, M["challenge"], carrier)
 
