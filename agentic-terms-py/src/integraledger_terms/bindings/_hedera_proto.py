@@ -17,12 +17,22 @@ INT64_LIMIT = 1 << 63
 UINT64_LIMIT = 1 << 64
 
 _MAX_FIELD_NUMBER = 536_870_911
-_ENTITY = re.compile(r"(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})")
+ENTITY = re.compile(r"(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})")
+_DECIMAL = re.compile(r"0|[1-9][0-9]{0,18}")
 
 
 def is_entity(value: object) -> bool:
     """A Hedera entity id, shard.realm.num."""
-    return isinstance(value, str) and _ENTITY.fullmatch(value) is not None
+    return isinstance(value, str) and ENTITY.fullmatch(value) is not None
+
+
+def amount_of(value: object) -> int | None:
+    """A decimal below 2^63, zero included, or None: an x402 Hedera option's amount (x402's Hedera scheme gives the
+    amount no sign rule), and each MPP Hedera charge split's amount."""
+    if not isinstance(value, str) or _DECIMAL.fullmatch(value) is None:
+        return None
+    v = int(value)
+    return v if v < INT64_LIMIT else None
 
 
 @dataclass(frozen=True, slots=True)

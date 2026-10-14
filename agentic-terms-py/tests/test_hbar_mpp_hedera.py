@@ -149,6 +149,12 @@ def test_mpp_charge_hedera_b16_other_accounts() -> None:
     b16(CHARGE, [EVM_ACCOUNT, f"hedera:mainnet:{F['payer']}"])
 
 
+def test_mpp_charge_hedera_an_account_whose_address_is_not_an_entity_id() -> None:
+    """An account whose address is not shard.realm.num as @integraledger/lcp's Hedera pairings read it (each part 0, or
+    up to 19 digits with no leading zero) has no payable option; nothing is fetched."""
+    b16(CHARGE, ["hedera:testnet:0.0.05555", "hedera:testnet:00.0.5555", "hedera:testnet:0.0." + "9" * 20])
+
+
 # ── the buyer half's vector rows ──────────────────────────────────────────────────────────────────────────────────
 
 

@@ -8,6 +8,7 @@ from typing import Any
 
 from .._types import Refusal
 from ._codec import b58_decode, b64u_decode, canonical_or_none
+from ._hedera_proto import amount_of, is_entity
 from ._jose import parse_json
 from ._lcp import is_address, is_list, is_object
 
@@ -19,7 +20,6 @@ MAX_JSON_DEPTH = 16
 MAX_SAFE_INTEGER = 2**53 - 1
 UINT256_LIMIT = 2**256
 U64_LIMIT = 2**64
-INT64_LIMIT = 2**63
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 _POSITIVE = re.compile(r"[1-9][0-9]{0,77}")
@@ -42,8 +42,6 @@ _STELLAR_CONTRACT = re.compile(r"C[A-Z2-7]{55}")
 _STACKS_CHAIN = re.compile(r"(?:0|[1-9][0-9]{0,9})")
 _STACKS_NAME = re.compile(r"[a-zA-Z](?:[a-zA-Z0-9]|[-_])*")
 _C32_PRINCIPAL = re.compile(r"S[0-9A-HJKMNP-TV-Z]{38,40}")
-_HEDERA_ENTITY = re.compile(r"(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})")
-_HEDERA_AMOUNT = re.compile(r"(0|[1-9][0-9]{0,18})")
 _HEDERA_MAX_SPLITS = 8
 _EVM_MAX_SPLITS = 10
 _MAX_MEMO_BYTES = 566
@@ -414,22 +412,10 @@ def lightning_pairings(pairing: str) -> PairingCheck:
 # ── charge and session on Hedera, Solana, Stellar, XRPL and NEAR Intents.
 
 
-def _hedera_amount(value: object) -> int | None:
-    """A decimal below 2^63, zero included."""
-    if not isinstance(value, str) or _HEDERA_AMOUNT.fullmatch(value) is None:
-        return None
-    number = int(value)
-    return number if number < INT64_LIMIT else None
-
-
 def _hedera_positive_amount(value: object) -> int | None:
     """A positive decimal below 2^63: the charge's amount."""
-    number = _hedera_amount(value)
+    number = amount_of(value)
     return number if number is not None and number > 0 else None
-
-
-def _hedera_entity(value: object) -> bool:
-    return isinstance(value, str) and _HEDERA_ENTITY.fullmatch(value) is not None
 
 
 def hedera_charge_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] | Refusal:
@@ -438,7 +424,7 @@ def hedera_charge_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] |
     payer and the recipient, ten token transfer entries, the most a Hedera transaction carries."""
     amount = _hedera_positive_amount(request.get("amount"))
     currency, recipient = request.get("currency"), request.get("recipient")
-    if amount is None or not _hedera_entity(currency) or not _hedera_entity(recipient):
+    if amount is None or not is_entity(currency) or not is_entity(recipient):
         return Refusal("hedera/option-malformed")
     assert isinstance(currency, str) and isinstance(recipient, str)
     splits = request.get("splits")
@@ -448,8 +434,8 @@ def hedera_charge_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] |
     legs: list[tuple[str, int]] = []
     split_total = 0
     for sp in splits:
-        a = _hedera_amount(sp.get("amount")) if is_object(sp) else None
-        if not is_object(sp) or not _hedera_entity(sp.get("recipient")) or a is None:
+        a = amount_of(sp.get("amount")) if is_object(sp) else None
+        if not is_object(sp) or not is_entity(sp.get("recipient")) or a is None:
             return Refusal("hedera/option-malformed")
         legs.append((sp["recipient"], a))
         split_total += a

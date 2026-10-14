@@ -192,6 +192,13 @@ describe("mpp/charge/hedera", () => {
     expect((signed as MppCredential).challenge).toEqual((p.doc as MppChallenge[])[0]);
   });
   refusals(p, [EVM_ACCOUNT, `hedera:mainnet:${f.payer}`]);
+  it("an account whose address is not shard.realm.num as the protocol package reads it has no payable option; nothing is fetched", async () => {
+    for (const account of ["hedera:testnet:0.0.05555", "hedera:testnet:00.0.5555", `hedera:testnet:0.0.${"9".repeat(20)}`]) {
+      const fetch = serving(ABC);
+      expect(code(await confirm(p.doc, p.binding, account, fetch, p.inputs))).toBe("no-payable-option");
+      expect(fetch.calls).toBe(0);
+    }
+  });
 
   // The push form (draft-hedera-charge-00: "Two payload types are defined: "hash" (default) and "transaction" (pull
   // mode)"): the wallet signs and broadcasts the compared body and answers its transaction id.

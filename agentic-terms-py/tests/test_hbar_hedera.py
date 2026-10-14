@@ -121,6 +121,13 @@ def test_x402_exact_hedera_transfer_executor_b16_other_accounts() -> None:
     b16(EXECUTOR, [EVM_ACCOUNT, f"hedera:mainnet:{XF['payload']['payer']}"])
 
 
+def test_x402_exact_hedera_an_account_whose_address_is_not_an_entity_id() -> None:
+    """An account whose address is not shard.realm.num as @integraledger/lcp's Hedera pairings read it (each part 0, or
+    up to 19 digits with no leading zero) has no payable option on either pairing; nothing is fetched."""
+    for pairing in (HEDERA, EXECUTOR):
+        b16(pairing, ["hedera:testnet:0.0.05555", "hedera:testnet:00.0.5555", "hedera:testnet:0.0." + "9" * 20])
+
+
 # ── the buyer half's vector rows ──────────────────────────────────────────────────────────────────────────────────
 
 

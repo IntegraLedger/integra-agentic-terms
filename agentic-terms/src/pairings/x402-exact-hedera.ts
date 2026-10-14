@@ -10,8 +10,11 @@ import { bigintOf, bytesOf, inputsOf, isObject, isRefusal, refuse } from "./comm
 import { railPiece } from "./x402-rail.js";
 
 const PAIRING = "x402/exact/hedera";
-/** A Hedera entity id, `shard.realm.num`. */
-export const HEDERA_ENTITY = /^[0-9]{1,20}\.[0-9]{1,20}\.[0-9]{1,20}$/;
+/**
+ * A Hedera entity id, `shard.realm.num`, as `@integraledger/lcp`'s Hedera pairings read it: each part 0, or up to 19
+ * digits with no leading zero.
+ */
+export const HEDERA_ENTITY = /^(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})$/;
 const KEY_TYPES: readonly string[] = ["ed25519", "ecdsa-secp256k1"];
 
 function inputs(_accepted: PaymentRequirements, given: Inputs): Record<string, Json> | Refusal {

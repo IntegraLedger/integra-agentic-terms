@@ -2,17 +2,15 @@
 as hedera-body, and the payment whose payload.transaction is the signed transaction in base64. The node, the valid
 start and the maximum fee are the buyer's; the signer answers {publicKey, signature, type} with 0x hex bytes."""
 
-import re
 from collections.abc import Mapping
 from typing import Any
 
 from .._types import Inputs, Refusal, Signature
+from ..bindings._hedera_proto import ENTITY
 from ..bindings.x402_exact_hedera import EXACT
 from ._common import bigint_of, bytes_of, inputs_of
 from ._x402_rail import Rail, RailPiece
 
-# A Hedera entity id, shard.realm.num.
-HEDERA_ENTITY = re.compile(r"[0-9]{1,20}\.[0-9]{1,20}\.[0-9]{1,20}")
 _KEY_TYPES = ("ed25519", "ecdsa-secp256k1")
 
 
@@ -51,7 +49,7 @@ PIECE = RailPiece(
     Rail(
         pairing=EXACT,
         namespace="hedera",
-        address=HEDERA_ENTITY,
+        address=ENTITY,
         payer="payer",
         now=False,
         inputs=_inputs,

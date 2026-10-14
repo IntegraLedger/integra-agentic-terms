@@ -6,9 +6,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from .._types import Refusal, Signature
+from ..bindings._hedera_proto import ENTITY
 from ..bindings.x402_exact_hedera import EXECUTOR
 from ._x402_rail import Rail, RailPiece
-from .x402_exact_hedera import HEDERA_ENTITY
 
 
 def _answer(signature: Signature) -> dict[str, str] | Refusal:
@@ -29,7 +29,7 @@ PIECE = RailPiece(
     Rail(
         pairing=EXECUTOR,
         namespace="hedera",
-        address=HEDERA_ENTITY,
+        address=ENTITY,
         payer=None,
         now=True,
         inputs=_none,

@@ -14,12 +14,12 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Binding, Chosen, Inputs, Json, Refusal, Signature, Step
+from ..bindings._hedera_proto import ENTITY
 from ..bindings._mpp import attribution_memo
 from ..bindings._mpp_checks import hedera_charge_network
 from ..bindings.mpp_charge_hedera import ID, build_charge
 from ._common import account_of, bigint_of, bytes_of, choice_of, inputs_of
 from ._mpp import MppRail, MppRailPiece, request_of
-from .x402_exact_hedera import HEDERA_ENTITY
 
 _KEY_TYPES = ("ed25519", "ecdsa-secp256k1")
 _CREDENTIAL_TYPES = ("transaction", "hash")
@@ -148,7 +148,7 @@ PIECE = MppChargeHederaPiece(
     MppRail(
         pairing=ID,
         namespace="hedera",
-        address=HEDERA_ENTITY,
+        address=ENTITY,
         payer="payer",
         now=False,
         inputs=_inputs,

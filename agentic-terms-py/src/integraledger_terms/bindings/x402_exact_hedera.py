@@ -14,6 +14,7 @@ from ._hedera_proto import (
     INT64_LIMIT,
     UINT64_LIMIT,
     account_amount,
+    amount_of,
     complete_with,
     decode_hedera_tx,
     entity,
@@ -33,22 +34,12 @@ HEDERA_NETWORKS = ("hedera:mainnet", "hedera:testnet", "hedera:previewnet", "hed
 MAX_EXECUTORS = 16
 MAX_AUTHORIZATION_HEX = 8192
 
-_DECIMAL = re.compile(r"0|[1-9][0-9]{0,18}")
 _HEX_BYTES = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
 _ABSENT = object()
 
 
 def is_hedera_network(value: object) -> bool:
     return isinstance(value, str) and value in HEDERA_NETWORKS
-
-
-def amount_of(value: object) -> int | None:
-    """An x402 Hedera option's amount: a decimal below 2^63, zero included (x402's Hedera scheme gives the amount no
-    sign rule), or None."""
-    if not isinstance(value, str) or _DECIMAL.fullmatch(value) is None:
-        return None
-    v = int(value)
-    return v if v < INT64_LIMIT else None
 
 
 def _big(value: object) -> bool:
