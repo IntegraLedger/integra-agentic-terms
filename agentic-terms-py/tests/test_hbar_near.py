@@ -143,6 +143,47 @@ def test_x402_exact_near_any_integer_timeout_and_a_window_of_at_least_one_block(
         assert X402_EXACT_NEAR.build(near_choice(option), F["H"]) == Refusal("near/option-malformed"), option
 
 
+V2_SDA = base64.b64decode(N["V2"]["expectSignedDelegateAction"])
+
+
+def with_sender(sender: bytes) -> bytes:
+    """V2's signed delegate action with its sender_id string's bytes replaced."""
+    n = int.from_bytes(V2_SDA[:4], "little")
+    return len(sender).to_bytes(4, "little") + sender + V2_SDA[4 + n :]
+
+
+def with_byte(at: int, value: int) -> bytes:
+    data = bytearray(V2_SDA)
+    data[at] = value
+    return bytes(data)
+
+
+def test_x402_exact_near_strings_are_utf8() -> None:
+    # The borsh specification writes a String as its UTF-8 bytes, so a delegate action whose sender, receiver or method
+    # name is not UTF-8 is near/sda-malformed, and a UTF-8 one reads and writes back to the same bytes.
+    from integraledger_terms.bindings._borsh_near import decode_signed_delegate, encode_signed_delegate
+
+    receiver_at = 4 + int.from_bytes(V2_SDA[:4], "little") + 4
+    method_at = receiver_at + int.from_bytes(V2_SDA[receiver_at - 4 : receiver_at], "little") + 4 + 1 + 4
+    assert V2_SDA[receiver_at : receiver_at + 12] == F["O"]["asset"].encode()
+    assert V2_SDA[method_at : method_at + 11] == b"ft_transfer"
+    not_utf8 = [
+        with_byte(receiver_at + 4, 0xFF),
+        with_byte(method_at, 0xE9),
+        with_sender("payer-é.testnet".encode("latin-1")),
+        with_sender(b"payer\xc0\xaetestnet"),
+        with_sender(b"a\xed\xa0\x80\xed\xb0\x80.testnet"),
+        with_sender(b"payer.testnet\xc3"),
+    ]
+    for sda in not_utf8:
+        assert X402_EXACT_NEAR.bound(presented(base64.b64encode(sda).decode())) == Refusal("near/sda-malformed"), sda
+    utf8 = with_sender("payer-é.testnet".encode("utf-8"))
+    assert X402_EXACT_NEAR.bound(presented(base64.b64encode(utf8).decode())) == N["V2"]["expectBound"]
+    decoded = decode_signed_delegate(utf8)
+    assert decoded is not None and decoded[0].sender_id == "payer-é.testnet"
+    assert encode_signed_delegate(*decoded) == utf8
+
+
 def test_x402_exact_near_agreed_refusals() -> None:
     for row in N["agreedRefusals"]["rows"]:
         if "option" in row:

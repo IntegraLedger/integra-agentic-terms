@@ -1,6 +1,6 @@
 """Borsh for NEP-366: a DelegateAction and a SignedDelegate, read and written, with the NEAR action, public-key and
-signature enums. Integers are little-endian; a string or a byte vector is a u32 length and its bytes, strings read
-byte for byte; an enum is a u8 index and its variant; an option is a u8 0 or 1."""
+signature enums. Integers are little-endian; a byte vector is a u32 length and its bytes, and a string is the same with
+its bytes strict UTF-8, as borsh writes a String; an enum is a u8 index and its variant; an option is a u8 0 or 1."""
 
 import hashlib
 import struct
@@ -90,7 +90,7 @@ def _bytes(b: bytes) -> bytes:
 
 
 def _string(s: str) -> bytes:
-    return _bytes(s.encode("latin-1"))
+    return _bytes(s.encode("utf-8"))
 
 
 def _function_call(call: FunctionCall) -> bytes:
@@ -156,7 +156,10 @@ class _Reader:
         return self.take(self.u32())
 
     def string(self) -> str:
-        return self.vec().decode("latin-1")
+        try:
+            return self.vec().decode("utf-8")
+        except UnicodeDecodeError:
+            raise _Malformed from None
 
     def enum(self, size: int) -> int:
         index = self.u8()

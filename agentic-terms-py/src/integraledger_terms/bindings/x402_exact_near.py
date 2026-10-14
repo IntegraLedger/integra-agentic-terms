@@ -101,7 +101,7 @@ def _memo_of(args: bytes) -> AtrHash | Refusal:
 
 def near_carrier(signed_delegate_action: object) -> AtrHash | Refusal:
     """The hash in a SignedDelegateAction, padded standard base64 in its canonical form (RFC 4648 §3.5), whose one
-    action is a FunctionCall of ft_transfer with a JSON object of arguments whose memo is an LCP string. The bytes must be exactly the borsh encoding of what is read."""
+    action is a FunctionCall of ft_transfer with a JSON object of arguments whose memo is an LCP string. The bytes must be exactly the borsh encoding of what is read, every string in it UTF-8."""
     if not isinstance(signed_delegate_action, str):
         return Refusal("near/sda-malformed")
     if len(signed_delegate_action) > MAX_SDA_BASE64:
