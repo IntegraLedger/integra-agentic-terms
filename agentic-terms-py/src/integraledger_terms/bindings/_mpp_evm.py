@@ -112,6 +112,20 @@ def receive_typed_data(**a: Any) -> dict[str, Any] | Refusal:
     }
 
 
+_NO_WITNESS: Any = object()
+
+
+def _is_witness(w: object) -> bool:
+    """True for an object whose type is a string, whose fields is a list of objects with a string name and type, and
+    whose value is an object."""
+    if not is_object(w) or not isinstance(w.get("type"), str) or not is_object(w.get("value")):
+        return False
+    fields = w.get("fields")
+    if not isinstance(fields, list):
+        return False
+    return all(is_object(f) and isinstance(f.get("name"), str) and isinstance(f.get("type"), str) for f in fields)
+
+
 def permit2_typed_data(
     chain_id: int,
     permitted: Mapping[str, Any] | Sequence[Mapping[str, Any]],
@@ -119,12 +133,14 @@ def permit2_typed_data(
     nonce: int,
     deadline: int,
     verifying_contract: str | None = None,
-    witness: Mapping[str, Any] | None = None,
+    witness: object = _NO_WITNESS,
 ) -> dict[str, Any] | Refusal:
     """Permit2's typed data under its domain (name "Permit2", no version). No witness gives PermitTransferFrom; a
     witness {type, fields, value} gives PermitWitnessTransferFrom, or PermitBatchWitnessTransferFrom when permitted is
     a list. An empty list, one of more than 32 entries, a list with no witness, and an entry that is not an object
-    with a token address are refused evm/field-malformed."""
+    with a token address are refused evm/field-malformed. So is a witness that is not an object; whose type is not an
+    upper-case letter followed by up to 63 letters and digits, or is TokenPermissions or starts with Permit; whose
+    fields is not a list of objects with a string name and type; or whose value is not an object."""
     if isinstance(chain_id, bool) or not isinstance(chain_id, int) or not 0 < chain_id <= MAX_SAFE_INTEGER:
         return Refusal("evm/network-malformed")
     contract = PERMIT2 if verifying_contract is None else verifying_contract
@@ -155,7 +171,7 @@ def permit2_typed_data(
         if listed
         else {"token": entries[0]["token"], "amount": entries[0]["amount"]}
     )
-    if witness is None:
+    if witness is _NO_WITNESS:
         if listed:
             return Refusal("evm/field-malformed")
         return {
@@ -173,6 +189,9 @@ def permit2_typed_data(
             "primaryType": "PermitTransferFrom",
             "message": {"permitted": shaped, "spender": spender, "nonce": nonce, "deadline": deadline},
         }
+    if not _is_witness(witness):
+        return Refusal("evm/field-malformed")
+    assert is_object(witness)
     kind = witness["type"]
     if _WITNESS_TYPE_NAME.fullmatch(kind) is None or kind == "TokenPermissions" or kind.startswith("Permit"):
         return Refusal("evm/field-malformed")
