@@ -187,6 +187,26 @@ def test_x402_exact_tvm_v2_cells_and_v3_bound() -> None:
         assert BINDING.bound(presented(row["settlementBoc"], row["accepted"])) == Refusal(row["expect"]), row["case"]
 
 
+def test_x402_exact_tvm_bound_reads_no_amount_or_timeout_from_the_echoed_option() -> None:
+    # As lcp's exactTvm does: bound reads the echoed option's scheme, network, asset, payTo and extra, and neither its
+    # amount nor its maxTimeoutSeconds, which read and build require. Expected values are V3's and lcp's codes.
+    unsigned = BINDING.build(tvm_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
+    assert not isinstance(signed, Refusal)
+    placed = F["placed"]
+    untimed = {k: v for k, v in placed.items() if k != "maxTimeoutSeconds"}
+    unpriced = {k: v for k, v in placed.items() if k != "amount"}
+    echoed = [{**placed, "amount": "abc"}, {**placed, "amount": "1e3"}, unpriced, {**placed, "maxTimeoutSeconds": 0}, untimed]
+    for accepted in echoed:
+        assert BINDING.bound({**signed, "accepted": accepted}) == V["V3"]["expectBound"], accepted
+        assert BINDING.read({**TVM.doc, "accepts": [accepted]}) == Refusal("x402/no-payable-option"), accepted
+        choice = tvm_choice(accepted, required={"x402Version": 2, "resource": F["resource"], "accepts": [accepted]})
+        assert BINDING.build(choice, F["H"]) == Refusal("tvm/option-malformed"), accepted
+    unsponsored = {**placed, "extra": {**placed["extra"], "areFeesSponsored": False}}
+    assert BINDING.bound({**signed, "accepted": unsponsored}) == Refusal("tvm/option-malformed")
+
+
 def test_x402_exact_tvm_v2b_undeployed_wallet() -> None:
     choice = tvm_choice(wallet=W["wallet"], seqno=W["seqno"], stateInit=W["stateInit"])
     unsigned = BINDING.build(choice, F["H"])

@@ -190,8 +190,9 @@ def _decimal_below(value: object, limit: int) -> int | None:
     return n if n < limit else None
 
 
-def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """True for an exact option on a tvm: network, with sponsored fees, that this pairing pays."""
+def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The option's scheme, network, asset, payTo and extra: what bound requires of the option a presented payment
+    echoes. It reads no amount and no timeout."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = o.get("network")
@@ -215,6 +216,15 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("tvm/option-malformed")
     if "responseDestination" in extra and raw_address(extra["responseDestination"]) is None:
         return Refusal("tvm/option-malformed")
+    return True
+
+
+def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """_presentable, then the amount as a Jetton amount below 2^120 and maxTimeoutSeconds a positive safe integer, which
+    build writes into the request: what read and build require of an exact option on a tvm: network."""
+    p = _presentable(o)
+    if p is not True:
+        return p
     if _decimal_below(o.get("amount"), COINS_LIMIT) is None:
         return Refusal("tvm/option-malformed")
     timeout = safe_int(o.get("maxTimeoutSeconds"))
@@ -350,8 +360,8 @@ class X402ExactTvm:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The hash in the forward payload of the transfer the payer's W5 wallet signed, which must be the option's.
-        The signature is not verified here."""
-        p = presented_with(presented, check)
+        The echoed option's amount and timeout are not read. The signature is not verified here."""
+        p = presented_with(presented, _presentable)
         if isinstance(p, Refusal):
             return p
         boc = p[1].get("settlementBoc")
