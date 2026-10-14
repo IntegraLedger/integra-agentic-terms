@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from .._types import Refusal
-from ._codec import b58_decode, b64u_decode, canonical_or_none
+from ._codec import b58_decode, b64u_decode, canonical_or_none, utf16_key
 from ._hedera_proto import amount_of, is_entity
 from ._jose import parse_json
 from ._lcp import is_address, is_list, is_object
@@ -535,7 +535,7 @@ def is_xrpl_currency(value: object) -> bool:
         return True
     if not is_object(value):
         return False
-    keys = ",".join(sorted(value.keys(), key=lambda k: k.encode("utf-16-be", "surrogatepass")))
+    keys = ",".join(sorted(value.keys(), key=utf16_key))
     if keys == "currency,issuer":
         cur = value.get("currency")
         return (

@@ -189,7 +189,9 @@ def js_json(value: Any, depth: int = 0, *, null_non_finite: bool = False) -> str
     raise TypeError("not JSON data")
 
 
-def _utf16_key(text: str) -> bytes:
+def utf16_key(text: str) -> bytes:
+    """The sort key of a string by its UTF-16 code units, which is RFC 8785's member order; a lone surrogate is its own
+    code unit."""
     return text.encode("utf-16-be", "surrogatepass")
 
 
@@ -207,7 +209,7 @@ def canonical_json(value: Any, depth: int = 0) -> str:
     if isinstance(value, dict):
         if not all(isinstance(key, str) for key in value):
             raise TypeError("not JSON data")
-        keys = sorted(value, key=_utf16_key)
+        keys = sorted(value, key=utf16_key)
         for key in keys:
             key.encode("utf-8")
         return "{" + ",".join(_string(k) + ":" + canonical_json(value[k], depth + 1) for k in keys) + "}"

@@ -15,7 +15,7 @@ from typing import Any
 
 from .._types import Refusal
 from ..bindings._bolt11 import decode, invoice_h
-from ..bindings._codec import canonical_json
+from ..bindings._codec import canonical_json, utf16_key
 from ..bindings._url import url_scheme
 from ._common import bytes_of
 
@@ -71,7 +71,7 @@ def _is_absolute_uri(value: object) -> bool:
 
 def _ascending(names: list[str]) -> bool:
     """Strictly ascending and without duplicates, by UTF-16 code units, which is RFC 8785's member order."""
-    keys = [n.encode("utf-16-be") for n in names]
+    keys = [utf16_key(n) for n in names]
     return all(keys[i - 1] < keys[i] for i in range(1, len(keys)))
 
 
