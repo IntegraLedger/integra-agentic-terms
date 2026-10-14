@@ -176,21 +176,28 @@ class Witness:
     value: Mapping[str, Any]
 
 
-def _is_field(f: object) -> bool:
-    """True for a mapping with a str name and a str type."""
-    return isinstance(f, Mapping) and isinstance(f.get("name"), str) and isinstance(f.get("type"), str)
+_NO_WITNESS: Any = object()
 
 
-def _is_witness(w: object) -> bool:
-    """True for a Witness whose type is a str, whose fields is a list or tuple of mappings with a str name and type,
-    and whose value is a mapping."""
-    return (
-        isinstance(w, Witness)
-        and isinstance(w.type, str)
-        and isinstance(w.value, Mapping)
-        and isinstance(w.fields, (list, tuple))
-        and all(_is_field(f) for f in w.fields)
-    )
+def _witness_of(w: object) -> Witness | None:
+    """A Witness read once, member by member, into a copy: its type when that is a str, a copy of its fields when they
+    are a list or tuple of mappings with a str name and type (each entry read by its index), and a copy of its value
+    when that is a mapping; None for any other witness, a Witness lacking a member included."""
+    if not isinstance(w, Witness):
+        return None
+    kind, fields, value = getattr(w, "type", None), getattr(w, "fields", None), getattr(w, "value", None)
+    if not isinstance(kind, str) or not isinstance(value, Mapping) or not isinstance(fields, (list, tuple)):
+        return None
+    read: list[Field] = []
+    for i in range(len(fields)):
+        f = fields[i]
+        if not isinstance(f, Mapping):
+            return None
+        name, field_type = f.get("name"), f.get("type")
+        if not isinstance(name, str) or not isinstance(field_type, str):
+            return None
+        read.append({"name": name, "type": field_type})
+    return Witness(kind, read, dict(value))
 
 
 def permit2_typed_data(
@@ -200,14 +207,15 @@ def permit2_typed_data(
     nonce: int,
     deadline: int,
     verifying_contract: object = PERMIT2,
-    witness: Witness | None = None,
+    witness: Witness = _NO_WITNESS,
 ) -> dict[str, Any] | Refusal:
-    """Permit2's typed data under its domain (name "Permit2", no version). No witness gives PermitTransferFrom; a
-    witness gives PermitWitnessTransferFrom, or PermitBatchWitnessTransferFrom when permitted is a list. An empty
-    permitted list, one of more than 32 entries, and a list with no witness are refused evm/field-malformed. So is a
-    witness that is not a Witness; whose type is not a str of an upper-case letter followed by up to 63 letters and
-    digits, or is TokenPermissions or starts with Permit; whose fields is not a list or tuple of mappings with a str
-    name and type; or whose value is not a mapping."""
+    """Permit2's typed data under its domain (name "Permit2", no version). No witness argument gives
+    PermitTransferFrom; a witness gives PermitWitnessTransferFrom, or PermitBatchWitnessTransferFrom when permitted is a
+    list. An empty permitted list, one of more than 32 entries, and a list with no witness are refused
+    evm/field-malformed. So is a witness that is not a Witness, None included; whose type is not a str of an upper-case
+    letter followed by up to 63 letters and digits, or is TokenPermissions or starts with Permit; whose fields is not a
+    list or tuple of mappings with a str name and type; or whose value is not a mapping. The witness is read once, and
+    the typed data is built from that one read."""
     if isinstance(chain_id, bool) or not isinstance(chain_id, int) or not 0 < chain_id <= 2**53 - 1:
         return Refusal("evm/network-malformed")
     if not is_address(verifying_contract) or not is_address(spender):
@@ -234,7 +242,7 @@ def permit2_typed_data(
     ]
     copied = [{"token": e["token"], "amount": e["amount"]} for e in entries]
     message_permitted: Any = copied if batch else copied[0]
-    if witness is None:
+    if witness is _NO_WITNESS:
         if batch:
             return Refusal("evm/field-malformed")
         return {
@@ -252,12 +260,10 @@ def permit2_typed_data(
             "primaryType": "PermitTransferFrom",
             "message": {"permitted": message_permitted, "spender": spender, "nonce": nonce, "deadline": deadline},
         }
-    if (
-        not _is_witness(witness)
-        or _WITNESS_TYPE_NAME.fullmatch(witness.type) is None
-        or witness.type == "TokenPermissions"
-        or witness.type.startswith("Permit")
-    ):
+    w = _witness_of(witness)
+    if w is None or _WITNESS_TYPE_NAME.fullmatch(w.type) is None:
+        return Refusal("evm/field-malformed")
+    if w.type == "TokenPermissions" or w.type.startswith("Permit"):
         return Refusal("evm/field-malformed")
     primary_type = "PermitBatchWitnessTransferFrom" if batch else "PermitWitnessTransferFrom"
     return {
@@ -270,9 +276,9 @@ def permit2_typed_data(
                 {"name": "spender", "type": "address"},
                 {"name": "nonce", "type": "uint256"},
                 {"name": "deadline", "type": "uint256"},
-                {"name": "witness", "type": witness.type},
+                {"name": "witness", "type": w.type},
             ],
-            witness.type: [{"name": f["name"], "type": f["type"]} for f in witness.fields],
+            w.type: list(w.fields),
         },
         "primaryType": primary_type,
         "message": {
@@ -280,7 +286,7 @@ def permit2_typed_data(
             "spender": spender,
             "nonce": nonce,
             "deadline": deadline,
-            "witness": dict(witness.value),
+            "witness": w.value,
         },
     }
 

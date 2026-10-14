@@ -1,11 +1,13 @@
 """The x402 EVM breadth pairings: the gate's B2 (the plant) and B6 (build and sign) for each, and the bindings' rows
 (EV1-EV4, EV7, EV8 and the plants). Every expected digest, signature, salt, nonce and refusal is the vector files';
-the payer is the published Anvil key #0 the files name."""
+the payer is the published Anvil key #0 the files name. permit2_typed_data's witness cases are the protocol package's
+own test's."""
 
 import copy
 import hashlib
 import re
-from collections.abc import Callable
+from collections import UserString
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
 import pytest
@@ -349,65 +351,190 @@ def test_payment_hash_answers_a_payment_info_that_is_not_one() -> None:
         assert _evm.payment_hash(84532, AC_EIP3009["EV3"]["escrow"], info) == Refusal("evm/field-malformed")
 
 
-def test_permit2_typed_data_answers_a_malformed_witness() -> None:
-    """The well-formed witness is x402-exact-eip155-permit2.json's: the Witness struct of EV1's witnessTypeString, with
-    the value {to: payTo, validAfter: "0"}, over EV1's spender, nonce and deadline. Each malformed witness is
-    evm/field-malformed, the code @integraledger/lcp's permit2TypedData gives the same witness: one that is not a
-    Witness, a type that is not a str or breaks the type name rule, fields that are not a list of mappings with a str
-    name and type, and a value that is not a mapping."""
-    ev1, option = PERMIT2["EV1"], PERMIT2["fixed"]["option"]
-    struct = re.fullmatch(r".*\)Witness\(([^)]*)\)", ev1["witnessTypeString"])
-    assert struct is not None
-    fields = [{"name": name, "type": kind} for kind, name in (member.split(" ") for member in struct[1].split(","))]
-    value = {"to": option["payTo"], "validAfter": "0"}
-    assert fields == [{"name": "to", "type": "address"}, {"name": "validAfter", "type": "uint256"}]
+# ── permit2_typed_data. Its witness cases are the protocol package's own test of permit2TypedData's witness (lcp 0.4.0,
+# test/failures-are-values.test.ts), each in Python's form: a witness is an _evm.Witness, the protocol's undefined is no
+# witness argument, and its null is None. The well-formed witness is x402-exact-eip155-permit2.json's: the Witness struct
+# of EV1's witnessTypeString, with the value {to: payTo, validAfter: "0"}, over EV1's spender, nonce and deadline.
 
-    def typed(given: Any) -> dict[str, Any] | Refusal:
-        chain_id = int(option["network"].removeprefix("eip155:"))
-        permitted = {"token": option["asset"], "amount": int(option["amount"])}
-        return _evm.permit2_typed_data(chain_id, permitted, ev1["expectSpender"], int(ev1["expectNonceDecimal"]),
-                                       int(ev1["expectDeadline"]), witness=given)  # fmt: skip
+_EV1, _OPTION = PERMIT2["EV1"], PERMIT2["fixed"]["option"]
+_STRUCT = re.fullmatch(r".*\)Witness\(([^)]*)\)", _EV1["witnessTypeString"])
+assert _STRUCT is not None
+WITNESS_FIELDS = [{"name": name, "type": kind} for kind, name in (member.split(" ") for member in _STRUCT[1].split(","))]
+WITNESS_VALUE = {"to": _OPTION["payTo"], "validAfter": "0"}
+WITNESS = _evm.Witness("Witness", WITNESS_FIELDS, WITNESS_VALUE)
 
-    def witness(kind: Any, members: Any, of: Any) -> _evm.Witness:
-        return _evm.Witness(kind, members, of)
 
-    well = witness("Witness", fields, value)
-    good = typed(well)
-    assert not isinstance(good, Refusal)
-    assert good["primaryType"] == "PermitWitnessTransferFrom"
-    assert good["types"]["Witness"] == fields and good["message"]["witness"] == value
-    assert not isinstance(typed(witness("W" + "a" * 63, fields, value)), Refusal)
+def a_witness(kind: Any, fields: Any, value: Any) -> _evm.Witness:
+    return _evm.Witness(kind, fields, value)
 
-    class Named:
-        def __str__(self) -> str:
-            return "Witness"
 
-    malformed: list[tuple[str, Any]] = [
-        ("a witness of 0x1234", "0x1234"),
-        ("a witness of 1", 1),
-        ("a witness that is a list", [well]),
-        ("a mapping of a witness's members", {"type": "Witness", "fields": fields, "value": value}),
-        ("a type that is a list", witness(["Witness"], fields, value)),
-        ("a type whose str is Witness", witness(Named(), fields, value)),
-        ("a type that is a number", witness(1, fields, value)),
-        ("a type of TokenPermissions", witness("TokenPermissions", fields, value)),
-        ("a type that starts with Permit", witness("PermitWitness", fields, value)),
-        ("a type that starts lower-case", witness("witness", fields, value)),
-        ("a type of 65 characters", witness("W" + "a" * 64, fields, value)),
-        ("fields of None", witness("Witness", None, value)),
-        ("fields that are a string", witness("Witness", "to", value)),
-        ("fields that are a mapping", witness("Witness", {"name": "to", "type": "address"}, value)),
-        ("a field of None", witness("Witness", [None], value)),
-        ("a field that is a number", witness("Witness", [1], value)),
-        ("a field that is a list", witness("Witness", [["address", "to"]], value)),
-        ("a field whose name is not a str", witness("Witness", [{"name": 1, "type": "address"}], value)),
-        ("a field with no type", witness("Witness", [{"name": "to"}], value)),
-        ("a value of None", witness("Witness", fields, None)),
-        ("a value that is a string", witness("Witness", fields, "0x1234")),
-        ("a value that is a list", witness("Witness", fields, [value])),
-    ]
-    for name, bad in malformed:
-        assert typed(bad) == Refusal("evm/field-malformed"), name
+def permit2_typed(**given: Any) -> dict[str, Any] | Refusal:
+    """permit2_typed_data over EV1's chain id, permitted, spender, nonce and deadline, with the witness argument given."""
+    chain_id = int(_OPTION["network"].removeprefix("eip155:"))
+    permitted = {"token": _OPTION["asset"], "amount": int(_OPTION["amount"])}
+    return _evm.permit2_typed_data(chain_id, permitted, _EV1["expectSpender"], int(_EV1["expectNonceDecimal"]),
+                                   int(_EV1["expectDeadline"]), **given)  # fmt: skip
+
+
+def without(member: str) -> _evm.Witness:
+    """WITNESS with the named member left unset: the protocol's witness object without that key."""
+    w = object.__new__(_evm.Witness)
+    for name in ("type", "fields", "value"):
+        if name != member:
+            object.__setattr__(w, name, getattr(WITNESS, name))
+    return w
+
+
+class Named:
+    """An object whose str is "Witness", which is not a str."""
+
+    def __str__(self) -> str:
+        return "Witness"
+
+
+class WithMap:
+    """An object with a map method, which is not a list."""
+
+    def map(self, f: Any) -> list[Any]:
+        return []
+
+
+class IndexOnly(list[Any]):
+    """A list of fields whose own iteration fails: a reader that takes each entry by its index never calls it."""
+
+    def __iter__(self) -> Iterator[Any]:
+        raise AssertionError("the fields were iterated")
+
+
+class ShiftingName(Mapping[str, Any]):
+    """A field whose name is WITNESS's first field name on its first read and 7 on any later one."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "name":
+            self.reads += 1
+            return WITNESS_FIELDS[0]["name"] if self.reads == 1 else 7
+        if key == "type":
+            return WITNESS_FIELDS[0]["type"]
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("name", "type"))
+
+    def __len__(self) -> int:
+        return 2
+
+
+class ShiftingType(_evm.Witness):
+    """WITNESS's fields and value, under a type that is "Witness" on its first read and 1 on any later one."""
+
+    __slots__ = ("reads",)
+    reads: int
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "fields", WITNESS_FIELDS)
+        object.__setattr__(self, "value", WITNESS_VALUE)
+        object.__setattr__(self, "reads", 0)
+
+    @property
+    def type(self) -> Any:
+        object.__setattr__(self, "reads", self.reads + 1)
+        return "Witness" if self.reads == 1 else 1
+
+
+MALFORMED_WITNESSES: list[tuple[str, Any]] = [
+    ("a witness of None", None),
+    ("a witness of 0x1234", "0x1234"),
+    ("a witness of 1", 1),
+    ("a witness that is a list", [WITNESS]),
+    ("a type that is a list", a_witness(["Witness"], WITNESS_FIELDS, WITNESS_VALUE)),
+    ("a type that is an object whose str is Witness", a_witness(Named(), WITNESS_FIELDS, WITNESS_VALUE)),
+    ("a type that is a UserString", a_witness(UserString("Witness"), WITNESS_FIELDS, WITNESS_VALUE)),
+    ("a type that is a number", a_witness(1, WITNESS_FIELDS, WITNESS_VALUE)),
+    ("no fields", without("fields")),
+    ("fields of None", a_witness("Witness", None, WITNESS_VALUE)),
+    ("fields that are a string", a_witness("Witness", "to", WITNESS_VALUE)),
+    ("fields that are an object with a map method", a_witness("Witness", WithMap(), WITNESS_VALUE)),
+    ("a field of None", a_witness("Witness", [None], WITNESS_VALUE)),
+    ("a field that is a number", a_witness("Witness", [1], WITNESS_VALUE)),
+    ("a field that is a list", a_witness("Witness", [["address", "to"]], WITNESS_VALUE)),
+    ("fields with a hole, None after a field", a_witness("Witness", [WITNESS_FIELDS[0], None], WITNESS_VALUE)),
+    ("a field whose name is not a str", a_witness("Witness", [{"name": 1, "type": "address"}], WITNESS_VALUE)),
+    ("a field with no type", a_witness("Witness", [{"name": "to"}], WITNESS_VALUE)),
+    ("no value", without("value")),
+    ("a value of None", a_witness("Witness", WITNESS_FIELDS, None)),
+    ("a value that is a string", a_witness("Witness", WITNESS_FIELDS, "0x1234")),
+    ("a value that is a list", a_witness("Witness", WITNESS_FIELDS, [WITNESS_VALUE])),
+]
+
+# The type name rule (the protocol package's permit2TypedData docblock: an upper-case letter followed by up to 63
+# letters and digits, not TokenPermissions, not starting with Permit), and the forms Python adds: a mapping of a
+# witness's members is not a Witness, and a mapping is not a list of fields.
+MALFORMED_NAMES_AND_FORMS: list[tuple[str, Any]] = [
+    ("a type of TokenPermissions", a_witness("TokenPermissions", WITNESS_FIELDS, WITNESS_VALUE)),
+    ("a type that starts with Permit", a_witness("PermitWitness", WITNESS_FIELDS, WITNESS_VALUE)),
+    ("a type that starts lower-case", a_witness("witness", WITNESS_FIELDS, WITNESS_VALUE)),
+    ("a type of 65 characters", a_witness("W" + "a" * 64, WITNESS_FIELDS, WITNESS_VALUE)),
+    ("a mapping of a witness's members", {"type": "Witness", "fields": WITNESS_FIELDS, "value": WITNESS_VALUE}),
+    ("fields that are a mapping", a_witness("Witness", {"name": "to", "type": "address"}, WITNESS_VALUE)),
+]
+
+
+def test_permit2_typed_data_reads_the_vector_files_witness() -> None:
+    assert len(MALFORMED_WITNESSES) == 22
+    assert WITNESS_FIELDS == [{"name": "to", "type": "address"}, {"name": "validAfter", "type": "uint256"}]
+    typed = permit2_typed(witness=WITNESS)
+    assert not isinstance(typed, Refusal)
+    assert typed["primaryType"] == "PermitWitnessTransferFrom"
+    assert typed["types"]["Witness"] == WITNESS_FIELDS and typed["message"]["witness"] == WITNESS_VALUE
+    assert not isinstance(permit2_typed(witness=a_witness("W" + "a" * 63, WITNESS_FIELDS, WITNESS_VALUE)), Refusal)
+    absent = permit2_typed()
+    assert not isinstance(absent, Refusal) and absent["primaryType"] == "PermitTransferFrom"
+
+
+def test_permit2_typed_data_reads_the_fields_by_index() -> None:
+    typed = permit2_typed(witness=a_witness("Witness", IndexOnly(WITNESS_FIELDS), WITNESS_VALUE))
+    assert not isinstance(typed, Refusal) and typed["types"]["Witness"] == WITNESS_FIELDS
+
+
+def test_permit2_typed_data_reads_each_member_of_a_witness_once() -> None:
+    """A later answer of a field's name, or of the witness's type, never reaches the typed data."""
+    field = ShiftingName()
+    typed = permit2_typed(witness=a_witness("Witness", [field], WITNESS_VALUE))
+    assert not isinstance(typed, Refusal) and typed["types"]["Witness"] == [WITNESS_FIELDS[0]]
+    assert field.reads == 1
+    shifting = ShiftingType()
+    typed = permit2_typed(witness=shifting)
+    assert not isinstance(typed, Refusal) and typed["types"]["Witness"] == WITNESS_FIELDS
+    assert typed["types"]["PermitWitnessTransferFrom"][-1] == {"name": "witness", "type": "Witness"}
+    assert shifting.reads == 1
+
+
+@pytest.mark.parametrize("witness", [w for _, w in MALFORMED_WITNESSES], ids=[n for n, _ in MALFORMED_WITNESSES])
+def test_permit2_typed_data_refuses_a_malformed_witness(witness: Any) -> None:
+    assert permit2_typed(witness=witness) == Refusal("evm/field-malformed")
+
+
+@pytest.mark.parametrize(
+    "witness", [w for _, w in MALFORMED_NAMES_AND_FORMS], ids=[n for n, _ in MALFORMED_NAMES_AND_FORMS]
+)
+def test_permit2_typed_data_refuses_a_witness_type_name_or_form_it_does_not_take(witness: Any) -> None:
+    assert permit2_typed(witness=witness) == Refusal("evm/field-malformed")
+
+
+PAYMENT_WITNESS = a_witness("PaymentWitness", [{"name": "externalId", "type": "string"}], {"externalId": ""})
+
+
+@pytest.mark.parametrize("permitted", [None, 42, [42], [None], [[]], "x"], ids=["none", "int", "list-int", "list-none", "list-list", "str"])
+@pytest.mark.parametrize("witness", [None, PAYMENT_WITNESS], ids=["no-witness", "witness"])
+def test_permit2_typed_data_refuses_a_permitted_entry_that_is_not_an_object(permitted: Any, witness: Any) -> None:
+    # The expected refusal is the protocol package's permit2TypedData answer for each of these inputs (its
+    # failures-are-values test, "a permitted entry that is not an object").
+    given = {} if witness is None else {"witness": witness}
+    out = _evm.permit2_typed_data(chain_id=1, permitted=permitted, spender="0x" + "11" * 20, nonce=0, deadline=1, **given)
+    assert out == Refusal("evm/field-malformed")
 
 
 # ── The files' agreedRefusals rows, each with the input it carries.
