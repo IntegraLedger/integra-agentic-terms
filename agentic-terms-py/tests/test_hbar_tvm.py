@@ -12,12 +12,12 @@ from typing import Any
 import pytest
 
 from integraledger_terms import X402_EXACT_TVM as BINDING
-from integraledger_terms import Refusal, _gate
+from integraledger_terms import Declined, Refusal, _gate
 from integraledger_terms.bindings._ton_cell import Builder, Cell, Malformed, crc32c, parse_boc
 from integraledger_terms.bindings.x402_exact_tvm import boc_of, lcp_comment, root_of
 
 import ed25519
-from breadth import Pairing, build_and_sign, plant, x402_doc
+from breadth import Pairing, build_and_sign, link_calls, plant, x402_doc
 from hbar_support import EVM_ACCOUNT, b10, b16, identifier_row, inputs_row
 from support import hexb, load
 
@@ -386,6 +386,8 @@ def test_x402_exact_tvm_a_raw_address_whose_workchain_is_outside_int8_is_not_an_
         address = f"{workchain}:{hex_hash}"
         assert not isinstance(BINDING.build(tvm_choice(wallet=address), F["H"]), Refusal)
         assert not isinstance(BINDING.build(tvm_choice(jettonWallet=address), F["H"]), Refusal)
+        out, calls = link_calls(TVM, f"{F['O']['network']}:{caip10(address)}")
+        assert not isinstance(out, Declined) and calls == 1, (address, out)
     b16(TVM, [f"{F['O']['network']}:{caip10(f'{w}:{hex_hash}')}" for w in (128, -129)])
 
 

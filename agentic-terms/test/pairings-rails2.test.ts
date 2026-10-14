@@ -630,6 +630,18 @@ describe("x402/exact/tvm accounts", () => {
         expect(fetch.calls).toBe(0);
       }
     }));
+
+  it("an account whose raw workchain is -128 or 127, the ends of int8, is chosen, and its link fetched", () =>
+    at(tvmRow.now, async () => {
+      const hex = TVM.fixed.wallet.split(":")[1]!;
+      for (const workchain of [-128, 127]) {
+        const fetch = serving(new TextEncoder().encode("abc"));
+        const account = `${TVM.fixed.O.network}:${workchain}%3A${hex}`;
+        const out = await confirm(tvmRow.p.doc, tvmRow.p.binding, account, fetch, tvmRow.p.inputs);
+        expect([account, code(out)]).toEqual([account, undefined]);
+        expect(fetch.calls).toBe(1);
+      }
+    }));
 });
 
 describe("inputs", () => {
