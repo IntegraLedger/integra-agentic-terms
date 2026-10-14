@@ -223,6 +223,58 @@ def test_x402_exact_algorand_state_proof_reveal_keys_as_algosdk_decodes_them(key
     assert got == (A["V3"]["expectBound"] if decodes else Refusal("avm/txn-malformed"))
 
 
+SEVENS = bytes([7]) * 32
+# V2's transaction with its type and members set, and what lcp's exactAvm.bound answers through algosdk 3.8.0's
+# Transaction constructor: H, avm/txn-malformed where the constructor throws, or avm/not-axfer.
+TRANSACTION_SHAPES: list[tuple[dict[str, Any], str]] = [
+    ({"aclose": Z32}, "avm/txn-malformed"),
+    ({"asnd": Z32}, "avm/txn-malformed"),
+    ({"rekey": Z32}, "avm/txn-malformed"),
+    ({"aclose": SEVENS, "asnd": SEVENS, "rekey": SEVENS, "close": Z32}, "H"),
+    ({"type": "pay"}, "avm/not-axfer"),
+    ({"type": "pay", "close": Z32}, "avm/txn-malformed"),
+    ({"type": "afrz", "rekey": Z32}, "avm/txn-malformed"),
+    ({"type": "hb"}, "avm/txn-malformed"),
+    ({"type": "hb", "hb": {}}, "avm/not-axfer"),
+    ({"type": "keyreg", "nonpart": True}, "avm/not-axfer"),
+    ({"type": "keyreg", "nonpart": True, "votekey": SEVENS}, "avm/txn-malformed"),
+    ({"type": "keyreg", "votefst": 0}, "avm/txn-malformed"),
+    ({"type": "keyreg", "votekey": SEVENS, "selkey": SEVENS, "votefst": 1, "votelst": 2, "votekd": 3}, "avm/not-axfer"),
+    ({"type": "acfg", "apar": {"m": Z32}}, "avm/txn-malformed"),
+    ({"type": "acfg", "apar": {"dc": 2**53}}, "avm/txn-malformed"),
+    ({"type": "acfg", "apar": {"am": Z32, "dc": 2**53 - 1}}, "avm/not-axfer"),
+    ({"type": "appl", "apan": 5}, "avm/not-axfer"),
+    ({"type": "appl", "apan": 6}, "avm/txn-malformed"),
+    ({"type": "appl", "apls": {"nui": 2**53}}, "avm/txn-malformed"),
+    ({"type": "appl", "apep": 2**53}, "avm/txn-malformed"),
+    ({"type": "appl", "apbx": [{"i": 1}]}, "avm/txn-malformed"),
+    ({"type": "appl", "apbx": [{"i": 1}], "apfa": [7]}, "avm/not-axfer"),
+    ({"type": "appl", "al": [{"h": {"s": 1}}]}, "avm/txn-malformed"),
+    ({"type": "appl", "al": [{"s": 5}, {"h": {"s": 1}}]}, "avm/not-axfer"),
+    ({"type": "appl", "al": [{"l": {"p": 2}}]}, "avm/txn-malformed"),
+    ({"type": "appl", "al": [{"p": 7}, {"b": {"i": 1, "n": b"x"}}]}, "avm/not-axfer"),
+    ({"type": "stpf", "sptype": 2**53}, "avm/txn-malformed"),
+]
+
+
+@pytest.mark.parametrize(("members", "expect"), TRANSACTION_SHAPES)
+def test_x402_exact_algorand_transactions_as_algosdk_constructs_them(members: dict[str, Any], expect: str) -> None:
+    entry = copy.deepcopy(V2_ENTRY)
+    entry["txn"].update(members)
+    got = bound_of_entry(_algorand.pack(entry))
+    assert got == (A["V3"]["expectBound"] if expect == "H" else Refusal(expect))
+
+
+@pytest.mark.parametrize(("length", "decodes"), [(3, False), (4, True), (5, False), (8, True), (12, True)])
+def test_x402_exact_algorand_timestamp_extensions_as_algosdk_decodes_them(length: int, decodes: bool) -> None:
+    """V2's entry with one more member, msgpack's timestamp extension (type -1) of length bytes, which algosdk's decoder
+    reads only at 4, 8 or 12 bytes."""
+    data = _algorand.pack(V2_ENTRY)
+    extension = bytes([0xC7, length, 0xFF]) + bytes(length)
+    got = bound_of_entry(bytes([data[0] + 1]) + data[1:] + bytes([0xA2]) + b"zz" + extension)
+    assert got == (A["V3"]["expectBound"] if decodes else Refusal("avm/txn-malformed"))
+
+
 def test_x402_exact_algorand_v3_presented_options_are_bound_without_their_amount_or_timeout() -> None:
     """V2's payment under each V3.presentedOptions option, whose amount or timeout no build could use: bound reads the
     signed transaction and gives the row's expectBound, while read serves no such option and build refuses it, as lcp's

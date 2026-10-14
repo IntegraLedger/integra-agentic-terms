@@ -86,6 +86,13 @@ class Ext:
     data: bytes
 
 
+def _ext(code: int, data: bytes) -> Ext:
+    """An extension value; type -1, msgpack's timestamp, holds 4, 8 or 12 bytes, as algosdk's decoder requires."""
+    if code == -1 and len(data) not in (4, 8, 12):
+        raise Malformed
+    return Ext(code, data)
+
+
 class _Reader:
     def __init__(self, data: bytes) -> None:
         self.data = data
@@ -146,11 +153,11 @@ def _unpack(r: _Reader, depth: int) -> Any:
         return r.int(signed[b], signed=True)
     fixext = {0xD4: 1, 0xD5: 2, 0xD6: 4, 0xD7: 8, 0xD8: 16}
     if b in fixext:
-        return Ext(r.int(1, signed=True), r.read(fixext[b]))
+        return _ext(r.int(1, signed=True), r.read(fixext[b]))
     ext = {0xC7: 1, 0xC8: 2, 0xC9: 4}
     if b in ext:
         length = r.int(ext[b])
-        return Ext(r.int(1, signed=True), r.read(length))
+        return _ext(r.int(1, signed=True), r.read(length))
     text = {0xD9: 1, 0xDA: 2, 0xDB: 4}
     if b in text:
         return _text(r.read(r.int(text[b])))
@@ -452,6 +459,107 @@ def _check(value: Any, schema: Schema) -> None:
             _check(item, schema[1])
 
 
+def _not_zero_address(value: Any) -> None:
+    """An address algosdk's Transaction takes as optional is absent or not the zero address."""
+    if value is not None and value == bytes(32):
+        raise Malformed
+
+
+def _safe(value: Any) -> int:
+    """A u64 member algosdk reads as a JavaScript number (absent is 0): at most 2^53 - 1."""
+    number = 0 if value is None else int(value)
+    if number > _SAFE:
+        raise Malformed
+    return number
+
+
+def _entry(references: list[Any], index: int, key: str) -> None:
+    """A 1-based index into an access list names an entry, and that entry has key."""
+    if index > len(references) or references[index - 1].get(key) is None:
+        raise Malformed
+
+
+def _keyreg(txn: dict[Any, Any]) -> None:
+    """Offline (no participation key and no vote round), non-participating with none, or online with all five."""
+    keys = ("votekey", "selkey", "sprfkey", "votefst", "votelst", "votekd")
+    online = ("votekey", "selkey", "votefst", "votelst", "votekd")
+    any_present = any(txn.get(k) is not None for k in keys)
+    if txn.get("nonpart") is True and any_present:
+        raise Malformed
+    if txn.get("nonpart") is not True and any_present and not all(txn.get(k) is not None for k in online):
+        raise Malformed
+
+
+def _access(references: list[Any]) -> None:
+    """Each access entry's holding, locals or box names entries of the list that hold what it reads."""
+    for item in references:
+        if item.get("d") is not None or item.get("s") or item.get("p"):
+            continue
+        if item.get("h") is not None:
+            holding = item["h"]
+            address, asset = _safe(holding.get("d")), _safe(holding.get("s"))
+            if asset == 0:
+                raise Malformed
+            if address != 0:
+                _entry(references, address, "d")
+            _entry(references, asset, "s")
+        elif item.get("l") is not None:
+            local = item["l"]
+            address, app = _safe(local.get("d")), _safe(local.get("p"))
+            if address != 0:
+                _entry(references, address, "d")
+            if app != 0:
+                _entry(references, app, "p")
+        elif item.get("b") is not None:
+            app = _safe(item["b"].get("i"))
+            if app != 0:
+                _entry(references, app, "p")
+
+
+def _application(txn: dict[Any, Any]) -> None:
+    """An application call's completion is one of six, its counts are safe integers, and each box names an app."""
+    if _safe(txn.get("apan")) > 5:
+        raise Malformed
+    for schema in (txn.get("apls"), txn.get("apgs")):
+        if schema is not None:
+            _safe(schema.get("nui"))
+            _safe(schema.get("nbs"))
+    _safe(txn.get("apep"))
+    _safe(txn.get("aprv"))
+    apps = txn.get("apfa")
+    for box in txn.get("apbx") or []:
+        index = _safe(box.get("i"))
+        if index != 0 and (apps is None or index > len(apps)):
+            raise Malformed
+    if txn.get("al") is not None:
+        _access(txn["al"])
+
+
+def _constructs(txn: dict[Any, Any]) -> None:
+    """The checks algosdk 3.8.0's Transaction constructor makes past the schema, by the transaction's type. Raises
+    Malformed where decodeSignedTransaction throws."""
+    _not_zero_address(txn.get("rekey"))
+    kind = txn["type"]
+    if kind == "pay":
+        _not_zero_address(txn.get("close"))
+    elif kind == "axfer":
+        _not_zero_address(txn.get("aclose"))
+        _not_zero_address(txn.get("asnd"))
+    elif kind == "keyreg":
+        _keyreg(txn)
+    elif kind == "acfg" and txn.get("apar") is not None:
+        params = txn["apar"]
+        _safe(params.get("dc"))
+        for key in ("m", "r", "f", "c"):
+            _not_zero_address(params.get(key))
+    elif kind == "appl":
+        _application(txn)
+    elif kind == "stpf":
+        _safe(txn.get("sptype"))
+    elif kind == "hb" and txn.get("hb") is None:
+        raise Malformed
+
+
 @dataclass(frozen=True, slots=True)
 class SignedRead:
     kind: str
@@ -460,8 +568,9 @@ class SignedRead:
 
 def read_signed(data: bytes) -> SignedRead:
     """The type and note of a msgpack SignedTxn whose members are of SIGNED_SCHEMA's kinds, as algosdk 3.8.0's
-    decodeSignedTransaction reads them, with at most one of sig, msig, lsig and pqsig. The signatures are not
-    verified. Raises Malformed for anything that does not decode as one."""
+    decodeSignedTransaction reads them, with at most one of sig, msig, lsig and pqsig, and a transaction its
+    Transaction constructor takes (_constructs). The signatures are not verified. Raises Malformed for anything that
+    does not decode as one."""
     top = unpack(data)
     _check(top, SIGNED_SCHEMA)
     if sum(top.get(k) is not None for k in ("sig", "msig", "lsig", "pqsig")) > 1:
@@ -469,5 +578,6 @@ def read_signed(data: bytes) -> SignedRead:
     txn = top.get("txn")
     if not isinstance(txn, dict) or txn.get("type") not in TRANSACTION_TYPES:
         raise Malformed
+    _constructs(txn)
     note = txn.get("note", b"")
     return SignedRead(kind=txn["type"], note=note if isinstance(note, bytes) else b"")
