@@ -200,6 +200,29 @@ def test_x402_exact_hedera_token_build() -> None:
         assert unsigned.request["bodyBytes"].hex() == expect
 
 
+# hiero-sdk-python 0.2.10's generated protobufs (protobuf 7.36.2, SerializeToString(deterministic=True)) for V2's inputs
+# with amount 0, the tool that wrote V2: a zero AccountAmount amount (field 2) is not written.
+ZERO_AMOUNT_BODY = (
+    "0a0d0a060880e2cfaa06120318d309120218031880c2d72f22020878324d6c63703a7368613235363a30786261373831366266386630316366"
+    "656134313431343064653564616532323233623030333631613339363137376139636234313066663631663230303135616472100a0e0a050a"
+    "0318b32b0a050a0318d209"
+)
+
+
+def test_x402_exact_hedera_an_amount_of_zero_is_served() -> None:
+    """x402's Hedera scheme gives the amount no sign rule: read serves an option whose amount is 0, and build writes the
+    zero transfer. An amount of 2^63 is past the int64 the transfer carries."""
+    zero = {**F["O"], "amount": "0"}
+    read = X402_EXACT_HEDERA.read(x402_doc(zero, F["resource"]))
+    assert isinstance(read, Advertised) and read.offer["options"] == [zero]
+    unsigned = X402_EXACT_HEDERA.build(hedera_choice(zero), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    assert unsigned.request["bodyBytes"].hex() == ZERO_AMOUNT_BODY
+    too_large = {**F["O"], "amount": str(2**63)}
+    assert X402_EXACT_HEDERA.read(x402_doc(too_large, F["resource"])) == Refusal("x402/no-payable-option")
+    assert X402_EXACT_HEDERA.build(hedera_choice(too_large), F["H"]) == Refusal("hedera/option-malformed")
+
+
 def test_x402_exact_hedera_transfer_executor_pairing_of() -> None:
     for row in X["pairingOf"]:
         option = row["option"]
@@ -257,6 +280,20 @@ def test_x402_exact_hedera_transfer_executor_complete_and_bound() -> None:
     assert X402_EXACT_HEDERA_TRANSFER_EXECUTOR.bound(signed) == X["bound"]["expectWithExtension"]
     bare = {k: v for k, v in signed.items() if k != "extensions"}
     assert X402_EXACT_HEDERA_TRANSFER_EXECUTOR.bound(bare) == Refusal(X["bound"]["expectWithoutExtension"])
+
+
+def test_x402_exact_hedera_transfer_executor_an_amount_of_zero_is_served() -> None:
+    """x402's Hedera scheme gives the amount no sign rule: read serves an executor option whose amount is 0, build's
+    request is the vector file's with the option's amount as written, and bound reads the echoed extension under it."""
+    zero = {**XF["O"], "amount": "0"}
+    doc = x402_doc(zero, XF["resource"], link=LINK)
+    read = X402_EXACT_HEDERA_TRANSFER_EXECUTOR.read(doc)
+    assert isinstance(read, Advertised) and read.offer["options"] == [zero]
+    unsigned = X402_EXACT_HEDERA_TRANSFER_EXECUTOR.build({"required": doc, "accepted": zero, "now": XF["now"]}, F["H"])
+    assert not isinstance(unsigned, Refusal)
+    assert unsigned.request == {**X["build"]["expectRequest"], "amount": "0"}
+    signed = unsigned.complete(XF["payload"])
+    assert X402_EXACT_HEDERA_TRANSFER_EXECUTOR.bound(signed) == X["bound"]["expectWithExtension"]
 
 
 def test_x402_exact_hedera_reads_h_and_the_link() -> None:

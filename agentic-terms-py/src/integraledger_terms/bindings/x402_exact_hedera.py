@@ -47,11 +47,12 @@ def is_hedera_network(value: object) -> bool:
 
 
 def amount_of(value: object) -> int | None:
-    """A positive decimal below 2^63, or None."""
+    """An x402 Hedera option's amount: a decimal below 2^63, zero included (x402's Hedera scheme gives the amount no
+    sign rule), or None."""
     if not isinstance(value, str) or _DECIMAL.fullmatch(value) is None:
         return None
     v = int(value)
-    return v if 0 < v < INT64_LIMIT else None
+    return v if v < INT64_LIMIT else None
 
 
 def _big(value: object) -> bool:
