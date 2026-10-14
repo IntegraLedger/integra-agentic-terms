@@ -152,6 +152,16 @@ def test_x402_exact_hedera_v2_build_complete_bound() -> None:
     assert X402_EXACT_HEDERA.bound(presented(wire)) == E["V2"]["expectBound"]
 
 
+def test_x402_exact_hedera_v2_presented_options() -> None:
+    """bound reads V2's signed transaction under each presented option of V2.presentedOptions, whose amount or timeout
+    an option for read or build cannot carry: the presented option's amount and timeout are not read."""
+    rows = E["V2"]["presentedOptions"]
+    assert rows, "the vector file holds no V2.presentedOptions rows"
+    for row in rows:
+        p = {**presented(E["V2"]["expectTransactionBase64"]), "accepted": row["accepted"]}
+        assert X402_EXACT_HEDERA.bound(p) == row["expectBound"], row["case"]
+
+
 def test_x402_exact_hedera_v1_memo() -> None:
     unsigned = X402_EXACT_HEDERA.build(hedera_choice(), F["H"])
     assert not isinstance(unsigned, Refusal)
@@ -205,6 +215,28 @@ def test_x402_exact_hedera_transfer_executor_pairing_of() -> None:
             assert exact == Refusal("x402/option-not-this-pairing")
         else:
             assert Refusal(row["expect"]) in (exact, executor), row
+
+
+def test_x402_exact_hedera_a_null_transfer_method_is_malformed() -> None:
+    """A null assetTransferMethod is a value, neither absent, cryptoTransfer nor transferExecutor, so both pairings
+    refuse the option: read finds no payable option, and build and bound answer hedera/option-malformed. These are
+    @integraledger/lcp's answers (hedera.ts methodOf, exactOption and checkExecutor) for the vector files' options
+    with the member set to null."""
+    exact = {**F["O"], "extra": {**F["O"]["extra"], "assetTransferMethod": None}}
+    executor = {**XF["O"], "extra": {**XF["O"]["extra"], "assetTransferMethod": None}}
+    for option in (exact, executor):
+        doc = x402_doc(option, F["resource"])
+        assert X402_EXACT_HEDERA.read(doc) == Refusal("x402/no-payable-option")
+        assert X402_EXACT_HEDERA_TRANSFER_EXECUTOR.read(doc) == Refusal("x402/no-payable-option")
+        assert X402_EXACT_HEDERA.build(hedera_choice(option), F["H"]) == Refusal("hedera/option-malformed")
+        executor_build = X402_EXACT_HEDERA_TRANSFER_EXECUTOR.build(
+            {"required": doc, "accepted": option, "now": XF["now"]}, F["H"]
+        )
+        assert executor_build == Refusal("hedera/option-malformed")
+    paid = {**presented(E["V2"]["expectTransactionBase64"]), "accepted": exact}
+    assert X402_EXACT_HEDERA.bound(paid) == Refusal("hedera/option-malformed")
+    echoed = {**executor_unsigned().complete(XF["payload"]), "accepted": executor}
+    assert X402_EXACT_HEDERA_TRANSFER_EXECUTOR.bound(echoed) == Refusal("hedera/option-malformed")
 
 
 def executor_unsigned() -> Any:

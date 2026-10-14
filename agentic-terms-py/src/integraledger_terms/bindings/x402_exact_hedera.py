@@ -3,7 +3,7 @@ x402/exact/hedera/transfer-executor (the hash advertised in the challenge only):
 Nothing here fetches, hashes or signs."""
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -35,6 +35,7 @@ MAX_AUTHORIZATION_HEX = 8192
 _ENTITY = re.compile(r"(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})\.(0|[1-9][0-9]{0,18})")
 _DECIMAL = re.compile(r"0|[1-9][0-9]{0,18}")
 _HEX_BYTES = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
+_ABSENT = object()
 
 
 def is_entity(value: object) -> bool:
@@ -69,8 +70,9 @@ def _whole(value: object) -> int | None:
 
 
 def _method_of(o: Mapping[str, Any]) -> object:
+    """extra.assetTransferMethod, or _ABSENT when extra or the member is absent. A null method is a value."""
     extra = o.get("extra")
-    return extra.get("assetTransferMethod") if is_object(extra) else None
+    return extra.get("assetTransferMethod", _ABSENT) if is_object(extra) else _ABSENT
 
 
 def _on_hedera(o: object) -> bool:
@@ -81,33 +83,47 @@ def _on_hedera(o: object) -> bool:
     return isinstance(network, str) and network.startswith("hedera:")
 
 
-def _servable(o: Mapping[str, Any]) -> bool:
-    """Everything but the transfer method: network, asset, payee, amount and timeout."""
-    timeout = safe_int(o.get("maxTimeoutSeconds"))
+def _named(o: Mapping[str, Any]) -> bool:
+    """The option's network, asset and payee, with extra an object when present."""
     return (
         is_hedera_network(o.get("network"))
         and ("extra" not in o or is_object(o.get("extra")))
         and is_entity(o.get("asset"))
         and is_entity(o.get("payTo"))
-        and amount_of(o.get("amount")) is not None
-        and timeout is not None
-        and timeout > 0
     )
 
 
-def check_exact(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """True for a cryptoTransfer option (or no method) this pairing serves; None for another pairing's option."""
+def _servable(o: Mapping[str, Any]) -> bool:
+    """Everything but the transfer method: network, asset, payee, amount and timeout."""
+    timeout = safe_int(o.get("maxTimeoutSeconds"))
+    return _named(o) and amount_of(o.get("amount")) is not None and timeout is not None and timeout > 0
+
+
+def _exact_option(o: Mapping[str, Any], has: Callable[[Mapping[str, Any]], bool]) -> Literal[True] | Refusal | None:
+    """The cryptoTransfer method (or none) with a feePayer, and what has asks of the rest of the option; None for
+    another pairing's option."""
     if not _on_hedera(o):
         return None
     method = _method_of(o)
     if method == "transferExecutor":
         return None
-    if method is not None and method != "cryptoTransfer":
+    if method is not _ABSENT and method != "cryptoTransfer":
         return Refusal("hedera/option-malformed")
     extra = o.get("extra")
-    if not _servable(o) or not is_entity(extra.get("feePayer") if is_object(extra) else None):
+    if not has(o) or not is_entity(extra.get("feePayer") if is_object(extra) else None):
         return Refusal("hedera/option-malformed")
     return True
+
+
+def check_exact(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The option read and build serve: build writes the transfers from its amount."""
+    return _exact_option(o, _servable)
+
+
+def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The presented option bound serves: method, network, asset, payee and fee payer. bound reads the signed body,
+    not the option's amount or timeout, so neither is checked here."""
+    return _exact_option(o, _named)
 
 
 def executors_of(o: Mapping[str, Any]) -> list[str] | None:
@@ -124,7 +140,7 @@ def check_executor(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return None
     method = _method_of(o)
     if method != "transferExecutor":
-        return None if method is None or method == "cryptoTransfer" else Refusal("hedera/option-malformed")
+        return None if method is _ABSENT or method == "cryptoTransfer" else Refusal("hedera/option-malformed")
     return True if _servable(o) and executors_of(o) is not None else Refusal("hedera/option-malformed")
 
 
@@ -207,8 +223,9 @@ class X402ExactHedera:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The hash inside what the payer signed: the body memo, in LCP string form. Transfers, amounts, the fee payer
-        and the payer are not read, and no signature is verified here."""
-        p = presented_with(presented, check_exact)
+        and the payer are not read, nor the presented option's amount and timeout, and no signature is verified
+        here."""
+        p = presented_with(presented, _presentable)
         if isinstance(p, Refusal):
             return p
         wire = b64_decode(p[1].get("transaction"))

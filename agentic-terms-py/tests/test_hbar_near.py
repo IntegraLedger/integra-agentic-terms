@@ -105,6 +105,16 @@ def test_x402_exact_near_v1_args_and_request_hash() -> None:
     assert hashlib.sha256(bytes.fromhex(N["V1"]["expectPrefix"]) + sda[:-65]).hexdigest() == N["V1"]["expectRequestHash"]
 
 
+def test_x402_exact_near_v2_presented_options() -> None:
+    """bound reads V2's signed delegate action under each presented option of V2.presentedOptions, and gives the row's
+    expectBound."""
+    rows = N["V2"]["presentedOptions"]
+    assert rows, "the vector file holds no V2.presentedOptions rows"
+    for row in rows:
+        p = {**presented(N["V2"]["expectSignedDelegateAction"]), "accepted": row["accepted"]}
+        assert X402_EXACT_NEAR.bound(p) == row["expectBound"], row["case"]
+
+
 def test_x402_exact_near_v2_complete_and_bound() -> None:
     unsigned = X402_EXACT_NEAR.build(near_choice(), F["H"])
     assert not isinstance(unsigned, Refusal)
