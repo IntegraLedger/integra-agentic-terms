@@ -10,6 +10,7 @@ import {
   evmHash,
   evmPermit2,
   evmTransaction,
+  pairingsOf,
   place,
   tempoMemo,
   tempoPush,
@@ -270,6 +271,34 @@ describe("a Tempo challenge whose realm has no UTF-8 form", () => {
       expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
       expect(fetch.calls).toBe(0);
     }));
+});
+
+// The vector files' zeroAmount rows: a Tempo charge of amount "0" or "00", which MPP pays with a proof credential that
+// moves no money, names no pairing (the rows' expectPairings) and the pairing's build answers the rows' code. The gate
+// offers nothing for it: no-payable-option, with no fetch. The Python gate runs the same rows (test_mpp_tempo.py).
+describe("a Tempo charge of amount 0", () => {
+  type Zero = { fixed: Fixed; zeroAmount: { requests: string[]; expectPairings: string[]; expect: unknown } };
+  const rows: [string, Binding][] = [
+    ["mpp-charge-tempo-memo.json", tempoMemo],
+    ["mpp-charge-tempo-push.json", tempoPush],
+  ];
+  it.each(rows)("%s: names no pairing, the build answers the row's code, and the gate offers nothing", (file, binding) => {
+    const Z = vectors<Zero>(file);
+    expect(Z.zeroAmount.requests.length).toBe(3);
+    const [placed] = docOf(tempoMemo, issued("tempo", V.fixed.R_T));
+    const build = (binding as unknown as { build(choice: unknown, h: string): Promise<unknown> }).build;
+    return at(Z.fixed.now, async () => {
+      for (const request of Z.zeroAmount.requests) {
+        expect(pairingsOf(issued("tempo", request))).toEqual(Z.zeroAmount.expectPairings);
+        const challenge = { ...placed!, request: b64u(request) };
+        expect(await build({ challenge, from: Z.fixed.payer, now: Z.fixed.now }, H)).toEqual(Z.zeroAmount.expect);
+        const fetch = serving(ABC);
+        const out = await confirm([challenge], binding, account(42431, Z.fixed), fetch);
+        expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
+        expect(fetch.calls).toBe(0);
+      }
+    });
+  });
 });
 
 describe("mpp/charge/tempo/push", () => {
