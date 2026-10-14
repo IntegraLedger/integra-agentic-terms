@@ -116,7 +116,7 @@ class X402ExactEip155Eip3009:
     def build(self, choice: Json, h: AtrHash) -> _Unsigned | Refusal:
         """The EIP-712 TransferWithAuthorization request whose nonce is h."""
         if not isinstance(choice, Mapping):
-            return Refusal("x402/option-malformed")
+            return Refusal("x402/not-v2")
         required = choice.get("required")
         accepted = choice.get("accepted")
         served = chosen(required, accepted, _FILTER)

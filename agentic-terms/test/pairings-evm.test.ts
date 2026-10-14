@@ -13,6 +13,7 @@ import {
   type PaymentRequirements,
 } from "@integraledger/lcp/x402";
 import { pairingOf } from "@integraledger/lcp";
+import { permit2TypedData } from "@integraledger/lcp/evm";
 import type { Binding, SigningRequest } from "../src/index.js";
 import { buildAndSign, H, LINK, vectors, type Pairing } from "./support.js";
 
@@ -175,4 +176,46 @@ describe("x402/exact/eip155/erc7710-salt", () => {
         expect(await exactErc7710.bound(signed as never)).toBe(E.EV7.expectBound);
       }));
   });
+});
+
+// The files' agreedRefusals rows, each with the input it carries: a row with choice is build's choice, with the file's
+// H; a row with permitted is permit2TypedData over EV1's chain id, spender, nonce and deadline.
+type AgreedRow = { case: string; expect: string; choice?: unknown; permitted?: unknown };
+type AgreedFile = {
+  fixed: Fixed & { H: string };
+  EV1?: { expectSpender: `0x${string}`; expectNonceDecimal: string; expectDeadline: string };
+  agreedRefusals?: { rows: AgreedRow[] };
+};
+const agreed = (
+  [
+    [exactPermit2, "x402-exact-eip155-permit2.json"],
+    [uptoPermit2, "x402-upto-eip155-permit2.json"],
+    [exactErc7710, "x402-exact-eip155-erc7710.json"],
+    [exactErc7710Salt, "x402-exact-eip155-erc7710-salt.json"],
+    [authCaptureEip3009, "x402-auth-capture-eip155-eip3009.json"],
+    [authCapturePermit2, "x402-auth-capture-eip155-permit2.json"],
+  ] as const
+).flatMap(([binding, name]) => {
+  const v = vectors<AgreedFile>(name);
+  return (v.agreedRefusals?.rows ?? []).map((row) => ({ binding, v, row }));
+});
+
+it.skipIf(agreed.length === 0)("agreedRefusals: each row's input gives the row's refusal", async () => {
+  for (const { binding, v, row } of agreed) {
+    let got: unknown;
+    if ("choice" in row) {
+      got = await binding.build(row.choice as never, v.fixed.H as never);
+    } else if ("permitted" in row && v.EV1 !== undefined) {
+      got = permit2TypedData({
+        chainId: Number(v.fixed.option.network.slice("eip155:".length)),
+        permitted: row.permitted as never,
+        spender: v.EV1.expectSpender,
+        nonce: BigInt(v.EV1.expectNonceDecimal),
+        deadline: BigInt(v.EV1.expectDeadline),
+      });
+    } else {
+      throw new Error(`no input this runner reads: ${row.case}`);
+    }
+    expect(got, row.case).toEqual({ refused: true, code: row.expect });
+  }
 });

@@ -227,7 +227,7 @@ class _Choice:
 def _choice_of(pairing: str, choice: object, h: object) -> _Choice | Refusal:
     """The checks every build makes on the choice, giving the chain id, the now + maxTimeoutSeconds bound and H."""
     if not is_object(choice):
-        return Refusal("x402/option-malformed")
+        return Refusal("x402/not-v2")
     required, accepted = choice.get("required"), choice.get("accepted")
     if not is_v2(required):
         return Refusal("x402/not-v2")

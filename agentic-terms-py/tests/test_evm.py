@@ -297,16 +297,40 @@ def test_ev3_auth_capture_salt_commitment_and_nonces() -> None:
     assert_truncated(unbound_hash, ev3["unbound"]["expectPaymentHash"])
 
 
-def test_payment_hash_and_permit2_typed_data_answer_a_malformed_argument() -> None:
-    """A payment info that is not one, and a Permit2 permitted that is neither an object nor a list of objects, are
-    evm/field-malformed: the code @integraledger/lcp's paymentHash and permit2TypedData give the same arguments."""
-    expect = Refusal("evm/field-malformed")
+def test_payment_hash_answers_a_payment_info_that_is_not_one() -> None:
+    """evm/field-malformed: the code @integraledger/lcp's paymentHash gives the same arguments."""
     infos: list[Any] = [None, 42, "x", True, [None], {}]
     for info in infos:
-        assert _evm.payment_hash(84532, AC_EIP3009["EV3"]["escrow"], info) == expect
-    permitted: list[Any] = [None, 42, "abc", True, 1.5, [None], [42]]
-    for value in permitted:
-        assert _evm.permit2_typed_data(84532, value, _evm.EXACT_PERMIT2_PROXY, 0, 0) == expect
+        assert _evm.payment_hash(84532, AC_EIP3009["EV3"]["escrow"], info) == Refusal("evm/field-malformed")
+
+
+# ── The files' agreedRefusals rows, each with the input it carries.
+
+AGREED_FILES: list[tuple[Binding, dict[str, Any]]] = [
+    (X402_EXACT_EIP155_PERMIT2, PERMIT2),
+    (X402_UPTO_EIP155_PERMIT2, UPTO),
+    (X402_EXACT_EIP155_ERC7710, ERC7710),
+    (X402_EXACT_EIP155_ERC7710_SALT, ERC7710_SALT),
+    (X402_AUTH_CAPTURE_EIP155_EIP3009, AC_EIP3009),
+    (X402_AUTH_CAPTURE_EIP155_PERMIT2, AC_PERMIT2),
+]
+AGREED = [(b, v, row) for b, v in AGREED_FILES for row in v.get("agreedRefusals", {}).get("rows", [])]
+
+
+@pytest.mark.parametrize("binding, vectors, row", AGREED, ids=[f"{b.id} {r['case']}" for b, _, r in AGREED])
+def test_agreed_refusals(binding: Binding, vectors: dict[str, Any], row: dict[str, Any]) -> None:
+    """A row with choice is build's choice, with the file's H; a row with permitted is permit2TypedData over EV1's
+    chain id, spender, nonce and deadline."""
+    if "choice" in row:
+        got = binding.build(copy.deepcopy(row["choice"]), vectors["fixed"]["H"])
+    elif "permitted" in row:
+        ev1 = vectors["EV1"]
+        chain_id = int(vectors["fixed"]["option"]["network"].removeprefix("eip155:"))
+        got = _evm.permit2_typed_data(chain_id, copy.deepcopy(row["permitted"]), ev1["expectSpender"],
+                                      int(ev1["expectNonceDecimal"]), int(ev1["expectDeadline"]))  # fmt: skip
+    else:
+        raise AssertionError(f"no input this runner reads: {row['case']}")
+    assert got == Refusal(row["expect"])
 
 
 def test_ev4_auth_capture_eip3009_build_complete_and_bound() -> None:

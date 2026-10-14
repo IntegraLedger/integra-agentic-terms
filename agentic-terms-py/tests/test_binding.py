@@ -4,6 +4,8 @@ refusal codes of the file's agreedRefusals rows."""
 import copy
 from typing import Any
 
+import pytest
+
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from integraledger_terms import Advertised, Refusal
 
@@ -109,3 +111,22 @@ def test_agreed_refusals() -> None:
         bad = copy.deepcopy(presented)
         bad["payload"]["signature"] = signature
         assert BINDING.bound(bad) == agreed("bound with a signature")
+
+
+INPUT_ROWS = [r for r in PAIRING["agreedRefusals"]["rows"] if {"choice", "info", "legalContext"} & r.keys()]
+
+
+@pytest.mark.parametrize("row", INPUT_ROWS, ids=[r["case"] for r in INPUT_ROWS])
+def test_agreed_refusals_with_their_input(row: dict[str, Any]) -> None:
+    """A row's choice is build's choice, with H; its info replaces V5's document's extensions.legalContext.info, and
+    its legalContext that document's extensions.legalContext, for read."""
+    doc = copy.deepcopy(V5["expectDocument"])
+    if "choice" in row:
+        got = BINDING.build(copy.deepcopy(row["choice"]), H)
+    elif "info" in row:
+        doc["extensions"]["legalContext"]["info"] = copy.deepcopy(row["info"])
+        got = BINDING.read(doc)
+    else:
+        doc["extensions"]["legalContext"] = copy.deepcopy(row["legalContext"])
+        got = BINDING.read(doc)
+    assert got == Refusal(row["expect"])
