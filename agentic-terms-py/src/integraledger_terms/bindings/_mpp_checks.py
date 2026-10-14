@@ -342,14 +342,15 @@ def evm_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         return Refusal("mpp/chain-id-required")
     if not is_address(r.get("currency")) or not is_address(r.get("recipient")):
         return Refusal("mpp/request-malformed")
-    if _has(d, "permit2Contract") and not is_address(d["permit2Contract"]):
-        return Refusal("mpp/request-malformed")
+    types = d.get("credentialTypes")
     if _has(d, "credentialTypes"):
-        types = d["credentialTypes"]
         if not is_list(types) or len(types) == 0:
             return Refusal("mpp/credential-types")
         if not all(isinstance(t, str) and t in ("permit2", "authorization", "hash") for t in types):
             return Refusal("mpp/credential-types")
+    # The Permit2 opening signs permit2Contract as the verifying contract; an absent credentialTypes is ["hash"].
+    if is_list(types) and "permit2" in types and _has(d, "permit2Contract") and not is_address(d["permit2Contract"]):
+        return Refusal("mpp/request-malformed")
     return ["mpp/session/evm"]
 
 

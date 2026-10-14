@@ -30,6 +30,7 @@ from integraledger_terms import (
 )
 from integraledger_terms import _gate
 from integraledger_terms._keccak import keccak256
+from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, plant, run
@@ -141,6 +142,38 @@ def test_mpp_session_evm_b10_http_link() -> None:
 
 def test_mpp_session_evm_b16_other_namespace_and_chain() -> None:
     b16(EVM_DOC, MPP_SESSION_EVM, [OTHER_NAMESPACE, f"eip155:1:{EF['payer']}"], AUTHORIZATION_INPUTS)
+
+
+# methodDetails.permit2Contract is the verifying contract the Permit2 opening signs, so the session's check reads it
+# only where credentialTypes lists permit2 (an absent credentialTypes is ["hash"]), and after credentialTypes itself.
+# Each expected answer is @integraledger/lcp's pairingsOf for the same challenge.
+_UNREAD = ("mpp/session/evm",)
+
+
+@pytest.mark.parametrize(
+    ("types", "contract", "expect"),
+    [
+        (None, "x", _UNREAD),
+        (["hash"], "0x1234", _UNREAD),
+        (["authorization"], None, _UNREAD),
+        (["hash", "authorization"], 7, _UNREAD),
+        (["permit2"], "0x000000000022D473030F116dDEE9F6B43aC78BA3", _UNREAD),
+        (["permit2"], "x", "mpp/request-malformed"),
+        (["hash", "authorization", "permit2"], None, "mpp/request-malformed"),
+        (["permit2", "hash"], [], "mpp/request-malformed"),
+        ([], "x", "mpp/credential-types"),
+        (["permit2", "bogus"], "x", "mpp/credential-types"),
+        ("permit2", "x", "mpp/credential-types"),
+    ],
+)
+def test_mpp_session_evm_permit2_contract_is_read_where_credential_types_lists_permit2(types: Any, contract: Any, expect: Any) -> None:
+    request = json.loads(EF["request"])
+    details = {k: v for k, v in request["methodDetails"].items() if k != "credentialTypes"}
+    if types is not None:
+        details["credentialTypes"] = types
+    request["methodDetails"] = {**details, "permit2Contract": contract}
+    out = pairings_of(issued("evm", "session", json.dumps(request)))
+    assert out == (expect if isinstance(expect, tuple) else Refusal(expect))
 
 
 # ── mpp/session/tempo.
