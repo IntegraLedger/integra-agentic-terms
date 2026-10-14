@@ -32,9 +32,10 @@ const x402Doc = (binding: Binding, resource: object, option: PaymentRequirements
 
 describe("x402/exact/casper", () => {
   const V = vectors<{
-    fixed: { O: PaymentRequirements; from: string; resource: object; publicKey: string; signature: string };
+    fixed: { O: PaymentRequirements; from: string; resource: object; publicKey: string; signature: string; H: AtrHash };
     C1: { expectDomain: object; expectMessage: Record<string, unknown> };
     C2: { expectPayload: { payload: object } };
+    refusals: { rows: { case: string; fn: string; choice?: unknown; expect: object }[] };
   }>("x402-exact-casper.json");
   const f = V.fixed;
   const p: Pairing = {
@@ -52,6 +53,11 @@ describe("x402/exact/casper", () => {
       });
       expect((signed as { payload: object }).payload).toEqual(V.C2.expectPayload.payload);
     }));
+  it("refusals: each build row with a choice of its own gives the row's refusal", async () => {
+    const rows = V.refusals.rows.filter((r) => r.fn === "build" && "choice" in r);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(await exactCasper.build(r.choice as never, f.H), r.case).toEqual(r.expect);
+  });
 });
 
 describe("x402/exact/ccd", () => {

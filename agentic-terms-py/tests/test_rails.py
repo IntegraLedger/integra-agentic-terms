@@ -367,6 +367,8 @@ def test_casper_refusals() -> None:
         want = Refusal(row["expect"]["code"])
         if row["fn"] == "bound":
             got = X402_EXACT_CASPER.bound(mutate(CS["C2"]["expectPayload"], row["mutate"]))
+        elif row["fn"] == "build" and "choice" in row:
+            got = X402_EXACT_CASPER.build(row["choice"], CS_F["H"])
         elif row["fn"] == "build":
             option = {**CS_F["O"], **row.get("optionMutate", {})}
             choice = {"required": cs_required(option), "accepted": option, "from": row.get("from", CS_F["from"]), "now": CS_F["now"]}
@@ -379,6 +381,13 @@ def test_casper_refusals() -> None:
         assert (row["case"], got) == (row["case"], want)
         ran += 1
     assert ran == len(CS["refusals"]["rows"]) - 1
+
+
+def test_casper_refusals_hold_build_rows_with_a_choice_of_their_own() -> None:
+    """The rows test_casper_refusals builds from their own choice, which is not an object."""
+    rows = [row for row in CS["refusals"]["rows"] if row["fn"] == "build" and "choice" in row]
+    assert rows
+    assert all(not isinstance(row["choice"], dict) for row in rows)
 
 
 # ── x402/exact/aptos
