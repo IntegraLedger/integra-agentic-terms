@@ -3,11 +3,13 @@ challenge's id and realm), mpp/charge/evm/permit2 (the signed witness carries th
 mpp/charge/evm/transaction and mpp/charge/evm/hash (the ERC-20 transfer the buyer signs or broadcasts carries nothing
 of H, so bound refuses mpp/no-signed-place)."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Refusal
+from ._evm import PERMIT2, Witness, permit2_typed_data
 from ._lcp import is_address, is_list, is_object, normal_hash
 from ._mpp import (
     Checked,
@@ -25,7 +27,7 @@ from ._mpp import (
     TEMPO_DEFAULT_CHAIN,
 )
 from ._mpp_checks import positive_int
-from ._mpp_evm import PERMIT2, eip3009_typed_data, permit2_typed_data, transfer_calldata
+from ._mpp_evm import eip3009_typed_data, transfer_calldata
 
 AUTHORIZATION = "mpp/charge/evm/authorization"
 PERMIT2_ID = "mpp/charge/evm/permit2"
@@ -173,7 +175,7 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         return deadline
     nonce = int(challenge_hash_value, 16)
     transfers = [{"to": recipient, "amount": primary}, *(splits or [])]
-    permitted = [{"token": currency, "amount": t["amount"]} for t in transfers]
+    permitted: list[Mapping[str, Any]] = [{"token": currency, "amount": t["amount"]} for t in transfers]
     contract = o.details.get("permit2Address")
     typed_data = permit2_typed_data(
         chain_id=chain_id,
@@ -182,11 +184,9 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         nonce=nonce,
         deadline=deadline,
         verifying_contract=contract if isinstance(contract, str) else PERMIT2,
-        witness={
-            "type": "PaymentWitness",
-            "fields": PAYMENT_WITNESS,
-            "value": {"challengeHash": challenge_hash_value, "externalId": external_id},
-        },
+        witness=Witness(
+            "PaymentWitness", PAYMENT_WITNESS, {"challengeHash": challenge_hash_value, "externalId": external_id}
+        ),
     )
     if isinstance(typed_data, Refusal):
         return typed_data

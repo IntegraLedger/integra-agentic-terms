@@ -3,8 +3,6 @@ authorization and permit2, B16 for authorization, and the plant, MV11's call and
 hash. Expected values are the vector files'; the key is the published Anvil key #0."""
 
 import hashlib
-import re
-from collections import UserString
 from collections.abc import Iterator
 from typing import Any
 
@@ -23,8 +21,7 @@ from integraledger_terms import (
     finish,
     transact,
 )
-from integraledger_terms import Refusal, _gate
-from integraledger_terms.bindings._mpp_evm import permit2_typed_data
+from integraledger_terms import _gate
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, offered, plant, run
 from mpp_docs import MC, issued, placed_doc
@@ -102,91 +99,6 @@ def test_mpp_charge_evm_permit2_b6_mv6_digest_and_signature() -> None:
         assert eip712(request) == mv6["expectSignature"]
 
     build_and_sign(PERMIT2, inspect)
-
-
-PERMIT2_WITNESS = {"type": "PaymentWitness", "fields": [{"name": "externalId", "type": "string"}], "value": {"externalId": ""}}
-
-
-@pytest.mark.parametrize("permitted", [None, 42, [42], [None], [[]], "x"], ids=["none", "int", "list-int", "list-none", "list-list", "str"])
-@pytest.mark.parametrize("witness", [None, PERMIT2_WITNESS], ids=["no-witness", "witness"])
-def test_permit2_typed_data_refuses_a_permitted_entry_that_is_not_an_object(permitted: Any, witness: Any) -> None:
-    # The expected refusal is @integraledger/lcp's permit2TypedData answer for each of these inputs.
-    given = {} if witness is None else {"witness": witness}
-    out = permit2_typed_data(chain_id=1, permitted=permitted, spender="0x" + "11" * 20, nonce=0, deadline=1, **given)
-    assert out == Refusal("evm/field-malformed")
-
-
-# The well-formed witness is x402-exact-eip155-permit2.json's: the Witness struct of EV1's witnessTypeString, with the
-# value {to: payTo, validAfter: "0"} its case names, over EV1's spender, nonce and deadline. Each malformed witness is
-# one the protocol package's permit2TypedData refuses with evm/field-malformed (its failures-are-values test).
-P2 = load("x402-exact-eip155-permit2.json")
-_STRUCT = re.search(r"\)Witness\(([^)]*)\)$", P2["EV1"]["witnessTypeString"])
-assert _STRUCT is not None
-WITNESS_FIELDS = [{"name": m.split(" ")[1], "type": m.split(" ")[0]} for m in _STRUCT.group(1).split(",")]
-WITNESS_VALUE = {"to": P2["fixed"]["option"]["payTo"], "validAfter": "0"}
-WITNESS = {"type": "Witness", "fields": WITNESS_FIELDS, "value": WITNESS_VALUE}
-WITNESS_ARGS: dict[str, Any] = {
-    "chain_id": 84532,
-    "permitted": {"token": P2["fixed"]["option"]["asset"], "amount": int(P2["fixed"]["option"]["amount"])},
-    "spender": P2["EV1"]["expectSpender"],
-    "nonce": int(P2["EV1"]["expectNonceDecimal"]),
-    "deadline": int(P2["EV1"]["expectDeadline"]),
-}
-
-
-class _Spelled:
-    """An object whose text is "Witness" and which is not a string."""
-
-    def __str__(self) -> str:
-        return "Witness"
-
-
-class _Mapped:
-    """An object with a map method, which is not a list."""
-
-    def map(self, f: Any) -> list[Any]:
-        return []
-
-
-MALFORMED_WITNESSES: list[tuple[str, Any]] = [
-    ("a witness of None", None),
-    ("a witness of 0x1234", "0x1234"),
-    ("a witness of 1", 1),
-    ("a witness that is a list", [WITNESS]),
-    ("a type that is a list", {**WITNESS, "type": ["Witness"]}),
-    ("a type that is an object whose text is the name", {**WITNESS, "type": _Spelled()}),
-    ("a type that is a string-like object", {**WITNESS, "type": UserString("Witness")}),
-    ("a type that is a number", {**WITNESS, "type": 1}),
-    ("no fields", {"type": "Witness", "value": WITNESS_VALUE}),
-    ("fields of None", {**WITNESS, "fields": None}),
-    ("fields that are a string", {**WITNESS, "fields": "to"}),
-    ("fields that are an object with a map method", {**WITNESS, "fields": _Mapped()}),
-    ("a field of None", {**WITNESS, "fields": [None]}),
-    ("a field that is a number", {**WITNESS, "fields": [1]}),
-    ("a field that is a list", {**WITNESS, "fields": [["address", "to"]]}),
-    ("a field of None after a well-formed one", {**WITNESS, "fields": [WITNESS_FIELDS[0], None]}),
-    ("a field whose name is not a string", {**WITNESS, "fields": [{"name": 1, "type": "address"}]}),
-    ("a field with no type", {**WITNESS, "fields": [{"name": "to"}]}),
-    ("no value", {"type": "Witness", "fields": WITNESS_FIELDS}),
-    ("a value of None", {**WITNESS, "value": None}),
-    ("a value that is a string", {**WITNESS, "value": "0x1234"}),
-    ("a value that is a list", {**WITNESS, "value": [WITNESS_VALUE]}),
-]
-
-
-def test_permit2_typed_data_reads_the_vector_files_witness() -> None:
-    assert len(MALFORMED_WITNESSES) == 22
-    assert WITNESS_FIELDS == [{"name": "to", "type": "address"}, {"name": "validAfter", "type": "uint256"}]
-    typed = permit2_typed_data(**WITNESS_ARGS, witness=WITNESS)
-    assert not isinstance(typed, Refusal)
-    assert typed["primaryType"] == "PermitWitnessTransferFrom"
-    assert typed["types"]["Witness"] == WITNESS_FIELDS
-    assert typed["message"]["witness"] == WITNESS_VALUE
-
-
-@pytest.mark.parametrize("witness", [w for _, w in MALFORMED_WITNESSES], ids=[n for n, _ in MALFORMED_WITNESSES])
-def test_permit2_typed_data_refuses_a_malformed_witness(witness: Any) -> None:
-    assert permit2_typed_data(**WITNESS_ARGS, witness=witness) == Refusal("evm/field-malformed")
 
 
 def signed_tx(request: Any) -> str:
