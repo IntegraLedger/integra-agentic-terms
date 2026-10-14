@@ -21,7 +21,8 @@ from integraledger_terms import (
     finish,
     transact,
 )
-from integraledger_terms import _gate
+from integraledger_terms import Refusal, _gate
+from integraledger_terms.bindings._mpp_evm import permit2_typed_data
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, offered, plant, run
 from mpp_docs import MC, issued, placed_doc
@@ -99,6 +100,17 @@ def test_mpp_charge_evm_permit2_b6_mv6_digest_and_signature() -> None:
         assert eip712(request) == mv6["expectSignature"]
 
     build_and_sign(PERMIT2, inspect)
+
+
+PERMIT2_WITNESS = {"type": "PaymentWitness", "fields": [{"name": "externalId", "type": "string"}], "value": {"externalId": ""}}
+
+
+@pytest.mark.parametrize("permitted", [None, 42, [42], [None], [[]], "x"], ids=["none", "int", "list-int", "list-none", "list-list", "str"])
+@pytest.mark.parametrize("witness", [None, PERMIT2_WITNESS], ids=["no-witness", "witness"])
+def test_permit2_typed_data_refuses_a_permitted_entry_that_is_not_an_object(permitted: Any, witness: Any) -> None:
+    # The expected refusal is @integraledger/lcp's permit2TypedData answer for each of these inputs.
+    out = permit2_typed_data(chain_id=1, permitted=permitted, spender="0x" + "11" * 20, nonce=0, deadline=1, witness=witness)
+    assert out == Refusal("evm/field-malformed")
 
 
 def signed_tx(request: Any) -> str:

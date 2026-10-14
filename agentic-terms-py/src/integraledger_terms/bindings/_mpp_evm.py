@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .._types import Refusal
-from ._lcp import is_address, normal_hash, uint256_of
+from ._lcp import is_address, is_object, normal_hash, uint256_of
 
 UINT256_LIMIT = 2**256
 MAX_SAFE_INTEGER = 2**53 - 1
@@ -123,7 +123,8 @@ def permit2_typed_data(
 ) -> dict[str, Any] | Refusal:
     """Permit2's typed data under its domain (name "Permit2", no version). No witness gives PermitTransferFrom; a
     witness {type, fields, value} gives PermitWitnessTransferFrom, or PermitBatchWitnessTransferFrom when permitted is
-    a list."""
+    a list. An empty list, one of more than 32 entries, a list with no witness, and an entry that is not an object
+    with a token address are refused evm/field-malformed."""
     if isinstance(chain_id, bool) or not isinstance(chain_id, int) or not 0 < chain_id <= MAX_SAFE_INTEGER:
         return Refusal("evm/network-malformed")
     contract = PERMIT2 if verifying_contract is None else verifying_contract
@@ -132,14 +133,16 @@ def permit2_typed_data(
     if not is_uint256(nonce) or not is_uint256(deadline):
         return Refusal("evm/field-malformed")
     listed = isinstance(permitted, list)
-    entries: list[Mapping[str, Any]] = list(permitted) if isinstance(permitted, list) else [permitted]  # type: ignore[list-item]
-    if not 1 <= len(entries) <= 32:
+    given: list[object] = list(permitted) if isinstance(permitted, list) else [permitted]
+    if not 1 <= len(given) <= 32:
         return Refusal("evm/field-malformed")
-    for p in entries:
-        if not is_address(p.get("token")):
+    entries: list[Mapping[str, Any]] = []
+    for p in given:
+        if not is_object(p) or not is_address(p.get("token")):
             return Refusal("evm/field-malformed")
         if not is_uint256(p.get("amount")):
             return Refusal("evm/amount-malformed")
+        entries.append(p)
     token_permissions = [{"name": "token", "type": "address"}, {"name": "amount", "type": "uint256"}]
     domain = {"name": "Permit2", "chainId": chain_id, "verifyingContract": contract}
     eip712_domain = [
