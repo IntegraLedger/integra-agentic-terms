@@ -7,6 +7,7 @@ import asyncio
 import base64
 import dataclasses
 import json
+import re
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
@@ -975,6 +976,109 @@ def test_a_declared_length_of_5000_digits_is_larger_than_the_bound_at_both_gets(
     assert declined(out, "atr-too-large")
     out = run(link, lambda c: agree(A, URL, RecordingSigner(), c))
     assert out == Declined("agreement-failed", "The agreement receipt is larger than 64 KiB.")
+
+
+# Each header value the gate reads (retry-after, content-length and content-encoding, at the ATR's GET and at the
+# agreement URL's) loses its leading and trailing HTTP whitespace, which the Fetch standard names as tab, LF, CR and space
+# and removes from a header value; any other character stays, and the value is read with it. Each of the 256 bytes is put
+# on both sides of a value, in the answer's raw header bytes, which httpx decodes as U+0000-U+00FF. The expected answers
+# are this rule's, with RFC 9110's delay-seconds for retry-after (one to nine digits here, at least 1 s; 2 s for any other
+# value) and the bounds the gate states: 1 MiB for the ATR (B12), 64 KiB for the receipt.
+BYTES = [bytes([b]) for b in range(256)]
+HTTP_WHITESPACE = (b"\t", b"\n", b"\r", b" ")
+ATR_BOUND: int = row("B12")["input"]["bodyLength"]
+RECEIPT_BOUND = 64 * 1024
+
+
+def ruled(c: bytes, inner: bytes) -> str:
+    """inner with c on both sides, as the rule reads it."""
+    return (inner if c in HTTP_WHITESPACE else c + inner + c).decode("latin-1")
+
+
+def over(value: str, bound: int) -> bool:
+    return re.fullmatch("[0-9]+", value) is not None and int(value) > bound
+
+
+def outcome(out: object) -> str:
+    return out.detail if isinstance(out, Declined) else "read"
+
+
+def retry_wait(value: bytes, clock: Clock) -> float:
+    """The time from the agreement payment's first sending, answered 202 with the retry-after value, to its second,
+    answered with the receipt; to the end of the exchange when there is no second."""
+    paid_at: list[float] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if "payment-signature" not in request.headers:
+            return httpx.Response(402, headers={"payment-required": b64(AG["required"])})
+        paid_at.append(clock.now)
+        if len(paid_at) == 1:
+            return httpx.Response(202, headers=[(b"retry-after", value)])
+        return httpx.Response(200, json=AG["receipt"])
+
+    run(Link(handle), lambda c: approve_and_agree(RecordingSigner(), c))
+    return (paid_at[1] if len(paid_at) > 1 else clock.now) - paid_at[0]
+
+
+def test_retry_after_waits_the_rules_seconds_for_each_byte_around_the_digit_5(clock: Clock) -> None:
+    want, got = [], []
+    for c in BYTES:
+        value = ruled(c, b"5")
+        seconds = max(1, int(value)) if re.fullmatch("[0-9]{1,9}", value) else 2
+        want.append((c.hex(), min(seconds, EXCHANGE_S)))
+        got.append((c.hex(), retry_wait(c + b"5" + c, clock)))
+    assert got == want
+
+
+def test_a_declared_length_over_the_bound_is_read_by_the_rule_for_each_byte_around_it_at_both_gets() -> None:
+    atr_length, receipt_length = str(ATR_BOUND + 1).encode(), str(RECEIPT_BOUND + 1).encode()
+    want, got = [], []
+    for c in BYTES:
+        want.append((
+            c.hex(),
+            f"The ATR is larger than {ATR_BOUND} bytes." if over(ruled(c, atr_length), ATR_BOUND) else "read",
+            "The agreement receipt is larger than 64 KiB." if over(ruled(c, receipt_length), RECEIPT_BOUND) else "read",
+        ))
+        atr = [(b"content-length", c + atr_length + c)]
+        receipt = [(b"content-length", c + receipt_length + c)]
+        got.append((
+            c.hex(),
+            outcome(run(Link(lambda request: httpx.Response(200, headers=atr, content=A)),
+                        lambda client: confirm(D, BINDING, ACCOUNT, client))),
+            outcome(run(Link(lambda request: httpx.Response(200, headers=receipt, json=AG["receipt"])),
+                        lambda client: agree(A, URL, RecordingSigner(), client))),
+        ))
+    assert got == want
+
+
+def test_content_encoding_identity_is_read_by_the_rule_for_each_byte_around_it_at_both_gets() -> None:
+    want, got = [], []
+    for c in BYTES:
+        identity = ruled(c, b"identity").lower() in ("", "identity")
+        want.append((
+            c.hex(),
+            "read" if identity else "The link served a content coding other than identity.",
+            "read" if identity else "The agreement URL served a content coding other than identity.",
+        ))
+        coded = [(b"content-encoding", c + b"identity" + c)]
+        got.append((
+            c.hex(),
+            outcome(run(Link(lambda request: httpx.Response(200, headers=coded, content=A)),
+                        lambda client: confirm(D, BINDING, ACCOUNT, client))),
+            outcome(run(Link(lambda request: httpx.Response(200, headers=coded, json=AG["receipt"])),
+                        lambda client: agree(A, URL, RecordingSigner(), client))),
+        ))
+    assert got == want
+
+
+def test_a_header_value_httpx_decodes_as_utf_8_keeps_every_other_space_character(clock: Clock) -> None:
+    # httpx decodes a header block that is valid UTF-8 as UTF-8, so a value can hold a character past U+00FF. Every
+    # character str.isspace names that is not HTTP whitespace, and U+FEFF, around the digit 5 in its UTF-8 bytes: the
+    # wait is 2 s, as for any other value.
+    spaces = [chr(c) for c in range(0x110000) if chr(c).isspace() and chr(c) not in "\t\n\r "] + ["\ufeff"]
+    assert {"\u0085", "\u00a0", "\u2003", "\u3000"} <= set(spaces)
+    waits = {f"U+{ord(s):04X}": retry_wait(s.encode("utf-8") + b"5" + s.encode("utf-8"), clock) for s in spaces}
+    assert waits == {name: 2 for name in waits}
 
 
 def test_each_get_hands_httpx_the_gates_own_deadline() -> None:

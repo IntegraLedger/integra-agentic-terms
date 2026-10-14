@@ -142,9 +142,9 @@ def _from_base64_json(header: str) -> object | None:
 
 
 def _retry_seconds(header: str | None) -> int:
-    """retry-after as one to nine decimal digits of seconds, surrounding whitespace aside, at least 1; 2 for any other
-    value or none."""
-    value = header.strip() if header is not None else None
+    """retry-after as one to nine decimal digits of seconds, surrounding spaces, tabs, CRs and LFs aside, at least 1; 2
+    for any other value or none."""
+    value = _gate._trim_http_whitespace(header) if header is not None else None
     if value is None or _DECIMAL.fullmatch(value) is None:
         return RETRY_DEFAULT_S
     return max(RETRY_MIN_S, int(value))

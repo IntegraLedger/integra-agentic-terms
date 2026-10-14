@@ -83,11 +83,21 @@ def _unsupported(binding: Binding) -> Declined:
     return Declined("pairing-not-supported", f"The gate has no buyer piece for the pairing {getattr(binding, 'id', None)}.")
 
 
+# HTTP whitespace, as the Fetch standard names it: tab, LF, CR and space.
+_HTTP_WHITESPACE = "\t\n\r "
+
+
+def _trim_http_whitespace(value: str) -> str:
+    """A header value without its leading and trailing HTTP whitespace, as Fetch normalizes one. Any other character
+    stays, so a value it surrounds is read as written."""
+    return value.strip(_HTTP_WHITESPACE)
+
+
 def _declared_over(declared: str | None, bound: int) -> bool:
     """Whether a Content-Length value declares more than bound bytes, read as the TypeScript gate reads it: ASCII digits
-    alone once surrounding whitespace is stripped, compared by their significant digits, so a value of any length is
-    read. Any other value declares nothing."""
-    value = (declared or "").strip()
+    alone, surrounding spaces, tabs, CRs and LFs aside, compared by their significant digits, so a value of any length
+    is read. Any other value declares nothing."""
+    value = _trim_http_whitespace(declared or "")
     if _DECIMAL.fullmatch(value) is None:
         return False
     significant = value.lstrip("0") or "0"
@@ -103,8 +113,9 @@ IDENTITY = {"Accept-Encoding": "identity"}
 
 
 def is_identity(content_encoding: str | None) -> bool:
-    """Whether a Content-Encoding value names no coding: absent, empty, or identity."""
-    return (content_encoding or "").strip().lower() in ("", "identity")
+    """Whether a Content-Encoding value names no coding: absent, empty, or identity, surrounding spaces, tabs, CRs and
+    LFs aside."""
+    return _trim_http_whitespace(content_encoding or "").lower() in ("", "identity")
 
 
 async def _fetch(fetch: httpx.AsyncClient, link: str) -> bytes | Declined:

@@ -136,9 +136,27 @@ export function redirected(response: Response): boolean {
 /** The request header that asks for the body with no content coding, so the bytes hashed are the bytes sent. */
 export const IDENTITY = { "Accept-Encoding": "identity" } as const;
 
-/** Whether a `Content-Encoding` value names no coding: absent, empty, or `identity`. */
+/** HTTP whitespace, as the Fetch standard names it: tab, LF, CR and space. */
+const HTTP_WHITESPACE = "\t\n\r ";
+
+/**
+ * A header value without its leading and trailing HTTP whitespace, as Fetch normalizes one. Any other character stays,
+ * so a value it surrounds is read as written.
+ */
+export function trimHttpWhitespace(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && HTTP_WHITESPACE.includes(value[start]!)) start++;
+  while (end > start && HTTP_WHITESPACE.includes(value[end - 1]!)) end--;
+  return value.slice(start, end);
+}
+
+/**
+ * Whether a `Content-Encoding` value names no coding: absent, empty, or `identity`, surrounding spaces, tabs, CRs and
+ * LFs aside.
+ */
 export function isIdentity(contentEncoding: string | null): boolean {
-  const v = (contentEncoding ?? "").trim().toLowerCase();
+  const v = trimHttpWhitespace(contentEncoding ?? "").toLowerCase();
   return v === "" || v === "identity";
 }
 
@@ -173,7 +191,8 @@ async function fetchAtr(fetch: Fetch, link: string): Promise<Uint8Array | Declin
     if (!isIdentity(response.headers.get("content-encoding"))) {
       return declined("atr-unfetchable", "The link served a content coding other than identity.");
     }
-    const declared = response.headers.get("content-length")?.trim();
+    const length = response.headers.get("content-length");
+    const declared = length === null ? undefined : trimHttpWhitespace(length);
     if (declared !== undefined && DECIMAL.test(declared) && Number(declared) > MAX_ATR_BYTES) return tooLarge();
     if (body === null) {
       whole = true;

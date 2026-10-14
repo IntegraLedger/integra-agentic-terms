@@ -965,3 +965,94 @@ describe("the caller's signal", () => {
     expect(fetch.calls.length).toBe(0);
   });
 });
+
+// Each header value the gate reads (retry-after, content-length and content-encoding, at the ATR's GET and at the
+// agreement URL's) loses its leading and trailing HTTP whitespace, which the Fetch standard names as tab, LF, CR and
+// space and removes from a header value; any other character stays, and the value is read with it. Each of the 256
+// characters a header value decodes to (U+0000-U+00FF) is put on both sides of a value, in an answer whose headers give
+// the value as written. The expected answers are this rule's, with RFC 9110's delay-seconds for retry-after (one to
+// nine digits here, at least 1 s; 2 s for any other value) and the bounds the gate states: 1 MiB for the ATR (B12),
+// 64 KiB for the receipt.
+describe("a header value read without its surrounding HTTP whitespace", () => {
+  const CHARACTERS = Array.from({ length: 256 }, (_, c) => String.fromCharCode(c));
+  const HTTP_WHITESPACE = ["\t", "\n", "\r", " "];
+  /** `inner` with `c` on both sides, as the rule reads it. */
+  const ruled = (c: string, inner: string): string => (HTTP_WHITESPACE.includes(c) ? inner : c + inner + c);
+  const label = (c: string): string => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+  /** An answer whose headers give each value as written; a Headers object refuses some of these characters. */
+  function answer(status: number, headers: Record<string, string>, body: BodyInit | null = null): Response {
+    const real = new Response(body, { status });
+    const get = (name: string): string | null => headers[name.toLowerCase()] ?? null;
+    return { status, type: real.type, body: real.body, headers: { get } } as unknown as Response;
+  }
+  const RECEIPT = JSON.stringify(AG.receipt);
+  const ATR_BOUND: number = row("B12").input.bodyLength;
+  const RECEIPT_BOUND = 64 * 1024;
+  const over = (value: string, bound: number): boolean => /^[0-9]+$/.test(value) && Number(value) > bound;
+  const outcome = (out: unknown): string => (isDeclined(out) ? out.decline.detail : "read");
+
+  it("retry-after: the wait after a 202 is the rule's, for each character around the digit 5", async () => {
+    const want: [string, number][] = [];
+    const got: [string, number][] = [];
+    for (const c of CHARACTERS) {
+      const value = ruled(c, "5");
+      const seconds = /^[0-9]{1,9}$/.test(value) ? Math.max(1, Number(value)) : 2;
+      want.push([label(c), Math.min(seconds * 1000, EXCHANGE_MS)]);
+      const paidAt: number[] = [];
+      const fetch = (async (_url: string, init: Parameters<Fetch>[1]) => {
+        if (init.headers?.["PAYMENT-SIGNATURE"] === undefined) {
+          return new Response(null, { status: 402, headers: { "payment-required": base64Json(AG.required) } });
+        }
+        paidAt.push(Date.now());
+        return paidAt.length === 1 ? answer(202, { "retry-after": c + "5" + c }) : answer(200, {}, RECEIPT);
+      }) as Fetch;
+      await drive(approveAndAgree(counting(), fetch));
+      got.push([label(c), (paidAt[1] ?? Date.now()) - paidAt[0]!]);
+    }
+    expect(got).toEqual(want);
+  });
+
+  it("content-length: a declared length over the bound is read by the rule, for each character around it, at both GETs", async () => {
+    const want: [string, string, string][] = [];
+    const got: [string, string, string][] = [];
+    for (const c of CHARACTERS) {
+      const atrLength = String(ATR_BOUND + 1);
+      const receiptLength = String(RECEIPT_BOUND + 1);
+      want.push([
+        label(c),
+        over(ruled(c, atrLength), ATR_BOUND) ? `The ATR is larger than ${ATR_BOUND} bytes.` : "read",
+        over(ruled(c, receiptLength), RECEIPT_BOUND) ? "The agreement receipt is larger than 64 KiB." : "read",
+      ]);
+      const atr = (async () => answer(200, { "content-length": c + atrLength + c }, new Uint8Array(A))) as Fetch;
+      const receipt = (async () => answer(200, { "content-length": c + receiptLength + c }, RECEIPT)) as Fetch;
+      got.push([
+        label(c),
+        outcome(await confirm(D, exactEip3009, ACCOUNT, atr)),
+        outcome(await agree(A, AGREEMENT_URL, counting(), receipt)),
+      ]);
+    }
+    expect(got).toEqual(want);
+  });
+
+  it("content-encoding: identity is read by the rule, for each character around it, at both GETs", async () => {
+    const want: [string, string, string][] = [];
+    const got: [string, string, string][] = [];
+    for (const c of CHARACTERS) {
+      const identity = ["", "identity"].includes(ruled(c, "identity").toLowerCase());
+      want.push([
+        label(c),
+        identity ? "read" : "The link served a content coding other than identity.",
+        identity ? "read" : "The agreement URL served a content coding other than identity.",
+      ]);
+      const coded = { "content-encoding": c + "identity" + c };
+      const atr = (async () => answer(200, coded, new Uint8Array(A))) as Fetch;
+      const receipt = (async () => answer(200, coded, RECEIPT)) as Fetch;
+      got.push([
+        label(c),
+        outcome(await confirm(D, exactEip3009, ACCOUNT, atr)),
+        outcome(await agree(A, AGREEMENT_URL, counting(), receipt)),
+      ]);
+    }
+    expect(got).toEqual(want);
+  });
+});

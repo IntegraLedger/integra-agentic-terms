@@ -20,7 +20,7 @@ import {
   type Refusal,
 } from "@integraledger/lcp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected } from "./gate.js";
+import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected, trimHttpWhitespace } from "./gate.js";
 import { fromBase64, isRefusal } from "./pairings/common.js";
 import type {
   AgreeOptions,
@@ -101,11 +101,11 @@ function fromBase64Json(header: string): unknown {
 }
 
 /**
- * `retry-after` as one to nine decimal digits of seconds, surrounding whitespace aside, at least 1; 2 for any other
- * value or none.
+ * `retry-after` as one to nine decimal digits of seconds, surrounding spaces, tabs, CRs and LFs aside, at least 1; 2
+ * for any other value or none.
  */
 function retrySeconds(header: string | null): number {
-  const v = header?.trim();
+  const v = header === null ? undefined : trimHttpWhitespace(header);
   if (v === undefined || !DECIMAL.test(v)) return RETRY_DEFAULT_S;
   return Math.max(RETRY_MIN_S, Number(v));
 }
@@ -176,7 +176,8 @@ async function get(
       return failed("The agreement URL served a content coding other than identity.");
     }
     if (response.status !== 200) return answer;
-    const declared = response.headers.get("content-length")?.trim();
+    const length = response.headers.get("content-length");
+    const declared = length === null ? undefined : trimHttpWhitespace(length);
     if (declared !== undefined && /^[0-9]+$/.test(declared) && Number(declared) > MAX_ANSWER_BYTES) {
       return failed("The agreement receipt is larger than 64 KiB.");
     }
