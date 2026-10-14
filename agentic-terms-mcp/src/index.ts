@@ -74,7 +74,11 @@ const DESCRIPTIONS = {
     "document must advertise the held ATR hash, and the payment must name the held channel. On an MPP session a " +
     "challenge that names another channel or another ATR hash is declined, and one with no legal context is signed " +
     "under the held ATR hash. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the " +
-    "payment to send and the updated `hold`.",
+    "payment to send and the updated `hold`. With `refund`, signs a refund in place of a voucher. A Solana refund is " +
+    "taken again, with the payer-signed request_close built from `inputs`' `recentBlockhash`, when " +
+    "`refund.paymentResponse`, the seller's decoded `PAYMENT-RESPONSE`, has the `errorReason` " +
+    "`invalid_batch_settlement_svm_receiver_binding_unavailable`, read first, or else the document's `error` is " +
+    "that code.",
   atr_channel_record_charge:
     "Records the seller's cumulative charge in a held channel, no lower than the last recorded and no higher than " +
     "what was signed. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the updated " +
@@ -383,7 +387,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
           pairing,
           hold,
           document: JSON_VALUE,
-          refund: z.object({ amount: z.string().optional() }).optional(),
+          refund: z.object({ amount: z.string().optional(), paymentResponse: JSON_VALUE.optional() }).optional(),
           inputs,
         }),
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -391,13 +395,19 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       async (a) => {
         const held = await unseal(a.hold);
         if (held === undefined) return holdUnverified();
-        const refund = a.refund === undefined ? undefined : a.refund.amount === undefined ? {} : { amount: a.refund.amount };
+        const refund =
+          a.refund === undefined
+            ? undefined
+            : {
+                ...(a.refund.amount === undefined ? {} : { amount: a.refund.amount }),
+                ...(a.refund.paymentResponse === undefined ? {} : { paymentResponse: a.refund.paymentResponse }),
+              };
         const out = await within(
           a.document,
           held as unknown as ChannelHold,
           bindingOf(a.pairing),
           signer,
-          refund,
+          refund as Parameters<typeof within>[4],
           (a.inputs ?? {}) as Inputs,
         );
         if ("decline" in out) return declinedResult(out);

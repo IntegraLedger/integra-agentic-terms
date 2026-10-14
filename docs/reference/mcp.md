@@ -213,7 +213,7 @@ another H is declined, and one with no legal context is signed under the held H.
 | `pairing` | string | The channel's pairing. |
 | `hold` | object | The latest hold, exactly as returned. |
 | `document` | JSON | The seller's new payment request. |
-| `refund` | `{ amount? }`, optional | Sign a refund instead of a voucher: `{}` closes the channel. |
+| `refund` | `{ amount?, paymentResponse? }`, optional | Sign a refund instead of a voucher: `{}` closes the channel. `paymentResponse` is the decoded `PAYMENT-RESPONSE` the seller answered a Solana refund with; its `errorReason` `invalid_batch_settlement_svm_receiver_binding_unavailable` takes the refund again (see [channels and sessions](../guides/channels-and-sessions.md)). |
 | `inputs` | object, optional | The buyer's own values a refund's build needs. |
 
 Returns `atrHash`, `signed` and the updated `hold`. A hold whose `mac` does not verify is declined `hold-unverified`,

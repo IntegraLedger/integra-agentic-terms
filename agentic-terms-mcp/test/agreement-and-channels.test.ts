@@ -330,3 +330,80 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
     expect(at(m, "result.structuredContent")).not.toHaveProperty("hold");
   });
 });
+
+describe("a Solana channel's refund over MCP: x402/batch-settlement/solana", () => {
+  const pairing = "x402/batch-settlement/solana";
+  const BS = BV.fixed.svm;
+  // The seller's settle failure that takes a Solana refund again (x402's scheme_batch_settlement_svm, the
+  // PAYMENT-RESPONSE errorReason x402's reference client/refund.ts reads first).
+  const RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable";
+  const document = () =>
+    bindingOf(pairing).advertise({ x402Version: 2, resource: BV.fixed.resource, accepts: [BS.option] }, H_ABC, LINK_ABC, BS.option);
+  const account = `${BS.option.network}:${BS.payer}`;
+  const inputs = { payerAuthorizer: BS.payer, openSlot: BS.openSlot, tokenProgram: BS.tokenProgram, recentBlockhash: BS.blockhash, deposit: BS.deposit };
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const base58 = (b: Uint8Array): string => {
+    let n = BigInt(`0x${Buffer.from(b).toString("hex")}`);
+    let s = "";
+    while (n > 0n) {
+      s = ALPHABET[Number(n % 58n)] + s;
+      n /= 58n;
+    }
+    return s;
+  };
+  // Each request answered with 64 bytes in base58; bound reads the memos and verifies no signature.
+  const signer = () =>
+    recording(account, (r) => (r.kind === "batch" ? r.requests.map((_, i) => base58(new Uint8Array(64).fill(i + 1))) : []));
+  const atr = Buffer.from(ABC).toString("base64");
+
+  async function held(c: ReturnType<typeof connect>): Promise<object> {
+    const opened = await call(c, "atr_transact", { pairing, document: document(), inputs });
+    expect(at(opened, "result.isError")).toBeUndefined();
+    const signed = at(opened, "result.structuredContent.signed");
+    const mac = at(opened, "result.structuredContent.mac");
+    return at(await call(c, "atr_channel_open", { pairing, atr, signed, mac }), "result.structuredContent.hold") as object;
+  }
+
+  it("atr_channel_within passes refund.paymentResponse to within: its errorReason takes the refund again, with the request_close", async () => {
+    const s = signer();
+    const c = connect({ fetch: seller(), signer: s });
+    const hold = await held(c);
+    const first = await call(c, "atr_channel_within", { pairing, hold, document: document(), refund: {} });
+    const again = await call(c, "atr_channel_within", {
+      pairing,
+      hold,
+      document: document(),
+      refund: { paymentResponse: { success: false, errorReason: RETRY } },
+      inputs: { recentBlockhash: BS.blockhash },
+    });
+    await c.close();
+    expect(at(first, "result.isError")).toBeUndefined();
+    expect(at(first, "result.structuredContent.signed.payload")).not.toHaveProperty("transaction");
+    expect(at(again, "result.isError")).toBeUndefined();
+    expect(at(again, "result.structuredContent.signed.payload.type")).toBe("refund");
+    expect(at(again, "result.structuredContent.signed.payload")).toHaveProperty("transaction");
+    const last = s.requests.at(-1)!;
+    expect(last.kind === "batch" && last.requests.map((r) => r.kind)).toEqual(["solana-message", "ed25519-raw"]);
+  });
+
+  it("atr_channel_within declines x402/input-malformed, and calls no signer, for a paymentResponse that is a string or whose errorReason is not a string", async () => {
+    const s = signer();
+    const c = connect({ fetch: seller(), signer: s });
+    const hold = await held(c);
+    const before = s.requests.length;
+    const declines = [];
+    for (const paymentResponse of [RETRY, { errorReason: 5 }, { errorReason: [RETRY] }]) {
+      const m = await call(c, "atr_channel_within", {
+        pairing,
+        hold,
+        document: document(),
+        refund: { paymentResponse },
+        inputs: { recentBlockhash: BS.blockhash },
+      });
+      declines.push([at(m, "result.structuredContent.decline.code"), at(m, "result.structuredContent.decline.detail")]);
+    }
+    await c.close();
+    expect(declines).toEqual(Array(3).fill(["no-payable-option", "x402/input-malformed"]));
+    expect(s.requests.length - before).toBe(0);
+  });
+});
