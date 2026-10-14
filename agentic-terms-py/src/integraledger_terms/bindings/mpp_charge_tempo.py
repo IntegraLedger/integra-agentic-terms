@@ -112,7 +112,8 @@ def _signed_memo_call(presented: Any) -> Echoed | Refusal:
 
 def _landed_memo_log(presented: Any) -> Echoed | Refusal:
     """The echoed challenge, when the landed receipt holds exactly one TransferWithMemo log from currency whose memo
-    topic is this challenge's attribution memo."""
+    topic is this challenge's attribution memo. A credential with no landed logs, which have not been read, is
+    tempo/read-first."""
     e = echoed_for(presented, PUSH)
     if isinstance(e, Refusal):
         return e
@@ -120,7 +121,7 @@ def _landed_memo_log(presented: Any) -> Echoed | Refusal:
         return Refusal("mpp/credential-type")
     landed = presented.get("landed")
     if not is_object(landed) or not is_list(landed.get("logs")):
-        return Refusal("mpp/credential-malformed")
+        return Refusal("tempo/read-first")
     currency = request_address(e.checked, "currency")
     if isinstance(currency, Refusal):
         return currency

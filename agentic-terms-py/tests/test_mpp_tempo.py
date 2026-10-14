@@ -206,3 +206,15 @@ def test_mpp_charge_tempo_push_b6_the_landed_memo_binds_it_and_the_payment_sent_
     assert isinstance(whole, Transacted), whole
     assert len(signer.requests) == 1
     assert whole.signed == done.signed
+
+
+# A push credential that carries no landed receipt has not been read yet: the protocol package's push bound answers
+# tempo/read-first for no landed member, a landed of None and landed logs that are not a list, and H with the receipt
+# its B6 row presents.
+def test_mpp_charge_tempo_push_bound_without_a_landed_receipt_is_read_first() -> None:
+    presented = next(r for r in PUSH["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
+    landed = presented["landed"]
+    bare = {k: v for k, v in presented.items() if k != "landed"}
+    for c in (bare, {**bare, "landed": None}, {**bare, "landed": {**landed, "logs": {}}}):
+        assert MPP_CHARGE_TEMPO_PUSH.bound(copy.deepcopy(c)) == Refusal("tempo/read-first")
+    assert MPP_CHARGE_TEMPO_PUSH.bound(copy.deepcopy(presented)) == H
