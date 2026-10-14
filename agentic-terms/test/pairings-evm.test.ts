@@ -186,21 +186,23 @@ type AgreedFile = {
   EV1?: { expectSpender: `0x${string}`; expectNonceDecimal: string; expectDeadline: string };
   agreedRefusals?: { rows: AgreedRow[] };
 };
-const agreed = (
-  [
-    [exactPermit2, "x402-exact-eip155-permit2.json"],
-    [uptoPermit2, "x402-upto-eip155-permit2.json"],
-    [exactErc7710, "x402-exact-eip155-erc7710.json"],
-    [exactErc7710Salt, "x402-exact-eip155-erc7710-salt.json"],
-    [authCaptureEip3009, "x402-auth-capture-eip155-eip3009.json"],
-    [authCapturePermit2, "x402-auth-capture-eip155-permit2.json"],
-  ] as const
-).flatMap(([binding, name]) => {
+const AGREED_FILES = [
+  [exactPermit2, "x402-exact-eip155-permit2.json"],
+  [uptoPermit2, "x402-upto-eip155-permit2.json"],
+  [exactErc7710, "x402-exact-eip155-erc7710.json"],
+  [exactErc7710Salt, "x402-exact-eip155-erc7710-salt.json"],
+  [authCaptureEip3009, "x402-auth-capture-eip155-eip3009.json"],
+  [authCapturePermit2, "x402-auth-capture-eip155-permit2.json"],
+] as const;
+const agreed = AGREED_FILES.flatMap(([binding, name]) => {
   const v = vectors<AgreedFile>(name);
-  return (v.agreedRefusals?.rows ?? []).map((row) => ({ binding, v, row }));
+  return (v.agreedRefusals?.rows ?? []).map((row) => ({ binding, v, row, name }));
 });
 
-it.skipIf(agreed.length === 0)("agreedRefusals: each row's input gives the row's refusal", async () => {
+it("agreedRefusals: each file holds rows, and each row's input gives the row's refusal", async () => {
+  for (const [, name] of AGREED_FILES) {
+    expect(agreed.some((a) => a.name === name), `${name} holds agreedRefusals rows`).toBe(true);
+  }
   for (const { binding, v, row } of agreed) {
     let got: unknown;
     if ("choice" in row) {

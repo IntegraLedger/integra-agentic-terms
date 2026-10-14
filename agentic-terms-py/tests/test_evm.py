@@ -342,23 +342,23 @@ AGREED_FILES: list[tuple[Binding, dict[str, Any]]] = [
     (X402_AUTH_CAPTURE_EIP155_EIP3009, AC_EIP3009),
     (X402_AUTH_CAPTURE_EIP155_PERMIT2, AC_PERMIT2),
 ]
-AGREED = [(b, v, row) for b, v in AGREED_FILES for row in v.get("agreedRefusals", {}).get("rows", [])]
-
-
-@pytest.mark.parametrize("binding, vectors, row", AGREED, ids=[f"{b.id} {r['case']}" for b, _, r in AGREED])
-def test_agreed_refusals(binding: Binding, vectors: dict[str, Any], row: dict[str, Any]) -> None:
-    """A row with choice is build's choice, with the file's H; a row with permitted is permit2TypedData over EV1's
-    chain id, spender, nonce and deadline."""
-    if "choice" in row:
-        got = binding.build(copy.deepcopy(row["choice"]), vectors["fixed"]["H"])
-    elif "permitted" in row:
-        ev1 = vectors["EV1"]
-        chain_id = int(vectors["fixed"]["option"]["network"].removeprefix("eip155:"))
-        got = _evm.permit2_typed_data(chain_id, copy.deepcopy(row["permitted"]), ev1["expectSpender"],
-                                      int(ev1["expectNonceDecimal"]), int(ev1["expectDeadline"]))  # fmt: skip
-    else:
-        raise AssertionError(f"no input this runner reads: {row['case']}")
-    assert got == Refusal(row["expect"])
+@pytest.mark.parametrize("binding, vectors", AGREED_FILES, ids=[b.id for b, _ in AGREED_FILES])
+def test_agreed_refusals(binding: Binding, vectors: dict[str, Any]) -> None:
+    """The file holds agreedRefusals rows. A row with choice is build's choice, with the file's H; a row with permitted
+    is permit2TypedData over EV1's chain id, spender, nonce and deadline."""
+    rows = vectors.get("agreedRefusals", {}).get("rows", [])
+    assert rows, f"{binding.id}: the vector file holds no agreedRefusals rows"
+    for row in rows:
+        if "choice" in row:
+            got = binding.build(copy.deepcopy(row["choice"]), vectors["fixed"]["H"])
+        elif "permitted" in row:
+            ev1 = vectors["EV1"]
+            chain_id = int(vectors["fixed"]["option"]["network"].removeprefix("eip155:"))
+            got = _evm.permit2_typed_data(chain_id, copy.deepcopy(row["permitted"]), ev1["expectSpender"],
+                                          int(ev1["expectNonceDecimal"]), int(ev1["expectDeadline"]))  # fmt: skip
+        else:
+            raise AssertionError(f"no input this runner reads: {row['case']}")
+        assert got == Refusal(row["expect"]), row["case"]
 
 
 def test_ev4_auth_capture_eip3009_build_complete_and_bound() -> None:
