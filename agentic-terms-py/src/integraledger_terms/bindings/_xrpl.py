@@ -97,7 +97,8 @@ _HASH256_TEXT = re.compile(r"[0-9A-Fa-f]{64}")
 
 def channel_id(account: object, destination: object, sequence: object) -> str | Refusal:
     """The PayChannel id: SHA-512Half of 0x0078, the source's AccountID, the destination's AccountID and the creating
-    transaction's sequence, big-endian; upper-case hex."""
+    transaction's sequence, big-endian; upper-case hex. An address that is not a classic address, or a sequence that
+    is not a UInt32, is mpp/input-malformed."""
     a = _xrpl_codec.account_id_of(account)
     d = _xrpl_codec.account_id_of(destination)
     if (
@@ -107,13 +108,14 @@ def channel_id(account: object, destination: object, sequence: object) -> str | 
         or not isinstance(sequence, int)
         or not 0 <= sequence <= 0xFFFFFFFF
     ):
-        return Refusal("xrpl/not-channel-create")
+        return Refusal("mpp/input-malformed")
     digest = hashlib.sha512(_PAY_CHANNEL_SPACE + a + d + sequence.to_bytes(4, "big")).digest()
     return digest[:32].hex().upper()
 
 
 def claim_bytes(channel: object, drops: object) -> bytes | Refusal:
-    """The bytes a channel claim signs: CLM\\0, the channel id and the drops as a big-endian u64."""
+    """The bytes a channel claim signs: CLM\\0, the channel id and the drops as a big-endian u64. A channel id that is
+    not 64 hex digits, or drops that are not a UInt64, is mpp/input-malformed."""
     if (
         not isinstance(channel, str)
         or _HASH256_TEXT.fullmatch(channel) is None
@@ -121,5 +123,5 @@ def claim_bytes(channel: object, drops: object) -> bytes | Refusal:
         or not isinstance(drops, int)
         or not 0 <= drops < 1 << 64
     ):
-        return Refusal("xrpl/not-channel-create")
+        return Refusal("mpp/input-malformed")
     return _CLAIM_PREFIX + bytes.fromhex(channel) + drops.to_bytes(8, "big")

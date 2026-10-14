@@ -2,11 +2,15 @@
 Expected values are the vector file's; the payer is the XRPL vectors' Ed25519 key from entropy 01×16, whose private key
 is SHA-512Half of the entropy."""
 
+import base64
 import hashlib
+import json
 from typing import Any
 
 from integraledger_terms import MPP_SESSION_XRPL, Refusal
 from integraledger_terms.bindings import _xrpl
+from integraledger_terms.bindings._channel import ChannelRef
+from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 import ed25519
 from breadth import H, LINK, Pairing, build_and_sign, plant
@@ -123,3 +127,77 @@ def test_mpp_session_xrpl_plants_and_refusals() -> None:
     terms = {"publicKey": PUBLIC_KEY, "settleDelay": 3600, "fee": "12", "sequence": 7, "lastLedgerSequence": 1000}
     choice = {"challenge": SESSION.doc[0], "from": S["account"], "now": 0, "deposit": 0, "xrpl": terms}
     assert MPP_SESSION_XRPL.build(choice, H) == Refusal(agreed["build with a malformed from, deposit or XRPL channel terms"])
+
+
+_NOT_ADDRESS = "rf1BiGeXwwQoi8Z2ueFYTEXSwuJYfV2Jpm"  # XS1's account with its last character changed: its checksum fails
+
+
+def test_channel_id_claim_bytes_and_build_refuse_malformed_input_with_the_agreed_code() -> None:
+    # The cases are @integraledger/lcp's own test of xrplChannelId, xrplClaim and build; a Python int stands for its
+    # bigint, and a bool for a value that is not one.
+    agreed = {r["case"]: r["expect"] for r in V["agreedRefusals"]["rows"]}
+    helpers = Refusal(agreed["xrplChannelId with a malformed address or sequence, or xrplClaim with a malformed id or drops"])
+    x1 = V["XS1"]
+    assert x1["account"][:-1] == _NOT_ADDRESS[:-1] and x1["account"] != _NOT_ADDRESS
+    ids: list[tuple[Any, Any, Any]] = [
+        (_NOT_ADDRESS, x1["destination"], x1["sequence"]),
+        (x1["account"], _NOT_ADDRESS, x1["sequence"]),
+        (7, x1["destination"], x1["sequence"]),
+        (x1["account"], x1["destination"], -1),
+        (x1["account"], x1["destination"], 2**32),
+        (x1["account"], x1["destination"], 1.5),
+        (x1["account"], x1["destination"], True),
+    ]
+    for account, destination, sequence in ids:
+        assert (account, destination, sequence, _xrpl.channel_id(account, destination, sequence)) == (account, destination, sequence, helpers)
+    claims: list[tuple[Any, Any]] = [
+        ("zz", 100),
+        (S["expectChannel"][2:], 100),
+        (S["expectChannel"], True),
+        (S["expectChannel"], -1),
+        (S["expectChannel"], 1 << 64),
+    ]
+    for channel, drops in claims:
+        assert (channel, drops, _xrpl.claim_bytes(channel, drops)) == (channel, drops, helpers)
+    terms = {"publicKey": "ED" + "11" * 32, "settleDelay": 3600, "fee": "12", "sequence": 7, "lastLedgerSequence": 1000}
+    choice = {"challenge": SESSION.doc[0], "from": S["account"], "now": 0, "deposit": int(S["deposit"]), "xrpl": terms}
+    assert MPP_SESSION_XRPL.build({**choice, "from": _NOT_ADDRESS}, H) == Refusal(agreed["build with a malformed from, deposit or XRPL channel terms"])
+    # The request's recipient holds the shape the challenge check reads, and only its checksum fails: build passes on
+    # the helper's code.
+    asked = V["SS1"]["xrpl"]["challenge"]
+    text = asked["request"]
+    request = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
+    recipient = json.dumps({**request, "recipient": _NOT_ADDRESS}, separators=(",", ":"), sort_keys=True)
+    placed = placed_doc(issued_from(asked, recipient), H, LINK)[0]
+    assert MPP_SESSION_XRPL.build({**choice, "challenge": placed}, H) == helpers
+
+
+def issued_from(challenge: dict[str, Any], request_json: str) -> dict[str, Any]:
+    """challenge with its request replaced by request_json as base64url without padding."""
+    return {**challenge, "request": base64.urlsafe_b64encode(request_json.encode("utf-8")).decode("ascii").rstrip("=")}
+
+
+# A PaymentChannelCreate names its Destination (xrpl.org, "PaymentChannelCreate"), and a Sequence of 0 leaves the
+# sequence to TicketSequence (xrpl.org, "Transaction Common Fields"). An opening that lacks either derives no channel
+# id: channel_ref and build_within refuse it xrpl/not-channel-create, as @integraledger/lcp's channel.ref and
+# buildWithin do. The two blobs are XS2's with its Destination field (type 8, field 3: 0x83, then 20 bytes) removed,
+# and with its Sequence (UInt32 field 4: 0x24) set to 0; ripple-binary-codec 2.11.0 encodes the same bytes.
+_DESTINATION_FIELD = "831412EF6422DC22833EF13442F83E89FB113C01A65A"
+_SEQUENCE_FIELD = "24" + f"{S['sequence']:08X}"
+
+
+def test_an_opening_without_its_destination_or_sequence_names_no_channel() -> None:
+    assert S["blob"].count(_DESTINATION_FIELD) == 1 and S["blob"].count(_SEQUENCE_FIELD) == 1
+    no_destination = S["blob"].replace(_DESTINATION_FIELD, "")
+    no_sequence = S["blob"].replace(_SEQUENCE_FIELD, "2400000000")
+    without, zero = _xrpl.decode_blob(no_destination), _xrpl.decode_blob(no_sequence)
+    assert isinstance(without, _xrpl.Blob) and isinstance(zero, _xrpl.Blob)
+    assert "Destination" not in without.tx and zero.tx["Sequence"] == 0 and "TicketSequence" not in zero.tx
+    session = MPP_SESSION_XRPL
+    assert isinstance(session, MppSessionXrpl)
+    within = {**V["SS1"]["xrpl"]["challenge"], "id": "seller-own-id"}
+    for blob in (no_destination, no_sequence):
+        assert session.channel_ref(opening(blob)) == Refusal("xrpl/not-channel-create")
+        w = {"challenge": within, "opening": opening(blob), "cumulativeAmount": 100, "action": "voucher"}
+        assert session.build_within(w, H) == Refusal("xrpl/not-channel-create")
+    assert session.channel_ref(opening(S["blob"])) == ChannelRef("xrpl:1", S["expectChannel"])

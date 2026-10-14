@@ -93,6 +93,13 @@ def _sequence(tx: Mapping[str, Any]) -> object:
     return tx.get("TicketSequence") if sequence == 0 and not isinstance(sequence, bool) else sequence
 
 
+def _opening_channel(tx: Mapping[str, Any]) -> str | Refusal:
+    """The channel id of an opening's signed blob: channel_id(Account, Destination, Sequence, or TicketSequence when
+    Sequence is 0); xrpl/not-channel-create when the blob lacks the source, destination or sequence."""
+    channel = channel_id(tx.get("Account"), tx.get("Destination"), _sequence(tx))
+    return Refusal("xrpl/not-channel-create") if isinstance(channel, Refusal) else channel
+
+
 def _opening(presented: object) -> Opening | Refusal:
     """The echoed challenge of an opening whose signed PaymentChannelCreate's one LCP memo is the challenge's H."""
     e = echoed_for(presented, ID)
@@ -253,7 +260,7 @@ class MppSessionXrpl:
         decoded = decode_presented(blob)
         if isinstance(decoded, Refusal):
             return decoded
-        channel = channel_id(decoded.tx.get("Account"), decoded.tx.get("Destination"), _sequence(decoded.tx))
+        channel = _opening_channel(decoded.tx)
         return channel if isinstance(channel, Refusal) else ChannelRef(network, channel)
 
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
@@ -267,7 +274,7 @@ class MppSessionXrpl:
         o = within_checks(w, h, "session/xrpl", _opening, U64_LIMIT)
         if isinstance(o, Refusal):
             return o
-        channel = channel_id(o.tx.get("Account"), o.tx.get("Destination"), _sequence(o.tx))
+        channel = _opening_channel(o.tx)
         if isinstance(channel, Refusal):
             return channel
         drops = w["cumulativeAmount"]
