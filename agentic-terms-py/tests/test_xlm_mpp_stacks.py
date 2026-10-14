@@ -93,3 +93,14 @@ def test_mpp_charge_usdc_stacks_canonical_rows() -> None:
     for row in rows:
         out = MPP_CHARGE_USDC_STACKS.bound(credential(bytes.fromhex(row["wire"])))
         assert (out if isinstance(out, str) else out.code) == row["expect"], row["case"]
+
+
+def test_mpp_charge_usdc_stacks_multisig_key_fields() -> None:
+    # SIP-005: a multisig key field holds a compressed secp256k1 point, marked compressed (0x00) or uncompressed (0x01).
+    # A key off the curve, a 65-byte body, or an uncompressed key under P2WSH is not a transaction that decodes and
+    # re-serializes to the same bytes.
+    rows = json.loads((Path(__file__).parent / "stacks_key_fields.json").read_text())["rows"]
+    assert len(rows) == 11
+    for row in rows:
+        out = MPP_CHARGE_USDC_STACKS.bound(credential(bytes.fromhex(row["wire"])))
+        assert (out if isinstance(out, str) else out.code) == row["expect"], row["case"]

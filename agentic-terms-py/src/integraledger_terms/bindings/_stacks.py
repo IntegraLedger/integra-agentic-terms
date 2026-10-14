@@ -4,7 +4,9 @@ Clarity values), to find a contract call's function name and the bytes of its fo
 
 A read past the end gives what bytes remain: an integer read short is not a number, a length that is not a number
 reads nothing, and every later read past the end reads nothing. Enumerations, signature and coinbase lengths, Clarity
-names, contract-name lengths, principal versions and public keys are checked, and anything else is accepted as read.
+names, contract-name lengths, principal versions and public keys are checked, and anything else is accepted as read. A
+multisig key field holds a compressed secp256k1 point (33 bytes) whether it marks the key compressed (0x00) or
+uncompressed (0x01), as SIP-005 encodes it.
 The bytes must be exactly one transaction's encoding: a read past the end, bytes after the payload, text (a
 length-prefixed string, a string-utf8 value or a token transfer's memo) that is not well-formed UTF-8 or that begins
 with a byte-order mark, or a tuple whose member names are not in ascending order under the Unicode Collation
@@ -120,26 +122,22 @@ def _principal_address(version: int | None, hash160: bytes) -> None:
         raise Malformed
 
 
-def _on_curve(key: bytes) -> bool:
-    """Whether key is a secp256k1 point, compressed (02 or 03) or uncompressed (04)."""
-    if len(key) == 33 and key[0] in (2, 3):
-        x = int.from_bytes(key[1:], "big")
-        if x >= _P:
-            return False
-        y2 = (pow(x, 3, _P) + 7) % _P
-        y = pow(y2, (_P + 1) // 4, _P)
-        return y * y % _P == y2
-    if len(key) == 65 and key[0] == 4:
-        x, y = int.from_bytes(key[1:33], "big"), int.from_bytes(key[33:], "big")
-        return x < _P and y < _P and (y * y - x * x * x - 7) % _P == 0
-    return False
+def _compressed_point(key: bytes) -> bool:
+    """Whether key is a compressed secp256k1 point: 02 or 03, then an x below the field prime that has a point (SEC 1,
+    2.3.4)."""
+    if len(key) != 33 or key[0] not in (2, 3):
+        return False
+    x = int.from_bytes(key[1:], "big")
+    if x >= _P:
+        return False
+    y2 = (pow(x, 3, _P) + 7) % _P
+    y = pow(y2, (_P + 1) // 4, _P)
+    return y * y % _P == y2
 
 
-def _public_key(r: _Reader) -> bytes:
-    field_id = r.byte()
-    if field_id is None:
+def _public_key(r: _Reader) -> None:
+    if not _compressed_point(r.read(33)):
         raise Malformed
-    return bytes([field_id]) + r.read(64 if field_id == 4 else 32)
 
 
 def _signature(r: _Reader) -> None:
@@ -162,16 +160,10 @@ def _spending_condition(r: _Reader) -> None:
     for _ in range(r.prefix(4) or 0):
         field = r.enum(_AUTH_FIELDS)
         if field in (0, 1):
-            key = _public_key(r)
-            if field == 1:
-                if not _on_curve(key):
-                    raise Malformed
-                uncompressed = True
-            elif key[0] == 4:
-                uncompressed = True
+            _public_key(r)
         else:
             _signature(r)
-            uncompressed = uncompressed or field == 3
+        uncompressed = uncompressed or field in (1, 3)
     r.read(2)
     if uncompressed and mode in (3, 7):
         raise Malformed
