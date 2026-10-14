@@ -153,6 +153,16 @@ def test_x402_exact_lnbtc_build_with_another_h_is_no_metadata() -> None:
     assert binding.build({"required": required(F["O"]), "accepted": F["O"]}, row["h"]) == refusal(row["expect"])
 
 
+def test_x402_exact_lnbtc_bound_holds_the_options_network_to_the_invoice() -> None:
+    """bound reads the paid option's network as build checks it: the file's option whose network is not its invoice's
+    currency's, echoed in L5's payment, is refused with the row's code."""
+    rows = [r for r in V["refusals"]["rows"] if r["fn"] == "advertise" and r["expect"]["code"] == "ln/currency-network"]
+    assert len(rows) > 0
+    for row in rows:
+        option = with_set(F["O"], row["optionSet"])
+        assert X402_EXACT_LNBTC.bound(with_set(V["L5"]["payment"], {"accepted": option})) == refusal(row["expect"])
+
+
 # ── x402/exact/lnbtc/invoice-named ──
 
 

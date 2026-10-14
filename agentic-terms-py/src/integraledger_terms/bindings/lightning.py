@@ -80,8 +80,9 @@ def check_option(o: Mapping[str, Any], h: AtrHash | None) -> Bolt11 | Refusal:
     request_hash = extra.get("requestHash")
     if not isinstance(request_hash, str) or _REQUEST_HASH.fullmatch(request_hash) is None or d != "0x" + request_hash:
         return Refusal("ln/request-hash-mismatch")
-    if NETWORKS[o["network"]] != b.currency:
-        return Refusal("ln/currency-network")
+    network = _option_network_refused(o, b)
+    if network is not None:
+        return network
     pay_to = o.get("payTo")
     amount = o.get("amount")
     max_timeout = safe_int(o.get("maxTimeoutSeconds"))
@@ -97,6 +98,11 @@ def check_option(o: Mapping[str, Any], h: AtrHash | None) -> Bolt11 | Refusal:
     ):
         return Refusal("x402/option-malformed")
     return b
+
+
+def _option_network_refused(o: Mapping[str, Any], b: Bolt11) -> Refusal | None:
+    """ln/currency-network unless the invoice's currency is the one x402 gives the option's network."""
+    return None if NETWORKS[o["network"]] == b.currency else Refusal("ln/currency-network")
 
 
 def atr_names_invoice(atr: object, invoice: object) -> bool:
@@ -187,14 +193,19 @@ class X402ExactLnbtc:
         return LnUnsigned({"kind": "bolt11-pay", "invoice": accepted["extra"]["invoice"]}, required, accepted)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash in the invoice the payer paid: its m field. No signature is verified."""
+        """The hash in the invoice the payer paid: its m field, from an invoice whose currency is the one the option's
+        network names, as build checks it (ln/currency-network otherwise). No signature is verified."""
         accepted = _ln_accepted(presented)
         if isinstance(accepted, Refusal):
             return accepted
         b = decode(accepted["extra"]["invoice"])
         if isinstance(b, Refusal):
             return b
-        return invoice_h(b, "m")
+        m = invoice_h(b, "m")
+        if isinstance(m, Refusal):
+            return m
+        network = _option_network_refused(accepted, b)
+        return m if network is None else network
 
 
 @dataclass(frozen=True, slots=True)
