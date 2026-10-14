@@ -381,6 +381,63 @@ def test_x402_exact_algorand_v3_entries_holding_a_string_algosdk_reads_as_other_
         assert X402_EXACT_ALGORAND.bound(presented(payload)) == Refusal(row["expect"]), row["case"]
 
 
+def build_with(genesis_id: str, genesis_hash: str | None = None) -> AvmUnsigned | Refusal:
+    """build of fixed.O for the file's payer and suggested parameters, with genesis_id and genesis_hash written in."""
+    params = {**F["params"], **{k: int(F["params"][k]) for k in ("firstValid", "minFee", "feePerByte")}}
+    params["genesisId"] = genesis_id
+    if genesis_hash is not None:
+        params["genesisHash"] = genesis_hash
+    choice = {"required": x402_doc(F["O"], F["resource"]), "accepted": F["O"], "payer": F["payer"], "params": params}
+    unsigned: AvmUnsigned | Refusal = X402_EXACT_ALGORAND.build(choice, H)
+    return unsigned
+
+
+# build writes the suggested parameters' genesis id as each transaction's gen, a msgpack string. Expected values are
+# lcp's exactAvm.build, for these genesis ids: one holding a lone surrogate, short or long (RFC 3629 section 3 excludes
+# U+D800 to U+DFFF from UTF-8), or whose UTF-8 is the byte-order mark and 198 x, 201 bytes, is avm/option-malformed;
+# one holding other characters outside ASCII, the mark and 197 x (200 bytes), or x, the mark and 197 x (201 bytes), is
+# written as given, and bound reads H.
+REFUSED_GENESIS_IDS = [
+    pytest.param("testnet-v1.\ud800", id="a lone high surrogate last"),
+    pytest.param("\udc00testnet-v1.0", id="a lone low surrogate first"),
+    pytest.param("testnet-v1.0" + "x" * 60 + "\ud83d", id="a lone high surrogate after 72 characters"),
+    pytest.param("\ufeff" + "x" * 198, id="the mark and 198 x"),
+]
+WRITTEN_GENESIS_IDS = [
+    pytest.param(F["params"]["genesisId"], id="the file's genesis id"),
+    pytest.param("testnet-v1.0\u00e9", id="an e with an acute accent last"),
+    pytest.param("testnet-v1.0\U0001f600", id="U+1F600 last"),
+    pytest.param("\ufeff" + "x" * 197, id="the mark and 197 x"),
+    pytest.param("x\ufeff" + "x" * 197, id="x, the mark and 197 x"),
+]
+
+
+@pytest.mark.parametrize("genesis_id", REFUSED_GENESIS_IDS)
+def test_x402_exact_algorand_build_refuses_a_genesis_id_bound_would_refuse(genesis_id: str) -> None:
+    assert build_with(genesis_id) == Refusal("avm/option-malformed")
+
+
+@pytest.mark.parametrize("genesis_id", WRITTEN_GENESIS_IDS)
+def test_x402_exact_algorand_build_writes_any_other_genesis_id_as_given(genesis_id: str) -> None:
+    unsigned = build_with(genesis_id)
+    assert isinstance(unsigned, AvmUnsigned), unsigned
+    payment = unsigned.complete(bytes.fromhex(F["signature"]))
+    assert isinstance(payment, dict)
+    for entry in payment["payload"]["paymentGroup"]:
+        assert _algorand.unpack(base64.b64decode(entry))["txn"]["gen"] == genesis_id
+    assert X402_EXACT_ALGORAND.bound(presented(payment["payload"])) == H
+
+
+def test_x402_exact_algorand_build_reads_the_genesis_id_before_the_genesis_hash() -> None:
+    """As lcp's exactAvm.build checks the suggested parameters: a genesis id holding a lone surrogate is
+    avm/option-malformed under another network's genesis hash too, and a well-formed one under it is
+    avm/network-mismatch, the mark and 198 x among them."""
+    mainnet = "wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8="
+    assert build_with("testnet-v1.\ud800", mainnet) == Refusal("avm/option-malformed")
+    assert build_with("testnet-v1.0", mainnet) == Refusal("avm/network-mismatch")
+    assert build_with("\ufeff" + "x" * 198, mainnet) == Refusal("avm/network-mismatch")
+
+
 def test_x402_exact_algorand_v3_presented_options_are_bound_without_their_amount_or_timeout() -> None:
     """V2's payment under each V3.presentedOptions option, whose amount or timeout no build could use: bound reads the
     signed transaction and gives the row's expectBound, while read serves no such option and build refuses it, as lcp's

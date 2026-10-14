@@ -13,7 +13,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from . import _algorand
 from ._codec import b64_decode, b64_encode
-from ._lcp import from_lcp_string, is_list, is_object, normal_hash, safe_int, to_lcp_string
+from ._lcp import from_lcp_string, is_list, is_object, is_well_formed, normal_hash, safe_int, to_lcp_string
 from ._x402 import chosen, payment_with, presented_with, read_for
 
 ID = "x402/exact/algorand"
@@ -143,7 +143,10 @@ class X402ExactAlgorand:
 
     def build(self, choice: Json, h: AtrHash) -> AvmUnsigned | Refusal:
         """The asset transfer with the hash's LCP string as its note, and the fee payer's zero payment first when the
-        option names a fee payer."""
+        option names a fee payer. The suggested parameters' genesis id is written as each transaction's gen, a msgpack
+        string, so one holding a lone surrogate, which UTF-8 cannot encode, is avm/option-malformed, and so is one whose
+        UTF-8 is longer than 200 bytes and begins with the byte-order mark, which algosdk's decoder drops: each entry
+        is read back as carrier reads it, so build writes no string bound refuses."""
         if not is_object(choice):
             return Refusal("avm/option-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
@@ -162,7 +165,7 @@ class X402ExactAlgorand:
             or not _is_uint(pr.get("firstValid"))
             or not _is_uint(pr.get("minFee"))
             or not _is_uint(pr.get("feePerByte"))
-            or not isinstance(pr.get("genesisId"), str)
+            or not is_well_formed(pr.get("genesisId"))
         ):
             return Refusal("avm/option-malformed")
         genesis = b64_decode(pr.get("genesisHash"))
@@ -204,8 +207,10 @@ class X402ExactAlgorand:
                 for txn in group:
                     txn.group = grp
                 index = 1
+            for txn in group:
+                _algorand.unpack(txn.signed(None))
             to_sign = group[index].bytes_to_sign()
-        except (ValueError, TypeError, OverflowError):
+        except (ValueError, TypeError, OverflowError, _algorand.Malformed):
             return Refusal("avm/option-malformed")
         return AvmUnsigned(
             request={"kind": "algorand-txn", "bytes": to_sign},
