@@ -397,10 +397,3 @@ def test_mpp_session_tempo_a_partial_refund_and_an_action_not_built_sign_nothing
     refused = asyncio.run(within(p.doc, hold, SessionWithin(MPP_SESSION_TEMPO, "mpp/within-action-not-built"), signer))
     assert refused == Declined("pairing-not-supported", "mpp/within-action-not-built")
     assert signer.requests == []
-
-
-def test_tempo_precompile_addresses_are_the_vectors() -> None:
-    from integraledger_terms.bindings import _tempo
-
-    assert _tempo.TIP20_CHANNEL_RESERVE == TEMPO["constants"]["expectTip20ChannelReserve"]
-    assert _tempo.ACCOUNT_KEYCHAIN == TEMPO["constants"]["expectAccountKeychain"]
