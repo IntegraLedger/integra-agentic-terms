@@ -526,6 +526,26 @@ def test_x402_batch_settlement_solana_es2_es3_the_opening_wire_and_the_voucher_m
     assert voucher is not None and voucher.hex() == BV["ES3"]["message"]
 
 
+def test_x402_batch_settlement_solana_es2_the_opening_ends_with_the_seller_memo_then_the_binding_memo() -> None:
+    """build's open transaction message has ES2's length and, decompiled, ES2's fee payer, blockhash and instructions
+    with their accounts and flags. Its last two instructions are v3 Memos, extra.memo and then x402's binding memo,
+    x402:batch-settlement:svm:rcvauth:v1: followed by extra.receiverAuthorizer (x402's scheme_batch_settlement_svm,
+    section 3), in ES2's order. The payment's channelConfig, with its receiverAuthorizer, is ES4's config, member for
+    member."""
+    doc = x402_doc(with_memo(BS["option"]), BV["fixed"]["resource"])
+    unsigned = BATCH_BINDING.build(batch_choice(doc), H)
+    assert not isinstance(unsigned, Refusal), unsigned
+    message = unsigned.requests[0]["message"]
+    assert isinstance(message, bytes) and len(message) == BV["ES2"]["messageLength"]
+    wire = base64.b64decode(BV["ES2"]["wireBase64"])
+    assert decompile(message) == decompile(wire[1 + 64 * wire[0] :])
+    memos = [bytes.fromhex(ix["data"]).decode() for ix in decompile(message)["instructions"] if ix["program"] == _svm.MEMO_V3]
+    assert memos == [L, "x402:batch-settlement:svm:rcvauth:v1:" + BS["receiverAuthorizer"]]
+    payment = unsigned.complete([b58_encode(bytes([1]) * 64), b58_encode(bytes([2]) * 64)])
+    assert not isinstance(payment, Refusal), payment
+    assert list(payment["payload"]["channelConfig"].items()) == list(BV["ES4"]["config"].items())
+
+
 def test_the_solana_builds_answer_a_choice_that_is_not_an_object_with_not_v2() -> None:
     """x402/exact/solana's and x402/upto/solana's build, and the batch build and build_within, answer x402/not-v2
     before they read the choice, as @integraledger/lcp's builds do."""
@@ -1460,3 +1480,59 @@ def test_x402_batch_settlement_solana_es8_the_opening_carries_one_binding_memo_a
     for row in rows:
         got = BATCH_BINDING.bound(batch_deposit(row["wireBase64"]))
         assert (got.code if isinstance(got, Refusal) else got) == row["expect"], row["case"]
+
+
+def batch_wire(instruction: Any, memos: list[str]) -> str:
+    """A signed wire of the channel message for instruction with memos, under the fixed svm values; the signature is
+    zeros, which bound does not verify."""
+    message = _svm.channel_message(
+        _svm.ChannelBuildInput(
+            fee_payer=BS["feePayer"],
+            payer=BS["payer"],
+            mint=BS["mint"],
+            token_program=BS["tokenProgram"],
+            recent_blockhash=BS["blockhash"],
+            memo=None,
+            compute_unit_limit=200_000,
+            compute_unit_price=1,
+            instruction=instruction,
+        ),
+        memos,
+    )
+    assert isinstance(message, bytes), message
+    wire = _svm.signed_wire(message, BS["payer"], bytes(64))
+    assert isinstance(wire, bytes), wire
+    return _svm.to_base64(wire)
+
+
+def test_x402_batch_settlement_solana_bound_reads_the_channel_instruction_first_and_not_the_binding_memos_key() -> None:
+    """bound reads as @integraledger/lcp 0.4.0's opening read does (svmOpening, then openingCarrier): the channel
+    instruction before the memos, so a top-up with no memo, or with an opening's two, is x402/not-an-opening; and the
+    binding memo by its prefix alone, so an opening whose binding memo names another key gives H."""
+    binding = "x402:batch-settlement:svm:rcvauth:v1:" + BS["receiverAuthorizer"]
+    top_up = _svm.ChannelTopUp(channel=BV["ES1"]["channelPda"], amount=5)
+    for memos in ([], [L, binding]):
+        assert BATCH_BINDING.bound(batch_deposit(batch_wire(top_up, memos))) == Refusal("x402/not-an-opening"), memos
+    opening = _svm.ChannelOpen(
+        channel=BV["ES1"]["channelPda"],
+        signer=BS["payer"],
+        salt=int(BS["salt"]),
+        deposit=int(BS["deposit"]),
+        grace_period=BS["withdrawDelay"],
+        open_slot=int(BS["openSlot"]),
+        recipient=BS["payTo"],
+    )
+    assert BATCH_BINDING.bound(batch_deposit(batch_wire(opening, [L, binding]))) == H
+    other_key = "x402:batch-settlement:svm:rcvauth:v1:" + BS["payTo"]
+    assert BATCH_BINDING.bound(batch_deposit(batch_wire(opening, [other_key, L]))) == H
+
+
+def test_x402_batch_settlement_solana_bound_compares_the_seller_memo_with_extra_memo() -> None:
+    """ES2's opening read under an option whose extra.memo is another LCP string, or under one with no extra.memo, is
+    svm/carrier-mismatch: lcp 0.4.0's opening read compares the seller memo with extra.memo (svmOpening)."""
+    extra = BV["ES4"]["accepted"]["extra"]
+    opening = batch_deposit(BV["ES2"]["wireBase64"])
+    others = [{**extra, "memo": "lcp:sha256:0x" + "11" * 32}, {k: v for k, v in extra.items() if k != "memo"}]
+    for other in others:
+        presented = {**opening, "accepted": {**BV["ES4"]["accepted"], "extra": other}}
+        assert BATCH_BINDING.bound(presented) == Refusal("svm/carrier-mismatch"), other

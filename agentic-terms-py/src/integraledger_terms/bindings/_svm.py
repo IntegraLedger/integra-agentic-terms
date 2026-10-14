@@ -193,11 +193,23 @@ def svm_carrier(tx: SvmTx) -> Carrier | Refusal:
     """The one top-level Memo instruction (v3 or v4) and the ATR hash its UTF-8 data carries in LCP string form. None,
     or more than one, is svm/memo-count. The memo must be the hash's LCP string exactly, in lower-case hex; the same
     hash in any other spelling is svm/carrier-not-canonical."""
-    memos = [ix for ix in tx.instructions if _program_is(tx, ix, _MEMO_V3_BYTES) or _program_is(tx, ix, _MEMO_V4_BYTES)]
+    memos = memo_data(tx)
     if len(memos) != 1:
         return Refusal("svm/memo-count")
+    return memo_carrier(memos[0])
+
+
+def memo_data(tx: SvmTx) -> list[bytes]:
+    """The data of each top-level Memo instruction (v3 or v4), in order."""
+    return [
+        ix.data for ix in tx.instructions if _program_is(tx, ix, _MEMO_V3_BYTES) or _program_is(tx, ix, _MEMO_V4_BYTES)
+    ]
+
+
+def memo_carrier(data: bytes) -> Carrier | Refusal:
+    """The ATR hash one Memo instruction's UTF-8 data carries in LCP string form, exactly its LCP string."""
     try:
-        memo = memos[0].data.decode("utf-8")
+        memo = data.decode("utf-8")
     except UnicodeDecodeError:
         return Refusal("svm/memo-not-utf8")
     h = from_lcp_string(memo)
@@ -654,6 +666,12 @@ def build_channel_message(i: ChannelBuildInput) -> bytes | Refusal:
     """The v0 message for a channel instruction: SetComputeUnitLimit, SetComputeUnitPrice, the payment-channels
     instruction with its accounts in the program's order, then one v3 Memo instruction when memo is given. The fee
     payer is also the open's rent payer and payee."""
+    return channel_message(i, [] if i.memo is None else [i.memo])
+
+
+def channel_message(i: ChannelBuildInput, memos: Sequence[object]) -> bytes | Refusal:
+    """build_channel_message with one v3 Memo instruction per entry of memos, in order, in place of i.memo. A memo
+    that is not a string with a UTF-8 form is svm/input-malformed, with nothing built."""
     ix = i.instruction
     if (
         not is_key(i.fee_payer)
@@ -661,7 +679,7 @@ def build_channel_message(i: ChannelBuildInput) -> bytes | Refusal:
         or not is_key(i.mint)
         or i.token_program not in (TOKEN, TOKEN_2022)
         or not is_key(i.recent_blockhash)
-        or not (i.memo is None or isinstance(i.memo, str))
+        or not all(isinstance(m, str) for m in memos)
         or not _is_u32(i.compute_unit_limit)
         or not is_u64(i.compute_unit_price)
         or not isinstance(ix, (ChannelOpen, ChannelTopUp, ChannelRequestClose))
@@ -682,7 +700,7 @@ def build_channel_message(i: ChannelBuildInput) -> bytes | Refusal:
     else:
         data = b"\x05"
     try:
-        memo = None if i.memo is None else i.memo.encode("utf-8")
+        memo_data = [m.encode("utf-8") for m in memos if isinstance(m, str)]
     except UnicodeEncodeError:
         return Refusal("svm/input-malformed")
     event_authority = find_pda([b"event_authority"], PAYMENT_CHANNELS)
@@ -729,7 +747,7 @@ def build_channel_message(i: ChannelBuildInput) -> bytes | Refusal:
         [
             *_compute_budget(i.compute_unit_limit, i.compute_unit_price),
             Instruction(PAYMENT_CHANNELS, accounts, data),
-            *([] if memo is None else [Instruction(MEMO_V3, (), memo)]),
+            *(Instruction(MEMO_V3, (), m) for m in memo_data),
         ],
     )
 

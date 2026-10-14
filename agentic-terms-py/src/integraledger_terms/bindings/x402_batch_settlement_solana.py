@@ -1,9 +1,9 @@
 """The buyer half of the pairing x402/batch-settlement/solana: read, build with complete, bound, and the channel
 members (build_within, channel_kind, channel_ref, bound_within).
 
-The ATR hash rides as the option's extra.memo in LCP string form, which the payer writes as the one Memo instruction of
-the transaction that opens the payment channel. Later vouchers are paid under the channel the opening named. Nothing
-here fetches, hashes an ATR or signs.
+The ATR hash rides as the option's extra.memo in LCP string form, which the payer writes as a Memo instruction of the
+transaction that opens the payment channel, beside x402's binding memo for extra.receiverAuthorizer. Later vouchers are
+paid under the channel the opening named. Nothing here fetches, hashes an ATR or signs.
 """
 
 import re
@@ -19,12 +19,14 @@ from ._lcp import is_list, is_object, safe_int, to_lcp_string
 from ._svm import (
     TOKEN,
     TOKEN_2022,
+    Carrier,
     ChannelBuildInput,
     ChannelOpen,
     ChannelRequestClose,
     SvmTx,
     build_channel_message,
     channel_instruction,
+    channel_message,
     channel_pda,
     channel_voucher_message,
     decode_svm_tx,
@@ -32,11 +34,12 @@ from ._svm import (
     is_key,
     is_solana_network,
     key_string,
+    memo_carrier,
+    memo_data,
     memo_length,
     signature_bytes,
     signed_wire,
     static_nonce,
-    svm_carrier,
     to_base64,
     wire_of,
 )
@@ -46,6 +49,9 @@ ID = "x402/batch-settlement/solana"
 MAX_MEMO = 256
 MAX_SAFE_INTEGER = 2**53 - 1
 U64_LIMIT = 1 << 64
+# x402's receiver-authorizer binding memo: this prefix, then the base58 key.
+BINDING_MEMO_PREFIX = "x402:batch-settlement:svm:rcvauth:v1:"
+_BINDING_MEMO_PREFIX_BYTES = BINDING_MEMO_PREFIX.encode()
 _U64_DECIMAL = re.compile(r"[0-9]{1,20}")
 
 
@@ -132,6 +138,16 @@ def _tx_of(payload: Mapping[str, Any]) -> SvmTx | None | Refusal:
     return decode_svm_tx(wire)
 
 
+def _opening_carrier(tx: SvmTx) -> Carrier | Refusal:
+    """The opening's memos: exactly one receiver-authorizer binding memo, whose key is not read, and exactly one other
+    Memo instruction, which carries the ATR hash in LCP string form. Any other count is svm/memo-count."""
+    memos = memo_data(tx)
+    others = [d for d in memos if not d.startswith(_BINDING_MEMO_PREFIX_BYTES)]
+    if len(others) != 1 or len(memos) != 2:
+        return Refusal("svm/memo-count")
+    return memo_carrier(others[0])
+
+
 def _signatures(signatures: object, count: int) -> list[bytes] | None:
     if not is_list(signatures) or len(signatures) != count:
         return None
@@ -149,7 +165,9 @@ class X402BatchSettlementSolana:
         return _read(doc)
 
     def build(self, choice: Json, h: AtrHash) -> BatchUnsigned | Refusal:
-        """The opening: the open transaction, then the first voucher, each for the payer or its authorizer to sign."""
+        """The opening: the open transaction, then the first voucher, each for the payer or its authorizer to sign. The
+        transaction ends with two v3 Memo instructions: extra.memo, then x402's binding memo for
+        extra.receiverAuthorizer."""
         if not is_object(choice):
             return Refusal("x402/not-v2")
         required, accepted = choice.get("required"), choice.get("accepted")
@@ -186,14 +204,15 @@ class X402BatchSettlementSolana:
         limit, price = choice.get("computeUnitLimit"), choice.get("computeUnitPrice")
         delay = safe_int(extra["withdrawDelay"])
         assert delay is not None
-        message = build_channel_message(
+        receiver_authorizer: str = extra["receiverAuthorizer"]
+        message = channel_message(
             ChannelBuildInput(
                 fee_payer=fee_payer,
                 payer=payer,
                 mint=accepted["asset"],
                 token_program=token_program,
                 recent_blockhash=blockhash,
-                memo=memo,
+                memo=None,
                 compute_unit_limit=200_000 if limit is None else integer_of(limit),
                 compute_unit_price=1 if price is None else price,
                 instruction=ChannelOpen(
@@ -205,24 +224,24 @@ class X402BatchSettlementSolana:
                     open_slot=open_slot,
                     recipient=accepted["payTo"],
                 ),
-            )
+            ),
+            [memo, BINDING_MEMO_PREFIX + receiver_authorizer],
         )
         if isinstance(message, Refusal):
             return message
         amount = int(accepted["amount"])
         voucher_message = channel_voucher_message(channel, amount, 0)
         assert voucher_message is not None
-        config: dict[str, Any] = {"payer": payer, "payerAuthorizer": authorizer, "receiver": accepted["payTo"]}
-        if isinstance(extra.get("receiverAuthorizer"), str):
-            config["receiverAuthorizer"] = extra["receiverAuthorizer"]
-        config.update(
-            {
-                "token": accepted["asset"],
-                "withdrawDelay": extra["withdrawDelay"],
-                "salt": str(salt),
-                "openSlot": open_slot,
-            }
-        )
+        config = {
+            "payer": payer,
+            "payerAuthorizer": authorizer,
+            "receiver": accepted["payTo"],
+            "receiverAuthorizer": receiver_authorizer,
+            "token": accepted["asset"],
+            "withdrawDelay": extra["withdrawDelay"],
+            "salt": str(salt),
+            "openSlot": open_slot,
+        }
 
         def complete(signatures: object) -> dict[str, Any] | Refusal:
             sigs = _signatures(signatures, 2)
@@ -409,9 +428,9 @@ class X402BatchSettlementSolana:
         return ChannelRef(accepted["network"], pda)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash in the one memo of the opening the payer signed, which must equal the option's extra.memo, for a
-        deposit whose channel instruction is open and whose channel the config names. No signature is verified
-        here."""
+        """The hash in the seller memo of the opening the payer signed, which must equal the option's extra.memo, for a
+        deposit whose channel instruction is open and whose channel the config names. The opening carries exactly one
+        binding memo, whose key is not read, beside that one memo. No signature is verified here."""
         x = payload_of(presented, pairs)
         if isinstance(x, Refusal):
             return x
@@ -426,16 +445,16 @@ class X402BatchSettlementSolana:
         from_table = static_nonce(tx)
         if from_table is not None:
             return from_table
-        carrier = svm_carrier(tx)
-        if isinstance(carrier, Refusal):
-            return carrier
-        if carrier.memo != accepted["extra"].get("memo"):
-            return Refusal("svm/carrier-mismatch")
         ix = channel_instruction(tx)
         if isinstance(ix, Refusal):
             return ix
         if ix.kind != "open":
             return Refusal("x402/not-an-opening")
+        carrier = _opening_carrier(tx)
+        if isinstance(carrier, Refusal):
+            return carrier
+        if carrier.memo != accepted["extra"].get("memo"):
+            return Refusal("svm/carrier-mismatch")
         ref = self.channel_ref(presented)
         if isinstance(ref, Refusal):
             return ref
