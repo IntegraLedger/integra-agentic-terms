@@ -64,6 +64,19 @@ describe("x402/exact/ccd: the signer's answer in x402's wire form", () => {
     });
   }
 
+  it("an answer that is not an object, the wire form as JSON text, is declined signed-not-bound, x402/signature-malformed", async () => {
+    const real = Date.now;
+    Date.now = () => f.now * 1000;
+    try {
+      const text = JSON.stringify(V.D3.ccd.payment.payload.signedTransaction);
+      const signer = counting(`${f.O.network}:${f.payer}`, async () => text as never);
+      const out = await transact(structuredClone(doc), exactCcd as unknown as Binding, signer, serving(ABC));
+      expect("decline" in out && [out.decline.code, out.decline.detail]).toEqual(["signed-not-bound", "x402/signature-malformed"]);
+    } finally {
+      Date.now = real;
+    }
+  });
+
   it("the wire form itself is paid", async () => {
     const real = Date.now;
     Date.now = () => f.now * 1000;
