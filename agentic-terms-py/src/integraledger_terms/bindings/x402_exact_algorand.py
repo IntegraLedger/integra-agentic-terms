@@ -34,9 +34,10 @@ def _uint64(value: object) -> int | None:
     return number if number < _UINT64_LIMIT else None
 
 
-def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """The pairing's option filter: True for an option it serves, a refusal naming why an option on an algorand
-    network cannot be served, and None for any other option."""
+def _presentable(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The option's scheme, network, asset, payTo and extra (its fee payer, no transfer method, and no flow other than
+    "authorization"): what bound requires of the option a presented payment echoes. bound reads the signed
+    transaction, not the option's amount or timeout, so neither is checked here."""
     network = option.get("network") if is_object(option) else None
     if not isinstance(network, str) or not network.startswith("algorand:") or option.get("scheme") != "exact":
         return None
@@ -50,15 +51,25 @@ def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("avm/option-malformed")
     if "paymentFlow" in extra_map and extra_map["paymentFlow"] != "authorization":
         return Refusal("avm/option-malformed")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
     if (
         _uint64(option.get("asset")) is None
         or not _algorand.is_address(option.get("payTo"))
         or ("feePayer" in extra_map and not _algorand.is_address(extra_map["feePayer"]))
-        or _uint64(option.get("amount")) is None
-        or timeout is None
-        or timeout <= 0
     ):
+        return Refusal("avm/option-malformed")
+    return True
+
+
+def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The pairing's option filter: True for an option it serves, a refusal naming why an option on an algorand
+    network cannot be served, and None for any other option. It applies what bound requires of an echoed option, then
+    the amount as a decimal below 2^64 and maxTimeoutSeconds a positive safe integer, which build writes into the
+    asset transfer and its last valid round: read and build apply it."""
+    presentable = _presentable(option)
+    if presentable is not True:
+        return presentable
+    timeout = safe_int(option.get("maxTimeoutSeconds"))
+    if _uint64(option.get("amount")) is None or timeout is None or timeout <= 0:
         return Refusal("avm/option-malformed")
     return True
 
@@ -205,9 +216,10 @@ class X402ExactAlgorand:
         )
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The payment transaction's note, as a hash. Amount, receiver, asset, fee payer and sender are not read, and
-        no signature is verified here."""
-        p = presented_with(presented, check)
+        """The payment transaction's note, as a hash. The echoed option needs a valid scheme, network, asset, payTo and
+        extra; its amount and timeout are not read. The transaction's amount, receiver, asset, fee payer and sender are
+        not read, and no signature is verified here."""
+        p = presented_with(presented, _presentable)
         if isinstance(p, Refusal):
             return p
         carried = carrier(p[1])
