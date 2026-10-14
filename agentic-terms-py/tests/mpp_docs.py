@@ -9,17 +9,8 @@ from typing import Any
 
 from integraledger_terms import Refusal
 from integraledger_terms.bindings._codec import b64u_encode, canonical_json
-from integraledger_terms.bindings._lcp import from_lcp_string, normal_hash, to_lcp_string
-from integraledger_terms.bindings._mpp import (
-    BOUND,
-    LCP_KEYS,
-    MAX_CHALLENGES,
-    carrier_of,
-    check_challenge,
-    is_challenge_shape,
-    is_link,
-    member_at,
-)
+from integraledger_terms.bindings._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
+from integraledger_terms.bindings._mpp import LCP_KEYS, MAX_CHALLENGES, check_challenge, is_challenge_shape, is_link
 from integraledger_terms.bindings._mpp_checks import MAX_DECODED, decode_object, decode_string_map
 
 from support import load
@@ -27,6 +18,53 @@ from support import load
 MC = load("mpp-challenge.json")
 REALM: str = MC["fixed"]["realm"]
 EXPIRES: str = MC["fixed"]["expires"]
+# The challenge's members MPP binds.
+BOUND = ("realm", "method", "intent", "request", "expires", "digest", "header", "opaque")
+
+# The request member a pairing writes H into, by intent and method; None where no request member carries it. usdc
+# carries H in a request member only on its Solana profile (USDC_CARRIER).
+CARRIER: Mapping[str, Mapping[str, tuple[str, ...] | None]] = {
+    "charge": {
+        "card": ("externalId",),
+        "stripe": ("methodDetails", "metadata", "legal_context"),
+        "usdc": None,
+        "evm": None,
+        "tempo": None,
+        "solana": ("externalId",),
+        "stellar": ("recipient",),
+        "xrpl": ("methodDetails", "invoiceId"),
+        "hedera": None,
+        "lightning": ("methodDetails", "invoice"),
+        "nearintents": ("externalId",),
+    },
+    "session": {"lightning": ("depositInvoice",), "hedera": None, "solana": None, "xrpl": None, "evm": None, "tempo": None},
+    "subscription": {"tempo": None, "stripe": ("methodDetails", "metadata", "legal_context")},
+}
+
+# The request member usdc writes H into, by methodDetails.type; None where no request member carries it.
+USDC_CARRIER: Mapping[str, tuple[str, ...] | None] = {"evm": None, "solana": ("externalId",), "stacks": None, "gateway": None}
+
+
+def carrier_of(c: Mapping[str, Any], request: Mapping[str, Any]) -> tuple[str, ...] | None:
+    """The request member a challenge's intent and method carry H in, or None; for usdc, the member its request's
+    methodDetails.type names."""
+    if c.get("intent") == "charge" and c.get("method") == "usdc":
+        md = request.get("methodDetails")
+        kind = md.get("type") if is_object(md) else None
+        return USDC_CARRIER.get(kind) if isinstance(kind, str) else None
+    intent, method = c.get("intent"), c.get("method")
+    by_method = CARRIER.get(intent) if isinstance(intent, str) else None
+    return by_method.get(method) if by_method is not None and isinstance(method, str) else None
+
+
+def member_at(o: Mapping[str, Any], path: Sequence[str]) -> Any:
+    """The value at path in a decoded request, or None when a step is missing."""
+    at: Any = o
+    for k in path:
+        if not is_object(at) or k not in at:
+            return None
+        at = at[k]
+    return at
 
 
 def b64u(text: str) -> str:

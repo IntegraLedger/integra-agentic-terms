@@ -3,7 +3,7 @@ issued or as placed and the pairings it offers, the buyer's reading of the chall
 pays on, the echoed challenge of a credential, the challenge hash and MPP's attribution memo."""
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,7 +45,6 @@ MAX_CREDENTIAL = 65_536
 MAX_JSON_DEPTH = 16
 MAX_LINK = 2048
 LCP_KEYS = ("legalContext", "legalContextUrl", "legalContextAgreementUrl")
-BOUND = ("realm", "method", "intent", "request", "expires", "digest", "header", "opaque")
 TEMPO_DEFAULT_CHAIN = 42431
 TEMPO_V1_DEFAULT_CHAIN = 4217
 
@@ -53,29 +52,6 @@ _POSITION = re.compile(r"0|[1-9][0-9]?")
 _DID_PKH = re.compile(r"did:pkh:eip155:[1-9][0-9]{0,15}:(0x[0-9a-fA-F]{40})")
 _HEX_DIGITS = re.compile(r"0x[0-9a-fA-F]*")
 _MPP_TAG = keccak256(b"mpp")[:4]
-
-# The request member a pairing writes H into, by intent and method; None where no request member carries it. usdc
-# carries H in a request member only on its Solana profile (USDC_CARRIER).
-CARRIER: Mapping[str, Mapping[str, tuple[str, ...] | None]] = {
-    "charge": {
-        "card": ("externalId",),
-        "stripe": ("methodDetails", "metadata", "legal_context"),
-        "usdc": None,
-        "evm": None,
-        "tempo": None,
-        "solana": ("externalId",),
-        "stellar": ("recipient",),
-        "xrpl": ("methodDetails", "invoiceId"),
-        "hedera": None,
-        "lightning": ("methodDetails", "invoice"),
-        "nearintents": ("externalId",),
-    },
-    "session": {"lightning": ("depositInvoice",), "hedera": None, "solana": None, "xrpl": None, "evm": None, "tempo": None},
-    "subscription": {"tempo": None, "stripe": ("methodDetails", "metadata", "legal_context")},
-}
-
-# The request member usdc writes H into, by methodDetails.type; None where no request member carries it.
-USDC_CARRIER: Mapping[str, tuple[str, ...] | None] = {"evm": None, "solana": ("externalId",), "stacks": None, "gateway": None}
 
 
 # ── The attribution memo and the challenge hash.
@@ -248,28 +224,6 @@ def pairings_of(c: object) -> tuple[str, ...] | Refusal:
     out, and a challenge left with no pairing is mpp/expires-required."""
     checked = check_challenge(c, False)
     return checked if isinstance(checked, Refusal) else checked.pairings
-
-
-def carrier_of(c: Mapping[str, Any], request: Mapping[str, Any]) -> tuple[str, ...] | None:
-    """The request member a challenge's intent and method carry H in, or None; for usdc, the member its request's
-    methodDetails.type names."""
-    if c.get("intent") == "charge" and c.get("method") == "usdc":
-        md = request.get("methodDetails")
-        kind = md.get("type") if is_object(md) else None
-        return USDC_CARRIER.get(kind) if isinstance(kind, str) else None
-    intent, method = c.get("intent"), c.get("method")
-    by_method = CARRIER.get(intent) if isinstance(intent, str) else None
-    return by_method.get(method) if by_method is not None and isinstance(method, str) else None
-
-
-def member_at(o: Mapping[str, Any], path: Sequence[str]) -> Any:
-    """The value at path in a decoded request, or None when a step is missing."""
-    at: Any = o
-    for k in path:
-        if not is_object(at) or k not in at:
-            return None
-        at = at[k]
-    return at
 
 
 # ── The buyer's reading.
@@ -489,15 +443,6 @@ def credential_of(c: object) -> Mapping[str, Any] | Refusal:
     if "source" in c and not isinstance(c["source"], str):
         return Refusal("mpp/credential-malformed")
     return c
-
-
-def pushed_field(presented: object, kind: str, field: str) -> str | None:
-    """The string member field of a credential whose payload type is kind, or None."""
-    c = credential_of(presented)
-    if isinstance(c, Refusal) or c["payload"].get("type") != kind:
-        return None
-    v = c["payload"].get(field)
-    return v if isinstance(v, str) else None
 
 
 @dataclass(frozen=True, slots=True)
