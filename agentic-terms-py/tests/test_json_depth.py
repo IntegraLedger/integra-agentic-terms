@@ -136,9 +136,7 @@ def test_a_document_nested_past_64_levels_is_too_large(binding: Binding, doc: di
     assert binding.read({**doc, "x": nested_arrays(99_999)}) == Refusal(too_large)
 
 
-@pytest.mark.parametrize(("binding", "doc", "too_large"), MEASURED, ids=lambda v: getattr(v, "id", ""))
-def test_a_document_holding_an_integer_past_the_double_range_is_read(
-    binding: Binding, doc: dict[str, Any], too_large: str
-) -> None:
+@pytest.mark.parametrize(("binding", "doc"), [(b, d) for b, d, _ in MEASURED], ids=lambda v: getattr(v, "id", ""))
+def test_a_document_holding_an_integer_past_the_double_range_is_read(binding: Binding, doc: dict[str, Any]) -> None:
     assert isinstance(binding.read({**doc, "n": 10**399}), Advertised)
     assert isinstance(binding.read({**doc, "n": -(10**399)}), Advertised)
