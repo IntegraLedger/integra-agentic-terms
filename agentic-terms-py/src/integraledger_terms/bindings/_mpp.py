@@ -11,6 +11,7 @@ from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
 from .._types import Advertised, Refusal
 from ._codec import b64u_decode, b64u_encode, to_hex
+from ._jose import js_length
 from ._lcp import (
     agreement_fault,
     from_lcp_string,
@@ -235,7 +236,8 @@ def member_at(o: Mapping[str, Any], path: Sequence[str]) -> Any:
 
 
 def is_link(value: object) -> bool:
-    return isinstance(value, str) and len(value) <= MAX_LINK and is_https_link(value)
+    """True for an https link of at most 2048 UTF-16 code units."""
+    return isinstance(value, str) and js_length(value) <= MAX_LINK and is_https_link(value)
 
 
 def read(doc: object) -> Advertised | Refusal:

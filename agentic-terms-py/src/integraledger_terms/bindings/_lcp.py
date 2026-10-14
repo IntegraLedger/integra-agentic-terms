@@ -10,6 +10,7 @@ from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
 from .._core import AtrHash, is_hash
+from ._jose import js_length
 from ._url import url_scheme
 
 MAX_LINK_CHARS = 2048
@@ -197,9 +198,10 @@ def legal_context_info(lc: object) -> tuple[AtrHash, str] | None:
 
 
 def is_other_scheme_link(value: object) -> TypeGuard[str]:
-    """True for a string of at most 2048 characters that parses as an absolute URL whose scheme is not https: the one
-    failing link refused as link-not-https. Every other failing link is legal-context-malformed."""
-    return isinstance(value, str) and len(value) <= MAX_LINK_CHARS and url_scheme(value) not in (None, "https")
+    """True for a string of at most 2048 UTF-16 code units that parses as an absolute URL whose scheme is not https:
+    the one failing link the x402, MPP and UCP reads refuse as link-not-https, where every other failing link is
+    legal-context-malformed."""
+    return isinstance(value, str) and js_length(value) <= MAX_LINK_CHARS and url_scheme(value) not in (None, "https")
 
 
 def is_hash_with_non_https_link(info: object) -> bool:
@@ -214,7 +216,8 @@ def is_hash_with_non_https_link(info: object) -> bool:
 
 
 def is_agreement_url(value: object) -> TypeGuard[str]:
-    return isinstance(value, str) and len(value) <= MAX_LINK_CHARS and is_https_link(value)
+    """True for an https link of at most 2048 UTF-16 code units."""
+    return isinstance(value, str) and js_length(value) <= MAX_LINK_CHARS and is_https_link(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,9 +228,9 @@ class AgreementFault:
 
 
 def agreement_fault(url: object) -> AgreementFault:
-    """The fault of a value that is not an agreement URL: a string of at most 2048 characters that parses as an
+    """The fault of a value that is not an agreement URL: a string of at most 2048 UTF-16 code units that parses as an
     absolute URL whose scheme is not https is link-not-https; every other value (not a string, empty, unparseable,
-    longer than 2048 characters, or an https URL the link rule refuses) is legal-context-malformed."""
+    longer than 2048 UTF-16 code units, or an https URL the link rule refuses) is legal-context-malformed."""
     return AgreementFault("link-not-https" if is_other_scheme_link(url) else "legal-context-malformed")
 
 

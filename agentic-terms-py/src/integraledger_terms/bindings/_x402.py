@@ -7,6 +7,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Refusal
 from ._codec import canonical_or_none
+from ._jose import js_length
 from ._lcp import (
     AgreementFault,
     MAX_LINK_CHARS,
@@ -58,15 +59,17 @@ def is_offered(accepts: Sequence[Any], offer: object) -> bool:
 
 
 def legal_context_of(extensions: object) -> tuple[AtrHash, str] | Refusal:
-    """The hash and link in a document's extensions.legalContext, or the refusal that names what is wrong."""
-    lc = extensions.get(LEGAL_CONTEXT) if is_object(extensions) else None
-    if lc is None:
+    """The hash and link in a document's extensions.legalContext, or the refusal that names what is wrong: only an
+    absent member is x402/no-legal-context, and one present as anything but a legal context, null included, is
+    x402/legal-context-malformed. A link is bounded at 2048 UTF-16 code units."""
+    if not is_object(extensions) or LEGAL_CONTEXT not in extensions:
         return Refusal("x402/no-legal-context")
+    lc = extensions[LEGAL_CONTEXT]
     info = lc.get("info") if is_object(lc) else None
     decoded = legal_context_info(info)
     if decoded is None:
         return Refusal("x402/link-not-https" if is_hash_with_non_https_link(info) else "x402/legal-context-malformed")
-    if len(decoded[1]) > MAX_LINK_CHARS:
+    if js_length(decoded[1]) > MAX_LINK_CHARS:
         return Refusal("x402/legal-context-malformed")
     return decoded
 
