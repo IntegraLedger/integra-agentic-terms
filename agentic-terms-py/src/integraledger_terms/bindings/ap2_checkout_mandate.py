@@ -1,7 +1,9 @@
 """The buyer half of the pairing ap2/checkout-mandate: read, build with complete, and bound.
 
 The ATR hash is the legalContext member of the merchant-signed checkout_jwt payload, committed to by the buyer's closed
-Checkout Mandate through checkout_hash, and read back from inside the mandate. Nothing here verifies a signature.
+Checkout Mandate through checkout_hash, and read back from the checkout JWT presented beside the mandate. The mandate is
+presented alone, or last in AP2's chain after the open mandate. Nothing here verifies a signature, a cnf delegation or a
+link between hops.
 """
 
 import hashlib
@@ -93,7 +95,8 @@ def read_mandate(m: object) -> MandateContent | Refusal:
     by ~~ (at most these two hops, each an SD-JWT): exactly one resolved object of the last SD-JWT whose vct is
     mandate.checkout.1, its checkout_hash, and its checkout_jwt when disclosed. No signature is verified, nor the open
     mandate's cnf delegation to the closed mandate's signer, nor the closed mandate's sd_hash or issuer_jwt_hash link
-    to the open one; the open mandate's constraints are not read."""
+    to the open one; the open mandate's constraints are not read. A hop whose payload, with each disclosed value where
+    its reference sits, nests more than 64 levels is ap2/too-large."""
     sd = _closed_hop(m)
     if isinstance(sd, Refusal):
         return sd
@@ -121,8 +124,10 @@ def read_mandate(m: object) -> MandateContent | Refusal:
 
 
 def checkout_binding(p: object) -> dict[str, Any] | Refusal:
-    """AP2's merchant check: the mandate's checkout_hash is the hash of the presenter's latest checkout_jwt, and a
-    disclosed checkout_jwt is that JWT. Returns that JWT's payload."""
+    """AP2's merchant check: the mandate's checkout_hash is the hash of the presented checkout_jwt, and a disclosed
+    checkout_jwt is that JWT. Returns that JWT's payload. It checks that the mandate commits to the latest checkout when
+    the seller presents the checkout_jwt it last sent for this checkout; with the buyer's copy, it checks only that the
+    mandate and that JWT agree."""
     if not is_object(p):
         return Refusal("ap2/mandate-malformed")
     mandate = read_mandate(p.get("checkout_mandate"))
