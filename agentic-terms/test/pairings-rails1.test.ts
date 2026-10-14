@@ -342,6 +342,8 @@ describe("x402/exact/stellar", () => {
     V1: { M: string };
     V2: { simulatedXdr: string; currentLedger: number; expectPreimageLength: number; expectPreimageSha256: string;
       expectSignaturePrefix: string; expectSignatureSuffix: string; expectEnvelope: string };
+    V3: { accepted: Option; extensions: Record<string, unknown> };
+    agreedRefusals: { rows: { case: string; expect: string; transaction?: string }[] };
   }>("x402-exact-stellar.json");
   const f = T.fixed;
   const payer = ed25519(f.payerSeed);
@@ -378,6 +380,22 @@ describe("x402/exact/stellar", () => {
     const { signed } = await buildAndSign(q, () => undefined);
     const ext = (signed as { extensions: Record<string, { info: { id?: string } }> }).extensions;
     expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
+  });
+  // A row with a transaction is that envelope string as the payment's payload.transaction, its length counted in UTF-16
+  // code units (the rows' about).
+  it("agreedRefusals: each row with a transaction is refused with the row's code", async () => {
+    const rows = T.agreedRefusals.rows.filter((r) => typeof r.transaction === "string");
+    expect(rows.length, "agreedRefusals rows with a transaction").toBeGreaterThan(0);
+    for (const row of rows) {
+      const presented = {
+        x402Version: 2,
+        resource: f.resource,
+        accepted: T.V3.accepted,
+        payload: { transaction: row.transaction },
+        extensions: T.V3.extensions,
+      };
+      expect(await exactStellar.bound(presented), row.case).toEqual({ refused: true, code: row.expect });
+    }
   });
   refusals(p, [EVM_ACCOUNT, `stellar:pubnet:${f.payer}`]);
   // x402 v2's PaymentRequirements carries `network` as a string, a CAIP-2 network id; the Python gate declines the same

@@ -201,6 +201,12 @@ def test_x402_exact_stellar_agreed_refusals() -> None:
     accepted, extensions = V3["accepted"], V3["extensions"]
     assert X402_EXACT_STELLAR.bound(presented("AAAA", accepted, extensions)) == Refusal("stellar/tx-malformed")
     assert X402_EXACT_STELLAR.bound(presented("A" * 8193, accepted, extensions)) == Refusal("stellar/tx-too-large")
+    # The 8192-character bound counts UTF-16 code units, as @integraledger/lcp 0.4.0's readSignedTransfer reads
+    # JavaScript's String length: U+10000 is two.
+    beyond = "A" * 8191 + "\U00010000"
+    assert X402_EXACT_STELLAR.bound(presented(beyond, accepted, extensions)) == Refusal("stellar/tx-too-large")
+    within = "A" * 8190 + "\U00010000"
+    assert X402_EXACT_STELLAR.bound(presented(within, accepted, extensions)) == Refusal("stellar/tx-malformed")
     assert X402_EXACT_STELLAR.bound(presented(V3["envelope"], accepted, None)) == Refusal("x402/no-legal-context")
     other = {**accepted, "extra": {"areFeesSponsored": False}}
     assert X402_EXACT_STELLAR.bound(presented(V3["envelope"], other, extensions)) == Refusal("x402/option-not-this-pairing")
@@ -217,3 +223,14 @@ def test_x402_exact_stellar_agreed_refusals() -> None:
     assert unsigned.complete(b"\x01" * 63) == Refusal("stellar/tx-malformed")
     other_h = "0x" + "11" * 32
     assert X402_EXACT_STELLAR.build(choice, other_h) == Refusal("stellar/carrier-mismatch")
+
+
+def test_x402_exact_stellar_agreed_refusals_with_a_transaction() -> None:
+    """agreedRefusals rows that carry a transaction: that envelope string as the payment's payload.transaction is
+    refused with the row's code, its length counted in UTF-16 code units (the rows' about)."""
+    rows = [row for row in T["agreedRefusals"]["rows"] if "transaction" in row]
+    assert rows, "x402-exact-stellar.json agreedRefusals holds no row with a transaction"
+    accepted, extensions = V3["accepted"], V3["extensions"]
+    for row in rows:
+        out = X402_EXACT_STELLAR.bound(presented(row["transaction"], accepted, extensions))
+        assert out == Refusal(row["expect"]), row["case"]

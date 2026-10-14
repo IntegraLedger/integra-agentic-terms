@@ -13,6 +13,7 @@ from .._core import AtrHash
 from .._types import Refusal
 from . import _stellar_xdr as xdr
 from ._codec import b64_decode
+from ._jose import js_length
 
 PASSPHRASE = {
     "stellar:pubnet": "Public Global Stellar Network ; September 2015",
@@ -280,11 +281,13 @@ def read_source_transfer(text: object, network: object) -> SourcePayment | Refus
 
 
 def _bytes_of(text: object, network: object) -> bytes | Refusal:
+    """The bytes of a base64 envelope of at most MAX_XDR characters, counted in UTF-16 code units as JavaScript's
+    String length counts them, read in its canonical form."""
     if not is_stellar_network(network):
         return Refusal("stellar/network-malformed")
     if not isinstance(text, str) or text == "":
         return Refusal("stellar/tx-malformed")
-    if len(text) > MAX_XDR:
+    if js_length(text) > MAX_XDR:
         return Refusal("stellar/tx-too-large")
     data = b64_decode(text)
     return Refusal("stellar/tx-malformed") if data is None else data
