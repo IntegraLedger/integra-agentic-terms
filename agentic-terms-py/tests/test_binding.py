@@ -111,20 +111,30 @@ def test_agreed_refusals() -> None:
         assert BINDING.bound(bad) == agreed("bound with a signature")
 
 
+INPUTS = ("choice", "info", "legalContext", "accepts", "accepted")
+
+
 def test_agreed_refusals_with_their_input() -> None:
-    """The file holds agreedRefusals rows that carry an input. A row's choice is build's choice, with H; its info
-    replaces V5's document's extensions.legalContext.info, and its legalContext that document's
-    extensions.legalContext, for read."""
-    rows = [r for r in PAIRING["agreedRefusals"]["rows"] if {"choice", "info", "legalContext"} & r.keys()]
-    assert rows, "no agreedRefusals row carries a choice, an info or a legalContext"
+    """The file holds agreedRefusals rows that carry each input. A row's choice is build's choice, with H; its info
+    replaces V5's document's extensions.legalContext.info, its legalContext that document's extensions.legalContext
+    and its accepts that document's accepts, for read; its accepted replaces V1's option in build's choice, as the one
+    entry of required.accepts and as accepted."""
+    rows = [r for r in PAIRING["agreedRefusals"]["rows"] if r.keys() & set(INPUTS)]
+    for key in INPUTS:
+        assert any(key in r for r in rows), f"no agreedRefusals row carries {key}"
     for row in rows:
         doc = copy.deepcopy(V5["expectDocument"])
         if "choice" in row:
             got = BINDING.build(copy.deepcopy(row["choice"]), H)
+        elif "accepted" in row:
+            got = BINDING.build(choice(row["accepted"]), H)
         elif "info" in row:
             doc["extensions"]["legalContext"]["info"] = copy.deepcopy(row["info"])
             got = BINDING.read(doc)
-        else:
+        elif "legalContext" in row:
             doc["extensions"]["legalContext"] = copy.deepcopy(row["legalContext"])
+            got = BINDING.read(doc)
+        else:
+            doc["accepts"] = copy.deepcopy(row["accepts"])
             got = BINDING.read(doc)
         assert got == Refusal(row["expect"]), row["case"]
