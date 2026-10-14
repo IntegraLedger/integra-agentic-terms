@@ -18,7 +18,7 @@ import {
   type MppCredential,
 } from "@integraledger/lcp/mpp";
 import { decodeSvmTx } from "@integraledger/lcp/svm";
-import { check, confirm, transact, type Binding, type SigningRequest, type Presented } from "../src/index.js";
+import { check, confirm, openChannel, transact, within, type Binding, type SigningRequest, type Presented } from "../src/index.js";
 import { mppChargeHedera } from "../src/pairings/mpp-charge-hedera.js";
 import {
   ABC,
@@ -586,10 +586,11 @@ describe("mpp/session/xrpl", () => {
       deposit: s.deposit,
       xrpl: { publicKey: `0x${publicKey}`, settleDelay: s.settleDelay, fee: s.fee, sequence: s.sequence, lastLedgerSequence: s.lastLedgerSequence },
     },
+    // The wallet answers as the XRP Ledger writes a signed blob and a claim's signature: hex digits without 0x.
     answer: async (r) => {
       const q = request(r);
       if (q["kind"] !== "xrpl-session-open") throw new Error(String(q["kind"]));
-      return { signedBlob: `0x${s.blob}`, claimSignature: toHex(payer.sign(q["claim"].bytes)) };
+      return { signedBlob: s.blob, claimSignature: Buffer.from(payer.sign(q["claim"].bytes)).toString("hex") };
     },
   };
 
@@ -629,6 +630,41 @@ describe("mpp/session/xrpl", () => {
     expect(verify(null, claim, key, Buffer.from(String(c.payload["signature"]), "hex"))).toBe(true);
     expect(String(c.payload["signature"]).startsWith("c042fda5")).toBe(true);
     expect(String(c.payload["signature"]).endsWith("a03901")).toBe(true);
+  });
+  it("an opening answered in 0x hex is declined signed-not-bound: the answer takes one form, hex digits without 0x", async () => {
+    const claimSignature = (r: SigningRequest) => toHex(payer.sign(request(r)["claim"].bytes));
+    for (const prefixed of [
+      async (r: SigningRequest) => ({ signedBlob: `0x${s.blob}`, claimSignature: claimSignature(r) }),
+      async (r: SigningRequest) => ({ ...((await p.answer(r)) as Record<string, string>), signedBlob: `0x${s.blob}` }),
+      async (r: SigningRequest) => ({ signedBlob: s.blob, claimSignature: claimSignature(r) }),
+    ]) {
+      const out = await transact(p.doc, sessionXrpl, counting(p.account, prefixed), serving(ABC), { inputs: p.inputs! });
+      expect(isDeclined(out) && out.decline.code).toBe("signed-not-bound");
+    }
+  });
+
+  // A later claim in the held channel: XS3's claim bytes, signed by the channel's key and answered in the opening's form.
+  it("a claim within the held channel is answered as hex digits without 0x; one in 0x hex is declined signed-not-bound", async () => {
+    const opened = await transact(p.doc, sessionXrpl, counting(p.account, p.answer), serving(ABC), { inputs: p.inputs! });
+    if (isDeclined(opened) || "approve" in opened) throw new Error(JSON.stringify(opened));
+    const hold = await openChannel(opened.bytes, opened.signed!, sessionXrpl);
+    if (isDeclined(hold)) throw new Error(hold.decline.detail);
+    expect(hold.channel).toBe(s.expectChannel);
+    const own = [{ ...V.SS1.xrpl.challenge, id: "seller-own-id" }];
+    const claim = (prefix: string) => async (r: SigningRequest) =>
+      (r as unknown as { requests: { bytes: Uint8Array }[] }).requests.map((q) => prefix + Buffer.from(payer.sign(q.bytes)).toString("hex"));
+    const signer = counting(p.account, claim(""));
+    const paid = await within(own, hold, sessionXrpl, signer);
+    if (isDeclined(paid)) throw new Error(paid.decline.detail);
+    const handed = (signer.requests[0] as unknown as { requests: { kind: string; bytes: Uint8Array }[] }).requests;
+    expect(handed.map((q) => q.kind)).toEqual(["xrpl-claim"]);
+    expect(Buffer.from(handed[0]!.bytes).toString("hex").toUpperCase()).toBe(V.XS3.expect);
+    const key = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: Buffer.from(payer.publicKey).toString("base64url") }, format: "jwk" });
+    const payload = (paid.signed as MppCredential).payload;
+    expect([payload["action"], payload["channelId"], payload["amount"]]).toEqual(["voucher", s.expectChannel, V.XS3.drops]);
+    expect(verify(null, Buffer.from(V.XS3.expect, "hex"), key, Buffer.from(String(payload["signature"]), "hex"))).toBe(true);
+    const prefixed = await within(own, hold, sessionXrpl, counting(p.account, claim("0x")));
+    expect(isDeclined(prefixed) && [prefixed.decline.code, prefixed.decline.detail]).toEqual(["signed-not-bound", "mpp/credential-malformed"]);
   });
   refusals(p, [EVM_ACCOUNT, `xrpl:0:${s.account}`]);
 });

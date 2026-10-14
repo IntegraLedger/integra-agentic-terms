@@ -2,20 +2,21 @@
 Expected values are the vector file's; the payer is the XRPL vectors' Ed25519 key from entropy 01×16, whose private key
 is SHA-512Half of the entropy."""
 
+import asyncio
 import base64
 import hashlib
 import json
 from typing import Any
 
-from integraledger_terms import MPP_SESSION_XRPL, Refusal
+from integraledger_terms import MPP_SESSION_XRPL, Declined, Refusal, Transacted, Within, open_channel, transact, within
 from integraledger_terms.bindings import _xrpl
 from integraledger_terms.bindings._channel import ChannelRef
 from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 import ed25519
-from breadth import H, LINK, Pairing, build_and_sign, plant
+from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, plant, run
 from mpp_docs import placed_doc
-from support import hexb, load
+from support import hexb, load, serving
 from xlm_support import EVM_ACCOUNT, b16, mpp_b10
 
 V = load("mpp-session-hedera-solana-xrpl.json")
@@ -26,8 +27,9 @@ MEMO = f"lcp:sha256:{H}".encode("utf-8").hex().upper()
 
 
 def answer(request: Any) -> Any:
+    """The wallet's answer, as the XRP Ledger writes a signed blob and a claim's signature: hex digits without 0x."""
     assert request["kind"] == "xrpl-session-open", request["kind"]
-    return {"signedBlob": "0x" + S["blob"], "claimSignature": "0x" + ed25519.sign(SEED, hexb(request["claim"]["bytes"])).hex()}
+    return {"signedBlob": S["blob"], "claimSignature": ed25519.sign(SEED, hexb(request["claim"]["bytes"])).hex()}
 
 
 SESSION = Pairing(
@@ -201,3 +203,43 @@ def test_an_opening_without_its_destination_or_sequence_names_no_channel() -> No
         w = {"challenge": within, "opening": opening(blob), "cumulativeAmount": 100, "action": "voucher"}
         assert session.build_within(w, H) == Refusal("xrpl/not-channel-create")
     assert session.channel_ref(opening(S["blob"])) == ChannelRef("xrpl:1", S["expectChannel"])
+
+
+# ── the answer forms: an opening's {signedBlob, claimSignature} and a later xrpl-claim's signature take one form, hex
+# digits without 0x, the form the protocol package's complete reads.
+
+
+def test_an_opening_answered_in_0x_hex_is_declined_signed_not_bound() -> None:
+    def claim_signature(request: Any) -> str:
+        return "0x" + ed25519.sign(SEED, hexb(request["claim"]["bytes"])).hex()
+
+    for prefixed in (
+        lambda r: {"signedBlob": "0x" + S["blob"], "claimSignature": claim_signature(r)},
+        lambda r: {**answer(r), "signedBlob": "0x" + S["blob"]},
+        lambda r: {"signedBlob": S["blob"], "claimSignature": claim_signature(r)},
+    ):
+        out = run(lambda c: transact(SESSION.doc, MPP_SESSION_XRPL, Recording(SESSION.account, prefixed), c, inputs=SESSION.inputs), serving(ABC))
+        assert isinstance(out, Declined) and out.code == "signed-not-bound", out
+
+
+def test_a_claim_within_the_held_channel_is_answered_as_hex_digits_without_0x() -> None:
+    opened = run(lambda c: transact(SESSION.doc, MPP_SESSION_XRPL, Recording(SESSION.account, answer), c, inputs=SESSION.inputs), serving(ABC))
+    assert isinstance(opened, Transacted) and opened.signed is not None, opened
+    hold = open_channel(opened.atr_bytes, opened.signed, MPP_SESSION_XRPL)
+    assert not isinstance(hold, Declined), hold
+    assert hold["channel"] == S["expectChannel"]
+    own = [{**V["SS1"]["xrpl"]["challenge"], "id": "seller-own-id"}]
+
+    def claim(prefix: str) -> Any:
+        return lambda r: [prefix + ed25519.sign(SEED, hexb(q["bytes"])).hex() for q in r["requests"]]
+
+    signer = Recording(SESSION.account, claim(""))
+    paid = asyncio.run(within(own, hold, MPP_SESSION_XRPL, signer))
+    assert isinstance(paid, Within), paid
+    handed = signer.requests[0]["requests"]
+    assert [q["kind"] for q in handed] == ["xrpl-claim"] and hexb(handed[0]["bytes"]).hex().upper() == V["XS3"]["expect"]
+    payload = paid.signed["payload"]
+    assert (payload["action"], payload["channelId"], payload["amount"]) == ("voucher", S["expectChannel"], V["XS3"]["drops"])
+    assert payload["signature"] == ed25519.sign(SEED, bytes.fromhex(V["XS3"]["expect"])).hex()
+    prefixed = asyncio.run(within(own, hold, MPP_SESSION_XRPL, Recording(SESSION.account, claim("0x"))))
+    assert prefixed == Declined("signed-not-bound", "mpp/credential-malformed")

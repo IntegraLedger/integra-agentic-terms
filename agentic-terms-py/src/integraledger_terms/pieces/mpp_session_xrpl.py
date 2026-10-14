@@ -1,6 +1,7 @@
 """The buyer piece for mpp/session/xrpl: the PaymentChannelCreate and the first claim handed to the wallet as the
-build's xrpl-session-open request, exactly as built. The wallet answers {signedBlob, claimSignature} as 0x hex, which
-completes the build's own credential. The deposit and the channel's terms are the buyer's."""
+build's xrpl-session-open request, exactly as built. The wallet answers {signedBlob, claimSignature} as hex digits
+without 0x, as the XRP Ledger writes them and as a later xrpl-claim is answered, which completes the build's own
+credential. The deposit and the channel's terms are the buyer's."""
 
 from collections.abc import Mapping
 from typing import Any
@@ -37,11 +38,11 @@ def _inputs(request: Mapping[str, Any], given: Inputs) -> dict[str, Any] | Refus
 
 
 def _answer(signature: Signature) -> dict[str, str] | Refusal:
-    """{signedBlob, claimSignature} as the build's hex digits, from 0x hex."""
+    """{signedBlob, claimSignature} as given: the build's complete reads each as hex digits without 0x."""
     if not isinstance(signature, Mapping):
         return Refusal("mpp/credential-malformed")
-    blob, claim = hex_digits(signature.get("signedBlob")), hex_digits(signature.get("claimSignature"))
-    if blob is None or claim is None:
+    blob, claim = signature.get("signedBlob"), signature.get("claimSignature")
+    if not isinstance(blob, str) or not isinstance(claim, str):
         return Refusal("mpp/credential-malformed")
     return {"signedBlob": blob, "claimSignature": claim}
 

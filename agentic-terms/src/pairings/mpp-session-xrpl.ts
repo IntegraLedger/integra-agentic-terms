@@ -1,7 +1,8 @@
 /**
  * The buyer piece for `mpp/session/xrpl`: the `PaymentChannelCreate` and the first claim handed to the wallet as the
- * build's `xrpl-session-open` request, exactly as built. The wallet answers `{signedBlob, claimSignature}` as `0x` hex,
- * which completes the build's own credential. The deposit and the channel's terms are the buyer's.
+ * build's `xrpl-session-open` request, exactly as built. The wallet answers `{signedBlob, claimSignature}` as hex
+ * digits without `0x`, as the XRP Ledger writes them and as a later `xrpl-claim` is answered, which completes the
+ * build's own credential. The deposit and the channel's terms are the buyer's.
  */
 import type { Json, Refusal } from "@integraledger/lcp";
 import type { Inputs, Signature } from "../types.js";
@@ -27,12 +28,11 @@ function inputs(_request: Record<string, unknown>, given: Inputs): Record<string
   return { ...read, xrpl: { ...x, publicKey } };
 }
 
-/** `{signedBlob, claimSignature}` as the build's hex digits, from `0x` hex. */
+/** `{signedBlob, claimSignature}` as given: the build's `complete` reads each as hex digits without `0x`. */
 function answer(signature: Signature): { signedBlob: string; claimSignature: string } | Refusal {
   if (!isObject(signature)) return refuse("mpp/credential-malformed");
-  const signedBlob = hexDigits(signature["signedBlob"]);
-  const claimSignature = hexDigits(signature["claimSignature"]);
-  if (signedBlob === undefined || claimSignature === undefined) return refuse("mpp/credential-malformed");
+  const { signedBlob, claimSignature } = signature;
+  if (typeof signedBlob !== "string" || typeof claimSignature !== "string") return refuse("mpp/credential-malformed");
   return { signedBlob, claimSignature };
 }
 
