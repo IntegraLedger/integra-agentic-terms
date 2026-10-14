@@ -82,9 +82,10 @@ def test_json_forms() -> None:
 
 
 def test_json_bytes_measures_as_json_stringify_writes() -> None:
-    """JSON.stringify writes an infinity as null (ECMA-262 SerializeJSONProperty), so an integer past the double
-    range, which JSON.parse reads as Infinity, measures 4; a value nested past 64 levels, the value being level 1,
-    measures infinity, as @integraledger/lcp's jsonBytes measures it; a cycle cannot be written."""
+    """JSON.stringify writes a number that is not finite as null (ECMA-262 SerializeJSONProperty), so an integer past
+    the double range, or a float such as 1e400, which JSON.parse reads as Infinity, measures 4; a value nested past 64
+    levels, the value being level 1, measures infinity, as @integraledger/lcp's jsonBytes measures it; a cycle cannot be
+    written."""
 
     def arrays(count: int) -> list[Any]:
         value: list[Any] = []
@@ -92,9 +93,12 @@ def test_json_bytes_measures_as_json_stringify_writes() -> None:
             value = [value]
         return value
 
+    # JSON.stringify(JSON.parse(text)) on Node 26.10.0: "1" followed by 400 zeros is written null, as are 1e400 and
+    # -1e400, and 2**1024 - 2**970, the first integer that rounds past the largest double.
     assert json_bytes([10**400, -(10**400), 2**1024 - 2**970, 2**1024 - 2**970 - 1]) == len(
         "[null,null,null,1.7976931348623157e+308]"
     )
+    assert json_bytes(parse_json("[1e400,-1e400]")) == len("[null,null]")
     # JSON.stringify(JSON.parse(text)) on Node 26.10.0: an integer past 2**53 is written as the double it reads as.
     assert json_bytes([10**308, 2**53 + 1, 123456789012345678901234567890, 10**21 - 1, 2**63]) == len(
         "[1e+308,9007199254740992,1.2345678901234568e+29,1e+21,9223372036854776000]"
