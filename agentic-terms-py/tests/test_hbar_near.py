@@ -203,10 +203,25 @@ def test_x402_exact_near_key_type_written_as_a_float() -> None:
     assert signed["payload"]["signedDelegateAction"] == N["V2"]["expectSignedDelegateAction"]
 
 
+def base64_bytes(text: object) -> bytes:
+    try:
+        return base64.b64decode(text) if isinstance(text, str) else b""
+    except ValueError:
+        return b""
+
+
 def test_x402_exact_near_agreed_refusals_count_utf16_code_units() -> None:
     # The file's about: a signedDelegateAction's length is counted in UTF-16 code units; U+10000 counts two.
     rows = [r for r in N["agreedRefusals"]["rows"] if any(ord(c) > 0xFFFF for c in r.get("signedDelegateAction", ""))]
     assert rows, "agreedRefusals rows whose signedDelegateAction holds a character past U+FFFF"
+    for row in rows:
+        assert X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"])) == Refusal(row["expect"]), row["case"]
+
+
+def test_x402_exact_near_agreed_refusals_args_led_by_a_byte_order_mark() -> None:
+    # A byte-order mark leading the ft_transfer arguments is a character of their text, so the text is not JSON.
+    rows = [r for r in N["agreedRefusals"]["rows"] if b"\xef\xbb\xbf{" in base64_bytes(r.get("signedDelegateAction"))]
+    assert rows, "agreedRefusals rows whose ft_transfer arguments begin with a byte-order mark"
     for row in rows:
         assert X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"])) == Refusal(row["expect"]), row["case"]
 

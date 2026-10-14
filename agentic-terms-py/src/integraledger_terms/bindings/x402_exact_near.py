@@ -31,7 +31,6 @@ MAX_ARGS_BYTES = 4096
 
 _ACCOUNT = re.compile(r"[a-z0-9._-]{2,64}")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
-_BOM = b"\xef\xbb\xbf"
 
 
 def _account(value: object) -> bool:
@@ -82,11 +81,12 @@ def ft_transfer_args(pay_to: str, amount: str, h: AtrHash) -> bytes | Refusal:
 
 
 def _memo_of(args: bytes) -> AtrHash | Refusal:
-    """The hash in the memo of a JSON object of ft_transfer arguments."""
+    """The hash in the memo of a JSON object of ft_transfer arguments, strict UTF-8 text whose leading byte-order mark
+    is a character, so arguments that begin with one are not JSON."""
     if len(args) > MAX_ARGS_BYTES:
         return Refusal("near/args-malformed")
     try:
-        text = (args[len(_BOM) :] if args.startswith(_BOM) else args).decode("utf-8")
+        text = args.decode("utf-8")
     except UnicodeDecodeError:
         return Refusal("near/args-malformed")
     parsed = parse_json(text)
