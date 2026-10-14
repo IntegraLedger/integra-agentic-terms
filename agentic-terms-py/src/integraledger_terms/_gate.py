@@ -45,6 +45,7 @@ FETCH_DEADLINE_S = 10.0
 _NOTHING_TO_SIGN = re.compile(r".*/(no-signed-place|nothing-to-sign)")
 # The most signer calls one payment takes: a funding and then a voucher.
 _MAX_STEPS = 2
+# ASCII digits only: re's [0-9] matches no other script's digits.
 _DECIMAL = re.compile(r"[0-9]+")
 
 
@@ -81,6 +82,17 @@ def _unsupported(binding: Binding) -> Declined:
     return Declined("pairing-not-supported", f"The gate has no buyer piece for the pairing {getattr(binding, 'id', None)}.")
 
 
+def _declared_over(declared: str | None, bound: int) -> bool:
+    """Whether a Content-Length value declares more than bound bytes, read as the TypeScript gate reads it: ASCII digits
+    alone once surrounding whitespace is stripped, compared by their significant digits, so a value of any length is
+    read. Any other value declares nothing."""
+    value = (declared or "").strip()
+    if _DECIMAL.fullmatch(value) is None:
+        return False
+    significant = value.lstrip("0") or "0"
+    return len(significant) > len(str(bound)) or int(significant) > bound
+
+
 def _too_large() -> Declined:
     return Declined("atr-too-large", f"The ATR is larger than {MAX_ATR_BYTES} bytes.")
 
@@ -95,18 +107,19 @@ def is_identity(content_encoding: str | None) -> bool:
 
 
 async def _fetch(fetch: httpx.AsyncClient, link: str) -> bytes | Declined:
-    """One GET asking for the identity coding, no redirect, one deadline over headers and body, and at most
-    MAX_ATR_BYTES read as sent. A 200 whose Content-Encoding names any coding is declined with its body unread: nothing
+    """One GET asking for the identity coding, no redirect, one deadline over headers and body that is also the
+    request's own httpx timeout, and at most MAX_ATR_BYTES read as sent. A 200 whose Content-Encoding names any coding is declined with its body unread: nothing
     is decoded. A response the client's transport has already read in whole is taken as read."""
     try:
         async with asyncio.timeout(FETCH_DEADLINE_S):
-            async with fetch.stream("GET", link, headers=IDENTITY, follow_redirects=False) as response:
+            async with fetch.stream(
+                "GET", link, headers=IDENTITY, follow_redirects=False, timeout=FETCH_DEADLINE_S
+            ) as response:
                 if response.status_code != 200:
                     return Declined("atr-unfetchable", f"The link answered status {response.status_code}.")
                 if not is_identity(response.headers.get("content-encoding")):
                     return Declined("atr-unfetchable", "The link served a content coding other than identity.")
-                declared = (response.headers.get("content-length") or "").strip()
-                if _DECIMAL.fullmatch(declared) and int(declared) > MAX_ATR_BYTES:
+                if _declared_over(response.headers.get("content-length"), MAX_ATR_BYTES):
                     return _too_large()
                 if response.is_stream_consumed:
                     return response.content if len(response.content) <= MAX_ATR_BYTES else _too_large()

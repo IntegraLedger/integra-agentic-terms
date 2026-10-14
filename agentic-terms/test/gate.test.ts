@@ -402,6 +402,15 @@ describe("buyer rows", () => {
     expect(declared.seen.pulled).toBe(0);
   });
 
+  // Number() of a declared length of 5000 digits is Infinity, over the bound, as the Python gate reads it by its
+  // significant digits.
+  it("a declared length of 5000 digits is too large, and the body is never read", async () => {
+    const declared = streamed([1], "1" + "0".repeat(4999));
+    const signer = counting();
+    expect(code(await transact(D, binding, signer, stub(() => declared.response)))).toBe("atr-too-large");
+    expect([declared.seen.pulled, signer.requests.length]).toEqual([0, 0]);
+  });
+
   it("B14: a link that never answers is unfetchable at 10 000 ms", async () => {
     const r = row("B14");
     const fetch = stub(() => new Promise<Response>(() => undefined));

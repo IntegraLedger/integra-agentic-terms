@@ -24,6 +24,7 @@ from integraledger_terms import (
     X402_EXACT_EIP155_ERC7710,
     Declined,
     Json,
+    Moved,
     Refusal,
     ToApprove,
     Transacted,
@@ -269,6 +270,32 @@ def test_ba3_a_202_that_never_becomes_200_is_pending_at_the_exchange_bound_with_
     assert json.loads(base64.b64decode(seller.paid()[0])) == out.moved.signed
 
 
+@pytest.mark.parametrize(
+    ("retry_after", "paid"),
+    [(None, 120), ("0", 240), ("Wed, 21 Oct 2026 07:28:00 GMT", 120)],
+    ids=["absent", "0", "an HTTP-date"],
+)
+def test_a_202_whose_retry_after_is_in_another_form_is_pending_at_the_exchange_bound(
+    retry_after: str | None, paid: int, clock: Clock
+) -> None:
+    # The 202's retry-after in its other forms, as buyer.json's BA15 writes them: the gate waits
+    # retry-after's delay-seconds (RFC 9110 section 10.2.3), at least 1 s, and 2 s when it is absent or in any other
+    # form, an HTTP-date included, so within the 240 s exchange the payment goes 120 times, or 240 times after "0".
+    pending: dict[str, Any] = {"status": 202, "repeats": True}
+    if retry_after is not None:
+        pending["retryAfter"] = retry_after
+    seller = Seller([{"status": 402, "paymentRequired": "required"}, pending])
+    signer = RecordingSigner()
+    start = clock.now
+    out = run(seller.link(), lambda c: approve_and_agree(signer, c))
+    assert declined(out, "agreement-pending")
+    assert clock.now - start == EXCHANGE_S
+    assert len(signer.requests) == 1
+    assert len(seller.paid()) == paid
+    assert len(set(seller.paid())) == 1
+    assert isinstance(out, Declined) and isinstance(out.moved, Moved)
+
+
 def test_ba3_the_exchange_bound_runs_from_the_payments_first_sending_not_from_the_signers_call(clock: Clock) -> None:
     r = row("BA3")
     seller = Seller(r["input"]["agreement"])
@@ -411,6 +438,25 @@ def test_an_agreement_url_the_gate_refuses_carries_the_protocol_packages_code(ur
     assert out == Declined("link-not-https", detail)
     assert len(seller.agreement_requests()) == 0
     assert len(signer.requests) == 0
+
+
+@pytest.mark.parametrize(
+    ("url", "detail"),
+    [
+        ("http://api.seller.example/agreement/b9d3d4b7-2c99-4d5f-9178-837645f75273", "x402/link-not-https"),
+        ("api.seller.example/agreement/b9d3d4b7-2c99-4d5f-9178-837645f75273", "x402/legal-context-malformed"),
+        ("not a url", "x402/legal-context-malformed"),
+        ("https://u@pay.seller.example/agreement", "x402/legal-context-malformed"),
+    ],
+)
+def test_agree_called_with_an_agreement_url_it_refuses_carries_x402s_code(url: str, detail: str) -> None:
+    # buyer.json's BA5, with its detail and its agree entry: agree, called with the agreement URL alone, declines a URL
+    # it refuses link-not-https with the protocol package's code in x402's namespace, before any fetch or signer call.
+    seller = Seller([])
+    signer = RecordingSigner()
+    out = run(seller.link(), lambda c: agree(A, url, signer, c))
+    assert out == Declined("link-not-https", detail)
+    assert (len(seller.requests), len(signer.requests)) == (0, 0)
 
 
 @pytest.mark.parametrize("binding", [BINDING, X402_EXACT_EIP155_ERC7710], ids=lambda b: str(b.id))
@@ -849,3 +895,72 @@ def test_through_transact_a_signal_that_is_not_an_event_is_declined_before_any_f
     out = run(seller.link(), lambda c: transact(D, with_agreement(URL), RecordingSigner(), c, signal=object()))  # type: ignore[arg-type]
     assert out == Declined("no-payable-option", "x402/input-malformed")
     assert seller.requests == []
+
+
+def test_a_lone_surrogate_the_challenge_echoes_is_sent_escaped_as_json_stringify_writes_it() -> None:
+    # A seller's challenge whose resource description is a lone surrogate, written as a JSON escape: the paid request's
+    # PAYMENT-SIGNATURE carries it escaped, as Node's JSON.stringify writes it, and the agreement is recorded.
+    required = {**AG["required"], "resource": {**AG["required"]["resource"], "description": "\ud800"}}
+    header = base64.b64encode(json.dumps(required).encode("utf-8")).decode("ascii")
+    paid: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if "payment-signature" not in request.headers:
+            return httpx.Response(402, headers={"payment-required": header})
+        paid.append(request.headers["payment-signature"])
+        return httpx.Response(200, json=AG["receipt"])
+
+    out = run(Link(handle), lambda c: approve_and_agree(RecordingSigner(), c))
+    assert isinstance(out, Agreed), out
+    text = base64.b64decode(paid[0]).decode("utf-8")
+    assert '"description":"\\ud800"' in text
+    assert json.loads(text)["resource"]["description"] == "\ud800"
+
+
+@pytest.mark.parametrize(
+    ("declared", "over"),
+    [
+        ("1" + "0" * 4999, True),
+        ("65537", True),
+        (" 65537 ", True),
+        ("65536", False),
+        ("0" * 30 + "65536", False),
+        ("0" * 30 + "65537", True),
+        ("1\u00b2", False),
+        ("\u0661\u0662", False),
+        ("-1", False),
+        ("", False),
+        (None, False),
+    ],
+    ids=["5000 digits", "65537", "65537 in spaces", "65536", "65536 after zeros", "65537 after zeros",
+         "a superscript digit", "Arabic-Indic digits", "-1", "empty", "absent"],  # fmt: skip
+)
+def test_a_declared_length_is_read_as_ascii_digits_by_their_significant_digits(declared: str | None, over: bool) -> None:
+    # The TypeScript gate's read: /^[0-9]+$/ on the trimmed value, then Number(value) > 65536, which a value of any
+    # length gives (Number of 5000 digits is Infinity).
+    assert _gate._declared_over(declared, 65_536) is over
+
+
+def test_a_declared_length_of_5000_digits_is_larger_than_the_bound_at_both_gets() -> None:
+    # As the TypeScript gate declines it: atr-too-large at the ATR's GET, and the receipt larger than 64 KiB at the
+    # agreement URL's.
+    declared = "1" + "0" * 4999
+    link = Link(lambda request: httpx.Response(200, headers={"content-length": declared}, content=b""))
+    out = run(link, lambda c: confirm(D, BINDING, ACCOUNT, c))
+    assert declined(out, "atr-too-large")
+    out = run(link, lambda c: agree(A, URL, RecordingSigner(), c))
+    assert out == Declined("agreement-failed", "The agreement receipt is larger than 64 KiB.")
+
+
+def test_each_get_hands_httpx_the_gates_own_deadline() -> None:
+    # The gate's 10-second bound is each request's own httpx timeout, whatever the client's default (httpx's is 5 s).
+    seen: list[Any] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions.get("timeout"))
+        return httpx.Response(200, content=A) if str(request.url) == LINK_A else httpx.Response(200, json=AG["receipt"])
+
+    run(Link(handle), lambda c: confirm(D, BINDING, ACCOUNT, c))
+    run(Link(handle), lambda c: agree(A, URL, RecordingSigner(), c))
+    ten = {"connect": 10.0, "read": 10.0, "write": 10.0, "pool": 10.0}
+    assert seen == [ten, ten]

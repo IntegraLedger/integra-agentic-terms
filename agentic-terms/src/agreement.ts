@@ -339,7 +339,9 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * `signer`, sends it to `url`, and returns the receipt once recorded. `bytes` are the ATR the gate compared, whose hash
  * the agreement payment carries; `inputs` are the buyer's own chain values; `signal` ends the exchange. An `approved`
  * that is not of the agreement payment's form, or `inputs` that is not an object, is declined `no-payable-option` with
- * `x402/input-malformed` before any fetch or signer call.
+ * `x402/input-malformed` before any fetch or signer call. A `url` that is not an https URL is declined `link-not-https`
+ * with `x402/link-not-https` for an absolute URL of another scheme and `x402/legal-context-malformed` for any other
+ * value, before any fetch.
  */
 export function agree(
   bytes: Uint8Array,
@@ -352,8 +354,9 @@ export function agree(
 }
 
 /**
- * `agree`, where `ns` is the namespace of the pairing whose offer named the URL: a refused URL's detail carries it with
- * the protocol package's code.
+ * `agree`, where `ns` is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
+ * declines `link-not-https`, its detail the protocol package's code in that namespace, `link-not-https` for an absolute
+ * URL of another scheme and `legal-context-malformed` for any other value.
  */
 export async function exchange(
   bytes: Uint8Array,
@@ -365,7 +368,7 @@ export async function exchange(
 ): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
   if (!isHttpsLink(url)) {
     const fault = isOtherSchemeLink(url) ? "link-not-https" : "legal-context-malformed";
-    return declined("link-not-https", ns === undefined ? "The agreement URL is not an https URL." : `${ns}/${fault}`);
+    return declined("link-not-https", `${ns ?? "x402"}/${fault}`);
   }
   const { approved, signal, inputs = {} } = options;
   if ((approved !== undefined && !isAgreementPayment(approved)) || !isObject(inputs)) {

@@ -466,6 +466,7 @@ passes such a link to its `fetch`.
 | `Within` | `signed` and the updated `hold`. |
 | `ChannelHold` | A `dict`: `pairing`, `network`, `channel`, `h`, `atr` (base64), `opening`, `charged`, `signedMax`. |
 | `Declined` | `code`, `detail`, `moved`. |
+| `Moved` | `signed`, `atr_bytes`, `h`: the payment the signer moved before a decline, to keep and present again. |
 | `DeclineCode` | The twelve codes in the table above. |
 | `Chosen` | `pairing`, `choice`, `ref`, `agreement`: what the gate chose to pay, as JSON, with the agreement URL where the pairing needs one. |
 | `Signer` | A protocol: an `account` string (CAIP-10) and `async def sign(self, request) -> Signature`. |

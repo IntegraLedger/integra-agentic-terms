@@ -51,9 +51,10 @@ after, it declines `agreement-pending` with the payment as `moved`. Cancelling t
 | `Within` | `signed: dict`, `hold: ChannelHold` |
 | `Chosen` | `pairing: str`, `choice: dict`, `ref: str`, `agreement: str \| None`: the agreement URL, where the pairing needs one |
 | `Declined` | `code: DeclineCode`, `detail: str`, `moved: Moved \| None` |
+| `Moved` | `signed: Any`, `atr_bytes: bytes`, `h: AtrHash`: the payment the signer moved before a decline, to keep and present again |
 
 `ChannelHold` is a `dict` with the members `pairing`, `network`, `channel`, `h`, `atr`, `opening`, `charged` and
-`signedMax`, as in TypeScript. `Moved` holds `signed`, `atr_bytes` and `h`.
+`signedMax`, as in TypeScript.
 
 ## Protocols and types
 

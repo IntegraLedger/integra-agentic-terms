@@ -294,6 +294,27 @@ describe("agreement rows", () => {
     expect(base64Json(moved.signed)).toBe(fetch.paid()[0]);
   });
 
+  // The 202's retry-after in its other forms, as buyer.json's BA15 writes them: the gate waits
+  // retry-after's delay-seconds (RFC 9110 section 10.2.3), at least 1 s, and 2 s when it is absent or in any other
+  // form, an HTTP-date included, so within the 240 s exchange the payment goes 120 times, or 240 times after "0".
+  it.each([
+    ["absent", undefined, 120],
+    ["0", "0", 240],
+    ["an HTTP-date", "Wed, 21 Oct 2026 07:28:00 GMT", 120],
+  ] as const)("a 202 whose retry-after is %s: agreement-pending at the exchange bound, the payment sent %d times", async (_, retryAfter, paid) => {
+    const fetch = seller([
+      { status: 402, paymentRequired: "required" },
+      { status: 202, ...(retryAfter === undefined ? {} : { retryAfter }), repeats: true },
+    ]);
+    const signer = counting();
+    const { value, elapsed } = await drive(approveAndAgree(signer, fetch));
+    expect(code(value)).toBe("agreement-pending");
+    expect(elapsed).toBe(EXCHANGE_MS);
+    expect(signer.requests.length).toBe(1);
+    expect(fetch.paid().length).toBe(paid);
+    expect(new Set(fetch.paid()).size).toBe(1);
+  });
+
   it("BA3: the exchange bound runs from the payment's first sending, not from the signer's call", async () => {
     const r = row("BA3");
     const fetch = seller(r.input.agreement);
@@ -363,6 +384,50 @@ describe("agreement rows", () => {
       expect(fetch.agreementCalls().length).toBe(0);
       expect(signer.requests.length).toBe(0);
     }
+  });
+
+  // buyer.json's BA5, with its detail and its agree entry: agree, called with the agreement URL alone, declines a URL
+  // it refuses link-not-https with the protocol package's code in x402's namespace, before any fetch or signer call:
+  // link-not-https for an absolute URL of another scheme, legal-context-malformed for any other value.
+  it("agree called with an agreement URL it refuses carries x402's code in its detail", async () => {
+    for (const [url, detail] of [
+      ["http://api.seller.example/agreement/b9d3d4b7-2c99-4d5f-9178-837645f75273", "x402/link-not-https"],
+      ["api.seller.example/agreement/b9d3d4b7-2c99-4d5f-9178-837645f75273", "x402/legal-context-malformed"],
+      ["not a url", "x402/legal-context-malformed"],
+      ["https://u@pay.seller.example/agreement", "x402/legal-context-malformed"],
+    ] as const) {
+      const fetch = seller([]);
+      const signer = counting();
+      expect(await agree(A, url, signer, fetch)).toEqual({ decline: { code: "link-not-https", detail } });
+      expect([fetch.calls.length, signer.requests.length]).toEqual([0, 0]);
+    }
+  });
+
+  // A seller's challenge whose resource description is a lone surrogate, written as a JSON escape: the paid request's
+  // PAYMENT-SIGNATURE carries it escaped, as JSON.stringify writes it, and the agreement is recorded.
+  it("a lone surrogate the challenge echoes is sent escaped, and the agreement is recorded", async () => {
+    const required = { ...AG.required, resource: { ...AG.required.resource, description: "\ud800" } };
+    const header = Buffer.from(JSON.stringify(required)).toString("base64");
+    const paid: string[] = [];
+    const fetch = (async (_url: string, init: Parameters<Fetch>[1]) => {
+      const signature = init.headers?.["PAYMENT-SIGNATURE"];
+      if (signature === undefined) return new Response(null, { status: 402, headers: { "payment-required": header } });
+      paid.push(signature);
+      return new Response(JSON.stringify(AG.receipt), { status: 200 });
+    }) as Fetch;
+    expect(await approveAndAgree(counting(), fetch)).toEqual({ receipt: AG.receipt });
+    const text = Buffer.from(paid[0]!, "base64").toString("utf8");
+    expect(text).toContain('"description":"\\ud800"');
+    expect(JSON.parse(text).resource.description).toBe("\ud800");
+  });
+
+  // Number() of a declared length of 5000 digits is Infinity: the agreement URL's 200 is larger than 64 KiB.
+  it("a receipt whose declared length has 5000 digits is larger than 64 KiB", async () => {
+    const declared = "1" + "0".repeat(4999);
+    const fetch = (async () => new Response(null, { status: 200, headers: { "content-length": declared } })) as Fetch;
+    expect(await agree(A, AGREEMENT_URL, counting(), fetch)).toEqual({
+      decline: { code: "agreement-failed", detail: "The agreement receipt is larger than 64 KiB." },
+    });
   });
 
   it("BA6: a pairing whose payment is a public proof reads the agreement URL and does not pay it", async () => {

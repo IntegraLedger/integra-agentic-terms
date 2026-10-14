@@ -11,7 +11,6 @@ carries it as moved. Setting the caller's signal ends the exchange at its next s
 import asyncio
 import base64
 import binascii
-import json
 import re
 import time
 from collections.abc import Coroutine, Mapping, Sequence
@@ -23,6 +22,7 @@ import httpx
 from . import _gate
 from ._core import AtrHash, hash_equals, is_hash
 from ._core import atr_hash as hash_of
+from .bindings._codec import js_json
 from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
 from .bindings._x402 import MAX_OPTIONS
@@ -123,9 +123,9 @@ def _server_error(status: int) -> bool:
 
 
 def _to_base64(value: object) -> str:
-    """Standard base64 of the UTF-8 bytes of the compact JSON of value."""
-    text = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
-    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+    """Standard base64 of the UTF-8 bytes of the JSON text JSON.stringify writes for value, each lone surrogate
+    escaped."""
+    return base64.b64encode(js_json(value).encode("utf-8")).decode("ascii")
 
 
 def _from_base64_json(header: str) -> object | None:
@@ -155,14 +155,14 @@ async def _get(
     fetch: httpx.AsyncClient, url: str, signature: str | None, seconds: float
 ) -> _Answer | _Unanswered | Declined:
     """One GET of the agreement URL, asking for the identity coding, with no redirect and a deadline of seconds over
-    headers and body. A 200 or a 402, the answers the exchange reads, whose Content-Encoding names any coding is
+    headers and body, which is also the request's own httpx timeout. A 200 or a 402, the answers the exchange reads, whose Content-Encoding names any coding is
     agreement-failed with its body unread; a 200 body is read as sent, up to 64 KiB, and nothing is decoded; any other
     body is left unread."""
     headers = dict(_gate.IDENTITY) if signature is None else {**_gate.IDENTITY, "PAYMENT-SIGNATURE": signature}
     too_large = _failed("The agreement receipt is larger than 64 KiB.")
     try:
         async with asyncio.timeout(seconds):
-            async with fetch.stream("GET", url, headers=headers, follow_redirects=False) as response:
+            async with fetch.stream("GET", url, headers=headers, follow_redirects=False, timeout=seconds) as response:
                 answer = _Answer(
                     status=response.status_code,
                     payment_required=response.headers.get("payment-required"),
@@ -175,8 +175,7 @@ async def _get(
                     return _failed("The agreement URL served a content coding other than identity.")
                 if response.status_code != 200:
                     return answer
-                declared = response.headers.get("content-length")
-                if declared is not None and declared.strip().isdigit() and int(declared) > MAX_ANSWER_BYTES:
+                if _gate._declared_over(response.headers.get("content-length"), MAX_ANSWER_BYTES):
                     return too_large
                 if response.is_stream_consumed:
                     return too_large if len(response.content) > MAX_ANSWER_BYTES else replace(answer, body=response.content)
@@ -379,7 +378,9 @@ async def agree(
     signer, send it to url, and return the receipt once recorded. atr_bytes are the ATR the gate compared, whose hash
     the agreement payment carries; inputs are the buyer's own chain values; setting signal ends the exchange. An
     approved value that is not of the agreement payment's form, inputs that are not a mapping, or a signal that is not
-    an asyncio.Event is declined no-payable-option with x402/input-malformed before any fetch or signer call."""
+    an asyncio.Event is declined no-payable-option with x402/input-malformed before any fetch or signer call. A url
+    that is not an https URL is declined link-not-https with x402/link-not-https for an absolute URL of another scheme
+    and x402/legal-context-malformed for any other value, before any fetch."""
     return await exchange(atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, signal=signal, ns=None)
 
 
@@ -394,13 +395,12 @@ async def exchange(
     signal: asyncio.Event | None,
     ns: str | None,
 ) -> ToApprove | Agreed | Declined:
-    """agree, where ns is the namespace of the pairing whose offer named the URL: a refused URL's detail carries it
-    with the protocol package's code."""
+    """agree, where ns is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
+    declines link-not-https, its detail the protocol package's code in that namespace, link-not-https for an absolute
+    URL of another scheme and legal-context-malformed for any other value."""
     if not is_https_link(url):
-        if ns is None:
-            return Declined("link-not-https", "The agreement URL is not an https URL.")
         fault = "link-not-https" if is_other_scheme_link(url) else "legal-context-malformed"
-        return Declined("link-not-https", f"{ns}/{fault}")
+        return Declined("link-not-https", f"{ns if ns is not None else 'x402'}/{fault}")
     if (
         (approved is not None and not _is_agreement_payment(approved))
         or (inputs is not None and not isinstance(inputs, Mapping))
