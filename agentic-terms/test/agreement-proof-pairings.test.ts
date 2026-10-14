@@ -3,7 +3,7 @@
 // calls the signer only after its comparison and after the agreement's 200; `bound` returns `mpp/no-signed-place`,
 // because nothing the payer signed carries H, and the gate relies on the agreement transaction instead. So with the
 // agreement recorded, `transact` returns the credential the signer completed, with the receipt. The raw transaction's
-// SHA-256 and the transaction hash are MV11's and MV12's (viem 2.56.8 and eth-account 0.14.0, which agree).
+// SHA-256 and the transaction hash are MV11's and MV12's (viem 2.57.4 and eth-account 0.14.0, which agree).
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";

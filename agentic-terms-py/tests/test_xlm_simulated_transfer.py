@@ -2,7 +2,7 @@
 scheme_exact_stellar: "Argument 2 (amount): MUST equal requirements.amount exactly", on the SEP-41 token of
 requirements.asset; MPP's Stellar charge: a transfer on the contract matching currency. The payer is the account whose
 key signs, so the transfer's from must be the signer's account. The envelopes are stellar_transfers.json's, built with
-@stellar/stellar-sdk 17.1.0; the TypeScript gate's test rebuilds each with the SDK and checks it against that file."""
+@stellar/stellar-sdk 17.2.1; the TypeScript gate's test rebuilds each with the SDK and checks it against that file."""
 
 import json
 from datetime import datetime

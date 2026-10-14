@@ -2,7 +2,7 @@
 // scheme_exact_stellar: "Argument 2 (amount): MUST equal `requirements.amount` exactly", on the SEP-41 token of
 // `requirements.asset`; MPP's Stellar charge: a transfer on the contract matching `currency`. The payer is the account
 // whose key signs, so the transfer's `from` must be the signer's account. The edited envelopes are built here with
-// @stellar/stellar-sdk 17.1.0 from x402-exact-stellar.json's V2 simulated envelope, changing the transfer alike in the
+// @stellar/stellar-sdk 17.2.1 from x402-exact-stellar.json's V2 simulated envelope, changing the transfer alike in the
 // operation and in the payer's authorization entry; the other token contract is the contract strkey of 32 bytes of 07
 // and the other payer the account of the Ed25519 seed of 32 bytes of 08. The refusal codes are @integraledger/lcp's.
 import { readFileSync } from "node:fs";

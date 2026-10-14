@@ -1,4 +1,4 @@
-"""Sui's TransactionData in BCS, as the @mysten/sui 2.31.3 schema defines it, with its transforms: addresses as
+"""Sui's TransactionData in BCS, as the @mysten/sui 2.35.0 schema defines it, with its transforms: addresses as
 0x and 64 lower-case hex digits, object digests as base58 of exactly 32 bytes, type tags as their string forms, and
 TransactionExpiration's Epoch as a double. A transaction reads only when writing its parse back gives its bytes."""
 

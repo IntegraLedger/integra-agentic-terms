@@ -1,6 +1,6 @@
 """Solana rail pieces for the buyer half: the legacy and v0 wire transaction, its one Memo instruction carrying the ATR
 hash in LCP string form, the partially signed wire, program-derived and associated token addresses, and v0 message
-compilation with the account order of @solana/kit 8.3.0.
+compilation with the account order of @solana/kit 8.4.0.
 
 Nothing here fetches, hashes an ATR or signs.
 """
