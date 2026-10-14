@@ -60,6 +60,7 @@ every byte string in an answer is `0x` hex.
 | `stellar-auth` | A Soroban authorization preimage (`request.preimage`). | The 64-byte Ed25519 signature over its SHA-256, `0x` hex. |
 | `xrpl-tx` | An XRPL transaction as `txJson`. | The signed blob, `0x` hex, signed with a single key: a blob that carries `Signers` is declined `signed-not-bound`. |
 | `xrpl-session-open` | A `PaymentChannelCreate` and the first claim. | `{ signedBlob, claimSignature }`, `0x` hex, the blob signed with a single key. |
+| `xrpl-claim` | One claim on the session's payment channel, or a close's final claim, inside a `batch`: `{ channelId, drops, bytes }`, where `bytes` is `CLM\0`, the channel id and `drops` as a big-endian u64. | The signature over `bytes` by the channel's key, hex digits without `0x`. |
 | `hedera-body` | A Hedera transaction body (`request.bodyBytes`). With `broadcast: true` the signer signs and sends it. | `{ publicKey, signature, type }`, with `type` `ed25519` or `ecdsa-secp256k1`. With `broadcast`: `{ transactionId }`. |
 | `hedera-executor` | The executors, asset, payee, amount and `validBefore` for the buyer's transfer-executor tooling. | `{ payer, executor, authorization }`. |
 | `hedera-session-open` | An MPP session opening on Hedera, which the signer broadcasts, and its zero voucher. | `{ openTx, signature }`, with `landed` where the signer has the opening's receipt. |
