@@ -11,7 +11,7 @@ from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
-from ._mpp import Checked, chosen_for, credential_of, echoed_for, read
+from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, read
 from ._mpp_checks import xrpl_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 from ._xrpl import channel_id, claim_bytes, decode_presented, is_blob_hex
@@ -79,10 +79,10 @@ def lcp_memo(tx: Mapping[str, Any]) -> AtrHash | Refusal:
 
 @dataclass(frozen=True, slots=True)
 class Opening:
-    """A checked opening: its H, its echoed challenge checked, its payload and its signed transaction decoded."""
+    """A checked opening: its H, its echoed challenge, its payload and its signed transaction decoded."""
 
     h: AtrHash
-    checked: Checked
+    checked: EchoedChallenge
     payload: Mapping[str, Any]
     tx: Mapping[str, Any]
 

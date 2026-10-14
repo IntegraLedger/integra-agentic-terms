@@ -63,6 +63,12 @@ def _opening(presented: Mapping[str, Any]) -> Echoed | Refusal:
     return e
 
 
+def _escrow(details: Mapping[str, Any]) -> str | Refusal:
+    """methodDetails.escrowContract, lower-case, else mpp/request-malformed."""
+    escrow = details.get("escrowContract")
+    return escrow.lower() if isinstance(escrow, str) and is_address(escrow) else Refusal("mpp/request-malformed")
+
+
 def _chain(network: str) -> int:
     return 295 if network == "hedera:mainnet" else 296
 
@@ -168,7 +174,9 @@ class MppSessionHedera:
         channel = normal_hash(e.payload.get("channelId"))
         if channel is None:
             return Refusal("mpp/credential-malformed")
-        escrow = str(e.checked.details["escrowContract"]).lower()
+        escrow = _escrow(e.checked.details)
+        if isinstance(escrow, Refusal):
+            return escrow
         opened = [
             log
             for log in logs
@@ -246,7 +254,9 @@ class MppSessionHedera:
         channel = normal_hash(o.payload.get("channelId"))
         if channel is None:
             return Refusal("mpp/credential-malformed")
-        escrow = str(o.checked.details["escrowContract"]).lower()
+        escrow = _escrow(o.checked.details)
+        if isinstance(escrow, Refusal):
+            return escrow
         typed = voucher(channel, escrow, _chain(network), w["cumulativeAmount"])
         challenge = dict(w["challenge"])
         action = w["action"]

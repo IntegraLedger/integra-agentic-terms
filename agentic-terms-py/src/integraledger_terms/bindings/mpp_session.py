@@ -16,12 +16,15 @@ from ._lcp import is_address, is_object, normal_hash
 from ._mpp import (
     Echoed,
     MppUnsigned,
+    Params,
     credential_of,
     did_pkh_address,
     echoed_for,
     is_hex_bytes,
     offer_for,
+    params_of,
     read,
+    request_address,
     same_bytes,
     text,
 )
@@ -52,7 +55,6 @@ SESSION_TEMPO = "mpp/session/tempo"
 SUBSCRIPTION = "mpp/subscription/tempo"
 
 APPROVE_SELECTOR = "0x095ea7b3"
-TEMPO_V1_DEFAULT_CHAIN = 4217
 MAX_SIGNATURE = 8192
 MAX_WIRE = 65_536
 U96 = 1 << 96
@@ -103,53 +105,6 @@ def evm_channel_id(payer: object, payee: object, token: object, salt: object, au
             + address_word(escrow)
             + uint_word(chain_id)
         )
-    )
-
-
-# ── The session parameters of a challenge, read without the offer checks.
-
-
-@dataclass(frozen=True, slots=True)
-class Params:
-    method: str
-    intent: str
-    chain_id: int
-    network: str
-    escrow: str
-    version: str
-    request: dict[str, Any]
-    details: Mapping[str, Any]
-
-
-def params_of(c: object) -> Params | Refusal:
-    if not is_object(c) or not isinstance(c.get("request"), str):
-        return Refusal("mpp/credential-malformed")
-    method, intent = c.get("method"), c.get("intent")
-    if not ((intent == "session" and method in ("evm", "tempo")) or (intent == "subscription" and method == "tempo")):
-        return Refusal("mpp/not-this-pairing")
-    request = decode_object(c["request"])
-    if request is None:
-        return Refusal("mpp/request-malformed")
-    md = request.get("methodDetails")
-    details: Mapping[str, Any] = md if is_object(md) else {}
-    chain_id = positive_int(details.get("chainId"))
-    if chain_id is None and method == "tempo" and intent == "session" and "chainId" not in details:
-        chain_id = TEMPO_V1_DEFAULT_CHAIN
-    if chain_id is None:
-        return Refusal("mpp/chain-id-required")
-    version = "v2" if details.get("sessionProtocol") == "v2" else "v1"
-    escrow = details.get("escrowContract")
-    if intent == "session" and not is_address(escrow):
-        return Refusal("mpp/escrow-malformed")
-    return Params(
-        method=str(method),
-        intent=str(intent),
-        chain_id=chain_id,
-        network=f"eip155:{chain_id}",
-        escrow=escrow if isinstance(escrow, str) and is_address(escrow) else ZERO_ADDRESS,
-        version=version,
-        request=request,
-        details=details,
     )
 
 
@@ -302,12 +257,28 @@ def _evm_kind(presented: Any) -> str | Refusal:
     return Refusal("mpp/session-action")
 
 
-def _evm_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
-    """The echoed challenge, when the EVM opening's salt is H, its channel id agrees with the payer, salt and signer,
-    and an authorization's nonce, or a Permit2 witness's salt, carries the channel."""
+@dataclass(frozen=True, slots=True)
+class _EvmOpened:
+    h: AtrHash
+    params: Params
+
+
+def _evm_opened(presented: Mapping[str, Any]) -> _EvmOpened | Refusal:
+    """H and the session parameters, when the EVM opening's salt is H, its channel id agrees with the payer, salt and
+    signer, and an authorization's nonce, or a Permit2 witness's salt, carries the channel. Of the request it reads the
+    chain, the escrow, the recipient and the currency, which give the channel id."""
     e = echoed_for(presented, SESSION_EVM)
     if isinstance(e, Refusal):
         return e
+    params = params_of(presented["challenge"])
+    if isinstance(params, Refusal):
+        return params
+    recipient = request_address(e.checked, "recipient")
+    if isinstance(recipient, Refusal):
+        return recipient
+    currency = request_address(e.checked, "currency")
+    if isinstance(currency, Refusal):
+        return currency
     opening = _evm_opening(e.payload)
     if isinstance(opening, Refusal):
         return opening
@@ -333,10 +304,7 @@ def _evm_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
             return Refusal("mpp/credential-malformed")
         payer = auth["from"]
     assert isinstance(payer, str)
-    recipient, currency = text(e.checked.request.get("recipient")), text(e.checked.request.get("currency"))
-    expect = evm_channel_id(
-        payer, recipient, currency, e.h, signer, text(e.checked.details.get("escrowContract")), positive_int(e.checked.details.get("chainId"))
-    )
+    expect = evm_channel_id(payer, recipient, currency, e.h, signer, params.escrow, params.chain_id)
     channel = normal_hash(e.payload.get("channelId"))
     if isinstance(expect, Refusal) or channel is None or not same_bytes(channel, expect):
         return Refusal("mpp/channel-not-bound")
@@ -357,7 +325,7 @@ def _evm_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
         w_salt = normal_hash(w.get("salt")) if is_object(w) else None
         if w_salt is None or not hash_equals(w_salt, e.h):
             return Refusal("mpp/salt-not-this-hash")
-    return e
+    return _EvmOpened(e.h, params)
 
 
 def _evm_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
@@ -369,10 +337,7 @@ def _evm_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
     channel = normal_hash(w["opening"]["payload"].get("channelId"))
     if channel is None:
         return Refusal("mpp/credential-malformed")
-    chain_id = positive_int(o.checked.details.get("chainId"))
-    escrow = text(o.checked.details.get("escrowContract"))
-    assert chain_id is not None
-    typed = _voucher_data("EVM Payment Channel", "uint128", chain_id, escrow, channel, w["cumulativeAmount"])
+    typed = _voucher_data("EVM Payment Channel", "uint128", o.params.chain_id, o.params.escrow, channel, w["cumulativeAmount"])
     return within_unsigned(w, typed, channel)
 
 

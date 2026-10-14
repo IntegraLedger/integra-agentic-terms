@@ -239,8 +239,11 @@ def hedera_session_network_of(details: Obj) -> str | Refusal:
 
 def hedera_charge_network(request: Obj, default: str | None = None) -> str | Refusal:
     """The CAIP-2 network of an MPP Hedera charge: methodDetails.chainId 295 or 296, or, when it names none, the
-    default network given."""
+    default network given. A methodDetails that is present and not an object is mpp/request-malformed, the code
+    pairings_of gives it."""
     md = request.get("methodDetails")
+    if "methodDetails" in request and not is_object(md):
+        return Refusal("mpp/request-malformed")
     if not is_object(md) or "chainId" not in md:
         return default if default in _HEDERA_DEFAULTS else Refusal("hedera/chain-id-unnamed")
     return hedera_network_of_chain_id(md["chainId"])
@@ -470,6 +473,34 @@ def hedera_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     return ["mpp/charge/hedera"]
 
 
+def is_external_id(r: Obj) -> bool:
+    """A charge request's externalId as NEAR Intents carries it: absent or a string."""
+    return "externalId" not in r or isinstance(r["externalId"], str)
+
+
+def is_solana_external_id(r: Obj) -> bool:
+    """MPP Solana's externalId, which the payer signs as a memo: absent, or a string of at most 566 bytes."""
+    if "externalId" not in r:
+        return True
+    ext = r["externalId"]
+    return isinstance(ext, str) and len(ext.encode("utf-8")) <= _MAX_MEMO_BYTES
+
+
+def is_xrpl_invoice_id(d: Obj) -> bool:
+    """MPP XRPL's methodDetails.invoiceId: absent, or 64 hex digits."""
+    if "invoiceId" not in d:
+        return True
+    inv = d["invoiceId"]
+    return isinstance(inv, str) and _HEX64.fullmatch(inv) is not None
+
+
+def is_stellar_recipient(value: object) -> bool:
+    """A Stellar account (G...) or its muxed form (M...), as a charge challenge's recipient is."""
+    if not isinstance(value, str):
+        return False
+    return _STELLAR_ACCOUNT.fullmatch(value) is not None or _STELLAR_MUXED.fullmatch(value) is not None
+
+
 def solana_charge_pairings(r: Obj, d: Obj, c: Obj | None = None) -> list[str] | Refusal:
     network = solana_network_of(d, False)
     if isinstance(network, Refusal):
@@ -477,10 +508,8 @@ def solana_charge_pairings(r: Obj, d: Obj, c: Obj | None = None) -> list[str] | 
     currency = r.get("currency")
     if not is_u64_positive(r.get("amount")) or not (currency == "sol" or is_key(currency)) or not is_key(r.get("recipient")):
         return Refusal("mpp/request-malformed")
-    if _has(r, "externalId"):
-        ext = r["externalId"]
-        if not isinstance(ext, str) or len(ext.encode("utf-8")) > _MAX_MEMO_BYTES:
-            return Refusal("mpp/request-malformed")
+    if not is_solana_external_id(r):
+        return Refusal("mpp/request-malformed")
     if _has(d, "feePayer") and not isinstance(d["feePayer"], bool):
         return Refusal("mpp/request-malformed")
     if d.get("feePayer") is True and not is_key(d.get("feePayerKey")):
@@ -496,8 +525,7 @@ def stellar_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         not is_decimal(r.get("amount"))
         or not isinstance(currency, str)
         or _STELLAR_CONTRACT.fullmatch(currency) is None
-        or not isinstance(to, str)
-        or not (_STELLAR_ACCOUNT.fullmatch(to) or _STELLAR_MUXED.fullmatch(to))
+        or not is_stellar_recipient(to)
     ):
         return Refusal("stellar/option-malformed")
     if _has(d, "feePayer") and not isinstance(d["feePayer"], bool):
@@ -549,10 +577,8 @@ def xrpl_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         or (r.get("currency") == "XRP" and not is_u64_positive(amount))
     ):
         return Refusal("mpp/request-malformed")
-    if _has(d, "invoiceId"):
-        inv = d["invoiceId"]
-        if not isinstance(inv, str) or _HEX64.fullmatch(inv) is None:
-            return Refusal("mpp/request-malformed")
+    if not is_xrpl_invoice_id(d):
+        return Refusal("mpp/request-malformed")
     for k in ("destinationTag", "sourceTag"):
         if _has(d, k) and not _is_uint32(d[k]):
             return Refusal("mpp/request-malformed")
@@ -562,7 +588,7 @@ def xrpl_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 def near_intents_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     """methodDetails.originNetwork CAIP-2, which network() returns, and externalId, where H rides, absent or a string.
     No other request member is read."""
-    if not is_caip2(d.get("originNetwork")) or (_has(r, "externalId") and not isinstance(r["externalId"], str)):
+    if not is_caip2(d.get("originNetwork")) or not is_external_id(r):
         return Refusal("mpp/request-malformed")
     return ["mpp/charge/nearintents"]
 

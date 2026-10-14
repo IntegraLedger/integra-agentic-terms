@@ -21,6 +21,7 @@ from ._mpp import (
     is_hex_bytes,
     offer_for,
     read,
+    request_address,
     same_bytes,
     text,
 )
@@ -75,6 +76,9 @@ def _signed_memo_call(presented: Any) -> Echoed | Refusal:
     e = echoed_for(presented, MEMO)
     if isinstance(e, Refusal):
         return e
+    currency = request_address(e.checked, "currency")
+    if isinstance(currency, Refusal):
+        return currency
     if e.payload.get("type") != "transaction":
         return Refusal("mpp/credential-type")
     sig = e.payload.get("signature")
@@ -85,7 +89,6 @@ def _signed_memo_call(presented: Any) -> Echoed | Refusal:
     tx = decode_tempo_tx(bytes.fromhex(sig[2:]))
     if isinstance(tx, Refusal):
         return tx
-    currency = text(e.checked.request.get("currency"))
     realm, id_ = presented["challenge"]["realm"], presented["challenge"]["id"]
     found = 0
     for call in tx.calls:
@@ -114,7 +117,9 @@ def _landed_memo_log(presented: Any) -> Echoed | Refusal:
     landed = presented.get("landed")
     if not is_object(landed) or not is_list(landed.get("logs")):
         return Refusal("mpp/credential-malformed")
-    currency = text(e.checked.request.get("currency"))
+    currency = request_address(e.checked, "currency")
+    if isinstance(currency, Refusal):
+        return currency
     realm, id_ = presented["challenge"]["realm"], presented["challenge"]["id"]
     found = 0
     for log in landed["logs"]:

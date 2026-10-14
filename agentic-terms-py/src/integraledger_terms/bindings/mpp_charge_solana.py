@@ -13,7 +13,7 @@ from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
 from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, read
-from ._mpp_checks import usdc_profile
+from ._mpp_checks import is_solana_external_id, usdc_profile
 from ._svm import (
     MEMO_V3,
     MEMO_V4,
@@ -175,13 +175,16 @@ class MppChargeSolana:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """H from the echoed challenge, once the signed LCP memo equals the request's externalId and names that H.
-        No signature is verified here."""
+        The externalId is read as pairings_of reads it: absent, or a string of at most 566 bytes, else
+        mpp/request-malformed. No signature is verified here."""
         credential = credential_of(presented)
         if isinstance(credential, Refusal):
             return credential
         e = echoed_for(credential, self.id)
         if isinstance(e, Refusal):
             return e
+        if not is_solana_external_id(e.checked.request):
+            return Refusal("mpp/request-malformed")
         tx = _presented_tx(e.payload, self.transaction_only)
         if isinstance(tx, Refusal):
             return tx

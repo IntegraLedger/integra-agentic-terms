@@ -11,6 +11,7 @@ from .._types import Advertised, Refusal
 from . import _stellar
 from ._lcp import is_object, safe_int
 from ._mpp import chosen_for, credential_of, echoed_for, read
+from ._mpp_checks import is_stellar_recipient
 
 ID = "mpp/charge/stellar"
 
@@ -87,18 +88,24 @@ class MppChargeStellar:
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """H from the echoed challenge, once the to of the invocation the payer's entry signs is the request's muxed
-        recipient whose id is H's first 8 bytes, and the operation invokes exactly that. The authorization's signature
-        is not verified here."""
+        recipient whose id is H's first 8 bytes, and the operation invokes exactly that. The challenge's network and
+        its request's recipient, an account or its muxed form, are read as pairings_of reads them, else
+        stellar/option-malformed. The authorization's signature is not verified here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
         e = echoed_for(presented, ID)
         if isinstance(e, Refusal):
             return e
+        network = e.checked.details.get("network")
+        if network not in ("stellar:pubnet", "stellar:testnet"):
+            return Refusal("stellar/option-malformed")
+        if not is_stellar_recipient(e.checked.request.get("recipient")):
+            return Refusal("stellar/option-malformed")
         xdr = _presented_xdr(e.payload)
         if isinstance(xdr, Refusal):
             return xdr
-        signed = _stellar.read_signed_transfer(xdr, e.checked.details.get("network"))
+        signed = _stellar.read_signed_transfer(xdr, network)
         if isinstance(signed, Refusal):
             return signed
         payment = signed.payment

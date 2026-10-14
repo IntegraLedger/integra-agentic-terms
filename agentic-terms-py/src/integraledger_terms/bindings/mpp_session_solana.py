@@ -15,7 +15,7 @@ from .._types import Advertised, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._codec import b58_decode, canonical_json
 from ._lcp import is_object, is_well_formed
-from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, read
+from ._mpp import EchoedChallenge, MppUnsigned, chosen_for, credential_of, echoed_for, read
 from ._mpp_checks import solana_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 from ._svm import SvmTx, channel_voucher_message, decode_svm_tx, key_bytes, key_string, static_nonce, wire_of
@@ -80,22 +80,28 @@ def open_of(tx: SvmTx, program: object) -> Open | Refusal:
 
 @dataclass(frozen=True, slots=True)
 class Opening:
-    """A checked opening: its H, its echoed challenge checked, its payload and its signed transaction."""
+    """A checked opening: its H, its echoed challenge, its payload, its signed transaction and the channel program
+    that opens it."""
 
     h: AtrHash
-    checked: Checked
+    checked: EchoedChallenge
     payload: Mapping[str, Any]
     tx: SvmTx
+    program: str
 
 
 def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
     """The opening's checks: the one open of the challenge's program, its salt H's first 8 bytes, its channel the
-    payload's, and any authentication naming the challenge."""
+    payload's, and any authentication naming the challenge. The program, methodDetails.channelProgram, is a key, else
+    svm/input-malformed."""
     e = echoed_for(presented, ID)
     if isinstance(e, Refusal):
         return e
     if e.payload.get("action") != "open":
         return Refusal("mpp/session-action")
+    program = e.checked.details.get("channelProgram")
+    if not isinstance(program, str) or key_bytes(program) is None:
+        return Refusal("svm/input-malformed")
     wire = wire_of(e.payload.get("transaction"))
     if isinstance(wire, Refusal):
         return wire
@@ -105,7 +111,7 @@ def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
     from_table = static_nonce(tx)
     if from_table is not None:
         return from_table
-    opened = open_of(tx, e.checked.details.get("channelProgram"))
+    opened = open_of(tx, program)
     if isinstance(opened, Refusal):
         return opened
     if opened.salt != session_salt(e.h):
@@ -117,7 +123,7 @@ def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
         auth = e.payload["authentication"]
         if not is_object(auth) or auth.get("challengeId") != presented["challenge"].get("id"):
             return Refusal("svm/proof-not-challenge")
-    return Opening(e.h, e.checked, e.payload, tx)
+    return Opening(e.h, e.checked, e.payload, tx, program)
 
 
 def open_signer(tx: SvmTx, program: object) -> str | Refusal:
@@ -260,7 +266,7 @@ class MppSessionSolana:
             return o
         if o.checked.details.get("voucherSigner") == "operator":
             return Refusal("mpp/within-action-not-built")
-        signer = open_signer(o.tx, o.checked.details.get("channelProgram"))
+        signer = open_signer(o.tx, o.program)
         if isinstance(signer, Refusal):
             return signer
         channel = key_bytes(w["opening"]["payload"].get("channelId"))

@@ -273,7 +273,9 @@ def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
 
 def _gateway_bound(presented: Any) -> AtrHash | Refusal:
     """H from the echoed challenge, once the signed burn intent's TransferSpec salt equals usdc_gateway_salt over the
-    challenge and the credential's own values, by bytes. No signature is verified and no value is compared."""
+    challenge and the credential's own values, by bytes. The request's recipient, which the salt's preimage carries,
+    is a string, else mpp/request-malformed, the code pairings_of gives. No signature is verified and no value is
+    compared."""
     c = credential_of(presented)
     if isinstance(c, Refusal):
         return c
@@ -313,6 +315,9 @@ def _gateway_bound(presented: Any) -> AtrHash | Refusal:
     request_hash = usdc_request_hash(c["challenge"]["request"])
     if isinstance(request_hash, Refusal):
         return request_hash
+    recipient = e.checked.request.get("recipient")
+    if not isinstance(recipient, str):
+        return Refusal("mpp/request-malformed")
     expected = usdc_gateway_salt(
         {
             "id": c["challenge"]["id"],
@@ -322,7 +327,7 @@ def _gateway_bound(presented: Any) -> AtrHash | Refusal:
             "destinationNetwork": destination_network,
             "sourceDepositor": source,
             "sourceSigner": source_signer,
-            "recipient": text(e.checked.request.get("recipient")),
+            "recipient": recipient,
             "destinationRecipient": destination_recipient,
             "amount": amount,
             "maxFee": max_fee,

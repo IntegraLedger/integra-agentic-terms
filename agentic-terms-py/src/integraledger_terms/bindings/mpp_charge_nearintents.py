@@ -9,6 +9,7 @@ from .._core import AtrHash, hash_equals
 from .._types import Advertised, Refusal
 from ._lcp import from_lcp_string
 from ._mpp import echoed_for, read
+from ._mpp_checks import is_external_id
 
 ID = "mpp/charge/nearintents"
 
@@ -27,10 +28,13 @@ class MppChargeNearIntents:
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """H from the echoed challenge's externalId, for a push credential (type "hash") whose challenge names that
-        H."""
+        H. An externalId that is neither absent nor a string is mpp/request-malformed, the code pairings_of gives
+        it."""
         e = echoed_for(presented, ID)
         if isinstance(e, Refusal):
             return e
+        if not is_external_id(e.checked.request):
+            return Refusal("mpp/request-malformed")
         if e.payload.get("type") != "hash":
             return Refusal("near/not-hash-credential")
         ext = e.checked.request.get("externalId")

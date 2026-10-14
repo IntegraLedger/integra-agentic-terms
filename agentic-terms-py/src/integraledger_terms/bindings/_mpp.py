@@ -25,6 +25,7 @@ from ._lcp import (
 )
 from ._mpp_checks import (
     PAIRING_CHECKS,
+    USDC_PROFILES,
     decode_object,
     decode_string_map,
     hedera_charge_network,
@@ -37,6 +38,7 @@ from ._mpp_checks import (
     utf16_length,
     xrpl_network_of,
 )
+from ._mpp_evm import ZERO_ADDRESS
 
 MAX_CHALLENGES = 32
 MAX_CREDENTIAL = 65_536
@@ -306,8 +308,25 @@ def _chain_of(checked: Checked) -> int:
     return TEMPO_DEFAULT_CHAIN if chain_id is None else chain_id
 
 
-def session_network(c: object) -> str | Refusal:
-    """The CAIP-2 network of an EVM or Tempo session or subscription challenge."""
+@dataclass(frozen=True, slots=True)
+class Params:
+    """The chain, escrow and protocol version an EVM or Tempo session or subscription challenge names."""
+
+    method: str
+    intent: str
+    chain_id: int
+    network: str
+    escrow: str
+    version: str
+    request: dict[str, Any]
+    details: Mapping[str, Any]
+
+
+def params_of(c: object) -> Params | Refusal:
+    """The chain, escrow and protocol version an EVM or Tempo session or subscription challenge names, read without
+    the offer checks. A methodDetails that is present and not an object is mpp/request-malformed. On a Tempo session,
+    sessionProtocol is absent, v1 or v2, else mpp/session-protocol, and a missing chainId reads as Tempo's default chain
+    on v1 only: a v2 session without chainId or escrowContract is mpp/chain-id-required, the codes pairings_of gives."""
     if not is_object(c) or not isinstance(c.get("request"), str):
         return Refusal("mpp/credential-malformed")
     method, intent = c.get("method"), c.get("intent")
@@ -317,15 +336,39 @@ def session_network(c: object) -> str | Refusal:
     if request is None:
         return Refusal("mpp/request-malformed")
     md = request.get("methodDetails")
+    if "methodDetails" in request and not is_object(md):
+        return Refusal("mpp/request-malformed")
     details: Mapping[str, Any] = md if is_object(md) else {}
+    tempo_session = method == "tempo" and intent == "session"
+    protocol = details.get("sessionProtocol")
+    if tempo_session and "sessionProtocol" in details and protocol not in ("v1", "v2"):
+        return Refusal("mpp/session-protocol")
+    if tempo_session and protocol == "v2" and ("chainId" not in details or "escrowContract" not in details):
+        return Refusal("mpp/chain-id-required")
     chain_id = positive_int(details.get("chainId"))
-    if chain_id is None and method == "tempo" and intent == "session" and "chainId" not in details:
+    if chain_id is None and tempo_session and protocol != "v2" and "chainId" not in details:
         chain_id = TEMPO_V1_DEFAULT_CHAIN
     if chain_id is None:
         return Refusal("mpp/chain-id-required")
-    if intent == "session" and not is_address(details.get("escrowContract")):
+    escrow = details.get("escrowContract")
+    if intent == "session" and not is_address(escrow):
         return Refusal("mpp/escrow-malformed")
-    return f"eip155:{chain_id}"
+    return Params(
+        method=str(method),
+        intent=str(intent),
+        chain_id=chain_id,
+        network=f"eip155:{chain_id}",
+        escrow=escrow if isinstance(escrow, str) and is_address(escrow) else ZERO_ADDRESS,
+        version="v2" if protocol == "v2" else "v1",
+        request=request,
+        details=details,
+    )
+
+
+def session_network(c: object) -> str | Refusal:
+    """The CAIP-2 network of an EVM or Tempo session or subscription challenge."""
+    p = params_of(c)
+    return p if isinstance(p, Refusal) else p.network
 
 
 def network(challenge: object) -> str | Refusal:
@@ -458,25 +501,67 @@ def challenge_bound(c: object) -> Bound | Refusal:
 
 
 @dataclass(frozen=True, slots=True)
+class EchoedChallenge:
+    """An echoed challenge as a credential presents it: the request decoded, with no member of it checked. Each
+    pairing reads, and checks, only the request members its own read keys or derivation use. details is methodDetails,
+    empty when the request has none. expires is unix seconds; None when the challenge carries none; and
+    mpp/expires-required, the code pairings_of gives, when it carries one that does not read as a date."""
+
+    challenge: Mapping[str, Any]
+    request: dict[str, Any]
+    details: Mapping[str, Any]
+    expires: int | None | Refusal
+
+
+@dataclass(frozen=True, slots=True)
 class Echoed:
     h: AtrHash
-    checked: Checked
+    checked: EchoedChallenge
     payload: Mapping[str, Any]
 
 
+def echoed_of(challenge: Mapping[str, Any], request: dict[str, Any]) -> EchoedChallenge | Refusal:
+    """The EchoedChallenge of a challenge and its decoded request. A methodDetails that is present and not an object
+    is mpp/request-malformed, the code pairings_of gives it; it is never read as empty."""
+    md = request.get("methodDetails")
+    if "methodDetails" in request and not is_object(md):
+        return Refusal("mpp/request-malformed")
+    details: Mapping[str, Any] = md if is_object(md) else {}
+    expires: int | Refusal | None = None
+    if "expires" in challenge:
+        at = unix_of(challenge["expires"])
+        expires = Refusal("mpp/expires-required") if at is None else at
+    return EchoedChallenge(challenge, request, details, expires)
+
+
 def echoed_for(c: object, pairing: str) -> Echoed | Refusal:
-    """The echoed challenge of a credential for pairing: H from challenge_bound, and the challenge checked as placed
-    and naming pairing."""
+    """The echoed challenge of a credential for pairing: H from challenge_bound, and the challenge's intent and method,
+    which must be pairing's, with, on usdc, the profile methodDetails.type names. The request's checks are not run again
+    here: they are pairings_of's and the build's."""
     b = challenge_bound(c)
     if isinstance(b, Refusal):
         return b
     assert is_object(c)
-    checked = check_challenge(c["challenge"], True)
-    if isinstance(checked, Refusal):
-        return checked
-    if pairing not in checked.pairings:
+    challenge = c["challenge"]
+    _, intent, method = pairing.split("/")[:3]
+    if challenge["intent"] != intent or challenge["method"] != method:
         return Refusal("mpp/not-this-pairing")
-    return Echoed(b.h, checked, c["payload"])
+    echoed = echoed_of(challenge, b.request)
+    if isinstance(echoed, Refusal):
+        return echoed
+    if method == "usdc":
+        profile = usdc_profile(echoed.details)
+        if isinstance(profile, Refusal):
+            return profile
+        if USDC_PROFILES[profile[0]] != pairing:
+            return Refusal("mpp/not-this-pairing")
+    return Echoed(b.h, echoed, c["payload"])
+
+
+def request_address(e: EchoedChallenge, key: str) -> str | Refusal:
+    """The request member key as an address, else mpp/request-malformed."""
+    v = e.request.get(key)
+    return v if isinstance(v, str) and is_address(v) else Refusal("mpp/request-malformed")
 
 
 def chosen_for(challenge: object, h: object, pairing: str) -> Checked | Refusal:
