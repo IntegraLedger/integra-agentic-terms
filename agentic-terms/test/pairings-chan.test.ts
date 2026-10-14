@@ -303,6 +303,25 @@ describe("x402/batch-settlement/cloudflare", () => {
     b16(doc, batchCloudflare, ["eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "cloudflare:403:agent.example"]));
 });
 
+// The vector file's agreedRefusals rows that carry their input: a row with choice runs its pairing's call on that
+// choice with H.
+type AgreedRow = { case: string; expect: string; pairing?: string; call?: "build" | "buildWithin"; choice?: unknown };
+const AGREED = (vectors<{ agreedRefusals: { rows: AgreedRow[] } }>("x402-batch-settlement.json").agreedRefusals.rows);
+const PAIRINGS = {
+  "x402/batch-settlement/eip155": batchEvm,
+  "x402/batch-settlement/solana": batchSvm,
+  "x402/batch-settlement/cloudflare": batchCloudflare,
+} as const;
+
+it("x402-batch-settlement.json agreedRefusals: the file holds rows with a choice, and each gives the row's refusal", async () => {
+  const rows = AGREED.filter((r) => "choice" in r);
+  expect(rows.length, "agreedRefusals rows that carry a choice").toBeGreaterThan(0);
+  for (const row of rows) {
+    const binding = PAIRINGS[row.pairing as keyof typeof PAIRINGS] as unknown as Record<string, (c: unknown, h: string) => Promise<unknown>>;
+    expect(await binding[row.call!]!(row.choice, H), row.case).toEqual({ refused: true, code: row.expect });
+  }
+});
+
 // ── MPP sessions and subscription ────────────────────────────────────────────────────────────────────────────────────
 
 const MC = vectors<{ fixed: { realm: string; expires: string } }>("mpp-challenge.json");

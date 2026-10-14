@@ -167,6 +167,8 @@ def _uint(value: object, low: int) -> bool:
 
 def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     """The opening's two requests, in order: the deposit's token authorization, then the first voucher."""
+    if not is_object(c):
+        return Refusal("x402/not-v2")
     required, accepted = c.get("required"), c.get("accepted")
     ok = chosen(required, accepted, _FILTER)
     if ok is not True:
@@ -282,6 +284,8 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
 
 def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
     """A later voucher, or a refund, for a channel opened under h: one request, the voucher."""
+    if not is_object(w):
+        return Refusal("x402/not-v2")
     required, accepted = w.get("required"), w.get("accepted")
     ok = chosen(required, accepted, _FILTER)
     if ok is not True:

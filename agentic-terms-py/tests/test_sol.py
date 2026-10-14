@@ -515,6 +515,18 @@ def test_x402_batch_settlement_solana_es2_es3_the_opening_wire_and_the_voucher_m
     assert voucher is not None and voucher.hex() == BV["ES3"]["message"]
 
 
+def test_the_solana_builds_answer_a_choice_that_is_not_an_object_with_not_v2() -> None:
+    """x402/exact/solana's and x402/upto/solana's build, and the batch build and build_within, answer x402/not-v2
+    before they read the choice, as @integraledger/lcp's builds do."""
+    exact: Any = X402_EXACT_SOLANA
+    upto: Any = X402_UPTO_SOLANA
+    batch: Any = X402_BATCH_SETTLEMENT_SOLANA
+    values: list[Any] = [None, "x", [], 42]
+    for value in values:
+        for call in (exact.build, upto.build, batch.build, batch.build_within):
+            assert call(value, H) == Refusal("x402/not-v2"), (call, value)
+
+
 def batch_presented(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {"x402Version": 2, "accepted": BV["ES4"]["accepted"], "payload": dict(payload)}
 

@@ -13,6 +13,7 @@ from eth_account.messages import encode_typed_data
 from integraledger_terms import (
     X402_BATCH_SETTLEMENT_CLOUDFLARE,
     X402_BATCH_SETTLEMENT_EIP155,
+    X402_BATCH_SETTLEMENT_SOLANA,
     Binding,
     ChannelRef,
     Checked,
@@ -197,6 +198,35 @@ def test_x402_batch_settlement_cloudflare_b10_http_link() -> None:
 def test_x402_batch_settlement_cloudflare_b16_other_namespace_and_network() -> None:
     accounts = ["eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "cloudflare:403:agent.example"]
     b16(CF_DOC, X402_BATCH_SETTLEMENT_CLOUDFLARE, accounts)
+
+
+# ── A choice that is not an object.
+
+PAIRINGS: dict[str, Any] = {
+    b.id: b for b in (X402_BATCH_SETTLEMENT_EIP155, X402_BATCH_SETTLEMENT_SOLANA, X402_BATCH_SETTLEMENT_CLOUDFLARE)
+}
+CALLS = {"build": "build", "buildWithin": "build_within"}
+
+
+def test_a_choice_that_is_not_an_object_is_not_v2() -> None:
+    """The EVM build and build_within, and the Cloudflare build, answer x402/not-v2 before they read the choice, as
+    @integraledger/lcp's evmBuild, evmBuildWithin and cfBuild do."""
+    evm: Any = X402_BATCH_SETTLEMENT_EIP155
+    cloudflare: Any = X402_BATCH_SETTLEMENT_CLOUDFLARE
+    values: list[Any] = [None, "x", [], 42]
+    for value in values:
+        for call in (evm.build, evm.build_within, cloudflare.build):
+            assert call(value, H) == Refusal("x402/not-v2"), (call, value)
+
+
+def test_agreed_refusals_with_a_choice() -> None:
+    """The file holds agreedRefusals rows that carry a choice. The row's pairing runs its call, build or buildWithin,
+    on that choice with H, and answers the row's refusal."""
+    rows = [r for r in BV["agreedRefusals"]["rows"] if "choice" in r]
+    assert rows, "no agreedRefusals row carries a choice"
+    for row in rows:
+        call = getattr(PAIRINGS[row["pairing"]], CALLS[row["call"]])
+        assert call(copy.deepcopy(row["choice"]), H) == Refusal(row["expect"]), row["case"]
 
 
 # ── The bindings' buyer-side rows for these pairings.

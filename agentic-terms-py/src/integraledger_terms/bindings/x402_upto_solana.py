@@ -93,6 +93,8 @@ class X402UptoSolana:
     def build(self, choice: Json, h: AtrHash) -> SvmUnsigned | Refusal:
         """The open message the payer signs: the channel escrows the option's amount, and its one memo is
         extra.memo."""
+        if not is_object(choice):
+            return Refusal("x402/not-v2")
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:

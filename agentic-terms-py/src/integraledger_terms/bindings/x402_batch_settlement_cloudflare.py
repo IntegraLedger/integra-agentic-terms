@@ -47,6 +47,8 @@ class X402BatchSettlementCloudflare:
     def build(self, c: Json, h: AtrHash) -> dict[str, Any] | Refusal:
         """The request's payment document: the option's amount and asset, with the challenge's extensions echoed,
         when the challenge's legal context carries h."""
+        if not is_object(c):
+            return Refusal("x402/not-v2")
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _FILTER)
         if ok is not True:
