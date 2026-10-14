@@ -1,6 +1,6 @@
 """Byte encodings the bindings read and write: base64url without padding (RFC 4648 §5) and padded standard base64
-(§4), each read in its canonical form (§3.5), base58 (the Bitcoin alphabet), 0x hex, and the JSON forms the TypeScript
-bindings compare with."""
+(§4), each read in its canonical form (§3.5), base58 (the Bitcoin alphabet), 0x hex, UTF-8 as TextEncoder writes it,
+and the JSON forms the TypeScript bindings compare with."""
 
 import base64
 import binascii
@@ -96,6 +96,13 @@ def hex_bytes(value: object) -> bytes | None:
 
 def to_hex(data: bytes) -> str:
     return "0x" + data.hex()
+
+
+def text_encode(text: str) -> bytes:
+    """The UTF-8 bytes TextEncoder writes for text as a JavaScript string of its UTF-16 code units (WHATWG Encoding,
+    UTF-8 encode): a surrogate pair is the one four-byte character it forms, held as one code point or as two, and each
+    lone surrogate is U+FFFD."""
+    return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
 
 
 MAX_JSON_DEPTH = 64

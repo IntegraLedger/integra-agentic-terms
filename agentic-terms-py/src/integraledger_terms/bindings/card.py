@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
-from ._codec import b64u_decode
+from ._codec import b64u_decode, text_encode
 from ._jose import (
     SdJwt,
     SdJwtBounds,
@@ -34,7 +34,6 @@ from ._jose import (
     js_length,
     jws_segments,
     read_sd_jwt,
-    text_encode,
     within_depth,
 )
 from ._lcp import (

@@ -13,7 +13,7 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
-from ._codec import b64u_encode
+from ._codec import b64u_encode, text_encode
 from ._jose import (
     MIB,
     SdJwt,
@@ -22,7 +22,6 @@ from ._jose import (
     js_length,
     jws_segments,
     read_sd_jwt,
-    text_encode,
     within_depth,
 )
 from ._lcp import AgreementFault, agreement_in, is_object, legal_context_info

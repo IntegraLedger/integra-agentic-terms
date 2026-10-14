@@ -14,6 +14,7 @@ from integraledger_terms.bindings._codec import (
     canonical_or_none,
     es_number,
     js_json,
+    text_encode,
 )
 
 import ed25519
@@ -83,6 +84,41 @@ def test_a_lone_surrogate_is_escaped_as_json_stringify_escapes_it() -> None:
     assert js_json("\ud83d\ude00") == '"\U0001f600"'
     assert js_json('"\n\u0001') == '"\\"\\n\\u0001"'
     js_json(["\ud800"]).encode("utf-8")
+
+
+HIGH, LOW = chr(0xD83D), chr(0xDE00)
+
+
+@pytest.mark.parametrize(
+    ("text", "utf8"),
+    [
+        (HIGH, "efbfbd"),
+        (LOW, "efbfbd"),
+        ("a" + HIGH, "61efbfbd"),
+        (HIGH + "a", "efbfbd61"),
+        (HIGH + LOW, "f09f9880"),
+        (chr(0x1F600), "f09f9880"),
+        (LOW + HIGH, "efbfbdefbfbd"),
+        (HIGH + HIGH + LOW, "efbfbdf09f9880"),
+        ("\u00e9", "c3a9"),
+    ],
+    ids=[
+        "a lone high",
+        "a lone low",
+        "a high at the end",
+        "a high before another character",
+        "a pair",
+        "a pair as one code point",
+        "a reversed pair",
+        "two highs then a low",
+        "e acute",
+    ],
+)
+def test_text_encode_writes_what_textencoder_writes(text: str, utf8: str) -> None:
+    # Node 26.11.1: Buffer.from(new TextEncoder().encode(s)).toString("hex") for the JavaScript string s of the same
+    # UTF-16 code units (WHATWG Encoding, UTF-8 encode). A split pair is built with chr(): a Python literal joins two
+    # surrogate escapes into the one code point they form.
+    assert text_encode(text).hex() == utf8
 
 
 @pytest.mark.parametrize("value", [10**400, -(10**400), 2**1024 - 2**970], ids=["10^400", "-10^400", "2^1024 - 2^970"])

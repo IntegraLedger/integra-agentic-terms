@@ -3,6 +3,7 @@ file's, or, as each test names, what JSON.parse and JSON.stringify or @integrale
 input."""
 
 import base64
+import hashlib
 import json
 import math
 from typing import Any
@@ -22,7 +23,7 @@ from integraledger_terms.bindings._jose import (
     parse_json,
     read_sd_jwt,
 )
-from integraledger_terms.bindings.ap2_checkout_mandate import read_mandate
+from integraledger_terms.bindings.ap2_checkout_mandate import checkout_hash_of, read_mandate
 
 V = load("sd-jwt.json")
 CODES = SdJwtCodes(malformed="malformed", sd_alg_unsupported="sd-alg-unsupported", unreferenced="unreferenced", too_large="too-large")
@@ -41,6 +42,16 @@ def vcts(dp: Any) -> list[Any] | None:
 def test_sd_jwt_c4_published_disclosure_digests() -> None:
     for row in V["C4"]:
         assert disclosure_digest(row["disclosure"]) == row["expectDigest"]
+
+
+def test_the_digests_hash_the_utf8_textencoder_writes() -> None:
+    # Over the code units D83D DE00 held as two Python code points, TextEncoder writes f09f9880 (Node 26.11.1), and
+    # over the code units DE00 D83D, two U+FFFD; each digest is SHA-256 of those bytes.
+    high, low = chr(0xD83D), chr(0xDE00)
+    for text, utf8 in ((high + low, "f09f9880"), (low + high, "efbfbdefbfbd")):
+        digest = base64.urlsafe_b64encode(hashlib.sha256(bytes.fromhex(utf8)).digest()).rstrip(b"=").decode("ascii")
+        assert disclosure_digest(text) == digest
+        assert checkout_hash_of(text) == digest
 
 
 def test_sd_jwt_c6_resolves_both_delegate_payload_entries() -> None:

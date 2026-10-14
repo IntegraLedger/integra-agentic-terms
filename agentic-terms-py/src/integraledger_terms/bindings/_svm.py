@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Refusal
-from ._codec import b58_decode, b58_encode, b64_decode, b64_encode
+from ._codec import b58_decode, b58_encode, b64_decode, b64_encode, text_encode
 from ._jose import js_length
 from ._lcp import from_lcp_string, to_lcp_string
 
@@ -554,7 +554,7 @@ def memo_length(memo: str) -> int:
     """The UTF-8 length TextEncoder writes for the memo as a JavaScript string of its UTF-16 code units: a surrogate
     pair is one four-byte character, held as one code point or as two, and a lone surrogate is U+FFFD's three
     bytes."""
-    return len(memo.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8"))
+    return len(text_encode(memo))
 
 
 def integer_of(value: object) -> Any:

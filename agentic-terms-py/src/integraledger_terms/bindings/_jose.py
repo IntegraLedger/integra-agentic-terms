@@ -16,7 +16,7 @@ from typing import Any
 
 from .._types import Refusal
 from . import _codec
-from ._codec import b64u_decode, b64u_encode, es_number, js_json
+from ._codec import b64u_decode, b64u_encode, es_number, js_json, text_encode
 
 MAX_JSON_DEPTH = 64
 RESOLUTION_DEPTH = 16
@@ -24,18 +24,12 @@ MIB = 1_048_576
 
 _PRESENTATION = re.compile(r"[A-Za-z0-9_.~-]*")
 _ARRAY_INDEX = re.compile(r"0|[1-9][0-9]*")
-_LONE_SURROGATE = re.compile(r"[\ud800-\udfff]")
 _ARRAY_INDEX_LIMIT = 2**32 - 1
 
 
 def js_length(text: str) -> int:
     """The string's length in UTF-16 code units, as String.prototype.length counts it."""
     return len(text) + sum(1 for c in text if ord(c) > 0xFFFF)
-
-
-def text_encode(text: str) -> bytes:
-    """The UTF-8 bytes TextEncoder writes: a lone surrogate becomes U+FFFD."""
-    return _LONE_SURROGATE.sub("�", text).encode("utf-8")
 
 
 def _is_array_index(key: str) -> bool:
