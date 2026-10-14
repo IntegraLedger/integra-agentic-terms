@@ -122,6 +122,29 @@ def test_mpp_session_evm_b6_authorization_es4_funding_then_es5_voucher() -> None
     assert MPP_SESSION_EVM.channel.kind(signed) == "open"  # type: ignore[attr-defined]
 
 
+def test_mpp_session_evm_b6_permit2_es6_funding_then_es5_voucher() -> None:
+    # ES6: the Permit2 opening signs PermitWitnessTransferFrom over the deposit, with the escrow as spender, H as the
+    # nonce, and the channel's payee, salt and signer as its witness; the digest is eth-account's.
+    answer = EvmAnswer()
+    es6 = EVM["ES6"]
+
+    def inspect(request: Any) -> None:
+        assert request["kind"] == "eip712"
+        typed = request["typedData"]
+        affix("0x" + keccak256(es6["typeSignature"].encode("ascii")).hex(), es6["expectTypeHash"])
+        assert str(typed["message"]["nonce"]) == es6["expectNonce"] == str(int(H, 16))
+        assert typed["message"]["spender"] == EF["escrow"]
+        assert digest(typed) == es6["expectDigest"]
+
+    signed, _ = build_and_sign(evm_pairing({"deposit": EF["deposit"], "credentialType": "permit2"}, answer), inspect)
+    assert [r["kind"] for r in answer.seen[:2]] == ["eip712", "eip712"]
+    assert digest(answer.seen[1]["typedData"]) == EVM["ES5"]["expectVoucherDigest"]
+    assert signed["payload"]["type"] == "permit2"
+    assert signed["payload"]["channelId"] == EVM["ES1"]["expectChannelId"]
+    assert signed["payload"]["salt"] == H
+    assert MPP_SESSION_EVM.bound(signed) == H
+
+
 def test_mpp_session_evm_b6_hash_es2_open_call_then_the_voucher() -> None:
     es2 = EVM["ES2"]
 
