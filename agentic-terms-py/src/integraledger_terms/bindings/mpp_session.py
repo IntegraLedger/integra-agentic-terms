@@ -79,12 +79,11 @@ class SessionUnsigned:
 @dataclass(frozen=True, slots=True)
 class Channel:
     """A channel pairing's reading of a later request: its kind (open, within or close), its network and channel,
-    the hash a request within the channel is bound to, and when the channel ends."""
+    and the hash a request within the channel is bound to."""
 
     kind: Callable[[Any], str | Refusal]
     ref: Callable[[Any], dict[str, str] | Refusal]
     bound_within: Callable[[Any], AtrHash | Refusal]
-    until: Callable[[Any], int | None]
 
 
 def evm_channel_id(payer: object, payee: object, token: object, salt: object, authorized_signer: object, escrow: object, chain_id: object) -> str | Refusal:
@@ -217,10 +216,6 @@ def _ref_from(presented: Any) -> dict[str, str] | Refusal:
 
 def _not_bound_within(presented: Any) -> AtrHash | Refusal:
     return Refusal("mpp/not-bound-within")
-
-
-def _no_end(presented: Any) -> int | None:
-    return None
 
 
 # ── mpp/session/evm.
@@ -742,13 +737,6 @@ def _subscription_ref(presented: Any) -> dict[str, str] | Refusal:
     return k if isinstance(k, Refusal) else {"network": p.network, "channel": k.digest}
 
 
-def _subscription_until(presented: Any) -> int | None:
-    p = params_of(presented.get("challenge")) if is_object(presented) else None
-    if p is None or isinstance(p, Refusal):
-        return None
-    return unix_of(p.request.get("subscriptionExpires"))
-
-
 def _subscription_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     o = offer_for(choice, h, SUBSCRIPTION)
     if isinstance(o, Refusal):
@@ -824,7 +812,7 @@ class MppSessionEvm(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_evm_kind, ref=_ref_from, bound_within=_not_bound_within, until=_no_end)
+        return Channel(kind=_evm_kind, ref=_ref_from, bound_within=_not_bound_within)
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
@@ -846,7 +834,7 @@ class MppSessionTempo(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_tempo_kind, ref=_ref_from, bound_within=_tempo_bound_within, until=_no_end)
+        return Channel(kind=_tempo_kind, ref=_ref_from, bound_within=_tempo_bound_within)
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
@@ -868,7 +856,7 @@ class MppSubscriptionTempo(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_subscription_kind, ref=_subscription_ref, bound_within=_not_bound_within, until=_subscription_until)
+        return Channel(kind=_subscription_kind, ref=_subscription_ref, bound_within=_not_bound_within)
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
