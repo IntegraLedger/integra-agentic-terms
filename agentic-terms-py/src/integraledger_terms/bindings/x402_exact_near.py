@@ -20,7 +20,7 @@ from ._borsh_near import (
     public_key_of,
 )
 from ._codec import b64_decode, js_json
-from ._jose import parse_json
+from ._jose import js_length, parse_json
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._x402 import chosen, payment_with, presented_with, read_for
 
@@ -100,11 +100,12 @@ def _memo_of(args: bytes) -> AtrHash | Refusal:
 
 
 def near_carrier(signed_delegate_action: object) -> AtrHash | Refusal:
-    """The hash in a SignedDelegateAction, padded standard base64 in its canonical form (RFC 4648 §3.5), whose one
-    action is a FunctionCall of ft_transfer with a JSON object of arguments whose memo is an LCP string. The bytes must be exactly the borsh encoding of what is read, every string in it UTF-8."""
+    """The hash in a SignedDelegateAction, padded standard base64 in its canonical form (RFC 4648 §3.5) of at most
+    8192 UTF-16 code units, whose one action is a FunctionCall of ft_transfer with a JSON object of arguments whose memo
+    is an LCP string. The bytes must be exactly the borsh encoding of what is read, every string in it UTF-8."""
     if not isinstance(signed_delegate_action, str):
         return Refusal("near/sda-malformed")
-    if len(signed_delegate_action) > MAX_SDA_BASE64:
+    if js_length(signed_delegate_action) > MAX_SDA_BASE64:
         return Refusal("near/sda-too-large")
     data = None if signed_delegate_action == "" else b64_decode(signed_delegate_action)
     if data is None:

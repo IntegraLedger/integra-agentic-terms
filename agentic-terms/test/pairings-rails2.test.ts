@@ -90,7 +90,22 @@ const NEAR = vectors<{
   };
   V1: { expectRequestHash: string; expectSignature: { prefix: string; suffix: string } };
   V2: { expectSignedDelegateAction: string; expectReference: unknown };
+  agreedRefusals: { rows: { case: string; signedDelegateAction?: string; expect: string }[] };
 }>("x402-exact-near.json");
+
+// Each agreedRefusals row whose signedDelegateAction holds a character beyond the BMP: its length is counted in UTF-16
+// code units, as the file's about states.
+describe("x402/exact/near agreedRefusals: a signedDelegateAction beyond the BMP", () => {
+  const rows = NEAR.agreedRefusals.rows.filter((r) => /[\u{10000}-\u{10FFFF}]/u.test(r.signedDelegateAction ?? ""));
+  it("the file holds such rows", () => expect(rows.length).toBeGreaterThan(0));
+  for (const r of rows) {
+    it(`${r.case}: ${r.expect}`, async () => {
+      const { resource, O } = NEAR.fixed;
+      const payment = { x402Version: 2, resource, accepted: O, payload: { signedDelegateAction: r.signedDelegateAction } };
+      expect(await exactNear.bound(payment as never)).toEqual({ refused: true, code: r.expect });
+    });
+  }
+});
 
 const nearRow: Row = (() => {
   const f = NEAR.fixed;

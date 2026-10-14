@@ -184,6 +184,14 @@ def test_x402_exact_near_strings_are_utf8() -> None:
     assert encode_signed_delegate(*decoded) == utf8
 
 
+def test_x402_exact_near_agreed_refusals_count_utf16_code_units() -> None:
+    # The file's about: a signedDelegateAction's length is counted in UTF-16 code units; U+10000 counts two.
+    rows = [r for r in N["agreedRefusals"]["rows"] if any(ord(c) > 0xFFFF for c in r.get("signedDelegateAction", ""))]
+    assert rows, "agreedRefusals rows whose signedDelegateAction holds a character past U+FFFF"
+    for row in rows:
+        assert X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"])) == Refusal(row["expect"]), row["case"]
+
+
 def test_x402_exact_near_agreed_refusals() -> None:
     for row in N["agreedRefusals"]["rows"]:
         if "option" in row:
