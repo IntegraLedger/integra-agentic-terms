@@ -147,7 +147,8 @@ returns an updated hold. `within` checks the hold before it signs anything: the 
 opening must carry `h`, and the opening must name `network` and `channel`.
 
 Over MCP, the hold is the server's to check: each opening and hold a tool returns also carries `mac`, and the channel
-tools use only an opening or hold the same server process returned, unchanged. See [channel holds](../reference/mcp.md#channel-holds).
+tools use only an opening or hold the same server process returned, unchanged. `atr_channel_open` takes the opening
+with the `landed` receipt returned beside it, where there is one. See [channel holds](../reference/mcp.md#channel-holds).
 
 ## Refunds and closing
 

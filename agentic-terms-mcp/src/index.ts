@@ -62,9 +62,10 @@ const DESCRIPTIONS = {
     "`approved` set to `approve`, unchanged: this host's signer then pays it. Returns the agreement's receipt once it " +
     "is recorded; pass it to atr_confirm.",
   atr_channel_open:
-    "Keeps a channel you opened: takes the signed opening payment and the `mac` returned beside it, both exactly as " +
-    "returned, and the ATR bytes it was confirmed against; returns the channel `hold` to keep and pass to the other " +
-    "channel tools. The hold is opaque: pass it back exactly as returned.",
+    "Keeps a channel you opened: takes the signed opening payment, the `landed` receipt where one was returned beside " +
+    "it, and the `mac` returned beside it, all exactly as returned, and the ATR bytes it was confirmed against; " +
+    "returns the channel `hold` to keep and pass to the other channel tools. The hold is opaque: pass it back exactly " +
+    "as returned.",
   atr_channel_within:
     "Signs one later payment in a held channel with this host's signer, only when the seller's document advertises " +
     "the held ATR hash. Takes the latest `hold` exactly as returned; a changed hold is declined. Returns the payment " +
@@ -203,7 +204,7 @@ function hasChannel(binding: Binding): boolean {
 
 /**
  * The payment and, where `finish` or `transact` returned one, the landed receipt beside it; for a pairing with a
- * channel, the `mac` of the pairing and the payment that `atr_channel_open` takes with it.
+ * channel, the `mac` of the pairing, the payment and that receipt, which `atr_channel_open` takes with them.
  */
 async function signedOf(
   out: { signed: Presented | null; landed?: unknown },
@@ -212,7 +213,7 @@ async function signedOf(
   const signed = jsonOf(out.signed);
   const landed = out.landed === undefined ? {} : { landed: jsonOf(out.landed) };
   if (!hasChannel(binding) || out.signed === null) return { signed, ...landed };
-  return { signed, ...landed, mac: await macOf("opening", { pairing: binding.id, signed }) };
+  return { signed, ...landed, mac: await macOf("opening", { pairing: binding.id, signed, ...landed }) };
 }
 
 export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agreementSigner?: Signer }): McpServer {
@@ -340,12 +341,13 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
     "atr_channel_open",
     {
       description: DESCRIPTIONS.atr_channel_open,
-      inputSchema: z.object({ pairing, atr, signed: JSON_VALUE, mac: z.string() }),
+      inputSchema: z.object({ pairing, atr, signed: JSON_VALUE, landed: JSON_VALUE.optional(), mac: z.string() }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
-      if (!(await verifies("opening", { pairing: a.pairing, signed: a.signed }, a.mac))) return openingUnverified();
-      const out = await openChannel(bytesOf(a.atr), a.signed as Presented, bindingOf(a.pairing));
+      const landed = a.landed === undefined ? {} : { landed: a.landed };
+      if (!(await verifies("opening", { pairing: a.pairing, signed: a.signed, ...landed }, a.mac))) return openingUnverified();
+      const out = await openChannel(bytesOf(a.atr), a.signed as Presented, bindingOf(a.pairing), a.landed);
       if ("decline" in out) return declinedResult(out);
       return result({ atrHash: out.h, hold: await seal(jsonOf(out) as HoldJson) });
     },

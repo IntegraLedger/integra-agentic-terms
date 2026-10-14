@@ -54,8 +54,9 @@ HMAC-SHA-256, as `0x` hex, under a key the server process generates on first use
 returns. Objects are taken in sorted key order, so the order their members arrive in does not matter.
 
 - **The opening.** For a pairing with a channel, `atr_transact` and `atr_finish` return `mac` beside `signed`, over the
-  pairing and the signed opening. `atr_channel_open` takes the opening only with that `mac`, and declines any other
-  opening `opening-unverified` before the gate is called.
+  pairing, the signed opening and, where one is returned beside it, the `landed` receipt. `atr_channel_open` takes the
+  opening, with that receipt, only with that `mac`, and declines any other opening `opening-unverified` before the gate
+  is called.
 - **The chosen payment.** For a pairing with a channel, `atr_finish` reads `chosen` only when the `mac` `atr_confirm`
   returned in it verifies, and declines any other `chosen` `chosen-unverified` before the gate is called, so an opening
   and its `mac` come only from a `chosen` this server process returned, unchanged.
@@ -116,7 +117,7 @@ pairing reads H from what was signed, or, where the proof is the agreement payme
 | `signature` | JSON | The wallet's answer; a list, in order, for a payment signed in steps. |
 
 Returns `atrHash` and `signed` (and `landed`, where there is one), or `atrHash` and `next`. For a pairing with a channel,
-also returns `mac`, which `atr_channel_open` takes with the opening. Annotations: read-only, closed-world.
+also returns `mac`, which `atr_channel_open` takes with the opening and `landed`. Annotations: read-only, closed-world.
 
 ### `atr_check`
 
@@ -139,9 +140,11 @@ Keeps a channel you opened.
 | `pairing` | string | The channel's pairing. |
 | `atr` | base64 | The ATR's bytes the opening was confirmed against. |
 | `signed` | JSON | The signed opening, exactly as returned. |
+| `landed` | JSON, optional | The `landed` receipt returned beside the opening, exactly as returned, where one was. `mpp/session/hedera`'s opening is bound by the escrow log only that receipt carries. |
 | `mac` | string | The `mac` returned beside the opening. |
 
-Returns `atrHash` and `hold`, with its `mac`. An opening whose `mac` does not verify is declined `opening-unverified`.
+Returns `atrHash` and `hold`, with its `mac`. An opening whose `mac` does not verify, with the `landed` receipt it was
+returned with, is declined `opening-unverified`.
 Annotations: read-only, closed-world.
 
 ### `atr_channel_record_charge`
@@ -169,7 +172,7 @@ any agreement the agent approved.
 | `approved` | object, optional | The agreement payment the agent approved: `approve` from a previous call, unchanged. |
 
 Returns `atrHash`, `atr`, `signed` (and `landed`), and `agreement`, the receipt, where the pairing needs one; for a
-pairing with a channel, also `mac`, which `atr_channel_open` takes with the opening. Where the pairing needs an agreement
+pairing with a channel, also `mac`, which `atr_channel_open` takes with the opening and `landed`. Where the pairing needs an agreement
 payment that is not yet recorded and `approved` is absent, returns `atrHash`, `atr` and `approve` instead, and signs
 nothing: `approve.option` is the payment's `amount`, `asset`, `payTo` and `network`, `approve.url` the agreement URL and
 `approve.required` its payment request. Annotations: not read-only, not destructive, not idempotent, open-world.

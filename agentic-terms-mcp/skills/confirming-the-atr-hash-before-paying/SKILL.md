@@ -46,7 +46,7 @@ is for you and your principal to judge.
 8. If the seller answers that the payment is still settling, send the same `signed` payment again to collect the
    result. Do not sign a new one.
 9. For a channel or a session, call `atr_channel_open` after the opening payment, with the pairing, `atr.base64`, the
-   `signed` opening and the `mac` returned beside it, both unchanged, and keep the `hold` it returns. For each later payment in the channel, if this host offers
+   `signed` opening, the `landed` receipt where one was returned beside it, and the `mac`, all unchanged, and keep the `hold` it returns. For each later payment in the channel, if this host offers
    `atr_channel_within`, call it with the pairing, the `hold` and the seller's new document; it signs only when that
    document advertises the held hash. When the seller reports its cumulative charge, call `atr_channel_record_charge`
    with the `hold` and that charge. Always keep the latest `hold`. The `hold` is opaque: pass it back exactly as the

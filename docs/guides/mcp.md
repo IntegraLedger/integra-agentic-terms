@@ -113,8 +113,8 @@ Then call `atr_confirm` again with the same arguments and the `receipt`. Only th
 
 ### Channels and sessions
 
-After the opening payment, call `atr_channel_open` with the pairing, `atr.base64`, the `signed` opening and the `mac`
-returned beside it, and keep the `hold`. For each later payment, call `atr_channel_within` (where the host offers it) with the pairing, the `hold` and the
+After the opening payment, call `atr_channel_open` with the pairing, `atr.base64`, the `signed` opening, the `landed`
+receipt where one was returned beside it, and the `mac`, and keep the `hold`. For each later payment, call `atr_channel_within` (where the host offers it) with the pairing, the `hold` and the
 seller's new document. When the seller reports its cumulative charge, call `atr_channel_record_charge`. Always keep the
 latest `hold`, and pass it back exactly as returned: it carries a `mac` from the server process, and a changed hold, or
 one from another server process, is declined `hold-unverified`, as a changed opening is declined `opening-unverified`.
