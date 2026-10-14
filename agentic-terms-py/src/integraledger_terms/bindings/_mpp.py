@@ -20,6 +20,7 @@ from ._lcp import (
     is_list,
     is_object,
     is_other_scheme_link,
+    is_well_formed,
     normal_hash,
 )
 from ._mpp_checks import (
@@ -175,10 +176,13 @@ class Checked:
 
 
 def check_challenge(c: object, placed: bool) -> Checked | Refusal:
-    """The checks of pairings_of. With placed, opaque may carry the LCP members the seller's placement writes."""
+    """The checks of pairings_of. With placed, opaque may carry the LCP members the seller's placement writes. A realm
+    with no UTF-8 form, which the attribution memo and the challenge hash cannot take, is mpp/challenge-malformed."""
     if not is_challenge_shape(c):
         return Refusal("mpp/challenge-malformed")
     assert is_object(c)
+    if not is_well_formed(c["realm"]):
+        return Refusal("mpp/challenge-malformed")
     check = PAIRING_CHECKS.get(f"{c['intent']}/{c['method']}")
     if check is None:
         return Refusal("mpp/not-this-pairing")
@@ -427,13 +431,15 @@ class Bound:
 
 def challenge_bound(c: object) -> Bound | Refusal:
     """H from an echoed challenge: its id derives from H in the form its intent and method take, its opaque names H,
-    and its request decodes."""
+    and its request decodes. A realm with no UTF-8 form is mpp/challenge-malformed."""
     shaped = credential_of(c)
     if isinstance(shaped, Refusal):
         return shaped
     if not _json_within(shaped, MAX_CREDENTIAL):
         return Refusal("mpp/credential-malformed")
     challenge = shaped["challenge"]
+    if not is_well_formed(challenge["realm"]):
+        return Refusal("mpp/challenge-malformed")
     h = challenge_id_h(challenge)
     if isinstance(h, Refusal):
         return h

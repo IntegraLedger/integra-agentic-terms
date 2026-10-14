@@ -257,6 +257,21 @@ describe("mpp/charge/tempo/memo and push with splits", () => {
     }));
 });
 
+// A realm holding a lone surrogate has no UTF-8 form for the attribution memo to hash: the protocol package refuses the
+// challenge mpp/challenge-malformed, so it offers nothing and nothing is fetched or signed. The Python gate answers the
+// same (test_mpp_well_formed_strings.py).
+describe("a Tempo challenge whose realm has no UTF-8 form", () => {
+  const M = vectors<{ fixed: Fixed }>("mpp-charge-tempo-memo.json");
+  it("offers nothing: no-payable-option, mpp/no-payable-option, with no fetch", () =>
+    at(M.fixed.now, async () => {
+      const [placed] = docOf(tempoMemo, issued("tempo", V.fixed.R_T));
+      const fetch = serving(ABC);
+      const out = await confirm([{ ...placed!, realm: `${placed!.realm}\uD800` }], tempoMemo, account(42431, M.fixed), fetch);
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
+      expect(fetch.calls).toBe(0);
+    }));
+});
+
 describe("mpp/charge/tempo/push", () => {
   const T = vectors<{
     fixed: Fixed & { R_TNoModes: string };

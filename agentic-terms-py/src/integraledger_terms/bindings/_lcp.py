@@ -56,6 +56,17 @@ def uint256_of(value: object) -> int | None:
     return number if number < UINT256_LIMIT else None
 
 
+def is_well_formed(value: object) -> TypeGuard[str]:
+    """True for a string with a UTF-8 form: one holding a lone surrogate has none."""
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def is_address(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and _ADDRESS.fullmatch(value) is not None
 

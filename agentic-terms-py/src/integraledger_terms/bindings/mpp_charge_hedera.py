@@ -20,7 +20,7 @@ from ._hedera_proto import (
     tx_id_field,
     write_body,
 )
-from ._lcp import is_object
+from ._lcp import is_object, is_well_formed
 from ._mpp import attribution_memo, challenge_bound, check_attribution, credential_of, read
 from ._mpp_checks import decode_object, hedera_charge_legs
 from .x402_exact_hedera import HederaUnsigned, is_entity
@@ -44,8 +44,9 @@ def build_charge(challenge: object, request: object, c: object) -> HederaUnsigne
     """The body the payer signs for an MPP Hedera charge: the payer's own transaction id, MPP's attribution memo for
     this challenge as the memo, and the token transfers of currency: the payer's debit, the recipient's remainder and
     each split. With credentialType hash the request carries broadcast: true, for a signer that signs and broadcasts
-    the body; with transaction, the default, the signature completes the transaction."""
-    if not is_object(challenge) or not isinstance(challenge.get("id"), str) or not isinstance(challenge.get("realm"), str):
+    the body; with transaction, the default, the signature completes the transaction. A challenge id or realm with no
+    UTF-8 form is mpp/challenge-malformed, and such a clientId is hedera/option-malformed."""
+    if not is_object(challenge) or not is_well_formed(challenge.get("id")) or not is_well_formed(challenge.get("realm")):
         return Refusal("mpp/challenge-malformed")
     if not is_object(request):
         return Refusal("hedera/option-malformed")
@@ -66,7 +67,7 @@ def build_charge(challenge: object, request: object, c: object) -> HederaUnsigne
         or not isinstance(max_fee, int)
         or isinstance(max_fee, bool)
         or not 0 <= max_fee < UINT64_LIMIT
-        or ("clientId" in c and not isinstance(client_id, str))
+        or ("clientId" in c and not is_well_formed(client_id))
         or ("credentialType" in c and c["credentialType"] not in ("transaction", "hash"))
         or any(account == c["payer"] for account, _ in every)
     ):

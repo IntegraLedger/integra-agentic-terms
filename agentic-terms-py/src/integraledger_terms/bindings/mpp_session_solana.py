@@ -14,7 +14,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._codec import b58_decode, canonical_json
-from ._lcp import is_object
+from ._lcp import is_object, is_well_formed
 from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, read
 from ._mpp_checks import solana_network_of
 from ._session_within import action_kind, echoed_details, within_checks
@@ -37,7 +37,11 @@ def session_salt(h: AtrHash) -> int:
 
 
 def session_proof(channel_id: str, payer: str, challenge_id: str) -> bytes:
-    """The UTF-8 of the RFC 8785 JSON of {channelId, domain: "mpp-session-auth-v1", payer, sessionChallengeId}."""
+    """The UTF-8 of the RFC 8785 JSON of {channelId, domain: "mpp-session-auth-v1", payer, sessionChallengeId}. Raises
+    TypeError when channel_id, payer or challenge_id is not a string with a UTF-8 form: one holding a lone surrogate
+    has none, so no message is made that the caller did not write."""
+    if not is_well_formed(channel_id) or not is_well_formed(payer) or not is_well_formed(challenge_id):
+        raise TypeError("session_proof: channel_id, payer and challenge_id must be strings with a UTF-8 form")
     text = canonical_json(
         {"channelId": channel_id, "domain": "mpp-session-auth-v1", "payer": payer, "sessionChallengeId": challenge_id}
     )

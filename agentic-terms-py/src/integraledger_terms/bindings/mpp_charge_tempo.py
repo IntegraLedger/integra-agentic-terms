@@ -10,7 +10,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Refusal
 from ._codec import to_hex
-from ._lcp import is_list, is_object, normal_hash
+from ._lcp import is_list, is_object, is_well_formed, normal_hash
 from ._mpp import (
     Echoed,
     MppUnsigned,
@@ -38,7 +38,7 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     if isinstance(o, Refusal):
         return o
     client_id = choice.get("clientId")
-    if "clientId" in choice and not isinstance(client_id, str):
+    if "clientId" in choice and not is_well_formed(client_id):
         return Refusal("mpp/input-malformed")
     chain_id = chain_of(o)
     challenge = dict(choice["challenge"])
