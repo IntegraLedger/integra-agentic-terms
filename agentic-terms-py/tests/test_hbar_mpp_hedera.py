@@ -5,11 +5,14 @@ import copy
 import json
 from typing import Any
 
+import pytest
+
 from integraledger_terms import MPP_CHARGE_HEDERA as BINDING
 from integraledger_terms import MPP_SESSION_HEDERA as SESSION
 from integraledger_terms import Declined, Refusal, Transacted, confirm, transact
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, js_json
 from integraledger_terms.bindings._mpp import attribution_memo, check_attribution
+from integraledger_terms.bindings.mpp_session_hedera import channel_id, voucher
 
 import ed25519
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, link_calls, plant, run
@@ -274,6 +277,32 @@ def test_mpp_session_hedera_hs3_bound_and_plants() -> None:
     bad = opened([S["HS3"]["log"]])
     bad["payload"] = {**bad["payload"], "action": S["HS5"]["badAction"]}
     assert SESSION.bound(bad) == Refusal(S["HS5"]["expectBad"])
+
+
+# The channel id and voucher writers take only the values their ABI words can hold: each raises TypeError otherwise, as
+# @integraledger/lcp's hederaChannelId and hederaVoucher do. The cases are lcp's own; a Python int stands for its
+# bigint, and a float or bool for a value that is not one.
+_SIGNER = "0x" + "00" * 20
+
+
+def _channel_id(**at: Any) -> str:
+    c = {"payer": SF["payer"], "payee": SF["payee"], "token": SF["token"], "salt": H, "signer": _SIGNER, "escrow": SF["escrow"], "chain_id": 296}
+    c.update(at)
+    return channel_id(c["payer"], c["payee"], c["token"], c["salt"], c["signer"], c["escrow"], c["chain_id"])
+
+
+def test_mpp_session_hedera_channel_id_and_voucher_raise_type_error_outside_their_words() -> None:
+    assert _channel_id() == S["HS1"]["expectChannelId"]
+    for at in ({"salt": "0x12"}, {"payer": "0x12"}, {"escrow": H}, {"chain_id": "x"}, {"chain_id": 1}, {"chain_id": True}, {"signer": None}):
+        with pytest.raises(TypeError):
+            _channel_id(**at)
+    channel = S["HS1"]["expectChannelId"]
+    assert voucher(channel, SF["escrow"], 296, 5)["message"] == {"channelId": channel.lower(), "cumulativeAmount": 5}
+    assert voucher(channel, SF["escrow"], 296, (1 << 128) - 1)["message"]["cumulativeAmount"] == (1 << 128) - 1
+    for args in (("x", SF["escrow"], 296, 5), (channel, "x", 296, 5), (channel, SF["escrow"], 1, 5), (channel, SF["escrow"], 296, 5.0),
+                 (channel, SF["escrow"], 296, True), (channel, SF["escrow"], 296, -1), (channel, SF["escrow"], 296, 1 << 128)):  # fmt: skip
+        with pytest.raises(TypeError):
+            voucher(*args)
 
 
 def test_mpp_session_hedera_a_log_whose_payer_or_payee_topic_is_not_hex_is_not_the_opening() -> None:

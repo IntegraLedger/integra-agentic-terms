@@ -26,8 +26,18 @@ APPROVE_GAS = 1_000_000
 OPEN_GAS = 1_500_000
 
 
+def _is_chain_id(chain_id: object) -> bool:
+    return isinstance(chain_id, int) and not isinstance(chain_id, bool) and chain_id in (295, 296)
+
+
 def channel_id(payer: str, payee: str, token: str, salt: str, signer: str, escrow: str, chain_id: int) -> str:
-    """keccak256(abi.encode(payer, payee, token, salt, authorizedSigner, escrow, chainId)), lower-case."""
+    """keccak256(abi.encode(payer, payee, token, salt, authorizedSigner, escrow, chainId)), lower-case. Raises
+    TypeError when an address is not 0x and 40 hex digits, the salt is not a 32-byte hash, or the chain id is not 295
+    or 296."""
+    if not all(is_address(a) for a in (payer, payee, token, signer, escrow)):
+        raise TypeError("not a Hedera channel configuration")
+    if normal_hash(salt) is None or not _is_chain_id(chain_id):
+        raise TypeError("not a Hedera channel configuration")
     words = (
         address_word(payer)
         + address_word(payee)
@@ -41,7 +51,13 @@ def channel_id(payer: str, payee: str, token: str, salt: str, signer: str, escro
 
 
 def voucher(channel: str, escrow: str, chain_id: int, cumulative: int) -> dict[str, Any]:
-    """The EIP-712 voucher Voucher(bytes32 channelId, uint128 cumulativeAmount) under the escrow's domain."""
+    """The EIP-712 voucher Voucher(bytes32 channelId, uint128 cumulativeAmount) under the escrow's domain. Raises
+    TypeError when the channel id is not a 32-byte hash, the escrow not 0x and 40 hex digits, the chain id not 295 or
+    296, or cumulative not an int that fits a uint128."""
+    if normal_hash(channel) is None or not is_address(escrow) or not _is_chain_id(chain_id):
+        raise TypeError("not a Hedera channel")
+    if isinstance(cumulative, bool) or not isinstance(cumulative, int) or not 0 <= cumulative < U128_LIMIT:
+        raise TypeError("not a uint128 cumulative amount")
     return {
         "domain": {"name": "Hedera Stream Channel", "version": "1", "chainId": chain_id, "verifyingContract": escrow.lower()},
         "primaryType": "Voucher",
