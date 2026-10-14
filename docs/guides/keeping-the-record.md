@@ -19,8 +19,9 @@ Keep the bytes as bytes. Re-encoding them as a parsed and re-serialised JSON doc
 
 ## Confirm a payment later: `check`
 
-`check(bytes, presented, binding)` answers one question: does this payment carry, inside what was signed, the SHA-256
-of these bytes? It fetches nothing and calls no signer.
+`check(bytes, presented, binding)` answers one question: is the ATR hash the pairing reads from this payment the SHA-256
+of these bytes? A payment from which the pairing reads no ATR hash is declined `signed-not-bound`. It fetches nothing
+and calls no signer.
 
 ```ts
 import { check, transact, type Fetch, type Signer } from "@integraledger/terms";

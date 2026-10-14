@@ -98,8 +98,9 @@ import type { Binding, Declined } from "@integraledger/terms";
 declare function check(bytes: Uint8Array, presented: unknown, binding: Binding): Promise<{ h: AtrHash } | Declined>;
 ```
 
-Confirms that a payment held later carries, inside what was signed, the hash of the kept bytes. Put `landed` back into
-the payment first, where one was returned.
+Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes. A payment from
+which the pairing reads no ATR hash is declined `signed-not-bound`. Put `landed` back into the payment first, where one
+was returned.
 
 ### `agree`
 

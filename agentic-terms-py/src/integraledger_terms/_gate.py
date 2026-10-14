@@ -243,7 +243,8 @@ def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bind
 
 
 def check(atr_bytes: bytes, presented: Any, binding: Binding) -> Checked | Declined:
-    """The hash of these bytes, when the presented payment carries it inside what was signed."""
+    """Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes. A
+    payment from which the pairing reads no ATR hash is declined signed-not-bound."""
     if len(atr_bytes) > MAX_ATR_BYTES:
         return _too_large()
     h = atr_hash(atr_bytes)
