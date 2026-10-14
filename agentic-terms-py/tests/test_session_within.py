@@ -249,6 +249,78 @@ def test_the_sellers_own_challenge_naming_another_hash_declines_before_any_signe
     assert signer.requests == []
 
 
+# ── the within challenge's opaque: MPP's flat string-to-string map (draft-httpauth-payment-01, lines 348-352), read
+# as the protocol package reads one: base64url without padding, at most 8 KiB decoded, UTF-8 with a leading byte order
+# mark kept as a character. An opaque that is not one declines offer-unreadable, mpp/opaque-malformed, before any
+# signer call: buyer.json's BW1 and BW2 opaques among them, whose expected decline is that row's.
+
+_LCP = (
+    '{"legalContext":"lcp:sha256:' + H + '",'
+    '"legalContextUrl":"https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f"}'
+)
+
+
+def _seller(size: int) -> str:
+    return '{"seller":"' + "x" * (size - 13) + '"}'
+
+
+def _with_opaque(text: str, encoded: str | None = None) -> dict[str, Any]:
+    c = own(CHANNEL)
+    c["opaque"] = encoded if encoded is not None else base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii").rstrip("=")
+    return c
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"legalContext":null}',
+        _LCP[:-1] + ',"seller":1}',
+        '{"seller":1}',
+        '{"seller":{"a":"b"}}',
+        "\ufeff" + _LCP,
+        '{"seller":"\\ud800"}',
+        _seller(8193),
+    ],
+    ids=[
+        "BW1: a legalContext member that is null",
+        "BW2: the LCP members naming the held H, and a member seller whose value is the number 1",
+        "BW2: only a member seller whose value is the number 1",
+        "a member whose value is an object",
+        "a byte order mark before the object",
+        "a member whose value is an escaped lone surrogate, which has no RFC 8785 form",
+        "8193 bytes decoded",
+    ],
+)
+def test_an_opaque_that_is_not_a_flat_string_map_declines_before_any_signer_call(text: str) -> None:
+    hold = tempo_hold()
+    signer = wallet()
+    out = asyncio.run(within([_with_opaque(text)], hold, MPP_SESSION_TEMPO, signer))
+    assert out == Declined("offer-unreadable", "mpp/opaque-malformed")
+    assert signer.requests == []
+
+
+def test_a_padded_opaque_is_opaque_malformed_and_a_legal_context_not_an_lcp_string_is_legal_context_malformed() -> None:
+    hold = tempo_hold()
+    signer = wallet()
+    padded = base64.urlsafe_b64encode(_LCP.encode("utf-8")).decode("ascii").rstrip("=") + "="
+    outs = [
+        asyncio.run(within([_with_opaque(_LCP, padded)], hold, MPP_SESSION_TEMPO, signer)),
+        asyncio.run(within([_with_opaque('{"legalContext":"not-an-lcp-string"}')], hold, MPP_SESSION_TEMPO, signer)),
+    ]
+    assert [o.detail if isinstance(o, Declined) else o for o in outs] == ["mpp/opaque-malformed", "mpp/legal-context-malformed"]
+    assert signer.requests == []
+
+
+@pytest.mark.parametrize("text", [_seller(8192), _LCP], ids=["8192 bytes decoded", "BW1's control naming the held H"])
+def test_an_opaque_of_at_most_8_kib_is_read_with_one_voucher_request(text: str) -> None:
+    assert len(text.encode("utf-8")) <= 8192
+    hold = tempo_hold()
+    signer = wallet()
+    out = asyncio.run(within([_with_opaque(text)], hold, MPP_SESSION_TEMPO, signer))
+    assert isinstance(out, Within), out
+    assert [r["kind"] for r in signer.requests] == ["batch"]
+
+
 # ── the held Hedera session pays the seller's own within challenge (its own id, no legal context).
 
 

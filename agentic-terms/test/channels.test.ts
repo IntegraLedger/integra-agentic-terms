@@ -628,4 +628,52 @@ describe("mpp/session/tempo: the channel hold", () => {
     }
     expect(signer.requests.length).toBe(0);
   });
+
+  // MPP's opaque is a flat string-to-string map (draft-httpauth-payment-01, lines 348-352), read as the protocol
+  // package reads one: base64url without padding, at most 8 KiB decoded, UTF-8 with a leading byte order mark kept as
+  // a character. An opaque that is not one declines offer-unreadable, mpp/opaque-malformed, before any signer call:
+  // buyer.json's BW1 and BW2 opaques among them, whose expected decline is that row's.
+  const withOpaque = (text: string, encoded?: string): MppChallenge => ({
+    ...own({ channelId: T.TS3.expectChannelId }),
+    opaque: encoded ?? Buffer.from(text, "utf8").toString("base64url"),
+  });
+  const LCP = `{"legalContext":"lcp:sha256:${H}","legalContextUrl":"https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f"}`;
+  const seller = (bytes: number) => `{"seller":"${"x".repeat(bytes - 13)}"}`;
+  it.each([
+    ["BW1: a legalContext member that is null", '{"legalContext":null}'],
+    ["BW2: the LCP members naming the held H, and a member seller whose value is the number 1", `${LCP.slice(0, -1)},"seller":1}`],
+    ["BW2: only a member seller whose value is the number 1", '{"seller":1}'],
+    ["a member whose value is an object", '{"seller":{"a":"b"}}'],
+    ["a byte order mark before the object", `\uFEFF${LCP}`],
+    ["a member whose value is an escaped lone surrogate, which has no RFC 8785 form", '{"seller":"\\ud800"}'],
+    ["8193 bytes decoded", seller(8193)],
+  ])("an opaque with %s: offer-unreadable, mpp/opaque-malformed, and no signer call", async (_, text) => {
+    const hold = await held();
+    const signer = counting(account, walletAnswer);
+    const out = await at(f.now, () => within([withOpaque(text)], hold, sessionTempo, signer));
+    expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "mpp/opaque-malformed" });
+    expect(signer.requests.length).toBe(0);
+  });
+
+  it("an opaque written with base64 padding is mpp/opaque-malformed; a legalContext that is not an LCP string is mpp/legal-context-malformed", async () => {
+    const hold = await held();
+    const signer = counting(account, walletAnswer);
+    const padded = `${Buffer.from(LCP, "utf8").toString("base64url")}=`;
+    const outs = [
+      await at(f.now, () => within([withOpaque(LCP, padded)], hold, sessionTempo, signer)),
+      await at(f.now, () => within([withOpaque('{"legalContext":"not-an-lcp-string"}')], hold, sessionTempo, signer)),
+    ];
+    expect(outs.map((o) => isDeclined(o) && o.decline.detail)).toEqual(["mpp/opaque-malformed", "mpp/legal-context-malformed"]);
+    expect(signer.requests.length).toBe(0);
+  });
+
+  it("an opaque of 8192 bytes decoded, and BW1's control naming the held H, are read: one voucher request each", async () => {
+    for (const text of [seller(8192), LCP]) {
+      expect(Buffer.from(text, "utf8").length).toBeLessThanOrEqual(8192);
+      const hold = await held();
+      const signer = counting(account, walletAnswer);
+      unwrap(await at(f.now, () => within([withOpaque(text)], hold, sessionTempo, signer)));
+      expect(signer.requests.map((r) => r.kind)).toEqual(["batch"]);
+    }
+  });
 });

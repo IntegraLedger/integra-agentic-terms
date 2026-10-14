@@ -20,9 +20,9 @@ from . import _gate
 from ._core import MAX_ATR_BYTES, atr_hash, hash_equals
 from ._types import Advertised, Declined, DeclineCode, Json, Refusal, Signer
 from .bindings._channel import BatchUnsigned, ChannelRef
-from .bindings._jose import parse_json
 from .bindings._lcp import from_lcp_string
 from .bindings._mpp import network as mpp_network
+from .bindings._mpp_checks import decode_string_map
 from .bindings.mpp_session import session_resume
 from .pieces._common import with_payment_identifier
 from .pieces._mpp import pairings_of_placed, request_of
@@ -40,9 +40,6 @@ _REF_BYTES = 24
 _MEMBERS = ("channel_kind", "channel_ref", "bound_within")
 # At most this many challenges of a within document are looked at, as the MPP entry point reads a document.
 _MAX_CHALLENGES = 32
-# An opaque of at most this many base64url characters, 8 KiB decoded, is read.
-_MAX_OPAQUE = 10_924
-_B64URL = re.compile(r"[A-Za-z0-9_-]*")
 # For each request kind an in-channel build returns, an answer of the form that kind takes, of zero bytes: 65 bytes in
 # 0x hex for eip712, 64 bytes in base58 for ed25519-raw and solana-message. It completes a build without a signature,
 # so that the channel its payment names can be read before the signer is called.
@@ -315,10 +312,11 @@ async def _session_within(
 ) -> Within | Declined:
     """One voucher, or the close, in a held MPP session. The within challenge is the first of the document that either
     offers the pairing on the held network, or names a channel of the pairing on the held network, as session_resume
-    reads it for the pairing's method. A named channel must be the held one, and a legal context in
-    the challenge's opaque must name the held hash; either is checked before the signer is called. The voucher's
-    cumulative amount is the recorded charge plus the challenge's amount, and the close's is the recorded charge. Every
-    channel value comes from the held opening, through the binding's build_within."""
+    reads it for the pairing's method. A named channel must be the held one, the challenge's opaque, where present,
+    must be MPP's flat string-to-string map, and a legal context in it must name the held hash; each is checked before
+    the signer is called. The voucher's cumulative amount is the recorded charge plus the challenge's amount, and the
+    close's is the recorded charge. Every channel value comes from the held opening, through the binding's
+    build_within."""
     if refund is not None and "amount" in refund:
         return _declined("pairing-not-supported", "mpp/within-action-not-built")
     challenge: Any = None
@@ -341,8 +339,8 @@ async def _session_within(
     if challenge is None:
         return _declined("no-payable-option", "mpp/no-payable-option")
     named_h = _legal_context_of(challenge)
-    if named_h == "malformed":
-        return _declined("offer-unreadable", "mpp/legal-context-malformed")
+    if isinstance(named_h, Refusal):
+        return _declined("offer-unreadable", named_h.code)
     if named_h is not None and not hash_equals(named_h, h):
         return _declined("hash-mismatch", "The challenge names another ATR's hash than the one this channel opened for.")
     request_body = request_of(challenge)
@@ -403,25 +401,20 @@ def _named_channel(c: Mapping[str, Any], pairing: str) -> ChannelRef | None:
     return ChannelRef("unread", "unread") if isinstance(ref, Refusal) else ref
 
 
-def _legal_context_of(c: Mapping[str, Any]) -> str | None:
+def _legal_context_of(c: Mapping[str, Any]) -> str | Refusal | None:
     """The hash a challenge's opaque names as its legal context: None when there is no opaque or it has no
-    legalContext member, "malformed" when either cannot be read."""
-    opaque = c.get("opaque")
+    legalContext member; mpp/opaque-malformed when the opaque is not MPP's flat string-to-string map (decode_string_map:
+    base64url without padding, at most 8 KiB decoded, UTF-8, a JSON object of string members with an RFC 8785 form);
+    mpp/legal-context-malformed when its legalContext is not an LCP string."""
+    if "opaque" not in c:
+        return None
+    opaque = decode_string_map(c["opaque"])
     if opaque is None:
+        return Refusal("mpp/opaque-malformed")
+    if "legalContext" not in opaque:
         return None
-    if not isinstance(opaque, str) or len(opaque) > _MAX_OPAQUE or _B64URL.fullmatch(opaque) is None:
-        return "malformed"
-    try:
-        value = parse_json(base64.urlsafe_b64decode(opaque + "=" * (-len(opaque) % 4)).decode("utf-8"))
-    except (binascii.Error, ValueError, UnicodeDecodeError):
-        return "malformed"
-    if not isinstance(value, dict):
-        return "malformed"
-    lc = value.get("legalContext")
-    if lc is None:
-        return None
-    named = from_lcp_string(lc) if isinstance(lc, str) else None
-    return "malformed" if named is None else named
+    named = from_lcp_string(opaque["legalContext"])
+    return Refusal("mpp/legal-context-malformed") if named is None else named
 
 
 def record_charge(hold: ChannelHold, charged_cumulative_amount: str) -> ChannelHold | Declined:

@@ -6,7 +6,7 @@
  * MPP's sessions through the binding's `buildWithin`. `recordCharge` records the server's cumulative charge, bounded by
  * what was signed.
  */
-import { fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
+import { canonicalJson, fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { offers, requestOf } from "./pairings/mpp.js";
 import { fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
@@ -62,8 +62,9 @@ interface Batch {
 const DECIMAL = /^[0-9]{1,78}$/;
 /** At most this many challenges of a within document are looked at, as the MPP entry point reads a document. */
 const MAX_CHALLENGES = 32;
-/** An `opaque` of at most this many base64url characters, 8 KiB decoded, is read. */
-const MAX_OPAQUE = 10_924;
+/** An `opaque` of at most this many bytes decoded, 8 KiB, is read. */
+const MAX_OPAQUE_BYTES = 8192;
+const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const NOT_BOUND_WITHIN = /\/not-bound-within$/;
 const REF_BYTES = 24;
 const HOLD_KEYS = ["pairing", "network", "channel", "h", "atr", "charged", "signedMax"] as const;
@@ -345,10 +346,10 @@ export async function within(
 /**
  * One voucher, or the close, in a held MPP session. The within challenge is the first of the document that either
  * offers the pairing on the held network, or names a channel of the pairing on the held network, as `sessionResume`
- * reads it for the pairing's method. A named channel must be the held one, and a legal context in
- * the challenge's `opaque` must name the held hash; either is checked before the signer is called. The voucher's
- * cumulative amount is the recorded charge plus the challenge's amount, and the close's is the recorded charge. Every
- * channel value comes from the held opening, through the binding's `buildWithin`.
+ * reads it for the pairing's method. A named channel must be the held one, the challenge's `opaque`, where present,
+ * must be MPP's flat string-to-string map, and a legal context in it must name the held hash; each is checked before
+ * the signer is called. The voucher's cumulative amount is the recorded charge plus the challenge's amount, and the
+ * close's is the recorded charge. Every channel value comes from the held opening, through the binding's `buildWithin`.
  */
 async function sessionWithin(
   b: ChannelSteps,
@@ -385,7 +386,7 @@ async function sessionWithin(
   }
   if (challenge === undefined) return declined("no-payable-option", "mpp/no-payable-option");
   const named = legalContextOf(challenge);
-  if (named === "malformed") return declined("offer-unreadable", "mpp/legal-context-malformed");
+  if (isRefusal(named)) return declined("offer-unreadable", named.code);
   if (named !== undefined && !hashEquals(named, h)) {
     return declined("hash-mismatch", "The challenge names another ATR's hash than the one this channel opened for.");
   }
@@ -441,28 +442,53 @@ function namedChannel(c: MppChallenge, pairing: string): { network: string; chan
 
 /**
  * The hash a challenge's `opaque` names as its legal context: undefined when there is no `opaque` or it has no
- * `legalContext` member, "malformed" when either cannot be read.
+ * `legalContext` member; `mpp/opaque-malformed` when the `opaque` is not a flat string-to-string map (`opaqueMap`);
+ * `mpp/legal-context-malformed` when its `legalContext` is not an LCP string.
  */
-function legalContextOf(c: MppChallenge): AtrHash | "malformed" | undefined {
+function legalContextOf(c: MppChallenge): AtrHash | Refusal | undefined {
   if (c.opaque === undefined) return undefined;
-  const map = typeof c.opaque === "string" ? base64UrlJson(c.opaque) : undefined;
-  if (!isObject(map)) return "malformed";
+  const map = opaqueMap(c.opaque);
+  if (map === undefined) return refuse("mpp/opaque-malformed");
   const lc = map["legalContext"];
   if (lc === undefined) return undefined;
-  const named = typeof lc === "string" ? fromLcpString(lc) : null;
-  return named ?? "malformed";
+  return fromLcpString(lc) ?? refuse("mpp/legal-context-malformed");
 }
 
-/** A base64url string's bytes read as one JSON value, or undefined. */
-function base64UrlJson(s: string): unknown {
-  if (s.length > MAX_OPAQUE || !/^[A-Za-z0-9_-]*$/.test(s)) return undefined;
+/**
+ * An `opaque` read as MPP's flat string-to-string map: base64url without padding, its final character's unused bits
+ * zero, at most 8 KiB decoded; UTF-8 whose leading byte order mark is kept as a character; one JSON object whose
+ * members are all strings and that has an RFC 8785 form. Undefined for anything else.
+ */
+function opaqueMap(s: unknown): Record<string, string> | undefined {
+  const bytes = base64UrlBytes(s, MAX_OPAQUE_BYTES);
+  if (bytes === undefined) return undefined;
   try {
-    const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
-    const binary = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
-    return parseJson(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, (ch) => ch.charCodeAt(0))));
+    const v: unknown = parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
+    if (!isObject(v) || !Object.values(v).every((m) => typeof m === "string")) return undefined;
+    return typeof canonicalJson(v as Json) === "string" ? (v as Record<string, string>) : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** The bytes of base64url without padding whose final character's unused bits are zero, at most `max` of them. */
+function base64UrlBytes(s: unknown, max: number): Uint8Array | undefined {
+  if (typeof s !== "string" || s.length % 4 === 1 || s.length > Math.ceil((max * 4) / 3)) return undefined;
+  const out = new Uint8Array(Math.floor((s.length * 3) / 4));
+  let acc = 0;
+  let bits = 0;
+  let at = 0;
+  for (let i = 0; i < s.length; i++) {
+    const v = BASE64URL.indexOf(s[i]!);
+    if (v === -1) return undefined;
+    acc = ((acc << 6) | v) & 0xffffff;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out[at++] = (acc >> bits) & 0xff;
+    }
+  }
+  return (acc & ((1 << bits) - 1)) === 0 ? out : undefined;
 }
 
 /**
