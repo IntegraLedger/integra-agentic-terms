@@ -32,7 +32,10 @@ export interface ChannelHold {
   h: AtrHash;
   /** Base64 of the ATR bytes the opening compared. */
   atr: string;
-  /** The signed opening payment, exactly as the gate returned it. */
+  /**
+   * The signed opening payment as the gate returned it, written as plain JSON, with the landed receipt given beside it
+   * as its `landed` member, where one is given.
+   */
   opening: Json;
   /** The server's cumulative charge last recorded, decimal; "0" at the opening. */
   charged: string;
@@ -111,10 +114,17 @@ function fromBase64(s: string): Uint8Array | undefined {
   }
 }
 
-/** A value as plain JSON, or undefined when it holds anything JSON does not carry. */
+/**
+ * A value as the plain JSON `JSON.stringify` writes for it, without the members it leaves out (undefined, a function or
+ * a symbol); undefined when it holds a number that is not finite, or `JSON.stringify` writes nothing for it or throws.
+ */
 function asJson(v: unknown): Json | undefined {
   try {
-    const text = JSON.stringify(v);
+    const text = JSON.stringify(v, (_k, x: unknown) => {
+      const n = x instanceof Number ? x.valueOf() : x;
+      if (typeof n === "number" && !Number.isFinite(n)) throw new RangeError("A number that is not finite.");
+      return x;
+    });
     return text === undefined ? undefined : (JSON.parse(text) as Json);
   } catch {
     return undefined;

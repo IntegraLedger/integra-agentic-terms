@@ -102,13 +102,18 @@ MAX_JSON_DEPTH = 64
 
 
 def es_number(value: int | float) -> str:
-    """A number as JSON.stringify writes it (ECMAScript Number::toString)."""
+    """A number as JSON.stringify writes it (ECMAScript Number::toString). An int past 2^53 is the double JSON.parse
+    reads for it, and one outside the double range is the infinity JSON.parse reads: like any non-finite number, it
+    raises ValueError."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError("not a number")
     if isinstance(value, int):
-        value = float(value) if abs(value) > 2**53 else value
-        if isinstance(value, int):
+        if abs(value) <= 2**53:
             return str(value)
+        try:
+            value = float(value)
+        except OverflowError:
+            raise ValueError("not finite") from None
     if not math.isfinite(value):
         raise ValueError("not finite")
     if value == 0:
@@ -135,8 +140,21 @@ def es_number(value: int | float) -> str:
     return sign + digits[0] + tail + "e" + ("+" if n - 1 >= 0 else "-") + str(abs(n - 1))
 
 
+# A surrogate pair, whose two code points JSON.stringify writes as the one character they form, or a lone surrogate,
+# which it writes as a lower-case \uXXXX escape.
+_SURROGATES = re.compile("[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]")
+
+
+def _surrogate(match: re.Match[str]) -> str:
+    s = match.group()
+    if len(s) == 2:
+        return chr(0x10000 + ((ord(s[0]) - 0xD800) << 10) + (ord(s[1]) - 0xDC00))
+    return f"\\u{ord(s):04x}"
+
+
 def _string(text: str) -> str:
-    return json.dumps(text, ensure_ascii=False)
+    """A string as JSON.stringify writes it: quoted, with its short escapes, and each lone surrogate escaped."""
+    return _SURROGATES.sub(_surrogate, json.dumps(text, ensure_ascii=False))
 
 
 def js_json(value: Any, depth: int = 0) -> str:

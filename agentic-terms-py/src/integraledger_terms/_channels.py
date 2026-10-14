@@ -29,9 +29,10 @@ from .pieces._common import with_payment_identifier
 from .pieces._mpp import pairings_of_placed, request_of
 
 # A channel the buyer opened for an ATR it compared, as JSON the caller keeps and hands back: pairing, network,
-# channel, h, atr (base64 of the ATR bytes the opening compared), opening (the signed opening, exactly as the gate
-# returned it), charged (the server's cumulative charge last recorded, decimal, "0" at the opening) and signedMax (the
-# largest maxClaimableAmount signed in the channel, decimal).
+# channel, h, atr (base64 of the ATR bytes the opening compared), opening (the signed opening as the gate returned it,
+# written as plain JSON, with the landed receipt given beside it as its landed member, where one is given), charged
+# (the server's cumulative charge last recorded, decimal, "0" at the opening) and signedMax (the largest
+# maxClaimableAmount signed in the channel, decimal).
 ChannelHold = dict[str, Any]
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")

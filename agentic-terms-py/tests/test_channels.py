@@ -8,6 +8,7 @@ import asyncio
 import base64
 import copy
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -297,6 +298,17 @@ def test_open_channel_refuses_other_bytes_a_non_opening_and_a_pairing_with_no_ch
     voucher = unwrap(run_within(hold))
     assert code(open_channel(ABC, voucher.signed, BINDING)) == "signed-not-bound"
     assert code(open_channel(ABC, opening, X402_BATCH_SETTLEMENT_CLOUDFLARE)) == "pairing-not-supported"
+
+
+@pytest.mark.parametrize("n", [math.nan, math.inf, -math.inf], ids=["NaN", "Infinity", "-Infinity"])
+def test_open_channel_declines_an_opening_holding_a_number_that_is_not_finite(n: float) -> None:
+    # RFC 8259 §6 permits no NaN or Infinity in JSON: the hold records the opening as JSON, so an opening holding such a
+    # number is not held, as the TypeScript gate declines it.
+    _, opening = evm_hold()
+    held = unwrap(open_channel(ABC, {**opening, "extensions": {"n": 1}}, BINDING))
+    assert held["opening"]["extensions"] == {"n": 1}
+    out = open_channel(ABC, {**opening, "extensions": {"n": n}}, BINDING)
+    assert out == Declined("signed-not-bound", "The opening is not plain JSON.")
 
 
 @dataclass(frozen=True)

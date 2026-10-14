@@ -1,9 +1,20 @@
 """The primitives the bindings share, against published values: Keccak-256, base58, strict base64url and base64, and
-numbers as ECMAScript writes them."""
+numbers and strings as ECMAScript writes them."""
+
+import pytest
 
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._cbor import CborMap, CborSimple, decode_cbor
-from integraledger_terms.bindings._codec import b58_decode, b58_encode, b64_decode, b64u_decode, canonical_json, es_number
+from integraledger_terms.bindings._codec import (
+    b58_decode,
+    b58_encode,
+    b64_decode,
+    b64u_decode,
+    canonical_json,
+    canonical_or_none,
+    es_number,
+    js_json,
+)
 
 import ed25519
 
@@ -61,6 +72,34 @@ def test_numbers_and_member_order_as_rfc_8785_writes_them() -> None:
     assert es_number(0.002) == "0.002"
     assert es_number(1.0) == "1"
     assert canonical_json({"\U0001f600": 1, "\u20ac": 2, "1": 3}) == '{"1":3,"\u20ac":2,"\U0001f600":1}'
+
+
+def test_a_lone_surrogate_is_escaped_as_json_stringify_escapes_it() -> None:
+    # Node's JSON.stringify (ECMA-262 QuoteJSONString): a lone surrogate, in a value or a member name, is written as a
+    # lower-case \uXXXX escape, and a surrogate pair as the one character it forms.
+    assert js_json("\ud800") == '"\\ud800"'
+    assert js_json("a\udc00b") == '"a\\udc00b"'
+    assert js_json({"k\udbff": "\udfff\ud800"}) == '{"k\\udbff":"\\udfff\\ud800"}'
+    assert js_json("\ud83d\ude00") == '"\U0001f600"'
+    assert js_json('"\n\u0001') == '"\\"\\n\\u0001"'
+    js_json(["\ud800"]).encode("utf-8")
+
+
+@pytest.mark.parametrize("value", [10**400, -(10**400), 2**1024 - 2**970], ids=["10^400", "-10^400", "2^1024 - 2^970"])
+def test_an_integer_outside_the_double_range_is_not_finite(value: int) -> None:
+    # Node's JSON.parse reads such an integer as Infinity (2^1024 - 2^970 is the first that rounds to it), which
+    # JSON.stringify writes as null and @integraledger/lcp's canonicalJson refuses.
+    with pytest.raises(ValueError):
+        es_number(value)
+    with pytest.raises(ValueError):
+        js_json({"a": value})
+    assert canonical_or_none({"a": value}) is None
+
+
+def test_an_integer_inside_the_double_range_is_the_double_json_parse_reads() -> None:
+    # Node: JSON.stringify(JSON.parse(text)) for the integer 2^1024 - 2^970 - 1, and for 2^53 + 1.
+    assert es_number(2**1024 - 2**970 - 1) == "1.7976931348623157e+308"
+    assert es_number(2**53 + 1) == "9007199254740992"
 
 
 def test_the_test_signers_ed25519_is_rfc_8032s() -> None:

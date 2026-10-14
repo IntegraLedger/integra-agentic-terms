@@ -308,6 +308,19 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
       expect(code(await openChannel(ABC, voucher.signed, batchEvm))).toBe("signed-not-bound");
       expect(code(await openChannel(ABC, opening, batchCloudflare))).toBe("pairing-not-supported");
     }));
+
+  // RFC 8259 §6 permits no NaN or Infinity in JSON: the hold records the opening as JSON, so an opening holding such a
+  // number is not held, as Python's json.dumps(allow_nan=False) refuses it, where JSON.stringify would write null.
+  it("openChannel declines an opening holding a number that is not finite: signed-not-bound", () =>
+    at(E.now, async () => {
+      const { opening } = await evmHold();
+      const held = unwrap(await openChannel(ABC, { ...(opening as object), extensions: { n: 1 } } as Presented, batchEvm));
+      expect((held.opening as { extensions: unknown }).extensions).toEqual({ n: 1 });
+      for (const n of [NaN, Infinity, -Infinity, new Number(NaN)]) {
+        const out = await openChannel(ABC, { ...(opening as object), extensions: { n } } as Presented, batchEvm);
+        expect(isDeclined(out) && out.decline).toEqual({ code: "signed-not-bound", detail: "The opening is not plain JSON." });
+      }
+    }));
 });
 
 // EB9: the protocol package's EVM buildWithin over EB1's channel with EB2's maxClaimableAmount, its one request
