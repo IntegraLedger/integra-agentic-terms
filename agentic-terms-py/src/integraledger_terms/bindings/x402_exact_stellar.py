@@ -17,7 +17,7 @@ from ._x402 import chosen, filter_of, legal_context_of, read_for
 
 ID = "x402/exact/stellar"
 
-_AMOUNT = re.compile(r"[1-9][0-9]{0,37}")
+_AMOUNT = re.compile(r"0|[1-9][0-9]{0,38}")
 _I128_LIMIT = 1 << 127
 
 
@@ -43,7 +43,7 @@ _THIS = filter_of(_is_this)
 
 
 def _payable(option: Mapping[str, Any]) -> bool:
-    """True when the amount is a positive i128 in decimal and the timeout a positive safe integer."""
+    """True when the amount is an i128 of 0 or more in decimal and the timeout a positive safe integer."""
     amount = option.get("amount")
     timeout = safe_int(option.get("maxTimeoutSeconds"))
     return (

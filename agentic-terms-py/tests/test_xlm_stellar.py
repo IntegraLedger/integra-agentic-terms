@@ -195,6 +195,31 @@ def test_x402_exact_stellar_v3v2_address_credentials_v2() -> None:
     assert payment.auth.preimage_hash == row["expectReference"]["authDigest"]
 
 
+@pytest.mark.parametrize(
+    ("amount", "expect"),
+    [
+        ("0", "stellar/amount-mismatch"),
+        (str(10**38), "stellar/amount-mismatch"),
+        (str(2**127 - 1), "stellar/amount-mismatch"),
+        (str(2**127), "x402/option-malformed"),
+        ("01", "x402/option-malformed"),
+    ],
+)
+def test_x402_exact_stellar_an_option_amount_reads_from_0_to_the_largest_i128(amount: str, expect: str) -> None:
+    """An option's amount is an i128 of 0 or more in decimal, else x402/option-malformed (agreedRefusals), read up to
+    2^127 - 1 (@integraledger/lcp 0.4.0's x402/exact/stellar). An amount that reads reaches the comparison with the
+    simulated transfer, which pays 10000000: stellar/amount-mismatch."""
+    doc = x402_doc({**OPTION, "amount": amount}, F["resource"])
+    choice = {
+        "required": doc,
+        "accepted": doc["accepts"][0],
+        "simulatedXdr": V2["simulatedXdr"],
+        "currentLedger": V2["currentLedger"],
+        "payer": F["payer"],
+    }
+    assert X402_EXACT_STELLAR.build(choice, H) == Refusal(expect)
+
+
 def test_x402_exact_stellar_agreed_refusals() -> None:
     codes = [r["expect"] for r in T["agreedRefusals"]["rows"]]
     assert "stellar/tx-malformed" in codes and "stellar/tx-too-large" in codes
