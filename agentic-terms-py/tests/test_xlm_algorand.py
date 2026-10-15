@@ -647,17 +647,17 @@ def test_x402_exact_algorand_build_refuses_a_payment_entry_longer_than_carrier_r
     assert build_with("x" * 5781) == Refusal("avm/option-malformed")
 
 
-def test_x402_exact_algorand_v3_presented_options_are_bound_without_their_amount_or_timeout() -> None:
-    """V2's payment under each V3.presentedOptions option, whose amount or timeout no build could use: bound reads the
-    signed transaction and gives the row's expectBound, while read serves no such option and build refuses it, as lcp's
-    own test of these rows expects. Under each options row, bound gives that row's refusal."""
+def test_x402_exact_algorand_v3_presented_options_are_refused_by_the_read_filter() -> None:
+    """V2's payment under each V3.presentedOptions option, whose amount or timeout no build could use: bound holds the
+    echoed option to the filter read applies and gives the row's refusal, while read serves no such option and build
+    refuses it. Under each options row, bound gives that row's refusal."""
     payload = {"paymentIndex": A["V2"]["expectPaymentIndex"], "paymentGroup": A["V2"]["expectPaymentGroup"]}
     params = {**F["params"], **{k: int(F["params"][k]) for k in ("firstValid", "minFee", "feePerByte")}}
     rows = A["V3"]["presentedOptions"]
     assert rows
     for row in rows:
         accepted = row["accepted"]
-        assert X402_EXACT_ALGORAND.bound(presented(payload, accepted)) == row["expectBound"], row["case"]
+        assert X402_EXACT_ALGORAND.bound(presented(payload, accepted)) == Refusal(row["expect"]), row["case"]
         doc = x402_doc(accepted, F["resource"])
         assert X402_EXACT_ALGORAND.read(doc) == Refusal("x402/no-payable-option"), row["case"]
         choice = {"required": doc, "accepted": accepted, "payer": F["payer"], "params": params}

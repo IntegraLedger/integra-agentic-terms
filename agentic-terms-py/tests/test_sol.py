@@ -683,9 +683,10 @@ def batch_choice(doc: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def test_x402_batch_settlement_solana_es9_the_timeout_is_compared_only_as_a_number() -> None:
-    """The file holds ES9's rows: fixed.svm.option with the row's maxTimeoutSeconds, or without the member. The filter
-    takes the option when the row names the pairing, and build of the advertised option gives the row's
-    expectAdvertise refusal, or builds when it is null: build refuses the options advertise refuses."""
+    """The file holds ES9's rows: fixed.svm.option with the row's maxTimeoutSeconds, or without the member. read offers
+    the option when the row names the pairing, since the pairing's filter is the one pairingOf names it by, and build of
+    the advertised option gives the row's expectAdvertise refusal, or builds when it is null: build refuses the options
+    advertise refuses."""
     rows = BV.get("ES9", {}).get("rows", [])
     assert rows, "the vector file holds no ES9 rows"
     bare = {k: v for k, v in BS["option"].items() if k != "maxTimeoutSeconds"}
@@ -693,8 +694,10 @@ def test_x402_batch_settlement_solana_es9_the_timeout_is_compared_only_as_a_numb
         option = {**bare, "maxTimeoutSeconds": row["maxTimeoutSeconds"]} if "maxTimeoutSeconds" in row else bare
         label = repr(row.get("maxTimeoutSeconds", "absent"))
         assert option["extra"]["withdrawDelay"] == 3600, label
-        assert (X402_BATCH_SETTLEMENT_SOLANA.id if batch_pairs(option) else None) == row["expectPairing"], label
-        built = BATCH_BINDING.build(batch_choice(x402_doc(with_memo(option), BV["fixed"]["resource"])), H)
+        doc = x402_doc(with_memo(option), BV["fixed"]["resource"])
+        offered = not isinstance(BATCH_BINDING.read(doc), Refusal)
+        assert (X402_BATCH_SETTLEMENT_SOLANA.id if offered else None) == row["expectPairing"], label
+        built = BATCH_BINDING.build(batch_choice(doc), H)
         assert (built.code if isinstance(built, Refusal) else None) == row["expectAdvertise"], label
 
 

@@ -161,13 +161,16 @@ def test_x402_exact_hedera_v2_build_complete_bound() -> None:
 
 
 def test_x402_exact_hedera_v2_presented_options() -> None:
-    """bound reads V2's signed transaction under each presented option of V2.presentedOptions, whose amount or timeout
-    an option for read or build cannot carry: the presented option's amount and timeout are not read."""
+    """V2's signed transaction under each presented option of V2.presentedOptions: bound holds the presented option to
+    the filter read applies, so a row whose option read does not offer gives its expect refusal, and a row whose option
+    read offers gives its expectBound."""
     rows = E["V2"]["presentedOptions"]
-    assert rows, "the vector file holds no V2.presentedOptions rows"
+    assert any("expect" in row for row in rows), "the vector file holds no refused V2.presentedOptions row"
+    assert any("expectBound" in row for row in rows), "the vector file holds no bound V2.presentedOptions row"
     for row in rows:
         p = {**presented(E["V2"]["expectTransactionBase64"]), "accepted": row["accepted"]}
-        assert X402_EXACT_HEDERA.bound(p) == row["expectBound"], row["case"]
+        want = Refusal(row["expect"]) if "expect" in row else row["expectBound"]
+        assert X402_EXACT_HEDERA.bound(p) == want, row["case"]
 
 
 def test_x402_exact_hedera_v1_memo() -> None:
