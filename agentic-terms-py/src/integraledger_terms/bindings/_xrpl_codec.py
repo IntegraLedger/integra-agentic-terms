@@ -10,7 +10,10 @@ blobs as upper-case hex, accounts as classic addresses.
 
 The input must be the canonical serialization of what it decodes to (xrpl.org Binary Format): each object's fields in
 ascending order of type code and then field code with none repeated, no end marker and nothing after the top-level
-object's last field, every nested object and array closed by its end marker, and every array member an object. An
+object's last field, every nested object and array closed by its own end marker, and every array member an object.
+An end marker anywhere else is refused, as rippled 3.4.1 refuses an array end marker in an object
+(src/libxrpl/protocol/STObject.cpp L240-244) and an object end marker as an array's member
+(src/libxrpl/protocol/STArray.cpp L54-58), and so is a field deeper than MAX_DEPTH. An
 AccountID is 20 bytes, except that a UNLModify's Account is written with length 0. A Vector256's length is a
 multiple of 32. An XRP amount has its positive bit set and at most 10^17 drops, except that FeeAmountDelta may be
 negative and non-zero. An issued amount is zero written as 0x80 and seven zero bytes, or has a mantissa from 10^15
@@ -26,7 +29,12 @@ from typing import Any
 
 XRPL_ALPHABET = "rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz"
 _XRPL_INDEX = {c: i for i, c in enumerate(XRPL_ALPHABET)}
-MAX_DEPTH = 64
+# The deepest level a field of a transaction sits at, rippled's limit: its deserializer refuses a field whose depth is
+# above 10 (rippled 3.4.1, src/libxrpl/protocol/STVar.cpp L104-108, the STVar constructor that reads a SerialIter). A
+# top-level field is at level 1, each field inside an STObject or STArray field one level below that field, and an
+# array's member object one level below the array. An end marker that closes its own object or array sits at no level,
+# so an object or array at this level holds no field.
+MAX_DEPTH = 10
 
 # Type codes.
 UINT16, UINT32, UINT64, HASH128, HASH256, AMOUNT, BLOB, ACCOUNT = 1, 2, 3, 4, 5, 6, 7, 8
@@ -555,10 +563,10 @@ _UNL_MODIFY = {(UINT16, 2): (102).to_bytes(2, "big"), (UINT32, 52): (103).to_byt
 
 def _normal_object(r: _Reader, depth: int) -> bytes:
     """An object's fields, written back: each field's header, length prefix and value, and an end marker after each
-    nested object. The fields ascend by type code and then field code; a nested object ends at its end marker, and
-    the top-level object at the end of the bytes."""
-    if depth > MAX_DEPTH:
-        raise Malformed
+    nested object. The object sits at level depth, the top-level object at 0, and each of its fields one level below
+    it: a field past MAX_DEPTH is refused, and so is an array end marker, which closes no object. The fields ascend by
+    type code and then field code; a nested object ends at its end marker, and the top-level object at the end of the
+    bytes."""
     out = bytearray()
     last = 0
     unl_modify = False
@@ -568,6 +576,8 @@ def _normal_object(r: _Reader, depth: int) -> bytes:
         if (type_code, nth) == (OBJECT, 1):
             closed = True
             break
+        if (type_code, nth) == (ARRAY, 1) or depth >= MAX_DEPTH:
+            raise Malformed
         ordinal = type_code << 16 | nth
         if ordinal <= last:
             raise Malformed
@@ -586,9 +596,9 @@ def _normal_object(r: _Reader, depth: int) -> bytes:
 
 def _normal_array(r: _Reader, depth: int) -> bytes:
     """An array's object members up to its end marker, written back: each member's header and value, followed by an
-    object end marker; then the array end marker."""
-    if depth > MAX_DEPTH:
-        raise Malformed
+    object end marker; then the array end marker. The array sits at level depth and each member one level below it: a
+    member past MAX_DEPTH is refused, and so is a member that is not an object, or is an object end marker, which
+    closes no array."""
     out = bytearray()
     closed = False
     while not r.end():
@@ -596,7 +606,7 @@ def _normal_array(r: _Reader, depth: int) -> bytes:
         if (type_code, nth) == (ARRAY, 1):
             closed = True
             break
-        if type_code != OBJECT:
+        if type_code != OBJECT or nth == 1 or depth >= MAX_DEPTH:
             raise Malformed
         out += _header(type_code, nth) + _content(r, type_code, nth, depth, False) + b"\xe1"
     if not closed:

@@ -76,7 +76,8 @@ class Blob:
 def decode_blob(text: object) -> Blob | Refusal:
     """A signed blob of at most 4096 hex digits decoded, with its transaction hash as the ledger computes it:
     SHA-512Half over 54584E00 and the blob, in upper case. The blob must be the canonical serialization of what it
-    decodes to."""
+    decodes to. A blob with a field deeper than _xrpl_codec.MAX_DEPTH (10 levels, as rippled counts them), or with an
+    end marker in an object or array it does not close, is xrpl/blob-malformed, as rippled refuses either."""
     if not is_blob_hex(text):
         return Refusal("xrpl/blob-malformed")
     assert isinstance(text, str)

@@ -1,5 +1,6 @@
 """The XRPL blob decoder takes only the canonical serialization of what it decodes to. Expected values are
-xrpl_canonical.json's, which ripple-binary-codec 2.11.0 gave for each blob, and x402-exact-xrpl.json's."""
+xrpl_canonical.json's, each the outcome of @integraledger/lcp's decodeBlob with ripple-binary-codec 2.11.0, and
+x402-exact-xrpl.json's."""
 
 import json
 from pathlib import Path

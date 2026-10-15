@@ -2,6 +2,7 @@
 say, and each row says whether the caps admit its input."""
 
 import base64
+import hashlib
 import sys
 from types import FrameType
 from typing import Any
@@ -14,14 +15,77 @@ from integraledger_terms.bindings import _algorand, _stellar, _stellar_xdr, _xrp
 V: dict[str, Any] = load("decoder-caps.json")
 
 
-def test_xrpl_caps() -> None:
-    assert _xrpl_codec.MAX_DEPTH == V["xrpl"]["maxDepth"]
-    for row in V["xrpl"]["rows"]:
-        decoded = _xrpl.decode_blob(row["blob"])
-        if row["accept"]:
-            assert isinstance(decoded, _xrpl.Blob), row["name"]
+def xrpl_nesting(blob: str) -> tuple[int, str, list[str]]:
+    """A blob's deepest field level, that field's kind (field, object or array; the first at that level), and its
+    stray end markers, read over its field headers as the file's about counts them: a top-level field sits at level 1,
+    and every other field one level below the objects and arrays open around it. An object or array field opens a
+    level; an end marker closes the innermost one when it is that one's own (ObjectEndMarker an object's,
+    ArrayEndMarker an array's) and sits at no level; any other end marker is stray: it counts as a field and opens a
+    level as its type's fields do. Every other value is read as a leaf."""
+    kinds = {_xrpl_codec.OBJECT: "object", _xrpl_codec.ARRAY: "array"}
+    r = _xrpl_codec._Reader(bytes.fromhex(blob))
+    opened: list[int] = []
+    deepest, deepest_kind = 0, ""
+    strays = []
+    while not r.end():
+        type_code, nth = r.field()
+        if opened and (type_code, nth) == (opened[-1], 1):
+            opened.pop()
+            continue
+        if type_code in kinds and nth == 1:
+            strays.append(_xrpl_codec._key(type_code, nth))
+        if len(opened) + 1 > deepest:
+            deepest, deepest_kind = len(opened) + 1, kinds.get(type_code, "field")
+        if type_code in kinds:
+            opened.append(type_code)
         else:
-            assert decoded == Refusal("xrpl/blob-malformed"), row["name"]
+            _xrpl_codec._value(r, type_code, nth, 0)
+    assert not opened, "every object and array the blob opens is closed"
+    return deepest, deepest_kind, strays
+
+
+def test_xrpl_caps() -> None:
+    """Every XRPL row, every member read: the walk of its field headers gives its depth and its stray end marker, if
+    it has one; accept is whether that depth is within maxDepth with no stray marker; decode_blob gives that verdict;
+    and a row's hash is SHA-512Half over 54584E00 and its blob (Python's hashlib), the decoded blob's hash where the
+    row is accepted. The rows hold a field, an empty object and an empty array at maxDepth and one level past it, and
+    each end marker stray."""
+    cap = V["xrpl"]["maxDepth"]
+    assert _xrpl_codec.MAX_DEPTH == cap
+    seen: set[object] = set()
+    for row in V["xrpl"]["rows"]:
+        label = f"{row['name']}: {row['case']}"
+        depth, kind, strays = xrpl_nesting(row["blob"])
+        assert (depth, strays) == (row["depth"], [row["stray"]] if "stray" in row else []), label
+        assert row["accept"] is (depth <= cap and not strays), label
+        decoded = _xrpl.decode_blob(row["blob"])
+        if "hash" in row:
+            digest = hashlib.sha512(bytes.fromhex("54584E00" + row["blob"])).digest()[:32]
+            assert digest.hex().upper() == row["hash"], label
+        if row["accept"]:
+            assert isinstance(decoded, _xrpl.Blob) and decoded.hash == row.get("hash", decoded.hash), label
+        else:
+            assert decoded == Refusal("xrpl/blob-malformed"), label
+        seen.update(strays or [(kind, depth - cap)])
+    wanted: set[object] = {(at, past) for at in ("field", "object", "array") for past in (0, 1)}
+    assert wanted | {"ArrayEndMarker", "ObjectEndMarker"} <= seen, seen
+
+
+def test_xrpl_an_array_at_max_depth_holds_no_member() -> None:
+    """An array's member object sits one level below the array (the file's about). So a row whose deepest field is an
+    empty Memos array at maxDepth is accepted, and the same blob with one empty Memo object as that array's member, an
+    object at maxDepth + 1, is xrpl/blob-malformed, as rippled refuses a field past its limit (rippled 3.4.1,
+    src/libxrpl/protocol/STVar.cpp L104-108)."""
+    cap = V["xrpl"]["maxDepth"]
+    rows = [row for row in V["xrpl"]["rows"] if xrpl_nesting(row["blob"])[:2] == (cap, "array")]
+    assert rows, "decoder-caps.json holds no XRPL row whose deepest field is an array at maxDepth"
+    for row in rows:
+        assert isinstance(_xrpl.decode_blob(row["blob"]), _xrpl.Blob), row["name"]
+        data = bytes.fromhex(row["blob"])
+        assert data.count(b"\xf9\xf1") == 1, row["name"]
+        member = data.replace(b"\xf9\xf1", b"\xf9\xea\xe1\xf1").hex().upper()
+        assert xrpl_nesting(member)[:2] == (cap + 1, "object"), row["name"]
+        assert _xrpl.decode_blob(member) == Refusal("xrpl/blob-malformed"), row["name"]
 
 
 def test_msgpack_caps() -> None:
