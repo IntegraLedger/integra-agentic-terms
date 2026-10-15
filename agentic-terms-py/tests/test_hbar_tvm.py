@@ -838,6 +838,27 @@ def test_x402_exact_tvm_a_message_s_value_and_extra_flags_are_read_in_their_shor
         assert BINDING.bound(presented(boc)) == expect, name
 
 
+# The W5 action's send mode is read as TON's action phase takes it (ton-blockchain/ton crypto/block/transaction.cpp,
+# try_action_send_msg): TON's transaction emulator sends V2's settlement's Jetton transfer with exactly these 48 of the
+# 256 modes, refuses the others without +2 and skips those with it, so nothing is sent. lcp's exactTvm.bound binds H
+# for the 48 and answers tvm/not-jetton-transfer for the 208.
+_SENDS = {m + 16 * k for m in range(4) for k in range(12)}
+
+
+def test_x402_exact_tvm_the_w5_action_s_send_mode_is_read_as_ton_takes_it() -> None:
+    assert len(_SENDS) == 48 and max(_SENDS) == 179
+    sent = refused = 0
+    for mode in range(256):
+        out = BINDING.bound(presented(_settlement(mode=mode)))
+        if mode in _SENDS:
+            assert out == F["H"], mode
+            sent += 1
+        else:
+            assert out == Refusal("tvm/not-jetton-transfer"), mode
+            refused += 1
+    assert (sent, refused) == (48, 208)
+
+
 def _proofs(c: Cell, levels: int) -> Cell:
     """The cell under levels Merkle proofs (exotic type 3: the child's level-0 hash and depth)."""
     for _ in range(levels):

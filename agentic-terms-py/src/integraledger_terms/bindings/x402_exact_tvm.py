@@ -16,6 +16,7 @@ from ._ton_cell import Builder, Cell, Malformed, parse_boc, serialize_boc
 from ._ton_tlb import (
     MAINNET,
     Address,
+    TonConfiguration,
     is_state_init,
     load_address,
     load_maybe_address,
@@ -37,6 +38,10 @@ COINS_LIMIT = 1 << 120
 UINT32_LIMIT = 1 << 32
 SIGNATURE_BITS = 512
 SEND_MODE = 3
+# The send modes TON's action phase sends a message with (try_action_send_msg): +16 is bounce-on-fail and is set aside
+# from global version 4, and the rest must be +1, +2, +32, +64 and +128 alone, never +64 with +128. Any other mode is
+# refused, or skipped under +2 from global version 13: the message is not sent either way.
+SEND_MODES = 0xE3
 
 _NETWORK = re.compile(r"tvm:(-?(?:0|[1-9][0-9]{0,15}))")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
@@ -121,9 +126,10 @@ def _jetton_payload(body: Cell) -> Cell | None | Refusal:
         return Refusal("tvm/not-jetton-transfer")
 
 
-def _send_message(actions: Cell) -> Cell | Refusal:
-    """The outgoing message of an action list holding exactly one action_send_msg behind an empty prev. An exotic
-    action list is tvm/boc-malformed."""
+def _send_message(actions: Cell) -> tuple[int, Cell] | Refusal:
+    """The send mode and the outgoing message of an action list holding exactly one action_send_msg behind an empty
+    prev (action_send_msg#0ec3c86d mode:(## 8) out_msg:^(MessageRelaxed Any)). An exotic action list is
+    tvm/boc-malformed."""
     if actions.exotic:
         return Refusal("tvm/boc-malformed")
     if actions.length != 40 or len(actions.refs) != 2:
@@ -131,9 +137,16 @@ def _send_message(actions: Cell) -> Cell | Refusal:
     prev = actions.refs[0]
     if prev.length != 0 or prev.refs:
         return Refusal("tvm/actions")
-    if actions.slice().uint(32) != OP_SEND_MSG:
+    s = actions.slice()
+    if s.uint(32) != OP_SEND_MSG:
         return Refusal("tvm/actions")
-    return actions.refs[1]
+    return s.uint(8), actions.refs[1]
+
+
+def sends_with(mode: int, config: TonConfiguration) -> bool:
+    """True when TON's action phase sends a message with this mode at the configuration (SEND_MODES)."""
+    m = mode & ~16 if config.global_version >= 4 else mode
+    return m & ~SEND_MODES == 0 and m & 0xC0 != 0xC0
 
 
 def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
@@ -143,8 +156,9 @@ def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
     TON's action phase sends it (message_of), at mainnet's configuration: a source of addr_none or an addr_std with no
     anycast (the outgoing message's the W5 wallet's own), a destination TON sends to, a value and an extra_flags of at
     most 3 each in its shortest form, no extra currency, its state init validated as TON validates it, a referenced
-    body that is an ordinary cell with nothing after it, and at most two nested Merkle proofs or updates. The
-    settlement message TON would not send is tvm/boc-malformed, and the outgoing one tvm/not-jetton-transfer. The
+    body that is an ordinary cell with nothing after it, and at most two nested Merkle proofs or updates; the W5
+    action's send mode is one TON sends with (sends_with). The settlement message TON would not send is
+    tvm/boc-malformed, and the outgoing one, or a send mode TON refuses or skips, tvm/not-jetton-transfer. The
     settlement message's source names the account that relays it, which the bag cannot show: one naming another
     account is read, and TON sends it when that account relays it."""
     root = root_of(settlement_boc)
@@ -170,7 +184,10 @@ def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
     send = _send_message(actions)
     if isinstance(send, Refusal):
         return send
-    out = message_of(send, message.dest, MAINNET)
+    mode, sent = send
+    if not sends_with(mode, MAINNET):
+        return Refusal("tvm/not-jetton-transfer")
+    out = message_of(sent, message.dest, MAINNET)
     if out is None:
         return Refusal("tvm/not-jetton-transfer")
     payload = _jetton_payload(out.body)

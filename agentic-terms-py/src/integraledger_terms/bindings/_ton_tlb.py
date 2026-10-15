@@ -18,7 +18,8 @@ MAX_MERKLE_DEPTH = 2
 @dataclass(frozen=True, slots=True)
 class TonConfiguration:
     """The network configuration TON's message rules rest on, for one network.
-    - global_version: ConfigParam 8, capabilities#c4 version:uint32. From 10, TON's action phase refuses an anycast
+    - global_version: ConfigParam 8, capabilities#c4 version:uint32. From 4, TON's action phase takes a send mode's
+      +16 as bounce-on-fail (bounce_on_fail_enabled); from 10, it refuses an anycast
       address (disable_anycast) and holds a message's extra currencies to max_msg_extra_currencies
       (extra_currency_v2); from 12, a message's extra_flags may set its two low bits only.
     - workchains: the workchains a message may name: the masterchain (-1), and ConfigParam 12's workchains that are
