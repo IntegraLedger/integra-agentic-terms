@@ -80,7 +80,8 @@ class Carried:
 
 
 def carrier(payload: object) -> Carried | Refusal:
-    """The hash in paymentGroup[paymentIndex]'s note, decoded as a signed asset transfer."""
+    """The hash in paymentGroup[paymentIndex]'s note, the entry read as the x402 path reads it (_algorand.read_signed):
+    as one signed asset transfer that algod and the x402 facilitator both read, and read alike."""
     if not is_object(payload) or not is_list(payload.get("paymentGroup")):
         return Refusal("avm/txn-malformed")
     group = payload["paymentGroup"]
@@ -97,9 +98,9 @@ def carrier(payload: object) -> Carried | Refusal:
         return Refusal("avm/txn-malformed")
     try:
         txn = _algorand.read_signed(data)
-    except (_algorand.Malformed, RecursionError):
+    except _algorand.Malformed:
         return Refusal("avm/txn-malformed")
-    if txn.kind != "axfer":
+    if not isinstance(txn, _algorand.SignedRead):
         return Refusal("avm/not-axfer")
     if len(txn.note) > MAX_NOTE:
         return Refusal("avm/txn-malformed")
@@ -144,10 +145,8 @@ class X402ExactAlgorand:
     def build(self, choice: Json, h: AtrHash) -> AvmUnsigned | Refusal:
         """The asset transfer with the hash's LCP string as its note, and the fee payer's zero payment first when the
         option names a fee payer. The suggested parameters' genesis id is written as each transaction's gen, a msgpack
-        string, so one holding a lone surrogate, which UTF-8 cannot encode, is avm/option-malformed, and so is one whose
-        UTF-8 is longer than 200 bytes and begins with the byte-order mark, which algosdk's decoder drops: each entry
-        it writes is read back with _algorand.unpack, the msgpack read carrier makes before it reads the transaction,
-        so build writes no string bound refuses."""
+        string, so one holding a lone surrogate, which UTF-8 cannot encode, is avm/option-malformed, checked before the
+        genesis hash; any other genesis id, a leading byte-order mark included, is written as given."""
         if not is_object(choice):
             return Refusal("avm/option-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")

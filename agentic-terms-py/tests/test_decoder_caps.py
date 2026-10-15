@@ -4,7 +4,7 @@ say, and each row says whether the caps admit its input."""
 import base64
 from typing import Any
 
-from support import load, msgpack_strings
+from support import Msgpack, load, msgpack_longer_forms, msgpack_strings, msgpack_value
 
 from integraledger_terms import Refusal
 from integraledger_terms.bindings import _algorand, _stellar, _stellar_xdr, _xrpl, _xrpl_codec
@@ -33,23 +33,37 @@ def test_msgpack_caps() -> None:
         assert accepted is row["accept"], row["name"]
 
 
+def msgpack_row(row: dict[str, Any]) -> Msgpack | None:
+    return msgpack_value(bytes.fromhex(row["hex"]))
+
+
 def test_msgpack_string_rows() -> None:
-    """The msgpack rows that are one value holding a string with a byte outside ASCII, read with
-    support.msgpack_strings: _algorand reads each as the row's accept says, a string that is not well-formed UTF-8 or
-    that is longer than 200 bytes and begins with the byte-order mark refused."""
+    """The msgpack rows that are one value holding a str with a byte outside ASCII, read with support.msgpack_value. The
+    caps judge no string's bytes: the Algorand reader judges each string by the member it fills. So each row is
+    admitted, as its accept says, whether or not its strings are UTF-8."""
     rows = [
         row
         for row in V["msgpack"]["rows"]
-        if any(max(s, default=0) >= 0x80 for s in msgpack_strings(bytes.fromhex(row["hex"])) or [])
+        if (value := msgpack_row(row)) is not None and any(max(s, default=0) >= 0x80 for s, _ in msgpack_strings(value))
     ]
     assert rows, "decoder-caps.json holds no msgpack row with a string outside ASCII"
     for row in rows:
-        try:
-            _algorand.unpack(bytes.fromhex(row["hex"]))
-            accepted = True
-        except _algorand.Malformed:
-            accepted = False
-        assert accepted is row["accept"], row["name"]
+        assert row["accept"] is True, row["name"]
+        _algorand.unpack(bytes.fromhex(row["hex"]))
+
+
+def test_msgpack_rows_in_longer_forms() -> None:
+    """The msgpack rows that are one value written otherwise than in its shortest form with distinct str keys (a map key
+    written twice, a key that is not a str, a length, count or integer in a longer format than it needs), read with
+    support.msgpack_value. The caps judge no key or format: the Algorand reader reads each as algod and the facilitator
+    read it. So each row is admitted, as its accept says."""
+    rows = [
+        row for row in V["msgpack"]["rows"] if (value := msgpack_row(row)) is not None and msgpack_longer_forms(value)
+    ]
+    assert rows, "decoder-caps.json holds no msgpack row written in a longer form"
+    for row in rows:
+        assert row["accept"] is True, row["name"]
+        _algorand.unpack(bytes.fromhex(row["hex"]))
 
 
 def test_scval_caps() -> None:

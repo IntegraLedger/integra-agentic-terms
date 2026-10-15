@@ -213,51 +213,133 @@ class StubBinding:
         return answer
 
 
-# msgpack formats by their first byte (the msgpack specification): values of a fixed size after it; bin and str, a
-# length and then its bytes; ext, a length, a type byte and the bytes; array 16/32 and map 16/32, a count of elements or
-# of key-value pairs.
-_MSGPACK_FIXED = {0xCA: 4, 0xCB: 8, 0xCC: 1, 0xCD: 2, 0xCE: 4, 0xCF: 8, 0xD0: 1, 0xD1: 2, 0xD2: 4, 0xD3: 8,
-                  0xD4: 2, 0xD5: 3, 0xD6: 5, 0xD7: 9, 0xD8: 17}  # fmt: skip
-_MSGPACK_SIZED = {0xC4: 1, 0xC5: 2, 0xC6: 4, 0xD9: 1, 0xDA: 2, 0xDB: 4, 0xC7: 1, 0xC8: 2, 0xC9: 4}
-_MSGPACK_COUNTED = {0xDC: (2, 1), 0xDD: (4, 1), 0xDE: (2, 2), 0xDF: (4, 2)}
-_MSGPACK_STR = (0xD9, 0xDA, 0xDB)
+# msgpack formats by their first byte (the msgpack specification): str and bin, a length and then its bytes; values of
+# a fixed size after it; ext, a length, a type byte and the bytes; array 16/32 and map 16/32, a count.
+_MSGPACK_STR = {0xD9: 1, 0xDA: 2, 0xDB: 4}
+_MSGPACK_BIN = {0xC4: 1, 0xC5: 2, 0xC6: 4}
+_MSGPACK_UINT = {0xCC: 1, 0xCD: 2, 0xCE: 4, 0xCF: 8}
+_MSGPACK_INT = {0xD0: 1, 0xD1: 2, 0xD2: 4, 0xD3: 8}
+_MSGPACK_FIXED = {0xCA: 4, 0xCB: 8, 0xD4: 2, 0xD5: 3, 0xD6: 5, 0xD7: 9, 0xD8: 17}
+_MSGPACK_EXT = {0xC7: 1, 0xC8: 2, 0xC9: 4}
+_MSGPACK_ARRAY = {0xDC: 2, 0xDD: 4}
+_MSGPACK_MAP = {0xDE: 2, 0xDF: 4}
+# Each str, bin, array and map format, with the length or count below which a shorter format holds it.
+_MSGPACK_LONGER = {0xD9: 32, 0xDA: 256, 0xDB: 65536, 0xC5: 256, 0xC6: 65536, 0xDC: 16, 0xDD: 65536, 0xDE: 16,
+                   0xDF: 65536}  # fmt: skip
 
 
-def msgpack_strings(data: bytes) -> list[bytes] | None:
-    """The bytes of every string in data (fixstr, str 8, str 16 or str 32; a map key or a value, at any depth), read
-    from the msgpack specification's formats; None unless data is exactly one msgpack value whose every declared length
-    and count fits in its bytes."""
-    strings: list[bytes] = []
-    at, values = 0, 1
-    while values:
-        if at >= len(data):
-            return None
-        b, at, values = data[at], at + 1, values - 1
-        if b <= 0x7F or b >= 0xE0 or b in (0xC0, 0xC2, 0xC3):
-            continue
-        if b <= 0x9F:
-            values += (b & 0x0F) * (2 if b <= 0x8F else 1)
-            continue
-        if b <= 0xBF:
-            length = b & 0x1F
-        elif b in _MSGPACK_FIXED:
-            length = _MSGPACK_FIXED[b]
-        elif b in _MSGPACK_SIZED or b in _MSGPACK_COUNTED:
-            width, per = _MSGPACK_COUNTED.get(b, (_MSGPACK_SIZED.get(b, 0), 0))
-            if at + width > len(data):
-                return None
-            length, at = int.from_bytes(data[at : at + width], "big"), at + width
-            if per:
-                values += per * length
-                if values > len(data) - at:
-                    return None
-                continue
-            length += 1 if b in (0xC7, 0xC8, 0xC9) else 0
-        else:
-            return None
-        if at + length > len(data):
-            return None
-        if b <= 0xBF or b in _MSGPACK_STR:
-            strings.append(data[at : at + length])
-        at += length
-    return strings if at == len(data) else None
+@dataclass(frozen=True)
+class Msgpack:
+    """One msgpack value read from the specification's formats: head is its first byte, size a str's or bin's length
+    or an array's or map's count, text a str's or bin's bytes, number an integer's value, items an array's elements,
+    and pairs a map's keys and values in the order written."""
+
+    head: int
+    size: int = 0
+    text: bytes | None = None
+    number: int | None = None
+    items: tuple["Msgpack", ...] = ()
+    pairs: tuple[tuple["Msgpack", "Msgpack"], ...] = ()
+
+    @property
+    def is_str(self) -> bool:
+        return 0xA0 <= self.head <= 0xBF or self.head in _MSGPACK_STR
+
+
+def msgpack_value(data: bytes) -> Msgpack | None:
+    """data read as one msgpack value from the specification's formats, without the package's reader; None unless data
+    is exactly one value whose every declared length and count fits in its bytes."""
+    at = 0
+
+    def take(n: int) -> bytes:
+        nonlocal at
+        if n > len(data) - at:
+            raise ValueError("past the end")
+        at += n
+        return data[at - n : at]
+
+    def number(width: int, signed: bool = False) -> int:
+        return int.from_bytes(take(width), "big", signed=signed)
+
+    def value() -> Msgpack:
+        b = take(1)[0]
+        if b <= 0x7F or b >= 0xE0:
+            return Msgpack(b, number=b if b <= 0x7F else b - 0x100)
+        if b <= 0x8F or b in _MSGPACK_MAP:
+            count = b & 0x0F if b <= 0x8F else number(_MSGPACK_MAP[b])
+            if 2 * count > len(data) - at:
+                raise ValueError("past the end")
+            return Msgpack(b, count, pairs=tuple((value(), value()) for _ in range(count)))
+        if b <= 0x9F or b in _MSGPACK_ARRAY:
+            count = b & 0x0F if b <= 0x9F else number(_MSGPACK_ARRAY[b])
+            if count > len(data) - at:
+                raise ValueError("past the end")
+            return Msgpack(b, count, items=tuple(value() for _ in range(count)))
+        if b <= 0xBF or b in _MSGPACK_STR or b in _MSGPACK_BIN:
+            length = b & 0x1F if b <= 0xBF else number({**_MSGPACK_STR, **_MSGPACK_BIN}[b])
+            return Msgpack(b, length, text=take(length))
+        if b in _MSGPACK_UINT or b in _MSGPACK_INT:
+            return Msgpack(b, number=number({**_MSGPACK_UINT, **_MSGPACK_INT}[b], b in _MSGPACK_INT))
+        if b in _MSGPACK_FIXED:
+            take(_MSGPACK_FIXED[b])
+        elif b in _MSGPACK_EXT:
+            take(number(_MSGPACK_EXT[b]) + 1)
+        elif b not in (0xC0, 0xC2, 0xC3):
+            raise ValueError("no such format")
+        return Msgpack(b)
+
+    try:
+        read = value()
+    except (ValueError, RecursionError):
+        return None
+    return read if at == len(data) else None
+
+
+def msgpack_strings(value: Msgpack) -> list[tuple[bytes, bytes | None]]:
+    """Every str in value, at any depth, each with the key it is the value of: that key's bytes when the key is a str or
+    a bin, None for a str that is itself a map key, and b"" for any other place (an array's element, the value itself,
+    or the value of a key of another format)."""
+    out: list[tuple[bytes, bytes | None]] = []
+
+    def walk(v: Msgpack, under: bytes | None) -> None:
+        if v.is_str and v.text is not None:
+            out.append((v.text, under))
+        for item in v.items:
+            walk(item, b"")
+        for key, inner in v.pairs:
+            walk(key, None)
+            walk(inner, key.text if key.text is not None else b"")
+
+    walk(value, b"")
+    return out
+
+
+def _msgpack_int_head(n: int) -> int:
+    """The first byte of the shortest format that holds the integer n."""
+    if -32 <= n < 0x80:
+        return n & 0xFF
+    for width, heads in zip((1, 2, 4), ((0xCC, 0xD0), (0xCD, 0xD1), (0xCE, 0xD2))):
+        if -(1 << (8 * width - 1)) <= n < 1 << (8 * width):
+            return heads[0] if n >= 0 else heads[1]
+    return 0xCF if n >= 0 else 0xD3
+
+
+def msgpack_longer_forms(value: Msgpack) -> list[str]:
+    """Each place where value is written otherwise than in its shortest form with distinct str keys: a length, count or
+    integer in a longer format than it needs, a map key written twice in one map, and a map key that is not a str."""
+    out: list[str] = []
+
+    def walk(v: Msgpack) -> None:
+        if v.head in _MSGPACK_LONGER and v.size < _MSGPACK_LONGER[v.head]:
+            out.append(f"a length or count of {v.size} in format {v.head:02x}")
+        if v.number is not None and v.head != _msgpack_int_head(v.number):
+            out.append(f"the integer {v.number} in format {v.head:02x}")
+        keys = [(k.head, k.text, k.number) for k, _ in v.pairs]
+        if len(set(keys)) < len(keys):
+            out.append("a map key written twice")
+        out.extend(f"a map key in format {k.head:02x}" for k, _ in v.pairs if not k.is_str)
+        for item in (*v.items, *(x for pair in v.pairs for x in pair)):
+            walk(item)
+
+    walk(value)
+    return out
