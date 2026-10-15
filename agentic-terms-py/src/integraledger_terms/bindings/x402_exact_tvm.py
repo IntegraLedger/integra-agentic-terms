@@ -15,6 +15,7 @@ from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_stri
 from ._ton_cell import Builder, Cell, Malformed, parse_boc, serialize_boc
 from ._ton_tlb import (
     MAINNET,
+    TESTNET,
     Address,
     TonConfiguration,
     is_state_init,
@@ -41,11 +42,12 @@ SEND_MODE = 3
 # The send modes TON's action phase sends a message with (try_action_send_msg): +16 is bounce-on-fail and is set aside
 # from global version 4, and the rest must be +1, +2, +32, +64 and +128 alone, never +64 with +128. Any other mode is
 # refused, or skipped under +2 from global version 13: the message is not sent either way.
-SEND_MODES = 0xE3
+_SEND_MODES = 0xE3
 
-_NETWORK = re.compile(r"tvm:(-?(?:0|[1-9][0-9]{0,15}))")
+# The two networks the pairing serves, as x402's TON scheme names them, each with the configuration its messages are
+# read at: tvm:-239 (mainnet) and tvm:-3 (testnet).
+_CONFIGURATIONS: Mapping[str, TonConfiguration] = {"tvm:-239": MAINNET, "tvm:-3": TESTNET}
 _DECIMAL = re.compile(r"[0-9]{1,78}")
-_MAX_SAFE_INTEGER = 2**53 - 1
 
 
 def lcp_comment(h: AtrHash) -> Cell | Refusal:
@@ -143,28 +145,32 @@ def _send_message(actions: Cell) -> tuple[int, Cell] | Refusal:
     return s.uint(8), actions.refs[1]
 
 
-def sends_with(mode: int, config: TonConfiguration) -> bool:
-    """True when TON's action phase sends a message with this mode at the configuration (SEND_MODES)."""
+def _sends_with(mode: int, config: TonConfiguration) -> bool:
+    """True when TON's action phase sends a message with this mode at the configuration (_SEND_MODES)."""
     m = mode & ~16 if config.global_version >= 4 else mode
-    return m & ~SEND_MODES == 0 and m & 0xC0 != 0xC0
+    return m & ~_SEND_MODES == 0 and m & 0xC0 != 0xC0
 
 
-def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
+def tvm_carrier(settlement_boc: object, network: object) -> tuple[AtrHash, Cell] | Refusal:
     """The hash and the forward payload of the signed request in a settlement bag of cells: an internal message whose
     body is a W5 internal_signed request with exactly one action_send_msg behind an empty list, carrying a Jetton
     transfer whose forward payload is a reference to a text comment holding an LCP string. Each message is read as
-    TON's action phase sends it (message_of), at mainnet's configuration: a source of addr_none or an addr_std with no
+    TON's action phase sends it (message_of), at the configuration held for the network: a source of addr_none or an addr_std with no
     anycast (the outgoing message's the W5 wallet's own), a destination TON sends to, a value and an extra_flags of at
     most 3 each in its shortest form, no extra currency, its state init validated as TON validates it, a referenced
     body that is an ordinary cell with nothing after it, and at most two nested Merkle proofs or updates; the W5
-    action's send mode is one TON sends with (sends_with). The settlement message TON would not send is
+    action's send mode is one TON sends with (_sends_with). The settlement message TON would not send is
     tvm/boc-malformed, and the outgoing one, or a send mode TON refuses or skips, tvm/not-jetton-transfer. The
     settlement message's source names the account that relays it, which the bag cannot show: one naming another
-    account is read, and TON sends it when that account relays it."""
+    account is read, and TON sends it when that account relays it. The network is tvm:-239 (mainnet) or tvm:-3
+    (testnet), and any other is tvm/network-malformed."""
+    config = _CONFIGURATIONS.get(network) if isinstance(network, str) else None
+    if config is None:
+        return Refusal("tvm/network-malformed")
     root = root_of(settlement_boc)
     if isinstance(root, Refusal):
         return root
-    message = message_of(root, None, MAINNET)
+    message = message_of(root, None, config)
     if message is None:
         return Refusal("tvm/boc-malformed")
     try:
@@ -185,9 +191,9 @@ def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
     if isinstance(send, Refusal):
         return send
     mode, sent = send
-    if not sends_with(mode, MAINNET):
+    if not _sends_with(mode, config):
         return Refusal("tvm/not-jetton-transfer")
-    out = message_of(sent, message.dest, MAINNET)
+    out = message_of(sent, message.dest, config)
     if out is None:
         return Refusal("tvm/not-jetton-transfer")
     payload = _jetton_payload(out.body)
@@ -208,7 +214,8 @@ def _decimal_below(value: object, limit: int) -> int | None:
 
 def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """The option's scheme, network, asset, payTo and extra: what bound requires of the option a presented payment
-    echoes. It reads no amount and no timeout."""
+    echoes. The network is one of the two the pairing serves (_CONFIGURATIONS), whose configuration the messages are
+    read at; any other tvm: network is tvm/network-malformed. It reads no amount and no timeout."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = o.get("network")
@@ -221,8 +228,7 @@ def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("x402/option-not-this-pairing")
     if is_object(extra) and "paymentFlow" in extra and extra["paymentFlow"] != "authorization":
         return Refusal("x402/option-not-this-pairing")
-    m = _NETWORK.fullmatch(network)
-    if m is None or abs(int(m.group(1))) > _MAX_SAFE_INTEGER:
+    if network not in _CONFIGURATIONS:
         return Refusal("tvm/network-malformed")
     if raw_address(o.get("asset")) is None or raw_address(o.get("payTo")) is None:
         return Refusal("tvm/option-malformed")
@@ -237,7 +243,7 @@ def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
 
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """_presentable, then the amount as a Jetton amount below 2^120 and maxTimeoutSeconds a positive safe integer, which
-    build writes into the request: what read and build require of an exact option on a tvm: network."""
+    build writes into the request: what read and build require of an exact option on the tvm:-239 or tvm:-3 network."""
     p = _presentable(o)
     if p is not True:
         return p
@@ -382,7 +388,7 @@ class X402ExactTvm:
         boc = p[1].get("settlementBoc")
         if not isinstance(boc, str):
             return Refusal("x402/payload-malformed")
-        carried = tvm_carrier(boc)
+        carried = tvm_carrier(boc, p[0]["network"])
         if isinstance(carried, Refusal):
             return carried
         if not _carries(p[0], carried[1]):

@@ -34,6 +34,9 @@ class TonConfiguration:
 # Mainnet's configuration: the one @ton/sandbox 0.45.0 ships (defaultConfig, configuration seqno 92871331, ConfigParam
 # 19 global id -239), read offline. ConfigParam 12 holds one workchain, 0.
 MAINNET = TonConfiguration(global_version=15, workchains=frozenset({-1, 0}), max_msg_extra_currencies=0)
+# Testnet's configuration. Testnet's own values are not read: these are mainnet's, from MAINNET's source, since no
+# offline source pinned by seqno holds testnet's ConfigParams 8, 12 and 43.
+TESTNET = TonConfiguration(global_version=15, workchains=frozenset({-1, 0}), max_msg_extra_currencies=0)
 
 
 @dataclass(frozen=True, slots=True)

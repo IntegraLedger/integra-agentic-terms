@@ -4,6 +4,7 @@ one), and the buyer half's vector rows. Expected values are x402-exact-tvm.json'
 import base64
 import json
 import math
+import re
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -15,7 +16,7 @@ from integraledger_terms import X402_EXACT_TVM as BINDING
 from integraledger_terms import Declined, Refusal, _gate
 from integraledger_terms.bindings._ton_cell import Builder, Cell, Malformed, crc32c, parse_boc
 from integraledger_terms.bindings._ton_tlb import raw_address
-from integraledger_terms.bindings.x402_exact_tvm import OP_SEND_MSG, boc_of, lcp_comment, root_of
+from integraledger_terms.bindings.x402_exact_tvm import OP_SEND_MSG, boc_of, lcp_comment, root_of, tvm_carrier
 
 import ed25519
 from breadth import Pairing, build_and_sign, link_calls, plant, x402_doc
@@ -857,6 +858,58 @@ def test_x402_exact_tvm_the_w5_action_s_send_mode_is_read_as_ton_takes_it() -> N
             assert out == Refusal("tvm/not-jetton-transfer"), mode
             refused += 1
     assert (sent, refused) == (48, 208)
+
+
+def _signed() -> dict[str, Any]:
+    """V2's payment, from build and complete with the vector seed."""
+    unsigned = BINDING.build(tvm_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
+    assert isinstance(signed, dict)
+    return signed
+
+
+def _offered(option: dict[str, Any]) -> dict[str, Any]:
+    return tvm_choice(option, required={"x402Version": 2, "resource": F["resource"], "accepts": [option]})
+
+
+# The pairing serves the two networks x402's TON scheme names, tvm:-239 (mainnet) and tvm:-3 (testnet), and reads
+# each message at the configuration held for the network. lcp's exactTvm answers each case the same: any other tvm:
+# network is tvm/network-malformed, so read finds no payable option, and a tvm:-3 option builds V2's request and binds
+# H, with the carrier tvm:-239 gives.
+def test_x402_exact_tvm_the_option_s_network_is_one_of_the_two_the_pairing_serves() -> None:
+    signed = _signed()
+    boc = signed["payload"]["settlementBoc"]
+    for network in ("tvm:-1", "tvm:0", "tvm:698", "tvm:-2390"):
+        option = {**F["placed"], "network": network}
+        assert BINDING.build(_offered(option), F["H"]) == Refusal("tvm/network-malformed"), network
+        assert BINDING.bound({**signed, "accepted": option}) == Refusal("tvm/network-malformed"), network
+        assert BINDING.read({**TVM.doc, "accepts": [option]}) == Refusal("x402/no-payable-option"), network
+    for given in ("tvm:-1", "tvm:0", "tvm:698", "tvm:-2390", "eip155:1", None):
+        assert tvm_carrier(boc, given) == Refusal("tvm/network-malformed"), given
+    testnet = {**F["placed"], "network": "tvm:-3"}
+    unsigned = BINDING.build(_offered(testnet), F["H"])
+    assert not isinstance(unsigned, Refusal) and unsigned.request["hash"].hex() == V["V2"]["expectRequestHash"]
+    assert BINDING.bound({**signed, "accepted": testnet}) == F["H"]
+    comment = lcp_comment(F["H"])
+    assert isinstance(comment, Cell)
+    for network in ("tvm:-239", "tvm:-3"):
+        carried = tvm_carrier(boc, network)
+        assert isinstance(carried, tuple) and carried[0] == F["H"] and carried[1].equals(comment), network
+
+
+# The agreedRefusals option rows whose network is tvm: and a global id other than the two the pairing serves.
+def test_x402_exact_tvm_agreed_refusals_of_networks_the_pairing_does_not_serve() -> None:
+    def other(option: Any) -> bool:
+        network = option.get("network") if isinstance(option, dict) else None
+        return isinstance(network, str) and re.fullmatch(r"tvm:-?[0-9]+", network) is not None and network not in ("tvm:-239", "tvm:-3")
+
+    rows = [r for r in V["agreedRefusals"]["rows"] if other(r.get("option"))]
+    assert len(rows) >= 1
+    signed = _signed()
+    for row in rows:
+        assert BINDING.build(_offered(row["option"]), F["H"]) == Refusal(row["expect"]), row["case"]
+        assert BINDING.bound({**signed, "accepted": row["option"]}) == Refusal(row["expect"]), row["case"]
 
 
 def _proofs(c: Cell, levels: int) -> Cell:
