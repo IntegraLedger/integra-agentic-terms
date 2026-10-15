@@ -88,17 +88,7 @@ export type SigningRequest =
   | { kind: "ucp-checkout"; checkout: UcpUnsigned["checkout"] }
   | { kind: "acp-allowance"; allowance: AcpUnsigned["allowance"] }
   | { kind: "batch"; requests: readonly (BatchRequest | WithinSigningRequest)[] }
-  | Extract<BatchRequest, { kind: "ed25519-raw" }>
-  | TempoCalls;
-
-/** Several calls in one Tempo `0x76` transaction, in order, signed by the payer; broadcast by it where `broadcast`. */
-export interface TempoCalls {
-  kind: "tempo-calls";
-  chainId: number;
-  calls: readonly { to: `0x${string}`; data: `0x${string}` }[];
-  validBefore: number;
-  broadcast: boolean;
-}
+  | Extract<BatchRequest, { kind: "ed25519-raw" }>;
 
 /**
  * The signer's answer, as JSON. Each kind's form is its buyer piece's: a signature for the kinds whose payment takes one
