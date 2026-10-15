@@ -129,9 +129,12 @@ class ByteVector(Type):
 
 
 def utf8_decode(data: bytes) -> str:
-    """UTF-8 as a WHATWG TextDecoder decodes it by default: malformed sequences replaced, a leading BOM removed."""
-    text = data.decode("utf-8", errors="replace")
-    return text[1:] if text.startswith("﻿") else text
+    """UTF-8 as @mysten/bcs 2.1.2 reads a String, a WHATWG TextDecoder with fatal and ignoreBOM set: strict, with a
+    leading U+FEFF kept as a character. Bytes that are not UTF-8 raise BcsError."""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise BcsError("not UTF-8") from e
 
 
 def utf8_encode(text: str) -> bytes:
