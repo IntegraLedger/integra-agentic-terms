@@ -17,7 +17,7 @@ from .._types import Refusal
 from ._codec import b58_decode, b58_encode, b64_decode, b64_encode, text_encode
 from ._ed25519 import x_of
 from ._jose import js_length
-from ._lcp import from_lcp_string, to_lcp_string
+from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
 
 MEMO_V3 = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 MEMO_V4 = "Memo4c2pN8afCj432Lb7RMVKi9PbQnnW7ewFFaV3oAH"
@@ -86,6 +86,16 @@ class SvmInstruction:
 
 
 @dataclass(frozen=True, slots=True)
+class SvmLookup:
+    """One address table lookup of a v0 message: the table's address, and the indexes it loads, writable and
+    read-only."""
+
+    table: str
+    writable: tuple[int, ...]
+    readonly: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SvmTx:
     signatures: tuple[bytes, ...]
     # Exactly the bytes every signer signed.
@@ -95,6 +105,8 @@ class SvmTx:
     instructions: tuple[SvmInstruction, ...]
     blockhash: bytes
     required_signatures: int
+    # The message's address table lookups, in order; none for a legacy message.
+    lookups: tuple[SvmLookup, ...]
 
 
 class _Cursor:
@@ -169,20 +181,22 @@ def decode_svm_tx(wire: object) -> SvmTx | Refusal:
             program = c.byte()
             accounts = tuple(c.take(c.compact()))
             instructions.append(SvmInstruction(program, accounts, c.take(c.compact())))
+        lookups = []
         if versioned:
             for _ in range(c.compact()):
-                c.take(32)
-                writable = c.take(c.compact())
-                readonly = c.take(c.compact())
+                table = key_string(c.take(32))
+                writable = tuple(c.take(c.compact()))
+                readonly = tuple(c.take(c.compact()))
                 # A v0 message's sanitize refuses a lookup that loads no account (anza-xyz/solana-sdk 648387ee, tag
                 # message@v3.0.0, message/src/versions/v0/mod.rs:118-129).
                 if not writable and not readonly:
                     return Refusal("svm/tx-malformed")
+                lookups.append(SvmLookup(table, writable, readonly))
         if c.at != len(data):
             return Refusal("svm/tx-malformed")
     except (IndexError, ValueError):
         return Refusal("svm/tx-malformed")
-    return SvmTx(signatures, data[start:], keys, tuple(instructions), blockhash, required)
+    return SvmTx(signatures, data[start:], keys, tuple(instructions), blockhash, required, tuple(lookups))
 
 
 def _program_is(tx: SvmTx, ix: SvmInstruction, program: bytes | None) -> bool:
@@ -240,6 +254,44 @@ def static_nonce(tx: SvmTx) -> Refusal | None:
     named = first.accounts[:1]
     return Refusal("svm/nonce-account-not-static") if any(i >= len(tx.keys) for i in named) else None
 
+
+
+def loaded_keys(tx: SvmTx, loads: object) -> tuple[bytes, ...] | Refusal:
+    """Every key a message's instructions may index once its address table lookups are resolved, in the runtime's
+    order: the static keys, then each lookup's writable entries, then each lookup's read-only entries (anza-xyz/agave
+    f516a892, tag v3.0.14, runtime/src/bank/address_lookup_table.rs L41-68 appends lookup by lookup, writable to
+    writable and read-only to read-only, accounts-db/src/accounts.rs L145-156). loads holds, for each lookup in order,
+    its table's address and as many base58 keys as the lookup names writable and read-only indexes, as a seller's
+    reader writes them; any other value is svm/read-first. A loaded key that repeats a static key or another loaded key
+    is svm/table-unusable: the runtime refuses a transaction that loads one account twice (AccountLoadedTwice,
+    accounts-db/src/account_locks.rs L160-170)."""
+    if not is_list(loads) or len(loads) != len(tx.lookups):
+        return Refusal("svm/read-first")
+    writable: list[bytes] = []
+    readonly: list[bytes] = []
+    for lookup, load in zip(tx.lookups, loads):
+        if not is_object(load) or load.get("address") != lookup.table:
+            return Refusal("svm/read-first")
+        w = _key_list(load.get("writable"), len(lookup.writable))
+        r = _key_list(load.get("readonly"), len(lookup.readonly))
+        if w is None or r is None:
+            return Refusal("svm/read-first")
+        writable += w
+        readonly += r
+    seen = set(tx.keys)
+    for key in writable + readonly:
+        if key in seen:
+            return Refusal("svm/table-unusable")
+        seen.add(key)
+    return tx.keys + tuple(writable) + tuple(readonly)
+
+
+def _key_list(value: object, n: int) -> list[bytes] | None:
+    """The 32-byte keys of a list of exactly n base58 keys, else None."""
+    if not is_list(value) or len(value) != n:
+        return None
+    keys = [key_bytes(v) for v in value]
+    return [k for k in keys if k is not None] if all(k is not None for k in keys) else None
 
 def wire_of(text: object) -> bytes | Refusal:
     """The wire in a payment, padded standard base64 in its canonical form (RFC 4648 §3.5), decoded, or the refusal

@@ -1,6 +1,7 @@
 """What every MPP pairing's buyer half shares: the challenge id derived from the ATR hash, the challenge checked as
 issued or as placed and the pairings it offers, the buyer's reading of the challenge list, the network a challenge
-pays on, the echoed challenge of a credential, the challenge hash and MPP's attribution memo."""
+pays on, the echoed challenge of a credential, the read held for a credential in Held, the challenge hash and MPP's
+attribution memo."""
 
 import re
 from collections.abc import Callable, Mapping
@@ -466,6 +467,26 @@ def credential_of(c: object) -> Mapping[str, Any] | Refusal:
     if "source" in c and not isinstance(c["source"], str):
         return Refusal("mpp/credential-malformed")
     return c
+
+
+class Held(dict[str, Any]):
+    """A credential with the read made for it, held as @integraledger/lcp holds it under the payment's own FETCHED
+    member: an attribute no JSON decode makes, so no wire form carries it. bound and build_within take a
+    read only from here: a member of the credential's own of any name, such as tables or landed, is never read as one,
+    and a credential carrying one gives the answer the same credential without it gives. dict(), {**held} and a JSON
+    round trip drop the read; copy.copy keeps it."""
+
+    __slots__ = ("fetched",)
+
+    def __init__(self, credential: Mapping[str, Any], fetched: Any) -> None:
+        super().__init__(credential)
+        self.fetched = fetched
+
+
+def fetched_of(c: object) -> Any:
+    """The read held for the credential c in Held, as @integraledger/lcp holds it under the payment's own FETCHED
+    member, or None."""
+    return c.fetched if isinstance(c, Held) else None
 
 
 @dataclass(frozen=True, slots=True)

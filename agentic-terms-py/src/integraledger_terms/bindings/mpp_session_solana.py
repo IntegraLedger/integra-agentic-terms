@@ -6,7 +6,7 @@ channel program's open instruction; H itself is in the challenge the opening ans
 ATR or signs.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,10 +15,19 @@ from .._types import Advertised, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._codec import b58_decode, canonical_json
 from ._lcp import is_object, is_well_formed
-from ._mpp import EchoedChallenge, MppUnsigned, chosen_for, credential_of, echoed_for, read
+from ._mpp import Echoed, EchoedChallenge, MppUnsigned, chosen_for, credential_of, echoed_for, fetched_of, read
 from ._mpp_checks import solana_network_of
 from ._session_within import action_kind, echoed_details, within_checks
-from ._svm import SvmTx, channel_voucher_message, decode_svm_tx, key_bytes, key_string, static_nonce, wire_of
+from ._svm import (
+    SvmTx,
+    channel_voucher_message,
+    decode_svm_tx,
+    key_bytes,
+    key_string,
+    loaded_keys,
+    static_nonce,
+    wire_of,
+)
 
 ID = "mpp/session/solana"
 OPEN_DISCRIMINATOR = 1
@@ -50,15 +59,17 @@ def session_proof(channel_id: str, payer: str, challenge_id: str) -> bytes:
 
 @dataclass(frozen=True, slots=True)
 class Open:
+    """The open instruction: its salt and its account indexes."""
+
     salt: int
-    signer: str | None
-    channel: str
+    accounts: tuple[int, ...]
 
 
-def open_of(tx: SvmTx, program: object) -> Open | Refusal:
+def open_of(tx: SvmTx, program: object, key_count: int) -> Open | Refusal:
     """The one top-level instruction of program whose data starts with the open discriminator, with at least 33 bytes
-    of data and 6 accounts: its salt (data bytes 1-8, little-endian), its authorizedSigner (account 4; None for an
-    account the static keys do not hold) and its channel (account 5)."""
+    of data and 6 accounts, and its salt (data bytes 1-8, little-endian). svm/open-not-found when there is none, or
+    more than one, or when its channel (account 5) is past key_count, the count of every key the message names: its
+    static keys and each address its address table lookups load."""
     program_key = key_bytes(program)
     if program_key is None:
         return Refusal("svm/open-not-found")
@@ -74,15 +85,25 @@ def open_of(tx: SvmTx, program: object) -> Open | Refusal:
     if len(opens) != 1:
         return Refusal("svm/open-not-found")
     ix = opens[0]
-    position = ix.accounts[OPEN_CHANNEL_ACCOUNT]
-    if position >= len(tx.keys):
+    if ix.accounts[OPEN_CHANNEL_ACCOUNT] >= key_count:
         return Refusal("svm/open-not-found")
-    signer = ix.accounts[OPEN_SIGNER_ACCOUNT]
-    return Open(
-        int.from_bytes(ix.data[1:9], "little"),
-        key_string(tx.keys[signer]) if signer < len(tx.keys) else None,
-        key_string(tx.keys[position]),
-    )
+    return Open(int.from_bytes(ix.data[1:9], "little"), ix.accounts)
+
+
+@dataclass(frozen=True, slots=True)
+class OpenAccounts:
+    signer: str | None
+    channel: str
+
+
+def open_accounts(o: Open, keys: Sequence[bytes]) -> OpenAccounts | Refusal:
+    """The open's authorizedSigner (account 4; None for an index past keys) and channel (account 5; an index past keys
+    is svm/open-not-found), each read from keys: the message's static keys, or every key its instructions may index
+    once its address table lookups are resolved (loaded_keys)."""
+    position, signer = o.accounts[OPEN_CHANNEL_ACCOUNT], o.accounts[OPEN_SIGNER_ACCOUNT]
+    if position >= len(keys):
+        return Refusal("svm/open-not-found")
+    return OpenAccounts(key_string(keys[signer]) if signer < len(keys) else None, key_string(keys[position]))
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,19 +118,25 @@ class Opening:
     signer: str | None
 
 
-def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
-    """The opening's checks: the one open of the challenge's program, its salt H's first 8 bytes, its channel the
-    payload's; then authentication, which draft-solana-session-00's open action requires for an operator voucher
-    signer and forbids for client, the default: missing for operator, or present for client, is
-    mpp/credential-malformed; present, it names the echoed challenge's id, else svm/proof-not-challenge. For operator,
-    the draft requires the open's authorizedSigner (account 4) to equal the challenged operator: a static key other
-    than the challenge's operator, or an account from an address lookup table, is svm/signer-not-operator. For client,
-    the client chooses that signer. The program, methodDetails.channelProgram, is a key, else svm/input-malformed."""
-    e = echoed_for(presented, ID)
-    if isinstance(e, Refusal):
-        return e
-    if e.payload.get("action") != "open":
-        return Refusal("mpp/session-action")
+@dataclass(frozen=True, slots=True)
+class _Static:
+    tx: SvmTx
+    open: Open
+    channel_id: str
+    operator: str | None
+
+
+def _static(presented: Mapping[str, Any], e: Echoed) -> _Static | Refusal:
+    """The opening's checks that read no account, in order: the program, methodDetails.channelProgram, a key, else
+    svm/input-malformed; the transaction; a durable nonce account named through an address lookup table,
+    svm/nonce-account-not-static; the one open of the program, svm/open-not-found when there is none, or more than one,
+    or when its channel (account 5) is past every key the message names; its salt H's first 8 bytes, else
+    mpp/carrier-not-challenge; the payload's channelId a key, else svm/channel-mismatch; then authentication, which
+    draft-solana-session-00's open action requires for an operator voucher signer and forbids for client, the default:
+    missing for operator, or present for client, is mpp/credential-malformed; present, it names the echoed challenge's
+    id, else svm/proof-not-challenge; and for operator, the challenge's operator a key, else svm/signer-not-operator.
+    Each comes before any address lookup table is read, so an opening that fails one gets its code whatever its
+    lookups hold."""
     program = e.checked.details.get("channelProgram")
     if not isinstance(program, str) or key_bytes(program) is None:
         return Refusal("svm/input-malformed")
@@ -122,13 +149,14 @@ def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
     from_table = static_nonce(tx)
     if from_table is not None:
         return from_table
-    opened = open_of(tx, program)
+    loaded = sum(len(lookup.writable) + len(lookup.readonly) for lookup in tx.lookups)
+    opened = open_of(tx, program, len(tx.keys) + loaded)
     if isinstance(opened, Refusal):
         return opened
     if opened.salt != session_salt(e.h):
         return Refusal("mpp/carrier-not-challenge")
     declared = key_bytes(e.payload.get("channelId"))
-    if declared is None or key_string(declared) != opened.channel:
+    if declared is None:
         return Refusal("svm/channel-mismatch")
     authenticated = "authentication" in e.payload
     operator_mode = e.checked.details.get("voucherSigner") == "operator"
@@ -138,11 +166,48 @@ def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
         auth = e.payload["authentication"]
         if not is_object(auth) or auth.get("challengeId") != presented["challenge"].get("id"):
             return Refusal("svm/proof-not-challenge")
-    if operator_mode:
-        operator = key_bytes(e.checked.details.get("operator"))
-        if operator is None or opened.signer != key_string(operator):
-            return Refusal("svm/signer-not-operator")
-    return Opening(e.h, e.checked, e.payload, tx, opened.signer)
+    operator = key_bytes(e.checked.details.get("operator")) if operator_mode else None
+    if operator_mode and operator is None:
+        return Refusal("svm/signer-not-operator")
+    return _Static(tx, opened, key_string(declared), None if operator is None else key_string(operator))
+
+
+def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
+    """The opening's checks: first those that read no account (_static). Then the open's accounts: its channel the
+    payload's channelId, else svm/channel-mismatch, and, for operator, its authorizedSigner (account 4) the challenged
+    operator, as draft-solana-session-00 requires, else svm/signer-not-operator; for client, the client chooses that
+    signer. The draft has the server validate the complete compiled message, resolving any version-0 address lookup
+    table entries (Settlement Procedure, Open, step 9), and a table can supply account 4 or account 5. So the accounts
+    are read from the static keys and, for a message with address table lookups, from the tables read for the opening
+    and held in Held, as @integraledger/lcp holds them under the payment's own FETCHED member (fetched_of), in the
+    runtime's order (loaded_keys): such an opening without them, or whose tables are not one entry per lookup naming
+    its table with as many keys as it names indexes, is svm/read-first, and
+    one whose loaded keys repeat a static key or each other is svm/table-unusable. A tables member of the opening's own
+    is not read: an opening carrying one gives the answer the same opening without it gives. A message without lookups
+    is read from its static keys, whatever the opening carries."""
+    e = echoed_for(presented, ID)
+    if isinstance(e, Refusal):
+        return e
+    if e.payload.get("action") != "open":
+        return Refusal("mpp/session-action")
+    s = _static(presented, e)
+    if isinstance(s, Refusal):
+        return s
+    keys: Sequence[bytes] = s.tx.keys
+    if s.tx.lookups:
+        read = fetched_of(presented)
+        loaded = loaded_keys(s.tx, read.get("tables") if is_object(read) else None)
+        if isinstance(loaded, Refusal):
+            return loaded
+        keys = loaded
+    accounts = open_accounts(s.open, keys)
+    if isinstance(accounts, Refusal):
+        return accounts
+    if accounts.channel != s.channel_id:
+        return Refusal("svm/channel-mismatch")
+    if s.operator is not None and accounts.signer != s.operator:
+        return Refusal("svm/signer-not-operator")
+    return Opening(e.h, e.checked, e.payload, s.tx, accounts.signer)
 
 
 def _kind(presented: object) -> ChannelKind | Refusal:
@@ -191,7 +256,7 @@ class MppSessionSolana:
         """The values the buyer's channel client composes the open from: the salt (H's first 8 bytes), the program,
         the network and the request's blockhash and slot. complete checks the composed open as bound does before
         returning the credential: it carries authentication when the challenge's voucherSigner is operator, and none
-        otherwise."""
+        otherwise. complete reads no address lookup table, so an open whose message has lookups is svm/read-first."""
         if not is_object(choice):
             return Refusal("svm/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, ID)
@@ -224,7 +289,9 @@ class MppSessionSolana:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """H from the echoed challenge, once the signed open's salt is H's first 8 bytes and its channel the
-        payload's. No signature is verified here."""
+        payload's, its accounts read as the opening's checks read them: through the tables held in Held, as
+        @integraledger/lcp holds them under the payment's own FETCHED member, for an opening whose message has address
+        table lookups. No signature is verified here."""
         credential = credential_of(presented)
         if isinstance(credential, Refusal):
             return credential
@@ -287,9 +354,11 @@ class MppSessionSolana:
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         """A voucher, or a close's voucher, on the channel the held opening opened, for its client voucher signer: one
         ed25519-raw request over the channel voucher message (channel id, cumulative amount, no expiry), for the
-        authorizedSigner of the opening's one open instruction. An operator channel's vouchers are the operator's, and are not
-        built, nor are a topUp or a use; an action draft-solana-session-00 does not define, such as bearer, is
-        mpp/session-action."""
+        authorizedSigner of the opening's one open instruction, the key vouchers "MUST verify under"
+        (draft-solana-session-00). The opening is read as bound reads it: for a message with address table lookups,
+        through the tables held for it in Held, else svm/read-first, so the opening is the one held with its tables
+        for the life of the channel. An operator channel's vouchers are the operator's, and are not built, nor are a
+        topUp or a use; an action draft-solana-session-00 does not define, such as bearer, is mpp/session-action."""
         o = within_checks(w, h, "session/solana", _opening, U64_LIMIT, ("topUp", "use"))
         if isinstance(o, Refusal):
             return o

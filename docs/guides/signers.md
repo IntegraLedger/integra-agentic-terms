@@ -57,7 +57,7 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 | Kind | What the signer signs | Answer |
 | --- | --- | --- |
 | `solana-message` | A Solana v0 transaction message (`request.message`). | The payer's 64-byte Ed25519 signature, `0x` hex (base58 for the batch-settlement opening and voucher). |
-| `solana-session-open` | The values of an MPP session opening, which the buyer's channel client composes into an `open`. | The open payload. Under the challenge's `operator` voucher signer, the open instruction's authorizedSigner (account 4) is the challenge's `operator`. |
+| `solana-session-open` | The values of an MPP session opening, which the buyer's channel client composes into an `open`. | The open payload. Under the challenge's `operator` voucher signer, the open instruction's authorizedSigner (account 4) is the challenge's `operator`. The gate reads no address lookup table, so an open whose message has lookups is refused `svm/read-first`. |
 | `ed25519-raw` | Raw Ed25519 over the bytes given (`request.message`), by the key `request.signer` names. | The 64-byte signature, base58. |
 | `stellar-auth` | A Soroban authorization preimage (`request.preimage`). | The 64-byte Ed25519 signature over its SHA-256, `0x` hex. |
 | `xrpl-tx` | An XRPL transaction as `txJson`. | The signed blob, hex digits without `0x`, as the XRP Ledger writes it, signed with a single key: a blob that carries `Signers` is declined `signed-not-bound`. The blob carries `NetworkID` as rippled requires of the network, none where its id is at most 1024 and that id above 1024; any other is declined `signed-not-bound` (`xrpl/network-mismatch`). |
