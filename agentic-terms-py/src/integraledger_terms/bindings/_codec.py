@@ -108,22 +108,6 @@ def text_encode(text: str) -> bytes:
 MAX_JSON_DEPTH = 64
 
 
-def nests_within(value: object) -> bool:
-    """True when the lists, tuples and dicts json.dumps writes as arrays and objects nest at most MAX_JSON_DEPTH levels
-    in value, as the protocol package writes and reads JSON. It walks one level at a time, without recursion, so a value
-    of any depth is measured before anything recursive walks it."""
-    level = [value] if isinstance(value, (dict, list, tuple)) else []
-    depth = 0
-    while level:
-        depth += 1
-        if depth > MAX_JSON_DEPTH:
-            return False
-        level = [
-            c for v in level for c in (v.values() if isinstance(v, dict) else v) if isinstance(c, (dict, list, tuple))
-        ]
-    return True
-
-
 def es_number(value: int | float) -> str:
     """A number as JSON.stringify writes it (ECMAScript Number::toString). An int past 2^53 is the double JSON.parse
     reads for it, and one outside the double range is the infinity JSON.parse reads: like any non-finite number, it

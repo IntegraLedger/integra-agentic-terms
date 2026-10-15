@@ -22,8 +22,8 @@ from integraledger_terms import (
     Binding,
     Refusal,
 )
-from integraledger_terms.bindings._codec import MAX_JSON_DEPTH, js_json, nests_within
-from integraledger_terms.bindings._jose import UNPARSED, json_bytes, json_within_depth, parse_json
+from integraledger_terms.bindings._codec import MAX_JSON_DEPTH, js_json
+from integraledger_terms.bindings._jose import UNPARSED, json_bytes, json_within_depth, parse_json, within_depth
 from integraledger_terms.bindings.lightning import atr_names_invoice
 from integraledger_terms.bindings.mpp_charge_usdc import usdc_request_hash
 
@@ -60,11 +60,11 @@ def test_json_depth_rows() -> None:
         assert (parse_json(row["text"]) is not UNPARSED) is row["accept"], row["name"]
         parsed = json.loads(row["text"]) if row["accept"] else None
         if parsed is not None:
-            assert nests_within(parsed), row["name"]
+            assert within_depth(parsed), row["name"]
 
 
-def test_a_value_nests_within_64_levels_counted_as_its_json_text_is() -> None:
-    # nests_within measures the lists, tuples and dicts json.dumps writes as arrays and objects, without recursion, as
+def test_a_value_within_depth_64_levels_counted_as_its_json_text_is() -> None:
+    # within_depth measures the lists, tuples and dicts json.dumps writes as arrays and objects, without recursion, as
     # json_within_depth measures the text: 64 levels hold and 65 do not, at any depth and on any shape, a cycle
     # included, which json.dumps would not write.
     def nested(levels: int, inner: object) -> object:
@@ -78,13 +78,13 @@ def test_a_value_nests_within_64_levels_counted_as_its_json_text_is() -> None:
         for inner in (0, [], {}):
             value = nested(levels, inner)
             deep = levels + (1 if isinstance(inner, (list, dict)) else 0)
-            assert nests_within(value) is (deep <= MAX_JSON_DEPTH), (levels, inner)
+            assert within_depth(value) is (deep <= MAX_JSON_DEPTH), (levels, inner)
             if deep <= 2 * MAX_JSON_DEPTH:
-                assert json_within_depth(json.dumps(value)) is nests_within(value), (levels, inner)
-    assert nests_within(0) and nests_within("[[[") and nests_within(()) and not nests_within(nested(65, ()))
+                assert json_within_depth(json.dumps(value)) is within_depth(value), (levels, inner)
+    assert within_depth(0) and within_depth("[[[") and within_depth(()) and not within_depth(nested(65, ()))
     cycle: list[object] = []
     cycle.append(cycle)
-    assert not nests_within(cycle)
+    assert not within_depth(cycle)
 
 
 def test_json_numbers_rows() -> None:
