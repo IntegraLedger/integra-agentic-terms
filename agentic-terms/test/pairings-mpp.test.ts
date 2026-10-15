@@ -488,3 +488,37 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
     }),
   );
 });
+
+// mpp-challenge.json's agreedRefusals row for a build with an H the challenge's id does not derive from. On the
+// challenges placed with H (C_E; C_E's request without credentialTypes, which offers the transaction and hash pairings;
+// C_T; and C_T's request without supportedModes, which offers memo and push), each EVM and Tempo charge build builds
+// with H, and refuses with the row's code H with its last hex digit changed, H without its last digit, and H without
+// 0x.
+describe("mpp-challenge.json agreedRefusals: a build with an H the challenge's id does not derive from", () => {
+  type Row = { case: string; expect: string };
+  const rows = vectors<{ agreedRefusals: { rows: Row[] } }>("mpp-challenge.json").agreedRefusals.rows;
+  const row = rows.find((r) => r.case.startsWith("build with an H the challenge's id does not derive from"));
+  type Domain = { name: string; version: string };
+  const A = vectors<{ fixed: Fixed & { tokenDomain: Domain } }>("mpp-charge-evm-authorization.json");
+  const R_E = JSON.parse(V.fixed.R_E) as { methodDetails: { chainId: number } };
+  const R_T = JSON.parse(V.fixed.R_T) as { methodDetails: { chainId: number } };
+  const calls = issued("evm", JSON.stringify({ ...R_E, methodDetails: { chainId: R_E.methodDetails.chainId } }));
+  const push = issued("tempo", JSON.stringify({ ...R_T, methodDetails: { chainId: R_T.methodDetails.chainId } }));
+  const builds: [string, Binding, MppChallenge, Record<string, unknown>][] = [
+    [evmAuthorization.id, evmAuthorization, issued("evm", V.fixed.R_E), { tokenDomain: A.fixed.tokenDomain }],
+    [evmHash.id, evmHash, calls, {}],
+    [evmTransaction.id, evmTransaction, calls, {}],
+    [tempoMemo.id, tempoMemo, issued("tempo", V.fixed.R_T), {}],
+    [tempoPush.id, tempoPush, push, {}],
+  ];
+  const other = `${H.slice(0, -1)}${H.endsWith("e") ? "f" : "e"}`;
+  it.each(builds)("%s builds with H and refuses each other H with the row's code", async (_id, binding, c, extra) => {
+    expect(row, "the agreedRefusals row for a build with an H its challenge's id does not derive from").toBeDefined();
+    const b = binding as unknown as { build(choice: unknown, h: string): Promise<unknown> };
+    const choice = { challenge: docOf(binding, c)[0], from: A.fixed.payer, now: 0, ...extra };
+    expect(await b.build(choice, H)).not.toHaveProperty("refused");
+    for (const h of [other, H.slice(0, -1), H.slice(2)]) {
+      expect([h, await b.build(choice, h)]).toEqual([h, { refused: true, code: row!.expect }]);
+    }
+  });
+});

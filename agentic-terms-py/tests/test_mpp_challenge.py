@@ -6,7 +6,15 @@ import hashlib
 import json
 from typing import Any
 
-from integraledger_terms import Advertised, Refusal
+from integraledger_terms import (
+    MPP_CHARGE_EVM_AUTHORIZATION,
+    MPP_CHARGE_EVM_HASH,
+    MPP_CHARGE_EVM_TRANSACTION,
+    MPP_CHARGE_TEMPO_MEMO,
+    MPP_CHARGE_TEMPO_PUSH,
+    Advertised,
+    Refusal,
+)
 from integraledger_terms.bindings._codec import b64u_decode
 from integraledger_terms.bindings._mpp import (
     attribution_memo,
@@ -230,10 +238,10 @@ def test_agreed_refusals_on_the_buyer_path() -> None:
     assert _agreed("pairingsOf with a duplicate credentialTypes") == "no refusal"
     assert pairings_of(issued("evm", "charge", i["duplicateTypes"])) == ("mpp/charge/evm/permit2",)
     not_https = _agreed("read with a legalContextAgreementUrl of at most 2048")
-    malformed = _agreed("read with a legalContextAgreementUrl that is not a string")
+    malformed = _agreed("read with a legalContextAgreementUrl that does not parse")
     placed = placed_doc(C_E, H, LINK)
 
-    def with_agreement(a: str) -> list[dict[str, Any]]:
+    def with_agreement(a: object) -> list[dict[str, Any]]:
         opaque = {"legalContext": f"lcp:sha256:{H}", "legalContextAgreementUrl": a, "legalContextUrl": LINK}
         return [{**placed[0], "opaque": b64u(json.dumps(opaque))}]
 
@@ -244,8 +252,53 @@ def test_agreed_refusals_on_the_buyer_path() -> None:
     long, long_http = "https://pay.seller.example/" + "a" * 2030, "http://pay.seller.example/" + "a" * 2030
     for a in ("https://", "", "not a url", "https://u@pay.seller.example/", long, long_http):
         assert (a[:40], read(with_agreement(a))) == (a[:40], refused(malformed))
+    # MPP's opaque is a flat string-to-string map (draft-httpauth-payment-01), so an agreement URL that is not a string
+    # makes the opaque no opaque: read reads no challenge from it, as @integraledger/lcp 0.4.0's read answers.
+    for value in (7, None, [LINK], {"url": LINK}):
+        assert (value, read(with_agreement(value))) == (value, refused("mpp/no-legal-context"))
     assert _agreed("read with two challenges whose links") == "mpp/legal-context-conflict"
-    assert _agreed("challengeId, place or build with an H") == "mpp/challenge-malformed"
+    challenge_malformed = refused(_agreed("challengeId or place with an H"))
+    for h, position in ((H[:-1], 0), (H, 32), (H, -1)):
+        assert (h, position, challenge_id(h, position)) == (h, position, challenge_malformed)
+
+
+# The EVM and Tempo charge builds over the challenges placed with H: C_E; C_E's request without credentialTypes, which
+# offers the transaction and hash pairings; C_T; and C_T's request without supportedModes, which offers memo and push.
+# The payer and the token's EIP-712 domain are mpp-charge-evm-authorization.json's.
+_PAYER = load("mpp-charge-evm-authorization.json")["fixed"]
+_R_E, _R_T = json.loads(V["fixed"]["R_E"]), json.loads(V["fixed"]["R_T"])
+_CALLS = issued("evm", "charge", json.dumps({**_R_E, "methodDetails": {"chainId": _R_E["methodDetails"]["chainId"]}}))
+_PUSH = issued("tempo", "charge", json.dumps({**_R_T, "methodDetails": {"chainId": _R_T["methodDetails"]["chainId"]}}))
+_BUILDS: dict[str, tuple[Any, dict[str, Any], dict[str, Any]]] = {
+    "authorization": (MPP_CHARGE_EVM_AUTHORIZATION, C_E, {"tokenDomain": _PAYER["tokenDomain"]}),
+    "hash": (MPP_CHARGE_EVM_HASH, _CALLS, {}),
+    "transaction": (MPP_CHARGE_EVM_TRANSACTION, _CALLS, {}),
+    "memo": (MPP_CHARGE_TEMPO_MEMO, C_T, {}),
+    "push": (MPP_CHARGE_TEMPO_PUSH, _PUSH, {}),
+}
+
+
+def _choice(name: str) -> dict[str, Any]:
+    _, challenge, extra = _BUILDS[name]
+    return {"challenge": placed_doc(challenge, H, LINK)[0], "from": _PAYER["payer"], "now": 0, **extra}
+
+
+def _built(name: str) -> Any:
+    unsigned = _BUILDS[name][0].build(_choice(name), H)
+    assert not isinstance(unsigned, Refusal), (name, unsigned)
+    return unsigned
+
+
+def test_a_charge_build_refuses_an_h_its_challenge_id_does_not_derive_from() -> None:
+    """mpp-challenge.json's agreedRefusals row for a build with an H the challenge's id does not derive from: each
+    charge build builds with H, and refuses with the row's code H with its last hex digit changed, H without its last
+    digit, and H without 0x."""
+    expect = refused(_agreed("build with an H the challenge's id does not derive from"))
+    other = H[:-1] + ("f" if H.endswith("e") else "e")
+    for name, (binding, _, _) in _BUILDS.items():
+        _built(name)
+        for h in (other, H[:-1], H[2:]):
+            assert (name, h, binding.build(_choice(name), h)) == (name, h, expect)
 
 
 def test_mv7_attribution_memo_and_its_check() -> None:

@@ -829,13 +829,30 @@ def test_x402_batch_settlement_solana_agreed_refusals_on_the_buyer_half() -> Non
     choice = batch_choice(p.doc)
     unsigned = BATCH_BINDING.build(choice, H)
     assert not isinstance(unsigned, Refusal)
-    signature_count = batch_agreed("complete with a signature count")
-    assert X402_BATCH_SETTLEMENT_SOLANA_PIECE.complete(unsigned, good[:1], out.chosen) == Refusal(signature_count)
-    input_malformed = batch_agreed("SVM complete with a signature")
+    # A list of answers other than one per request is not of the form a batch request takes: the gate's own detail
+    # (docs/reference/declines.md), given before the binding's complete reads the list.
+    signature_malformed = Refusal("x402/signature-malformed")
+    assert X402_BATCH_SETTLEMENT_SOLANA_PIECE.complete(unsigned, good[:1], out.chosen) == signature_malformed
+    input_malformed = batch_agreed("SVM complete with a signature count")
+    # The opening asks for two signatures and the voucher for one; any other count is the row's refusal.
+    w = {"required": p.doc, "accepted": choice["accepted"], "channelConfig": BV["ES4"]["config"],
+         "maxClaimableAmount": 1000}  # fmt: skip
+    within = BATCH_BINDING.build_within(w, H)
+    assert not isinstance(within, Refusal)
+    assert (len(unsigned.requests), len(within.requests)) == (2, 1)
+    for answers in (good[:1], [*good, good[0]]):
+        assert unsigned.complete(answers) == Refusal(input_malformed), len(answers)
+    for answers in ([], [good[0], good[0]]):
+        assert within.complete(answers) == Refusal(input_malformed), len(answers)
+    assert unsigned.complete(["x", good[1]]) == Refusal(input_malformed)
     assert unsigned.complete([good[0], b58_encode(bytes(63))]) == Refusal(input_malformed)
     assert unsigned.complete(["0x" + "11" * 64, good[1]]) == Refusal(input_malformed)
-    for key, value in (("deposit", 0), ("deposit", 2**64), ("openSlot", 2**64), ("salt", -1), ("tokenProgram", "x")):
+    assert within.complete([b58_encode(bytes([1]) * 65)]) == Refusal(input_malformed)
+    out_of_range = (("deposit", 0), ("deposit", 2**64), ("openSlot", 2**64), ("openSlot", 2**53), ("salt", -1),
+                    ("salt", 2**64), ("tokenProgram", "x"), ("computeUnitLimit", 2**32))  # fmt: skip
+    for key, value in out_of_range:
         assert BATCH_BINDING.build({**choice, key: value}, H) == Refusal(input_malformed), key
+    assert BATCH_BINDING.build_within({**w, "maxClaimableAmount": -1}, H) == Refusal(input_malformed)
     # ES1's channel PDA, a key off the Ed25519 curve, as the payer authorizer: the program's open refuses it as the
     # authorized signer (solana-foundation/payment-channels 0c07d5751c8972abf6a219570a3f39a72f46f879,
     # program/payment_channels/src/instructions/open.rs L271-273).
