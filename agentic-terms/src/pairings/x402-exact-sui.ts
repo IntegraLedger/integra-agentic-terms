@@ -1,6 +1,8 @@
 /**
  * The buyer piece for `x402/exact/sui`: the wallet builds the scheme's payment, adds the request's `pureInput` as the
- * one unused `Pure` input, bounds the expiration by epoch, signs, and answers `{signature, transaction}`.
+ * one unused `Pure` input, bounds the expiration by epoch as the request asks, signs, and answers
+ * `{signature, transaction}`. The epoch bound is this piece's choice, not a condition of the record: a signed
+ * transaction without one that carries the hash completes, and is recorded.
  */
 import { walletBuiltPiece } from "./x402-account-rails.js";
 
