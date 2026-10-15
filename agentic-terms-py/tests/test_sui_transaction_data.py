@@ -5,12 +5,15 @@ TextEncoder), and from the vector file's fixed values; digests are hashlib's Bla
 
 import base64
 import hashlib
+import sys
+from collections.abc import Callable
 
 import pytest
 
 from integraledger_terms import X402_EXACT_SUI, Refusal
 from integraledger_terms.bindings._bcs import STRING, BcsError
 from integraledger_terms.bindings._codec import b58_encode
+from integraledger_terms.bindings._sui_tx import parse_transaction_data
 from integraledger_terms.bindings.x402_exact_sui import decode_sui_tx, sui_carrier
 
 from support import load
@@ -161,3 +164,82 @@ def test_an_epoch_at_any_u64_reads_exactly(epoch: int) -> None:
 
 def test_an_epoch_with_a_byte_after_it_is_malformed() -> None:
     assert decode_sui_tx(b64(V2[:-8] + u64(2**53 + 1) + b"\x00")) == Refusal("sui/tx-malformed")
+
+
+# ── A type nested to Sui's type depth limit: the protocol config's max_type_argument_depth is 16, and Sui's
+# transaction checks refuse a type with a node at that depth, the outermost node at depth 1, in a call's type arguments
+# and a vector's element type; a funds withdrawal's Balance<T> holds at most 16 nodes, so its T holds at most 15.
+
+
+def vectors(levels: int) -> bytes:
+    """TypeTag vector<...<u8>> with levels nodes: vector is 6 before its element type, u8 is 1."""
+    return b"\x06" * (levels - 1) + b"\x01"
+
+
+def struct(*params: bytes) -> bytes:
+    """TypeTag struct 0x2::m::S with the type parameters."""
+    return b"\x07" + TWO + bcs_bytes(b"m") + bcs_bytes(b"S") + uleb(len(params)) + b"".join(params)
+
+
+SHAPES: dict[str, Callable[[bytes], bytes]] = {
+    "a call's type argument": lambda t: transaction([pure(H)], [move_call(types=(t,))]),
+    "a vector's element type": lambda t: transaction([pure(H)], [b"\x05\x01" + t + uleb(0)]),
+    "a funds withdrawal's type": lambda t: transaction([pure(H), b"\x02\x00" + u64(1) + b"\x00" + t + b"\x00"], []),
+}
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_type_of_15_levels_decodes_and_16_or_more_is_malformed(shape: str) -> None:
+    ok = decode_sui_tx(b64(SHAPES[shape](vectors(15))))
+    assert not isinstance(ok, Refusal), ok
+    assert sui_carrier(ok) == SUI["fixed"]["H"]
+    for levels in (16, 17, 1000, 20_000):
+        data = SHAPES[shape](vectors(levels))
+        assert decode_sui_tx(b64(data)) == Refusal("sui/tx-malformed"), levels
+        assert X402_EXACT_SUI.bound(payment(b64(data))) == Refusal("sui/tx-malformed"), levels
+
+
+def test_a_structs_type_parameters_sit_one_level_below_it_each_counted_on_its_own() -> None:
+    call = SHAPES["a call's type argument"]
+    for t in (struct(b"\x01", vectors(14)), struct(struct(vectors(13))), struct(vectors(14), b"\x01", b"\x01")):
+        assert not isinstance(decode_sui_tx(b64(call(t))), Refusal)
+    for t in (struct(b"\x01", vectors(15)), struct(vectors(15), b"\x01"), struct(struct(vectors(14)))):
+        assert decode_sui_tx(b64(call(t))) == Refusal("sui/tx-malformed")
+
+
+def test_a_type_past_the_limit_is_refused_by_its_read_at_any_recursion_limit() -> None:
+    """The read counts a type's nesting and stops at the limit, so a type nested as deep as 128 KiB allows is refused
+    without recursing past it, whatever the interpreter's recursion limit."""
+    data = SHAPES["a call's type argument"](vectors(130_000))
+    for limit in (1_000, 100_000):
+        before = sys.getrecursionlimit()
+        sys.setrecursionlimit(limit)
+        try:
+            with pytest.raises(BcsError) as raised:
+                parse_transaction_data(data)
+        finally:
+            sys.setrecursionlimit(before)
+        assert not isinstance(raised.value.__cause__, RecursionError), limit
+
+
+def test_one_type_past_the_limit_among_others_within_it_is_malformed() -> None:
+    data = transaction([pure(H)], [move_call(types=(vectors(15),)), move_call(types=(vectors(1), vectors(16)))])
+    assert decode_sui_tx(b64(data)) == Refusal("sui/tx-malformed")
+
+
+# ── Another kind: Sui's TransactionKind lists ProgrammableTransaction first (0), and ProgrammableSystemTransaction
+# tenth from zero, with a programmable transaction's body.
+
+
+@pytest.mark.parametrize("levels", [15, 16, 1000, 20_000])
+def test_another_kind_is_not_programmable_at_every_depth_of_its_types(levels: int) -> None:
+    for kind in (1, 10):
+        data = transaction([pure(H)], [move_call(types=(vectors(levels),))], kind=kind)
+        assert decode_sui_tx(b64(data)) == Refusal("sui/not-programmable"), kind
+
+
+def test_another_kind_is_read_from_its_tag_before_its_body() -> None:
+    for data in (b"\x00\x01", b"\x00\x0a\xff", b"\x00\x0b", b"\x00\x80\x00", b"\x00\x7f" + bytes(40)):
+        assert decode_sui_tx(b64(data)) == Refusal("sui/not-programmable"), data.hex()
+    for data in (b"", b"\x00", b"\x00\x00", b"\x01\x00", b"\x01\x01"):
+        assert decode_sui_tx(b64(data)) == Refusal("sui/tx-malformed"), data.hex()

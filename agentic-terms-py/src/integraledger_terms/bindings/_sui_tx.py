@@ -17,8 +17,8 @@ from ._bcs import (
     BcsError,
     Enum,
     FixedBytes,
-    Lazy,
     Map,
+    Reader,
     Struct,
     Transform,
     Tuple,
@@ -38,6 +38,9 @@ _STRUCT = re.compile(rf"([^:]+)::([^:]+)::([^<]+)(<({_DOT}+)>)?")
 _JS_SPACE = "\t\n\v\f\r                  　﻿"
 _PRIMITIVES = ("address", "bool", "u8", "u16", "u32", "u64", "u128", "u256", "signer")
 _DIGEST_PREFIX = b"TransactionData::"
+# Sui's max_type_argument_depth, 16: Sui's transaction checks refuse a type with a node at that depth, the outermost
+# node at depth 1.
+TYPE_DEPTH_LIMIT = 16
 
 
 def _normalize_address(value: str) -> str:
@@ -155,6 +158,30 @@ def parse_type_tag(text: str, normalize_address: bool = False) -> dict[str, Any]
     raise BcsError("unexpected token in a type tag")
 
 
+def _type_within_depth(text: str) -> bool:
+    """True when every node of the type, as @mysten/sui writes a type, sits at a depth below TYPE_DEPTH_LIMIT. The walk
+    reads the text one level at a time as parse_type_tag reads it, keeps its own list and stops at the limit: a
+    primitive, vector<T>, or address::module::name followed by <T, U, ...> when the struct has type parameters, split on
+    the commas outside angle brackets. Text that reads as no type is not within the limit."""
+    todo = [(text, 1)]
+    while todo:
+        t, depth = todo.pop()
+        if depth >= TYPE_DEPTH_LIMIT:
+            return False
+        if t in _PRIMITIVES:
+            continue
+        vector = _VECTOR.match(t)
+        if vector is not None:
+            todo.append((vector.group(1), depth + 1))
+            continue
+        struct = _STRUCT.match(t)
+        if struct is None:
+            return False
+        if struct.group(5) is not None:
+            todo.extend((p, depth + 1) for p in _split_generic_parameters(struct.group(5)))
+    return True
+
+
 def type_tag_string(tag: dict[str, Any]) -> str:
     """The string form of a type tag, as @mysten/sui's TypeTagSerializer.tagToString writes it."""
     for primitive in ("bool", "u8", "u16", "u32", "u64", "u128", "u256", "address", "signer"):
@@ -169,22 +196,44 @@ def type_tag_string(tag: dict[str, Any]) -> str:
     raise BcsError("invalid type tag")
 
 
-INNER_TYPE_TAG: Type = Enum(
-    [
-        ("bool", None),
-        ("u8", None),
-        ("u64", None),
-        ("u128", None),
-        ("address", None),
-        ("signer", None),
-        ("vector", Lazy(lambda: INNER_TYPE_TAG)),
-        ("struct", Lazy(lambda: STRUCT_TAG)),
-        ("u16", None),
-        ("u32", None),
-        ("u256", None),
-    ]
-)
-STRUCT_TAG: Type = Struct([("address", ADDRESS), ("module", STRING), ("name", STRING), ("typeParams", Vector(INNER_TYPE_TAG))])
+class _PastTheDepthLimit(Type):
+    """A type node at Sui's type depth limit: reading or writing it raises BcsError, so no read of a type recurses past
+    the limit."""
+
+    def read(self, r: Reader) -> Any:
+        raise BcsError("a type past Sui's type depth limit")
+
+    def write(self, value: Any, w: bytearray) -> None:
+        raise BcsError("a type past Sui's type depth limit")
+
+
+def _type_tags() -> tuple[Type, Type]:
+    """TypeTag and StructTag for the outermost node, at depth 1, built from the limit up: a vector's element type and a
+    struct's type parameters sit one level below their node, and a node at Sui's type depth limit is
+    _PastTheDepthLimit."""
+    below: Type = _PastTheDepthLimit()
+    struct: Type = below
+    for _ in range(TYPE_DEPTH_LIMIT - 1):
+        struct = Struct([("address", ADDRESS), ("module", STRING), ("name", STRING), ("typeParams", Vector(below))])
+        below = Enum(
+            [
+                ("bool", None),
+                ("u8", None),
+                ("u64", None),
+                ("u128", None),
+                ("address", None),
+                ("signer", None),
+                ("vector", below),
+                ("struct", struct),
+                ("u16", None),
+                ("u32", None),
+                ("u256", None),
+            ]
+        )
+    return below, struct
+
+
+INNER_TYPE_TAG, STRUCT_TAG = _type_tags()
 TYPE_TAG = Transform(
     INNER_TYPE_TAG,
     output=type_tag_string,
@@ -193,7 +242,7 @@ TYPE_TAG = Transform(
 
 # ── programmable transactions
 
-WITHDRAWAL_TYPE = Enum([("Balance", Lazy(lambda: TYPE_TAG))])
+WITHDRAWAL_TYPE = Enum([("Balance", TYPE_TAG)])
 WITHDRAW_FROM = Enum(
     [("Sender", None), ("Sponsor", None), ("SenderAllowance", Struct([("funder", ADDRESS), ("allowance", ADDRESS)]))]
 )
@@ -403,15 +452,37 @@ TRANSACTION_DATA = Enum([("V1", TRANSACTION_DATA_V1)])
 
 
 def parse_transaction_data(data: bytes) -> Any:
-    """The parsed TransactionData, when writing it back gives exactly these bytes; raises BcsError otherwise."""
+    """The parsed TransactionData, when every type a programmable transaction carries is within Sui's type depth limit
+    and writing it back gives exactly these bytes; raises BcsError otherwise. The depth is read before anything is
+    written back."""
     try:
         parsed = TRANSACTION_DATA.parse(data)
+    except Exception as e:
+        raise BcsError(type(e).__name__) from e
+    if not all(_type_within_depth(t) for t in _programmable_types(parsed)):
+        raise BcsError("a type past Sui's type depth limit")
+    try:
         written = TRANSACTION_DATA.serialize(parsed)
     except Exception as e:
         raise BcsError(type(e).__name__) from e
     if written != data:
         raise BcsError("not canonical")
     return parsed
+
+
+def _programmable_types(parsed: Any) -> list[str]:
+    """The types a programmable transaction carries: each call's type arguments, each vector's element type, and each
+    funds withdrawal's type. None for any other kind."""
+    if parsed["$kind"] != "V1" or parsed["V1"]["kind"]["$kind"] != "ProgrammableTransaction":
+        return []
+    ptb = parsed["V1"]["kind"]["ProgrammableTransaction"]
+    out = [i["FundsWithdrawal"]["typeArg"]["Balance"] for i in ptb["inputs"] if i["$kind"] == "FundsWithdrawal"]
+    for command in ptb["commands"]:
+        if command["$kind"] == "MoveCall":
+            out.extend(command["MoveCall"]["typeArguments"])
+        elif command["$kind"] == "MakeMoveVec" and command["MakeMoveVec"]["type"] is not None:
+            out.append(command["MakeMoveVec"]["type"])
+    return out
 
 
 def command_arguments(command: dict[str, Any]) -> list[Any]:

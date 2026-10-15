@@ -38,13 +38,20 @@ class SuiTx:
 
 
 def decode_sui_tx(transaction: object) -> SuiTx | Refusal:
-    """A base64 TransactionData V1 with a programmable kind."""
+    """A base64 TransactionData V1 with a programmable kind. A programmable transaction with a type (a call's type
+    argument, a vector's element type, a funds withdrawal's type) that has a node at depth 16, Sui's type depth limit,
+    is sui/tx-malformed, the code of bytes that do not decode. A V1 TransactionData of another kind is
+    sui/not-programmable, answered from its kind's tag before its body is decoded."""
     data = base64_bytes(transaction, MAX_TX_BYTES)
     if data == "too-large":
         return Refusal("sui/tx-too-large")
     if data == "malformed":
         return Refusal("sui/tx-malformed")
     assert isinstance(data, bytes)
+    # TransactionData opens with two BCS enum tags, one byte each: its version, V1 (0), and its kind,
+    # ProgrammableTransaction (0). Another kind is answered from its tag: no type of its body is read.
+    if len(data) > 1 and data[0] == 0 and data[1] != 0:
+        return Refusal("sui/not-programmable")
     try:
         parsed = parse_transaction_data(data)
     except BcsError:
