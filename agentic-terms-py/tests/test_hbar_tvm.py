@@ -14,7 +14,8 @@ import pytest
 from integraledger_terms import X402_EXACT_TVM as BINDING
 from integraledger_terms import Declined, Refusal, _gate
 from integraledger_terms.bindings._ton_cell import Builder, Cell, Malformed, crc32c, parse_boc
-from integraledger_terms.bindings.x402_exact_tvm import boc_of, lcp_comment, root_of
+from integraledger_terms.bindings._ton_tlb import raw_address
+from integraledger_terms.bindings.x402_exact_tvm import OP_SEND_MSG, boc_of, lcp_comment, root_of
 
 import ed25519
 from breadth import Pairing, build_and_sign, link_calls, plant, x402_doc
@@ -282,6 +283,16 @@ def _simple_lib(b: Builder) -> Builder:
     return b.bit(0).ref(_v2b_code_and_data()[0])
 
 
+def _shared_libraries(forks: int) -> Cell:
+    """V2b's code and data with a libraries dictionary of forks that each reference one child twice: 2^forks entries
+    in forks + 1 cells, which TON's validation reads 2^(forks + 1) - 1 times."""
+    code, _ = _v2b_code_and_data()
+    node = Builder().uint(0b10, 2).bit(0).ref(code).end()
+    for n in range(1, forks):
+        node = Builder().uint(0b10, 2).uint(0, _width(n)).ref(node).ref(node).end()
+    return _state_init(Builder().uint(0b11, 2).bit(0).uint(256 - forks, _width(256)).ref(node).ref(node).end())
+
+
 def _carried(given: Cell) -> bool:
     unsigned = BINDING.build(tvm_choice(stateInit=boc_of(given)), F["H"])
     assert not isinstance(unsigned, Refusal), unsigned
@@ -333,13 +344,7 @@ def test_x402_exact_tvm_build_takes_only_a_state_init_ton_reads_as_one_state_ini
 # dictionary of n entries has 2n - 1 cells on its paths: 512 entries are 1,024 reads, 513 are 1,026. lcp's build
 # answers each so, from TON's own transaction emulator.
 def test_x402_exact_tvm_a_state_init_whose_validation_reads_more_than_1024_cells_is_refused() -> None:
-    code, _ = _v2b_code_and_data()
-
-    def shared(forks: int) -> Cell:
-        node = Builder().uint(0b10, 2).bit(0).ref(code).end()
-        for n in range(1, forks):
-            node = Builder().uint(0b10, 2).uint(0, _width(n)).ref(node).ref(node).end()
-        return _state_init(Builder().uint(0b11, 2).bit(0).uint(256 - forks, _width(256)).ref(node).ref(node).end())
+    shared = _shared_libraries
 
     def edge(keys: list[int], n: int) -> Cell:
         """keys (each n bits) as a Hashmap edge, every label written hml_long."""
@@ -610,3 +615,109 @@ def test_x402_exact_tvm_a_bag_of_cells_is_read_as_ton_deserializes_it() -> None:
         assert isinstance(root_of(row["boc"]), Cell) if within else root_of(row["boc"]) in (
             Refusal("tvm/boc-malformed") if root is None else Refusal("tvm/boc-too-large"),
         ), row["case"]
+
+
+Write = Callable[[Builder], Builder]
+
+
+def _v2_request() -> Cell:
+    """V2's signed W5 request, from build and complete with the vector seed."""
+    unsigned = BINDING.build(tvm_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
+    assert not isinstance(signed, Refusal)
+    return settlement_root(signed).refs[0]
+
+
+def _message(dest: str, body: Cell, **fields: Write) -> Cell:
+    """An int_msg_info message to dest, written field by field: IHR disabled, no source, a value of 0, no extra
+    currency, zero fees and times, no init and the body by reference. Each keyword writes the field it names instead:
+    flags (ihr_disabled, bounce, bounced), src, dest, value, extra, extra_flags, fwd_fee, times, init or body."""
+    to = raw_address(dest)
+    assert to is not None
+    write: dict[str, Write] = {
+        "flags": lambda b: b.bit(1).bit(0).bit(0),
+        "src": lambda b: b.uint(0, 2),
+        "dest": lambda b: b.uint(0b100, 3).sint(to.workchain, 8).buf(to.hash),
+        "value": lambda b: b.coins(0),
+        "extra": lambda b: b.bit(0),
+        "extra_flags": lambda b: b.coins(0),
+        "fwd_fee": lambda b: b.coins(0),
+        "times": lambda b: b.uint(0, 64 + 32),
+        "init": lambda b: b.bit(0),
+        "body": lambda b: b.bit(1).ref(body),
+        **fields,
+    }
+    b = Builder().bit(0)
+    for name in ("flags", "src", "dest", "value", "extra", "extra_flags", "fwd_fee", "times", "init", "body"):
+        write[name](b)
+    return b.end()
+
+
+def _outgoing(**fields: Write) -> Cell:
+    """V2's outgoing message to fixed.jettonWallet, bounceable, with V2's Jetton transfer body, written by _message."""
+    transfer = _v2_request().refs[0].refs[1].refs[0]
+    flags: Write = lambda b: b.bit(1).bit(1).bit(0)  # noqa: E731
+    return _message(F["jettonWallet"], transfer, **{"flags": flags, **fields})
+
+
+def _settlement(out: Cell | None = None, mode: int = 3, **fields: Write) -> str:
+    """V2's settlement as a bag of cells: the W5 request with V2's fields and signature, whose one action sends out
+    (V2's outgoing message when None) with the mode, in a message to fixed.wallet that _message writes with fields."""
+    request = _v2_request()
+    out = request.refs[0].refs[1] if out is None else out
+    actions = Builder().ref(Builder().end()).uint(OP_SEND_MSG, 32).uint(mode, 8).ref(out).end()
+    head, signature = request.value >> (request.length - 128), request.value & ((1 << 512) - 1)
+    signed = Builder().uint(head, 128).bit(1).ref(actions).bit(0).uint(signature, 512).end()
+    return boc_of(_message(F["wallet"], signed, **fields))
+
+
+def _init_by_ref(init: Cell) -> Write:
+    return lambda b: b.bit(1).bit(1).ref(init)
+
+
+def _init_inline(init: Cell) -> Write:
+    return lambda b: b.bit(1).bit(0).slice(init.slice())
+
+
+def _extra(dictionary: Cell) -> Write:
+    return lambda b: b.bit(1).ref(dictionary)
+
+
+# TON validates the action that sends a message (ton-blockchain/ton crypto/block/transaction.cpp: the action list's
+# t_OutListNode.validate_ref, and validate_message_relaxed_libs for its state init) as crypto/tl/tlblib.cpp's
+# validate_ref_internal does: each cell ordinary and read to its end, each dictionary label at most as long as its key,
+# and at most 1,024 cells read, each dictionary cell each time a path reaches it. A libraries dictionary of 9 shared
+# forks is 1,023 reads with its state init, and 10 are 2,047: TON's emulator relays and sends the message with 9 and
+# refuses 10, by reference or inline. lcp's exactTvm.bound answers each case below the same: H, tvm/boc-malformed for
+# the settlement message and tvm/not-jetton-transfer for the outgoing one.
+def test_x402_exact_tvm_a_message_s_dictionaries_are_validated_as_ton_validates_them() -> None:
+    def bound(boc: str) -> Any:
+        return BINDING.bound(presented(boc))
+
+    for init in (_init_by_ref, _init_inline):
+        assert bound(_settlement(init=init(_shared_libraries(9)))) == F["H"]
+        assert bound(_settlement(init=init(_shared_libraries(10)))) == Refusal("tvm/boc-malformed")
+    assert bound(_settlement(_outgoing(init=_init_by_ref(_shared_libraries(9))))) == F["H"]
+    assert bound(_settlement(_outgoing(init=_init_by_ref(_shared_libraries(10))))) == Refusal("tvm/not-jetton-transfer")
+    code, _ = _v2b_code_and_data()
+    key = code.hash
+    leaf = Builder().uint(0b10, 2).uint(256, 9).buf(key).bit(0).ref(code)
+    library = Cell((2 << 256) | int.from_bytes(b"\x01" * 32, "big"), 8 + 256, (), True)
+    refused = {
+        "a libraries label of 257 bits": _state_init(Builder().uint(0b10, 2).uint(257, 9).buf(key).bit(0).bit(0).ref(code).end()),
+        "a libraries label of hml_same 300": _state_init(Builder().uint(0b11, 2).bit(0).uint(300, 9).bit(0).ref(code).end()),
+        "a libraries leaf with a bit after its SimpleLib": _state_init(Builder().slice(leaf.end().slice()).bit(1).end()),
+        "a libraries cell that is exotic": _state_init(library),
+    }
+    for name, init_cell in refused.items():
+        assert bound(_settlement(init=_init_by_ref(init_cell))) == Refusal("tvm/boc-malformed"), name
+        assert bound(_settlement(_outgoing(init=_init_by_ref(init_cell)))) == Refusal("tvm/not-jetton-transfer"), name
+    currencies = {
+        "a label of 40 bits on 32-bit keys": Builder().uint(0b10, 2).uint(40, 6).uint(0, 40).uint(1, 5).uint(1, 8).end(),
+        "a leaf with a bit after its amount": Builder().uint(0b10, 2).uint(32, 6).uint(7, 32).uint(1, 5).uint(1, 8).bit(1).end(),
+        "an exotic dictionary cell": library,
+    }
+    for name, dictionary in currencies.items():
+        assert bound(_settlement(extra=_extra(dictionary))) == Refusal("tvm/boc-malformed"), name
+        assert bound(_settlement(_outgoing(extra=_extra(dictionary)))) == Refusal("tvm/not-jetton-transfer"), name

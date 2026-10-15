@@ -1,6 +1,6 @@
 """The TON cell layer: cells with their level, hashes and depths, a bit builder and a slice, bags of cells read and
-written with CRC-32C, and the check that a HashmapE parses. An exotic cell is held as the bag gives it, and a slice of
-one is Malformed, so each read refuses one where it parses it."""
+written with CRC-32C, and TL-B validation of a cell and a Hashmap as TON runs it. An exotic cell is held as the bag
+gives it, and a slice of one is Malformed, so each read refuses one where it parses it."""
 
 import hashlib
 import math
@@ -313,45 +313,56 @@ class Slice:
 
 
 def read_label(s: Slice, n: int) -> int:
-    """The length of a HmLabel for key length n, read from the slice: hml_short (unary length, then the bits),
-    hml_long (the length in ceil(log2(n + 1)) bits, then the bits) or hml_same (one bit, then the length). A label
-    longer than the key is Malformed."""
+    """The length of a TL-B HmLabel ~l n read from the slice: hml_short$0 (a unary length, then the bits), hml_long$10
+    (the length in ceil(log2(n + 1)) bits, then the bits) or hml_same$11 (one bit, then the length). A label longer
+    than n is Malformed, as is a read past the slice's end."""
     width = math.ceil(math.log2(n + 1))
     if not s.bit():
         length = 0
         while s.bit():
             length += 1
-        s.uint(length)
     elif not s.bit():
         length = s.uint(width)
-        s.uint(length)
     else:
         s.bit()
         length = s.uint(width)
+        if length > n:
+            raise Malformed
+        return length
     if length > n:
         raise Malformed
+    s.uint(length)
     return length
 
 
-def _hashmap(s: Slice, n: int, value: Callable[[Slice], object]) -> None:
-    """Parses one Hashmap node of key length n: its label, then the value at a leaf or the two children at a fork,
-    each child that is an ordinary cell."""
-    length = read_label(s, n)
-    if n - length == 0:
-        value(s)
-        return
-    for child in (s.ref(), s.ref()):
-        if not child.exotic:
-            _hashmap(child.slice(), n - length - 1, value)
+class Validation:
+    """TL-B validation as TON runs it (ton-blockchain/ton crypto/tl/tlblib.cpp, TLB::validate_ref_internal): each cell
+    ordinary and read to its end, with no bit or reference left over, and at most reads cells read in all. A read
+    past a slice's end is Malformed."""
 
+    def __init__(self, reads: int) -> None:
+        self.left = reads
 
-def load_dict(s: Slice, key_bits: int, value: Callable[[Slice], object]) -> Cell | None:
-    """A HashmapE: the root reference when one is present, after checking that the map's ordinary cells parse. An
-    exotic cell in the map is not parsed, as @ton/core's Dictionary reads one."""
-    root = s.maybe_ref()
-    if root is not None and not root.exotic:
-        _hashmap(root.slice(), key_bits, value)
-    return root
+    def exact(self, c: Cell, read: Callable[[Slice], bool]) -> bool:
+        """True when the cell is ordinary, within the reads left, and read reads it to its end."""
+        if self.left <= 0 or c.exotic:
+            return False
+        self.left -= 1
+        s = c.slice()
+        return read(s) and s.remaining_bits == 0 and s.remaining_refs == 0
+
+    def hashmap(self, c: Cell, n: int, value: Callable[[Slice], bool]) -> bool:
+        """A TL-B Hashmap n X edge (hm_edge): a label of at most n bits, then at key length 0 the value, which value
+        reads, else a fork of two edges, each cell counted each time a path reaches it."""
+
+        def edge(s: Slice) -> bool:
+            length = read_label(s, n)
+            if length == n:
+                return value(s)
+            left, right = s.ref(), s.ref()
+            return self.hashmap(left, n - length - 1, value) and self.hashmap(right, n - length - 1, value)
+
+        return self.exact(c, edge)
 
 
 # ── bags of cells ─────────────────────────────────────────────────────────────────────────────────────────────────

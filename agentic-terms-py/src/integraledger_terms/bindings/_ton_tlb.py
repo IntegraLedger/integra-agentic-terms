@@ -2,14 +2,13 @@
 relaxed message (CommonMsgInfoRelaxed, Maybe StateInit, the body), StateInit, and currency collections."""
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 
-from ._ton_cell import Builder, Cell, Malformed, Slice, load_dict, read_label
+from ._ton_cell import Builder, Cell, Malformed, Slice, Validation
 
 _RAW_ADDRESS = re.compile(r"-?[0-9]{1,10}:[0-9a-fA-F]{64}")
-# The cells TON's validation reads of a message's state init, at most (ton-blockchain/ton crypto/tl/tlblib.hpp,
-# default_validate_max_cells).
+# The cells TON's TL-B validation reads at most (ton-blockchain/ton crypto/tl/tlblib.hpp, default_validate_max_cells):
+# of a message's state init, and of the action that sends a message.
 STATE_INIT_MAX_READS = 1024
 
 
@@ -74,55 +73,25 @@ def load_maybe_address(s: Slice) -> Address | None:
     raise Malformed
 
 
-def _extra_currency(s: Slice) -> object:
-    return s.uint(8 * s.uint(5))
+def _extra_currency(s: Slice) -> bool:
+    s.uint(8 * s.uint(5))
+    return True
 
 
-def _library(s: Slice) -> object:
+def _simple_lib(s: Slice) -> bool:
+    """simple_lib public:Bool root:^Cell."""
     s.bit()
-    return s.ref()
-
-
-def load_state_init(s: Slice) -> None:
-    """Reads a StateInit from the slice: Maybe fixed_prefix_length, Maybe TickTock, Maybe ^code, Maybe ^data and the
-    libraries HashmapE 256 SimpleLib, as @ton/core's loadStateInit reads it."""
-    if s.bit():
-        s.uint(5)
-    if s.bit():
-        s.uint(2)
-    s.maybe_ref()
-    s.maybe_ref()
-    load_dict(s, 256, _library)
+    s.ref()
+    return True
 
 
 def is_state_init(root: Cell) -> bool:
     """True when the cell is exactly one StateInitWithLibs, the type in which TON validates a message's state init
     (ton-blockchain/ton crypto/block/transaction.cpp, try_action_send_msg and unpack_input_msg): fixed_prefix_length,
-    special, code, data and library:(HashmapE 256 SimpleLib). As TON's validation does (crypto/tl/tlblib.cpp,
-    TLB::validate_ref_internal), each cell this reads is ordinary and read to its end, with no bit or reference left
-    over, and it reads at most 1,024 cells: the state init's, then each dictionary cell each time a path reaches it.
-    The code, the data and each library's root are any cells and are not read."""
-    reads = STATE_INIT_MAX_READS
-
-    def exact(c: Cell, read: Callable[[Slice], bool]) -> bool:
-        nonlocal reads
-        if reads <= 0:
-            return False
-        reads -= 1
-        s = c.slice()  # Malformed for an exotic cell
-        return read(s) and s.remaining_bits == 0 and s.remaining_refs == 0
-
-    def edge(c: Cell, n: int) -> bool:
-        def read(s: Slice) -> bool:
-            length = read_label(s, n)
-            if length == n:
-                s.bit()
-                s.ref()
-                return True
-            left, right = s.ref(), s.ref()
-            return edge(left, n - length - 1) and edge(right, n - length - 1)
-
-        return exact(c, read)
+    special, code, data and library:(HashmapE 256 SimpleLib), each cell this reads validated as TON validates it
+    (Validation), with at most 1,024 cells read: the state init's, then each dictionary cell each time a path reaches
+    it. The code, the data and each library's root are any cells and are not read."""
+    v = Validation(STATE_INIT_MAX_READS)
 
     def fields(s: Slice) -> bool:
         if s.bit():
@@ -132,12 +101,26 @@ def is_state_init(root: Cell) -> bool:
         s.maybe_ref()
         s.maybe_ref()
         library = s.maybe_ref()
-        return library is None or edge(library, 256)
+        return library is None or v.hashmap(library, 256, _simple_lib)
 
     try:
-        return exact(root, fields)
+        return v.exact(root, fields)
     except Malformed:
         return False
+
+
+def _inline_state_init(s: Slice) -> Cell:
+    """A StateInit written inline in the slice, as the cell its fields make."""
+    bits_at, refs_at = s.at, s.ref_at
+    if s.bit():
+        s.uint(5)
+    if s.bit():
+        s.uint(2)
+    s.maybe_ref()
+    s.maybe_ref()
+    s.maybe_ref()
+    length = s.at - bits_at
+    return Cell((s.cell.value >> (s.cell.length - s.at)) & ((1 << length) - 1), length, s.cell.refs[refs_at : s.ref_at])
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +134,10 @@ class Relaxed:
 
 def load_message_relaxed(s: Slice) -> Relaxed:
     """MessageRelaxed: CommonMsgInfoRelaxed, Maybe (Either StateInit ^StateInit), Either X ^X. An int_msg_info is read
-    in full; any other info is reported as not internal."""
+    in full; any other info is reported as not internal. The init, a ^StateInit or the cell its inline fields make,
+    must be one is_state_init holds, and the extra currencies a HashmapE 32 (VarUInteger 32) validated as TON validates
+    the action that sends the message: within 1,024 cell reads with its node and the message, a ^StateInit and a
+    referenced body."""
     if s.bit():
         return Relaxed(False, None, Cell(0, 0))
     s.bit()
@@ -160,17 +146,21 @@ def load_message_relaxed(s: Slice) -> Relaxed:
     load_maybe_address(s)
     dest = load_address(s)
     s.coins()
-    load_dict(s, 32, _extra_currency)
+    extra = s.maybe_ref()
     s.coins()
     s.coins()
     s.uint(64)
     s.uint(32)
+    init_ref = False
     if s.bit():
-        if not s.bit():
-            load_state_init(s)
-        else:
-            load_state_init(s.ref().slice())
-    body = s.ref() if s.bit() else s.as_cell()
+        init_ref = s.bit()
+        if not is_state_init(s.ref() if init_ref else _inline_state_init(s)):
+            raise Malformed
+    body_ref = s.bit()
+    body = s.ref() if body_ref else s.as_cell()
+    reads = STATE_INIT_MAX_READS - 2 - init_ref - body_ref
+    if extra is not None and not Validation(reads).hashmap(extra, 32, _extra_currency):
+        raise Malformed
     return Relaxed(True, dest, body)
 
 
