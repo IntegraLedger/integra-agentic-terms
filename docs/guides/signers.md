@@ -46,7 +46,7 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 | --- | --- | --- |
 | `eip712` | EIP-712 typed data (`request.typedData`): an EIP-3009 transfer authorization, a Permit2 transfer, a channel voucher. | The 65-byte signature, `0x` hex. |
 | `erc7710` | An ERC-7710 delegation request for the option. | `{ delegationManager, permissionContext, delegator }`, each `0x` hex. |
-| `evm-call` | One contract call on the chain. With `broadcast: true` the signer sends it itself. | Without `broadcast`: the signed EIP-1559 transaction, `0x` hex. With `broadcast`: the transaction hash, `0x` hex. |
+| `evm-call` | One contract call on the chain. With `broadcast: true` the signer sends it itself. | Without `broadcast`: the signed EIP-1559 transaction, `0x` hex, for the request's `chainId`; another chain is declined `signed-not-bound` (`evm/chain-mismatch`), as are bytes that are not an EIP-1559 transaction (`mpp/credential-malformed`). With `broadcast`: the transaction hash, `0x` hex. |
 | `evm-calls` | Several calls, in order, which the signer broadcasts (a session's opening). | The opening's transaction hash, `0x` hex. |
 | `gateway-burn-intent` | A Circle Gateway burn intent. The client computes the salt from the preimage the request gives and signs. | `{ source, sourceNetwork, destinationNetwork, maxFee, burnIntent, signature }`. |
 | `tempo-call`, `tempo-calls` | A Tempo `0x76` transaction with one call, or several in order (a charge with splits). With `broadcast: true` the signer sends it. | Without `broadcast`: the signed transaction, `0x` hex. With `broadcast`: `{ hash, landed }`, the hash it sent and, where it has it, the landed receipt `{ transaction, blockNumber, logs }`. |

@@ -6,6 +6,7 @@ import hashlib
 import json
 from typing import Any
 
+from eth_account import Account
 from integraledger_terms import (
     MPP_CHARGE_EVM_AUTHORIZATION,
     MPP_CHARGE_EVM_HASH,
@@ -291,6 +292,22 @@ def _built(name: str) -> Any:
     return unsigned
 
 
+def _evm_wire_of(size: int) -> str:
+    """An EIP-1559 transaction of exactly size bytes on C_E's chain, signed by the payer key with eth-account: a call to
+    C_E's currency whose data is zero bytes enough to reach size."""
+
+    def signed(n: int) -> str:
+        tx = {"type": 2, "chainId": _R_E["methodDetails"]["chainId"], "nonce": 0, "maxPriorityFeePerGas": 1,
+              "maxFeePerGas": 2, "gas": 60_000, "to": _R_E["currency"], "value": 0, "data": "0x" + "00" * n}  # fmt: skip
+        return "0x" + bytes(Account.sign_transaction(tx, _PAYER["payerKey"]).raw_transaction).hex()
+
+    for n in range(size - len(signed(0)) // 2 - 64, size):
+        wire = signed(n)
+        if (len(wire) - 2) // 2 == size:
+            return wire
+    raise AssertionError(f"no padding gives {size} bytes")
+
+
 def test_a_charge_build_refuses_an_h_its_challenge_id_does_not_derive_from() -> None:
     """mpp-challenge.json's agreedRefusals row for a build with an H the challenge's id does not derive from: each
     charge build builds with H, and refuses with the row's code H with its last hex digit changed, H without its last
@@ -328,13 +345,15 @@ def _tempo_wire_of(size: int) -> str:
 def test_a_charge_complete_refuses_an_answer_past_its_bound() -> None:
     """mpp-challenge.json's agreedRefusals row for complete with a signature outside 1 to 8192 bytes, a transaction hash
     not 32 bytes, or a signed transaction over 64 KiB: an answer at each bound completes, and one past it is the row's
-    refusal."""
+    refusal. The EVM transactions at the bound and one byte past it are EIP-1559 transactions on the challenge's
+    chain, which complete reads, so the size bound alone refuses the one past it; the memo's at the bound is a 0x76
+    transaction on its chain."""
     expect = refused(_agreed("complete with a signature outside 1 to 8192 bytes"))
-    wire, over = "0x" + "11" * 65_536, "0x" + "11" * 65_537
+    over = "0x" + "11" * 65_537
     at_bound = [("authorization", "0x11"), ("authorization", "0x" + "11" * 8192), ("hash", H), ("push", H),
-                ("transaction", wire), ("memo", _tempo_wire_of(65_536))]  # fmt: skip
+                ("transaction", _evm_wire_of(65_536)), ("memo", _tempo_wire_of(65_536))]  # fmt: skip
     past = [("authorization", "0x"), ("authorization", "0x" + "11" * 8193), ("hash", "0x" + "11" * 31),
-            ("push", "0x" + "11" * 33), ("transaction", over), ("memo", over)]  # fmt: skip
+            ("push", "0x" + "11" * 33), ("transaction", _evm_wire_of(65_537)), ("memo", over)]  # fmt: skip
     for name, answer in at_bound:
         assert not isinstance(_built(name).complete(answer), Refusal), (name, len(answer))
     for name, answer in past:

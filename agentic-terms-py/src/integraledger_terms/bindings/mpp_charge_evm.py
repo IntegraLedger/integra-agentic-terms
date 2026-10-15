@@ -25,6 +25,7 @@ from ._mpp import (
     text,
 )
 from ._mpp_evm import eip3009_typed_data, transfer_calldata
+from ._rlp import rlp_decode, rlp_uint
 
 AUTHORIZATION = "mpp/charge/evm/authorization"
 PERMIT2_ID = "mpp/charge/evm/permit2"
@@ -238,8 +239,40 @@ class MppChargeEvmPermit2:
 
 # ── mpp/charge/evm/transaction and mpp/charge/evm/hash.
 
+# EIP-1559's transaction type, its EIP-2718 envelope byte; the places among its fields of the destination and data (byte
+# strings), and of the access list.
+_EIP1559_TYPE = 0x02
+_EIP1559_BYTES = (5, 7)
+_EIP1559_ACCESS_LIST = 8
+
+
+def _eip1559_chain_id(wire: bytes) -> int | None:
+    """The chain id of a signed EIP-1559 transaction: 0x02, then the RLP list of its twelve fields, chainId, nonce,
+    maxPriorityFeePerGas, maxFeePerGas, gasLimit, destination, amount, data, accessList, signatureYParity, signatureR
+    and signatureS (EIP-1559), each integer canonical and the access list a list. None for any other bytes."""
+    if not wire or wire[0] != _EIP1559_TYPE:
+        return None
+    top = rlp_decode(wire[1:], 3)
+    if top is None or top.items is None or len(top.items) != 12:
+        return None
+    for i, item in enumerate(top.items):
+        if i == _EIP1559_ACCESS_LIST:
+            if not item.is_list:
+                return None
+        elif i in _EIP1559_BYTES:
+            if item.is_list:
+                return None
+        elif rlp_uint(item) is None:
+            return None
+    return rlp_uint(top.items[0])
+
 
 def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    """The call's request for the buyer's signer, on the challenge's chain. On hash, complete takes the transaction
+    hash; on transaction, the signed transaction, as draft-evm-charge-00's transaction verification reads it before it
+    broadcasts (L696-697 and L873-879 at tempoxyz/mpp-specs 08e7dd87): an EIP-1559 transaction, else
+    mpp/credential-malformed, whose chain id is the challenge's methodDetails.chainId, else evm/chain-mismatch. bound
+    reads nothing of it (mpp/no-signed-place)."""
     o = offer_for(choice, h, pairing)
     if isinstance(o, Refusal):
         return o
@@ -256,6 +289,11 @@ def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
             return {"challenge": challenge, "source": source, "payload": {"type": "hash", "hash": signed_or_hash}}
         if not is_hex_bytes(signed_or_hash, 1, MAX_WIRE):
             return Refusal("mpp/credential-malformed")
+        tx_chain = _eip1559_chain_id(bytes.fromhex(signed_or_hash[2:]))
+        if tx_chain is None:
+            return Refusal("mpp/credential-malformed")
+        if tx_chain != chain_id:
+            return Refusal("evm/chain-mismatch")
         return {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
 
     request = {
