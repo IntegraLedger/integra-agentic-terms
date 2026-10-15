@@ -32,7 +32,7 @@ from integraledger_terms import _gate
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
-from integraledger_terms.bindings._tempo import encode_key_authorization
+from integraledger_terms.bindings._tempo import encode_key_authorization, tempo_channel_id
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, plant, run
 from mpp_docs import b64u, http_doc, issued, placed_doc
@@ -273,6 +273,32 @@ def test_mpp_session_tempo_rows_whose_transaction_is_for_another_chain() -> None
         opening = tempo_opening(request_text, row["transactionChainId"])
         assert MPP_SESSION_TEMPO.bound(opening) == Refusal(row["expect"]), row["case"]
         assert voucher_within(opening) == Refusal(row["expect"]), row["case"]
+
+
+OPERATOR = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"  # the published Anvil key #2's address, a test value
+
+
+def test_mpp_session_tempo_a_v2_descriptor_names_the_challenge_s_operator() -> None:
+    # draft-tempo-session-00 requires a v2 credential's descriptor operator to be the challenge's methodDetails.operator,
+    # the zero address where it names none. B6's opening names the zero address under a challenge naming none.
+    channel = MPP_SESSION_TEMPO.channel  # type: ignore[attr-defined]
+    b6 = next(r for r in TEMPO["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
+    assert (MPP_SESSION_TEMPO.bound(b6), channel.bound_within(b6)) == (H, H)
+    named = json.loads(TF["requestV2"])
+    named["methodDetails"]["operator"] = OPERATOR
+    under_named = {**b6, "challenge": {**b6["challenge"], "request": b64u(json.dumps(named))}}
+    descriptor = {**b6["payload"]["descriptor"], "operator": OPERATOR}
+    channel_id = tempo_channel_id({**descriptor, "escrow": TF["escrowV2"], "chainId": TF["chainId"]})
+    naming = {**b6, "payload": {**b6["payload"], "descriptor": descriptor, "channelId": channel_id}}
+    for presented in (under_named, naming):
+        assert MPP_SESSION_TEMPO.bound(presented) == Refusal("tempo/descriptor-mismatch")
+        assert channel.bound_within(presented) == Refusal("tempo/descriptor-mismatch")
+    # The binding's build writes the challenge's operator into the open call and the descriptor.
+    for written in (OPERATOR, "0x" + OPERATOR[2:].lower()):
+        named["methodDetails"]["operator"] = written
+        opening = tempo_opening(json.dumps(named), TF["chainId"])
+        assert opening["payload"]["descriptor"]["operator"] == written
+        assert (MPP_SESSION_TEMPO.bound(opening), channel.bound_within(opening)) == (H, H)
 
 
 def tempo_pairing(answer: Any, doc: Any = None) -> Pairing:

@@ -494,7 +494,9 @@ _DESCRIPTOR_KEYS = ("payer", "payee", "operator", "token", "salt", "authorizedSi
 
 
 def _descriptor_salt(payload: Mapping[str, Any], p: Params) -> AtrHash | Refusal:
-    """The v2 descriptor's salt, when the descriptor's channel id is the payload's channel."""
+    """The v2 descriptor's salt, when the descriptor's channel id is the payload's channel and its operator is the
+    challenge's methodDetails.operator, or the zero address where the challenge names none: draft-tempo-session-00
+    requires both of a v2 credential's descriptor. Else tempo/descriptor-mismatch."""
     v = payload.get("descriptor")
     if not is_object(v) or not all(isinstance(v.get(k), str) for k in _DESCRIPTOR_KEYS):
         return Refusal("tempo/descriptor-mismatch")
@@ -503,6 +505,9 @@ def _descriptor_salt(payload: Mapping[str, Any], p: Params) -> AtrHash | Refusal
     channel = normal_hash(payload.get("channelId"))
     salt = normal_hash(d["salt"])
     if isinstance(channel_id, Refusal) or channel is None or salt is None or not same_bytes(channel_id, channel):
+        return Refusal("tempo/descriptor-mismatch")
+    operator = p.details.get("operator")
+    if not same_bytes(d["operator"], ZERO_ADDRESS if operator is None else operator):
         return Refusal("tempo/descriptor-mismatch")
     return salt
 
