@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 import httpx
@@ -395,3 +396,29 @@ def test_json_form_hands_a_request_of_any_depth_or_shape_without_recursion() -> 
     cycle["self"] = cycle
     looped: Any = terms._gate.json_form(cycle)
     assert looped["x"] == 1 and looped["self"] is looped
+
+
+class _Fresh(Mapping[str, Any]):
+    """A mapping that builds each value anew at every read, as a caller's binding may: one level per size, each level
+    holding that many members, the last holding {"i": i, "b": bytes([i])}."""
+
+    def __init__(self, sizes: tuple[int, ...]) -> None:
+        self._sizes = sizes
+
+    def __getitem__(self, key: str) -> Any:
+        i = int(key)
+        return _Fresh(self._sizes[1:]) if len(self._sizes) > 1 else {"i": i, "b": bytes([i])}
+
+    def __iter__(self) -> Iterator[str]:
+        return iter([str(i) for i in range(self._sizes[0])])
+
+    def __len__(self) -> int:
+        return self._sizes[0]
+
+
+def test_json_form_forms_values_built_anew_at_each_read() -> None:
+    # json_form keeps each mapping and list it reaches for the walk, so a value freed once it is formed never lends its
+    # id to a later one, and each member is formed from what its own read gave.
+    for outer, inner in ((50, 50), (200, 20), (20, 200)):
+        want = {str(o): {str(i): {"i": i, "b": f"0x{i:02x}"} for i in range(inner)} for o in range(outer)}
+        assert terms._gate.json_form(_Fresh((outer, inner))) == want, (outer, inner)

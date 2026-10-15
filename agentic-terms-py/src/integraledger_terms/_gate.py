@@ -172,8 +172,9 @@ def _moves(piece: Piece, unsigned: Any) -> bool:
 
 def json_form(value: Any) -> Any:
     """A signing request as the signer receives it: every byte string as 0x and lowercase hex, the rest as given. It
-    walks without recursion, each mapping and list formed once however often it is reached, so a request of any depth
-    or shape is handed over as the TypeScript gate hands it."""
+    walks without recursion, each mapping and list formed once however often it is reached, and keeps each one it has
+    reached for the walk, so no id is reused within it. A request of any depth or shape is handed over as the TypeScript
+    gate hands it."""
 
     def form(v: Any) -> Any:
         if isinstance(v, (bytes, bytearray)):
@@ -181,13 +182,13 @@ def json_form(value: Any) -> Any:
         if not isinstance(v, (Mapping, list, tuple)):
             return v
         if id(v) in formed:
-            return formed[id(v)]
+            return formed[id(v)][1]
         out: dict[Any, Any] | list[Any] = {} if isinstance(v, Mapping) else []
-        formed[id(v)] = out
+        formed[id(v)] = (v, out)
         pending.append((v.items() if isinstance(v, Mapping) else enumerate(v), out))
         return out
 
-    formed: dict[int, Any] = {}
+    formed: dict[int, tuple[Any, Any]] = {}
     pending: list[tuple[Any, Any]] = []
     top = form(value)
     while pending:
