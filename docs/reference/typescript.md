@@ -123,7 +123,8 @@ payment request and returns `{ approve, bytes, h }`, signing nothing; where the 
 its receipt. With `options.approved`, the value of `approve` carried back unchanged, signs exactly that payment with
 `signer`, sends it, and returns the receipt once recorded. The option paid is the first, in document order, that
 `signer` can pay with a pairing whose payment is itself a public proof. `options.inputs` are the buyer's own chain
-values; `options.signal` ends the exchange. A `signer` whose `account` is not a string is declined before any fetch.
+values; `options.signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, or a member
+of the wrong kind, and a `signer` whose `account` is not a string, are declined before any fetch.
 See [agreement payments](../guides/agreement-payments.md).
 
 ### `openChannel`
