@@ -244,15 +244,21 @@ class TempoAnswer:
         return sign_typed(request["typedData"])
 
 
-def tempo_opening(request_text: str, chain: int, signature: Any = None, payer: str = TF["payer"]) -> dict[str, Any]:
+def tempo_opening(
+    request_text: str, chain: int, signature: Any = None, payer: str = TF["payer"], dirty: int | None = None
+) -> dict[str, Any]:
     """The opening the binding's build writes for a challenge of request_text and payer, completed with its open call
     in a transaction of TS2's other fields for chain, signed with fixed.payerKey or as signature gives, and the payer's
-    voucher."""
+    voucher. With dirty, the open call's argument word of that index has a non-zero first byte."""
     unsigned = MPP_SESSION_TEMPO.build(
         {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": payer, "deposit": int(TF["deposit"])}, H
     )
     assert not isinstance(unsigned, Refusal), unsigned
-    signed_tx = open_wire({**unsigned.funding, "chainId": chain}, signature)
+    call = unsigned.funding["call"]
+    if dirty is not None:
+        at = 10 + 64 * dirty
+        call = {**call, "data": call["data"][:at] + "01" + call["data"][at + 2 :]}
+    signed_tx = open_wire({**unsigned.funding, "call": call, "chainId": chain}, signature)
     voucher = unsigned.voucher(signed_tx)
     assert not isinstance(voucher, Refusal), voucher
     opening = unsigned.complete(signed_tx, sign_typed(voucher))
@@ -303,6 +309,35 @@ def test_mpp_session_tempo_rows_whose_descriptor_names_another_payer_or_nonce_ha
         presented = with_descriptor(opening, {k: row[k] for k in ("payer", "expiringNonceHash") if k in row})
         assert MPP_SESSION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
         assert voucher_within(presented) == Refusal(row["expect"]), row["case"]
+
+
+def test_mpp_session_tempo_rows_whose_opening_names_another_party_than_its_open_call() -> None:
+    # mpp-session-tempo.json's agreedRefusals rows that change a v2 descriptor's payee, token or authorizedSigner, or a
+    # v1 payload's channelId (draft-tempo-session-00 L865-871 and L1180-1183, as the rows' about cites them): the
+    # descriptor matches the signed open call, and v1's channelId is computed from the payer the transaction recovers to.
+    v2 = tempo_opening(TF["requestV2"], TF["chainId"])
+    v1 = tempo_opening(TF["requestV1"], TF["chainId"])
+    assert (MPP_SESSION_TEMPO.bound(v2), MPP_SESSION_TEMPO.bound(v1)) == (H, H)
+    parties = [r for r in TEMPO["agreedRefusals"]["rows"] if "sessionProtocol" not in r and {"payee", "token", "authorizedSigner"} & set(r)]
+    channels = [r for r in TEMPO["agreedRefusals"]["rows"] if r.get("sessionProtocol") == "v1" and "channelId" in r]
+    assert parties and channels
+    for row in parties:
+        presented = with_descriptor(v2, {k: row[k] for k in ("payee", "token", "authorizedSigner") if k in row})
+        assert MPP_SESSION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
+    for row in channels:
+        presented = {**v1, "payload": {**v1["payload"], "channelId": row["channelId"]}}
+        assert MPP_SESSION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
+        assert voucher_within(presented) == Refusal(row["expect"]), row["case"]
+
+
+def test_mpp_session_tempo_an_open_call_argument_that_is_not_an_address_is_tx_malformed() -> None:
+    # An ABI address word is the address in its last 20 bytes and zeros in its first 12 (Solidity ABI specification):
+    # v2's open(payee, operator, token, deposit, salt, authorizedSigner) words 0, 1, 2 and 5, and v1's open(payee, token,
+    # deposit, salt, authorizedSigner) words 0, 1 and 4. A deposit word is not an address.
+    for request_text, words, deposit in ((TF["requestV2"], (0, 1, 2, 5), 3), (TF["requestV1"], (0, 1, 4), 2)):
+        for i in words:
+            assert MPP_SESSION_TEMPO.bound(tempo_opening(request_text, TF["chainId"], dirty=i)) == Refusal("tempo/tx-malformed")
+        assert MPP_SESSION_TEMPO.bound(tempo_opening(request_text, TF["chainId"], dirty=deposit)) == H
 
 
 ACCOUNT = bytes.fromhex(OPERATOR[2:])
