@@ -1,5 +1,5 @@
-"""One JSON nesting cap of 64 levels for every read of JSON text by a binding: core-vectors.json's jsonDepth rows,
-binding reads of text nested 64 and 65 levels deep, and the ACP, UCP and ACK reads, which measure a document as
+"""One JSON nesting cap of 64 levels for every read of JSON text by a binding: core-vectors.json's jsonDepth rows, read
+and written as the protocol package writes JSON, binding reads of text nested 64 and 65 levels deep, and the ACP, UCP and ACK reads, which measure a document as
 JSON.stringify writes it, the document being level 1. core-vectors.json's jsonNumbers rows: an integer literal of any
 length reads as JSON.parse reads it. The binding codes are those @integraledger/lcp's same reads give
 for the same inputs: its ACK and AP2 read, usdcRequestHash, atrNamesInvoice, and jsonBytes, which measures a value
@@ -85,6 +85,47 @@ def test_a_value_within_depth_64_levels_counted_as_its_json_text_is() -> None:
     cycle: list[object] = []
     cycle.append(cycle)
     assert not within_depth(cycle)
+
+
+def as_tuples(value: Any) -> Any:
+    if isinstance(value, list):
+        return tuple(as_tuples(v) for v in value)
+    if isinstance(value, dict):
+        return {k: as_tuples(v) for k, v in value.items()}
+    return value
+
+
+def test_js_json_writes_what_the_json_depth_rows_accept() -> None:
+    # Each jsonDepth row's value, read without the cap, is written as its text when the row accepts it and raises when
+    # it does not, as a list and as a tuple.
+    for row in CORE["jsonDepth"]["rows"]:
+        value = json.loads(row["text"])
+        for form in (value, as_tuples(value)):
+            if row["accept"]:
+                assert js_json(form) == row["text"], row["name"]
+            else:
+                with pytest.raises(ValueError):
+                    js_json(form)
+
+
+@pytest.mark.parametrize(
+    "nested",
+    [
+        lambda n: "[" * n + "]" * n,
+        lambda n: "[" * n + "0" + "]" * n,
+        lambda n: '{"a":' * (n - 1) + "{}" + "}" * (n - 1),
+        lambda n: '{"a":' * n + "null" + "}" * n,
+    ],
+    ids=["arrays", "arrays-holding-a-number", "objects", "objects-holding-null"],
+)
+def test_js_json_writes_64_levels_and_refuses_65(nested: Any) -> None:
+    # The protocol package writes no array or object at depth 64 or more, counted from 0 at the value: 64 levels are
+    # written, 65 raise, whether the innermost container is empty or holds a value.
+    assert js_json(json.loads(nested(64))) == nested(64)
+    with pytest.raises(ValueError):
+        js_json(json.loads(nested(65)))
+    with pytest.raises(ValueError):
+        js_json(as_tuples(json.loads(nested(65))))
 
 
 def test_json_numbers_rows() -> None:

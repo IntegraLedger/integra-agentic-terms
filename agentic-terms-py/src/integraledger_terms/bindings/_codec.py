@@ -167,8 +167,9 @@ def _string(text: str) -> str:
 def js_json(value: Any, depth: int = 0, *, null_non_finite: bool = False) -> str:
     """The text JSON.stringify writes for plain JSON data: compact, members in their order, non-ASCII kept. A number
     that is not finite (es_number) raises ValueError, or, with null_non_finite, is written null, as JSON.stringify
-    writes it (ECMA-262 SerializeJSONProperty)."""
-    if depth > MAX_JSON_DEPTH:
+    writes it (ECMA-262 SerializeJSONProperty). Arrays and objects nested more than MAX_JSON_DEPTH levels, the value
+    itself being level 1, raise ValueError, as the protocol package writes no deeper JSON."""
+    if depth >= MAX_JSON_DEPTH and isinstance(value, (list, tuple, dict)):
         raise ValueError("too deep")
     if value is None or isinstance(value, bool):
         return json.dumps(value)
