@@ -294,16 +294,17 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
     """The option the agreement is paid with, by the main payment's rule: the options in document order, and the first
     one the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402
     pairing, in the protocol package's order, whose read accepts the challenge holding only that option. An option
-    whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it. An accepts that
-    holds no mapping serves no option, and is declined as the read answers it: offer-unreadable with
-    x402/no-payable-option."""
+    whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it. An accepts that is
+    not a list, holds more than 32 entries or holds no mapping serves no option, and is declined offer-unreadable with
+    the code the read gives the whole challenge (_unserved_code)."""
     accepts = required.get("accepts")
-    if not isinstance(accepts, Sequence) or isinstance(accepts, (str, bytes)):
-        return Declined("offer-unreadable", "x402/option-malformed")
-    if len(accepts) > MAX_OPTIONS:
-        return Declined("offer-unreadable", "x402/option-malformed")
-    if not any(isinstance(option, Mapping) for option in accepts):
-        return Declined("offer-unreadable", "x402/no-payable-option")
+    if (
+        not isinstance(accepts, Sequence)
+        or isinstance(accepts, (str, bytes))
+        or len(accepts) > MAX_OPTIONS
+        or not any(isinstance(option, Mapping) for option in accepts)
+    ):
+        return Declined("offer-unreadable", _unserved_code(required))
     now = _gate._now()
     unreadable: str | None = None
     unpayable: str | None = None
@@ -335,6 +336,17 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
     if unpayable is None and unreadable is not None:
         return Declined("offer-unreadable", unreadable)
     return Declined("no-payable-option", unpayable if unpayable is not None else "x402/no-payable-option")
+
+
+def _unserved_code(required: Mapping[str, Any]) -> str:
+    """The code the x402 reads give a challenge that serves no option: the first refusal, in the protocol package's
+    order, that is not x402/no-payable-option (a fault of the whole challenge, such as its version or legal context, or
+    an accepts that is not a list of at most 32 entries), else x402/no-payable-option."""
+    for binding in _x402_bindings():
+        read = binding.read(required)
+        if isinstance(read, Refusal) and read.code != "x402/no-payable-option":
+            return read.code
+    return "x402/no-payable-option"
 
 
 def _bounds(option: Mapping[str, Any]) -> tuple[int, int] | None:

@@ -923,6 +923,43 @@ def test_accepts_that_holds_no_option_is_refused_offer_unreadable_with_the_reads
     assert signer.requests == []
 
 
+_LC = AG["required"]["extensions"]["legalContext"]
+_HASH_0X12 = {**AG["required"]["extensions"], "legalContext": {**_LC, "info": {**_LC["info"], "value": "0x12"}}}
+
+
+@pytest.mark.parametrize(
+    ("patch", "code"),
+    [
+        ({"x402Version": 1, "accepts": []}, "x402/not-v2"),
+        ({"x402Version": 1, "accepts": [1]}, "x402/not-v2"),
+        ({"x402Version": 1, "accepts": "x"}, "x402/not-v2"),
+        ({"extensions": _HASH_0X12, "accepts": []}, "x402/legal-context-malformed"),
+        ({"extensions": _HASH_0X12, "accepts": [None]}, "x402/legal-context-malformed"),
+        ({"extensions": _HASH_0X12, "accepts": "x"}, "x402/option-malformed"),
+    ],
+    ids=[
+        "x402Version 1, accepts []",
+        "x402Version 1, accepts [1]",
+        "x402Version 1, accepts 'x'",
+        "a malformed legal context, accepts []",
+        "a malformed legal context, accepts [None]",
+        "a malformed legal context, accepts 'x'",
+    ],
+)
+def test_a_fault_of_the_whole_challenge_is_refused_with_the_reads_code_whatever_its_accepts_holds(
+    patch: dict[str, Any], code: str
+) -> None:
+    """The read checks the version, then that accepts is a list of at most 32 entries, then the legal context, before
+    it looks for an option."""
+    required = {**AG["required"], **patch}
+    read = BINDING.read(required)
+    assert isinstance(read, Refusal) and read.code == code
+    signer = RecordingSigner()
+    out = run(Challenging(RECORDED, header=b64(required)).link(), lambda c: agree(A, URL, signer, c))
+    assert out == Declined("offer-unreadable", code)
+    assert signer.requests == []
+
+
 def test_a_malformed_legal_context_beside_an_option_that_gives_no_deadline_is_refused_with_the_reads_code() -> None:
     """A fault of the whole document is the read's, whatever its options' timeouts: the read gives that code first."""
     lc = AG["required"]["extensions"]["legalContext"]

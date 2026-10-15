@@ -281,14 +281,15 @@ interface Selected {
  * The option the agreement is paid with, by the main payment's rule: the options in document order, and the first one
  * the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402 pairing,
  * in the protocol package's order, whose read accepts the challenge holding only that option. An option whose
- * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it. An `accepts` that holds
- * no object serves no option, and is declined as the read answers it: `offer-unreadable` with `x402/no-payable-option`.
+ * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it. An `accepts` that is
+ * not a list, holds more than 32 entries or holds no object serves no option, and is declined `offer-unreadable` with
+ * the code the read gives the whole challenge (`unservedCode`).
  */
 async function select(required: Record<string, unknown>, account: string, inputs: Inputs): Promise<Selected | Declined> {
   const accepts = required["accepts"];
-  if (!Array.isArray(accepts)) return declined("offer-unreadable", "x402/option-malformed");
-  if (accepts.length > MAX_OPTIONS) return declined("offer-unreadable", "x402/option-malformed");
-  if (!accepts.some((option) => isObject(option))) return declined("offer-unreadable", "x402/no-payable-option");
+  if (!Array.isArray(accepts) || accepts.length > MAX_OPTIONS || !accepts.some((option) => isObject(option))) {
+    return declined("offer-unreadable", unservedCode(required));
+  }
   const now = Math.floor(Date.now() / 1000);
   let unreadable: string | undefined;
   let unpayable: string | undefined;
@@ -317,6 +318,19 @@ async function select(required: Record<string, unknown>, account: string, inputs
   }
   if (unpayable === undefined && unreadable !== undefined) return declined("offer-unreadable", unreadable);
   return declined("no-payable-option", unpayable ?? "x402/no-payable-option");
+}
+
+/**
+ * The code the x402 reads give a challenge that serves no option: the first refusal, in the protocol package's order,
+ * that is not `x402/no-payable-option` (a fault of the whole challenge, such as its version or legal context, or an
+ * `accepts` that is not a list of at most 32 entries), else `x402/no-payable-option`.
+ */
+function unservedCode(required: Record<string, unknown>): string {
+  for (const binding of X402) {
+    const read = (binding as unknown as { read(d: unknown): Read | Refusal }).read(required);
+    if (isRefusal(read) && read.code !== "x402/no-payable-option") return read.code;
+  }
+  return "x402/no-payable-option";
 }
 
 /**

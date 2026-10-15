@@ -958,6 +958,26 @@ describe("the agreement payment the agent approves", () => {
     },
   );
 
+  // A fault of the whole challenge is the read's, whatever its accepts holds: the read checks the version, then that
+  // accepts is a list of at most 32 entries, then the legal context, before it looks for an option.
+  const HASH_0X12 = { legalContext: { ...AG.required.extensions.legalContext, info: { ...AG.required.extensions.legalContext.info, value: "0x12" } } };
+  it.each([
+    ["x402Version 1, accepts []", { x402Version: 1, accepts: [] }, "x402/not-v2"],
+    ["x402Version 1, accepts [1]", { x402Version: 1, accepts: [1] }, "x402/not-v2"],
+    ['x402Version 1, accepts "x"', { x402Version: 1, accepts: "x" }, "x402/not-v2"],
+    ["a malformed legal context, accepts []", { extensions: { ...AG.required.extensions, ...HASH_0X12 }, accepts: [] }, "x402/legal-context-malformed"],
+    ["a malformed legal context, accepts [null]", { extensions: { ...AG.required.extensions, ...HASH_0X12 }, accepts: [null] }, "x402/legal-context-malformed"],
+    ['a malformed legal context, accepts "x"', { extensions: { ...AG.required.extensions, ...HASH_0X12 }, accepts: "x" }, "x402/option-malformed"],
+  ])("%s: offer-unreadable with the read's code, nothing signed", async (_, patch, code) => {
+    const required = { ...AG.required, ...patch };
+    const read = exactEip3009.read(required as unknown as PaymentRequired);
+    expect(read).toMatchObject({ refused: true, code });
+    const signer = counting();
+    const out = await agree(A, AGREEMENT_URL, signer, challenging(base64Json(required), RECORDED));
+    expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: code });
+    expect(signer.requests.length).toBe(0);
+  });
+
   // A fault of the whole document is the read's, whatever its options' timeouts: the read gives that code first.
   it("a legal context that is malformed, beside an option that gives no deadline: offer-unreadable with the read's code", async () => {
     const lc = AG.required.extensions.legalContext;
