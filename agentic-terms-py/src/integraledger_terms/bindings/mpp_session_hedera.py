@@ -261,7 +261,7 @@ class MppSessionHedera:
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         """A voucher, or a close's final voucher, on the channel the held opening opened: the voucher with the channel
         id, the escrow and the chain from the opening, signed as EIP-712."""
-        o = within_checks(w, h, "session/hedera", _opening, U128_LIMIT)
+        o = within_checks(w, h, "session/hedera", _opening, U128_LIMIT, ("topUp", "use", "bearer"))
         if isinstance(o, Refusal):
             return o
         network = hedera_session_network_of(o.checked.details)

@@ -15,18 +15,23 @@ from ._mpp_checks import decode_object
 U128 = 1 << 128
 U96 = 1 << 96
 MAX_SIGNATURE = 8192
-# The actions build_within does not build: topUp (a new deposit), Solana's operator use and Lightning's bearer.
-WITHIN_NOT_BUILT = ("topUp", "use", "bearer")
 
 O = TypeVar("O")
 
 
 def within_checks(
-    w: object, h: object, intent_and_method: str, opened: Callable[[Mapping[str, Any]], O | Refusal], limit: int
+    w: object,
+    h: object,
+    intent_and_method: str,
+    opened: Callable[[Mapping[str, Any]], O | Refusal],
+    limit: int,
+    not_built: Sequence[str],
 ) -> O | Refusal:
     """The checks build_within makes on its input before any channel value is read, in the input's member order: the
     within challenge's shape and its intent and method; the opening, by opened, bound to h; the cumulative amount below
-    limit; and the action, voucher or close."""
+    limit; and the action, voucher or close. not_built lists the actions the pairing's draft defines within a channel
+    that build_within does not build: each is mpp/within-action-not-built, and an action neither built nor listed is
+    mpp/session-action, as the pairing's channel_kind answers an action its draft does not define."""
     if not is_object(w):
         return Refusal("mpp/input-malformed")
     c = w.get("challenge")
@@ -47,7 +52,7 @@ def within_checks(
     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0 or amount >= limit:
         return Refusal("mpp/input-malformed")
     action = w.get("action")
-    if action in WITHIN_NOT_BUILT:
+    if action in not_built:
         return Refusal("mpp/within-action-not-built")
     if action not in ("voucher", "close"):
         return Refusal("mpp/session-action")

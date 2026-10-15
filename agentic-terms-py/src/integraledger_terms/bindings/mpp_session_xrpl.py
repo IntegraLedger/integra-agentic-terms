@@ -271,7 +271,7 @@ class MppSessionXrpl:
         """A claim, or a close's final claim, on the channel the held opening created: one xrpl-claim request over the
         claim bytes (CLM\\0, the channel id, the drops), for the channel's key, with the channel id derived from the
         opening's signed blob."""
-        o = within_checks(w, h, "session/xrpl", _opening, U64_LIMIT)
+        o = within_checks(w, h, "session/xrpl", _opening, U64_LIMIT, ("topUp", "use", "bearer"))
         if isinstance(o, Refusal):
             return o
         channel = _opening_channel(o.tx)

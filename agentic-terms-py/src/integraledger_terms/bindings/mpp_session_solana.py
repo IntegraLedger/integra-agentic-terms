@@ -260,8 +260,9 @@ class MppSessionSolana:
         """A voucher, or a close's voucher, on the channel the held opening opened, for its client voucher signer: one
         ed25519-raw request over the channel voucher message (channel id, cumulative amount, no expiry), for the
         signer the opening's open instruction named. An operator channel's vouchers are the operator's, and are not
-        built."""
-        o = within_checks(w, h, "session/solana", _opening, U64_LIMIT)
+        built, nor are a topUp or a use; an action draft-solana-session-00 does not define, such as bearer, is
+        mpp/session-action."""
+        o = within_checks(w, h, "session/solana", _opening, U64_LIMIT, ("topUp", "use"))
         if isinstance(o, Refusal):
             return o
         if o.checked.details.get("voucherSigner") == "operator":

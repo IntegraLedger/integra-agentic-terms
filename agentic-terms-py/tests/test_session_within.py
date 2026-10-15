@@ -180,6 +180,26 @@ def test_solana_build_within_refuses_an_operator_channel_s_voucher() -> None:
     assert MPP_SESSION_SOLANA.build_within(w, H) == Refusal("mpp/within-action-not-built")
 
 
+def agreed(prefix: str) -> str:
+    """The code of the one agreedRefusals row of the session file whose case starts with prefix."""
+    codes = [r["expect"] for r in HS["agreedRefusals"]["rows"] if r["case"].startswith(prefix)]
+    assert len(codes) == 1, (prefix, codes)
+    found: str = codes[0]
+    return found
+
+
+def test_solana_build_within_refuses_a_bearer_as_channel_kind_does() -> None:
+    # draft-solana-session-00 defines open, voucher, use, topUp and close: build_within builds a voucher and a close,
+    # refuses a topUp or a use as not built, and refuses an action the draft does not define with channel_kind's code.
+    code = agreed("a solana bearer")
+    w = {"challenge": SOLANA_OPENING["challenge"], "opening": SOLANA_OPENING, "cumulativeAmount": 100, "action": "bearer"}
+    assert MPP_SESSION_SOLANA.build_within(w, H) == Refusal(code)
+    bearer = {"challenge": SOLANA_OPENING["challenge"], "payload": {"action": "bearer", "channelId": HS["SV2"]["channel"]}}
+    assert MPP_SESSION_SOLANA.channel_kind(bearer) == Refusal(code)
+    for action in ("topUp", "use"):
+        assert MPP_SESSION_SOLANA.build_within({**w, "action": action}, H) == Refusal("mpp/within-action-not-built")
+
+
 def test_xrpl_build_within_at_100_is_xs3s_claim_on_xs2s_channel() -> None:
     unsigned = build(MPP_SESSION_XRPL, XRPL_OPENING, int(HS["XS3"]["drops"]))
     channel = HS["XS2"]["expectChannel"]
