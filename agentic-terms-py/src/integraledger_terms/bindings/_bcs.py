@@ -1,7 +1,7 @@
 """BCS schema combinators with a reader and a writer: unsigned integers, bool, ULEB128 lengths, fixed and
 length-prefixed bytes, UTF-8 strings, structs, enums, tuples, vectors, options, maps and transforms.
 
-Values take one form each: u8 to u32 as ints, u64 to u256 as decimal strings, bytes as bytes, a struct as a dict of
+Values take one form each: u16 and u32 as ints, u64 as a decimal string, bytes as bytes, a struct as a dict of
 its fields in order, an enum as {"$kind": name, name: value} (True for a variant with no value), an option as its
 value or None, and a map as a dict. Reading accepts a ULEB128 in any length whose value is at most 2^53 - 1 and a
 bool byte other than 1 as false; writing produces the one canonical encoding, so parsing and writing back gives the
@@ -308,12 +308,9 @@ class Map(Type):
             self.value.write(v, w)
 
 
-U8 = UInt(1, False)
 U16 = UInt(2, False)
 U32 = UInt(4, False)
 U64 = UInt(8, True)
-U128 = UInt(16, True)
-U256 = UInt(32, True)
 BOOL = Bool()
 BYTE_VECTOR = ByteVector()
 STRING = String()
