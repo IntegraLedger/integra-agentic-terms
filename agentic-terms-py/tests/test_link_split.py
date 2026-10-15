@@ -88,6 +88,8 @@ def test_each_reading_splits_the_link(row: dict[str, Any]) -> None:
         ("file://user@atr.seller.example/x", "legal-context-malformed"),
         ("file://C|/x", "link-not-https"),
         ("file:///x", "link-not-https"),
+        ("file://[::1]/x", "link-not-https"),
+        ("file://[::g]/x", "legal-context-malformed"),
         ("foo://:443/x", "legal-context-malformed"),
         ("foo://user@/x", "legal-context-malformed"),
         ("foo://atr.seller.example:443/x", "link-not-https"),
