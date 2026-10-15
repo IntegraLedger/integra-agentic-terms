@@ -190,9 +190,9 @@ def legal_context_info(lc: object) -> tuple[AtrHash, str] | None:
 
 def is_other_scheme_link(value: object) -> TypeGuard[str]:
     """True for a string of at most 2048 UTF-16 code units that parses as an absolute URL whose scheme is not https:
-    the one failing link the x402, MPP and UCP reads refuse as link-not-https, where every other failing link is
-    legal-context-malformed. Card's, ACK's and AP2's reads refuse every link that is not https as
-    legal-context-malformed."""
+    the one failing link the x402, ACP, MPP and UCP reads refuse as link-not-https, where every other failing link is
+    legal-context-malformed; the x402 and ACP reads reach it through is_hash_with_non_https_link. Card's, ACK's and
+    AP2's reads refuse every link that is not https as legal-context-malformed."""
     return isinstance(value, str) and js_length(value) <= MAX_LINK_CHARS and url_scheme(value) not in (None, "https")
 
 
