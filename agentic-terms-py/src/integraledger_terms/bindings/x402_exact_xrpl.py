@@ -12,7 +12,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
-from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for, timeout_seconds
+from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds
 from ._xrpl import (
     Blob,
     decode_presented,
@@ -23,11 +23,16 @@ from ._xrpl import (
     same_invoice,
     x402_invoice_id,
 )
+from ._xrpl_codec import account_id_of
 
 ID = "x402/exact/xrpl"
 
-_AMOUNT = re.compile(r"[0-9]+(\.[0-9]+)?")
+# A decimal with no sign, exponent or leading zero, whose fraction, if any, ends in a digit other than 0.
+_ISSUED = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]*[1-9])?")
 _DROPS = re.compile(r"[1-9][0-9]{0,16}")
+_I64_LIMIT = 2**63
+# AccountID 1, rippled's noAccount() (XRPLF/rippled 00e64075, src/libxrpl/protocol/AccountID.cpp:165-170).
+_NO_ACCOUNT = 1
 _ABSENT = object()
 
 
@@ -52,22 +57,64 @@ def _is_this(option: Mapping[str, Any]) -> bool:
     return pairing_of(option) is not None
 
 
+def _account(value: object) -> int:
+    """The AccountID of a classic address whose checksum holds, as a number, else -1: base58 with the XRPL alphabet of
+    version 0, a 20-byte AccountID and a 4-byte checksum, the first 4 bytes of the double SHA-256 of the two, the form
+    the XRPL exact scheme gives payTo and extra.issuer."""
+    account_id = account_id_of(value)
+    return -1 if account_id is None else int.from_bytes(account_id, "big")
+
+
+def _is_issued_value(s: str) -> bool:
+    """True when s is the canonical decimal of a positive STAmount value, which rippled 3.4.1 (XRPLF/rippled
+    00e64075) reads exactly. An STAmount value is a mantissa of 10^15 to 10^16 - 1 at an offset of -96 to 80
+    (include/xrpl/protocol/STAmount.h:35-40,61-68): IOUAmount rounds a value of more than 16 significant digits and
+    reads one below 10^-81 as zero (src/libxrpl/protocol/IOUAmount.cpp:29-36,58-68). partsFromString
+    (src/libxrpl/protocol/STNumber.cpp:159-216) refuses a leading zero, and reads the digits with the point removed as
+    a uint64 (:192, :198) that STAmount::iou casts to int64 (src/libxrpl/protocol/STAmount.cpp:291), so they are below
+    2^63; that also holds the value below the largest offset. So: no sign, exponent or leading zero, a fraction that
+    ends in a digit other than 0, at most 16 significant digits, at least 10^-81, and digits below 2^63. More than 19
+    digits, leading zeros aside, the width of 2^63, are refused before any further step reads them, so each step takes
+    time linear in the length of s."""
+    m = _ISSUED.fullmatch(s)
+    if m is None:
+        return False
+    fraction = (m.group(2) or "")[1:]
+    digits = (m.group(1) + fraction).lstrip("0")
+    if digits == "" or len(digits) > 19:
+        return False
+    significant = len(digits)
+    while digits[significant - 1] == "0":
+        significant -= 1
+    return significant <= 16 and int(digits) < _I64_LIMIT and len(digits) - 1 - len(fraction) - 15 >= -96
+
+
 def _payable(option: Mapping[str, Any]) -> bool:
-    """True when build can write the Payment's Amount, XRP drops or an issued amount with extra.issuer, and the
-    timeout is a positive safe integer."""
+    """True when build can write the Payment's Destination and Amount, and the timeout is a positive safe integer. payTo
+    is a classic address whose checksum holds (_account), and its AccountID is not 0, which rippled 3.4.1 (XRPLF/rippled
+    00e64075) refuses as any Payment's Destination (src/libxrpl/tx/transactors/payment/Payment.cpp:178-184). XRP is a
+    positive amount of drops (is_amount) below 10^17. An issued currency's amount is the canonical decimal of a positive
+    STAmount value, which rippled reads exactly (_is_issued_value), the form the XRPL exact scheme gives that amount,
+    and its extra.issuer is a classic address whose checksum holds. On an issued currency neither payTo nor the issuer
+    is AccountID 0 or 1: rippled does not read an issued amount whose issuer is 0
+    (src/libxrpl/protocol/STAmount.cpp:155-158), and the payment engine that every issued-currency Payment runs through
+    (Payment.cpp:611-613, :638) refuses 1, noAccount(), as the destination or the issuer
+    (src/libxrpl/tx/paths/PaySteps.cpp:188-190). The XRP Payment build writes, with no SendMax or paths, does not run
+    through that engine (Payment.cpp:611, :756-758), so an XRP payTo may be 1."""
     amount, asset = option.get("amount"), option.get("asset")
-    if not isinstance(amount, str) or not isinstance(asset, str) or not isinstance(option.get("payTo"), str):
+    if not isinstance(amount, str) or not isinstance(asset, str):
         return False
     if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return False
     if asset == "XRP":
-        return _DROPS.fullmatch(amount) is not None
+        return _account(option.get("payTo")) > 0 and is_amount(amount) and _DROPS.fullmatch(amount) is not None
     extra = option.get("extra")
-    return _AMOUNT.fullmatch(amount) is not None and is_object(extra) and isinstance(extra.get("issuer"), str)
+    issuer = extra.get("issuer") if is_object(extra) else None
+    return _account(option.get("payTo")) > _NO_ACCOUNT and _account(issuer) > _NO_ACCOUNT and _is_issued_value(amount)
 
 
-# The pairing's one option filter, which read, build and bound apply: an option of this pairing whose Amount build can
-# write and whose timeout is a positive safe integer (_payable), else x402/option-malformed.
+# The pairing's one option filter, which read, build and bound apply: an option of this pairing whose Destination and
+# Amount build can write and whose timeout is a positive safe integer (_payable), else x402/option-malformed.
 _THIS = filter_of(_is_this, _payable)
 
 

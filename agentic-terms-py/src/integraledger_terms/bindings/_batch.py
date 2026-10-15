@@ -7,7 +7,7 @@ from typing import Any
 
 from .._types import Refusal
 from ._lcp import is_object, safe_int
-from ._x402 import OptionFilter, accepted_by, timeout_seconds
+from ._x402 import OptionFilter, accepted_by, is_amount, timeout_seconds
 
 SCHEME = "batch-settlement"
 MIN_DELAY = 900
@@ -32,10 +32,13 @@ def is_decimal(value: object) -> bool:
 
 
 def payable(option: Mapping[str, Any]) -> bool:
-    """An option whose amount is a decimal below 2^128 and whose maxTimeoutSeconds is a positive safe integer."""
+    """An option whose amount is "0" or a positive amount (is_amount) below 2^128, and whose maxTimeoutSeconds is a
+    positive safe integer. The EVM and Solana batch-settlement schemes take a zero price: their facilitator validates
+    amount as a non-negative base-10 integer string. On EVM a zero price opens no channel: the opening's build refuses
+    an option under it."""
     amount = option.get("amount")
     return (
-        isinstance(amount, str)
+        (amount == "0" or is_amount(amount))
         and is_decimal(amount)
         and int(amount) < U128_LIMIT
         and timeout_seconds(option.get("maxTimeoutSeconds")) is not None

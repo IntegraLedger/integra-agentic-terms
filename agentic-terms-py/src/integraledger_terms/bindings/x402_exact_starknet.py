@@ -13,7 +13,16 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._jose import json_bytes
 from ._lcp import from_legal_context, is_object, normal_hash, safe_int, uint256_of
-from ._x402 import LEGAL_CONTEXT, OptionFilter, chosen, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import (
+    LEGAL_CONTEXT,
+    OptionFilter,
+    chosen,
+    is_amount,
+    payment_with,
+    presented_with,
+    read_for,
+    timeout_seconds,
+)
 
 ID = "x402/exact/starknet"
 
@@ -96,8 +105,8 @@ def _is_int(value: object, n: int) -> bool:
 
 def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """The pairing's filter: scheme exact on a Starknet network, the default transfer and the authorization flow,
-    felts for asset, payTo and a fee payer that is neither zero nor ANY_CALLER, an amount below 2^256 and a positive
-    timeout."""
+    felts for asset, payTo and a fee payer that is neither zero nor ANY_CALLER, a positive amount (is_amount) below
+    2^256 and a positive timeout."""
     if not is_object(option) or option.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = option.get("network")
@@ -117,7 +126,7 @@ def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("starknet/felt-malformed")
     if fee_payer == 0 or fee_payer == int(ANY_CALLER, 16):
         return Refusal("starknet/caller-forbidden")
-    if uint256_of(option.get("amount")) is None:
+    if not is_amount(option.get("amount")) or uint256_of(option.get("amount")) is None:
         return Refusal("starknet/option-malformed")
     if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("starknet/option-malformed")

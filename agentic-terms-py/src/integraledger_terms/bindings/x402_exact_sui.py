@@ -15,7 +15,7 @@ from ._bcs import BcsError
 from ._lcp import is_object, normal_hash
 from ._rail_bytes import U64_LIMIT, base64_bytes, decimal_below
 from ._sui_tx import command_arguments, parse_transaction_data, sui_digest
-from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/sui"
 
@@ -113,7 +113,8 @@ def sui_option_check(option: object) -> Refusal | None:
         return Refusal("x402/option-not-this-pairing")
     if not isinstance(asset, str) or _COIN_TYPE.fullmatch(asset) is None:
         return Refusal("x402/option-not-this-pairing")
-    if decimal_below(option.get("amount"), U64_LIMIT) is None:
+    amount = option.get("amount")
+    if not is_amount(amount) or decimal_below(amount, U64_LIMIT) is None:
         return Refusal("x402/option-not-this-pairing")
     if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("x402/option-not-this-pairing")

@@ -11,7 +11,7 @@ from typing import Any
 from .._core import AtrHash, is_hash
 from .._types import Advertised, Json, Refusal
 from ._lcp import chain_id_of, is_address, safe_int, uint256_of
-from ._x402 import accepted_by, chosen, filter_of, read_for, timeout_seconds
+from ._x402 import accepted_by, chosen, filter_of, is_amount, read_for, timeout_seconds
 
 ID = "x402/exact/eip155/eip3009"
 
@@ -56,7 +56,7 @@ def passes(option: object) -> bool:
 
 def _payable(option: Mapping[str, Any]) -> bool:
     """True for an option build can turn into typed data: the token's EIP-712 name and version, the asset and payee
-    addresses, an amount of 1 to 78 decimal digits below 2^256, and a time bound that is a safe integer above zero."""
+    addresses, a positive amount (is_amount) below 2^256, and a time bound that is a safe integer above zero."""
     extra = option.get("extra")
     if not isinstance(extra, Mapping):
         return False
@@ -68,6 +68,7 @@ def _payable(option: Mapping[str, Any]) -> bool:
         and version != ""
         and is_address(option.get("asset"))
         and is_address(option.get("payTo"))
+        and is_amount(option.get("amount"))
         and uint256_of(option.get("amount")) is not None
         and timeout_seconds(option.get("maxTimeoutSeconds")) is not None
     )

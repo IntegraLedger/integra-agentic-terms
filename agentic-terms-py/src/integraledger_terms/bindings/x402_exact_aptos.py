@@ -14,7 +14,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._lcp import is_object, normal_hash
 from ._rail_bytes import U64_LIMIT, base64_bytes, decimal_below, parse_json
-from ._x402 import chosen, legal_context_of, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, legal_context_of, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/aptos"
 
@@ -183,7 +183,8 @@ def aptos_option_check(option: object) -> Refusal | None:
         return Refusal("x402/option-not-this-pairing")
     if not isinstance(pay_to, str) or _ADDRESS_64.fullmatch(pay_to) is None:
         return Refusal("x402/option-not-this-pairing")
-    if decimal_below(option.get("amount"), U64_LIMIT) is None:
+    amount = option.get("amount")
+    if not is_amount(amount) or decimal_below(amount, U64_LIMIT) is None:
         return Refusal("x402/option-not-this-pairing")
     if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("x402/option-not-this-pairing")

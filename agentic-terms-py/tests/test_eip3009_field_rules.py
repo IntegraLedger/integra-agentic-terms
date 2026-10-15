@@ -1,6 +1,6 @@
 """x402/exact/eip155/eip3009 reads, builds and completes by the protocol package's field rules, as the TypeScript gate
 does through it: an eip155 network is eip155: and a chain id of 1 to 16 decimal digits with no leading zero, within
-the safe-integer range; an amount is 1 to 78 decimal digits below 2^256, signed as its text; the
+the safe-integer range; an amount is the canonical decimal of a positive integer below 2^256, signed as its text; the
 chosen option is one the document offers by equal RFC 8785 form (section 3.2.2.1: true and 1 are written apart); two
 link spellings conflict when both members are present; a legalContext member present as null is malformed and only an
 absent one is missing; and every 2048 bound on a link counts UTF-16 code units, as String.prototype.length does. Each
@@ -65,15 +65,17 @@ def test_an_eip155_network_has_no_leading_zero_and_is_not_zero() -> None:
         assert X402_EXACT_EIP155_EIP3009.read(doc({**O, "network": network})) == Refusal("x402/no-payable-option")
 
 
-def test_an_amount_is_1_to_78_digits_and_is_signed_as_its_text() -> None:
-    padded = {**O, "amount": "0001000"}
-    unsigned = X402_EXACT_EIP155_EIP3009.build(choice(doc(padded), padded), H)
+def test_an_amount_is_a_positive_decimal_below_2_256_and_is_signed_as_its_text() -> None:
+    largest = {**O, "amount": str(2**256 - 1)}
+    unsigned = X402_EXACT_EIP155_EIP3009.build(choice(doc(largest), largest), H)
     assert not isinstance(unsigned, Refusal)
     presented = unsigned.complete("0x" + "11" * 65)
     assert not isinstance(presented, Refusal)
-    assert presented["payload"]["authorization"]["value"] == "0001000"
-    seventy_nine = {**O, "amount": "0" * 78 + "1"}
-    assert X402_EXACT_EIP155_EIP3009.build(choice(doc(seventy_nine), seventy_nine), H) == Refusal("x402/option-malformed")
+    assert presented["payload"]["authorization"]["value"] == str(2**256 - 1)
+    for amount in ("0001000", "0", "0" * 78 + "1", str(2**256)):
+        option = {**O, "amount": amount}
+        built = X402_EXACT_EIP155_EIP3009.build(choice(doc(option), option), H)
+        assert built == Refusal("x402/option-malformed"), amount
 
 
 def test_the_chosen_option_is_offered_only_by_equal_rfc_8785_form() -> None:

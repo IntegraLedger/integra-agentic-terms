@@ -44,6 +44,7 @@ from ._x402 import (
     OptionFilter,
     accepted_by,
     chosen,
+    is_amount,
     is_v2,
     payment_with,
     read_for,
@@ -197,11 +198,11 @@ def _non_empty(value: object) -> bool:
 
 
 def _payable(pairing: str, option: Mapping[str, Any]) -> bool:
-    """An option build can pay: its amount and time bound; for auth-capture also the token's EIP-712 name and
-    version, the escrow terms _auth_capture_terms reads, and a maxTimeoutSeconds below 2^48, since now plus it is the
-    payment's preApprovalExpiry, a uint48."""
+    """An option build can pay: its amount, positive (is_amount) and below 2^256, and time bound; for auth-capture also
+    the token's EIP-712 name and version, the escrow terms _auth_capture_terms reads, and a maxTimeoutSeconds below
+    2^48, since now plus it is the payment's preApprovalExpiry, a uint48."""
     timeout = timeout_seconds(option.get("maxTimeoutSeconds"))
-    if uint256_of(option.get("amount")) is None or timeout is None:
+    if not is_amount(option.get("amount")) or uint256_of(option.get("amount")) is None or timeout is None:
         return False
     if _scheme_of(pairing) != "auth-capture":
         return True

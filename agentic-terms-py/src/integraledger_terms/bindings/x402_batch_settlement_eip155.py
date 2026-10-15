@@ -190,7 +190,13 @@ def _uint(value: object, low: int) -> bool:
 def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     """The opening's two requests, in order: the deposit's token authorization, then the first voucher. A from that is
     the zero address is x402/option-malformed: the channel contract's deposit refuses a configuration whose payer is.
-    The option filter refuses an option whose payTo or asset is."""
+    The option filter refuses an option whose payTo or asset is.
+
+    An option whose amount is "0" is x402/option-malformed here, though the filter takes it. On the channel a deposit
+    opens, totalClaimed and the server's chargedCumulativeAmount are 0: the scheme's server requires the opening
+    voucher's maxClaimableAmount to equal chargedCumulativeAmount + amount, which is 0, and its facilitator ("Not below
+    claimed") requires it to be strictly greater than totalClaimed. So a zero price is paid by a later voucher
+    (build_within), never by an opening."""
     if not is_object(c):
         return Refusal("x402/not-v2")
     required, accepted = c.get("required"), c.get("accepted")
@@ -198,6 +204,8 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     if ok is not True:
         return ok
     assert is_object(required) and is_object(accepted)
+    if accepted["amount"] == "0":
+        return Refusal("x402/option-malformed")
     salt = normal_hash(h)
     payer, payer_authorizer, auth_salt = c.get("from"), c.get("payerAuthorizer"), c.get("authSalt")
     if salt is None or not is_address(payer) or not is_address(payer_authorizer) or not is_hash32(auth_salt):

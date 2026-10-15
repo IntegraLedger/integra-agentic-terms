@@ -28,7 +28,7 @@ from ._ton_tlb import (
     store_address,
     store_internal_message,
 )
-from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/tvm"
 OP_JETTON_TRANSFER = 0x0F8A7EA5
@@ -227,12 +227,12 @@ def _decimal_below(value: object, limit: int) -> int | None:
 
 
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """The pairing's option filter: the option's scheme, network, asset, payTo and extra, the amount as a Jetton amount
-    below 2^120, a forward TON amount below 2^120 - 1 (build attaches more TON than it, and the attached value is a
-    Grams, below 2^120), and maxTimeoutSeconds a positive integer below 2^32, which build writes into the request (the
-    wallet message's valid_until, a uint32, is now plus maxTimeoutSeconds). The network is one of the two the pairing
-    serves (_CONFIGURATIONS), whose configuration the messages are read at; any other tvm: network is
-    tvm/network-malformed. read and build apply it, and bound holds the option a presented payment echoes to it."""
+    """The pairing's option filter: the option's scheme, network, asset, payTo and extra, the amount as a positive
+    Jetton amount (is_amount) below 2^120, a forward TON amount below 2^120 - 1 (build attaches more TON than it, and
+    the attached value is a Grams, below 2^120), and maxTimeoutSeconds a positive integer below 2^32, which build writes
+    into the request (the wallet message's valid_until, a uint32, is now plus maxTimeoutSeconds). The network is one of
+    the two the pairing serves (_CONFIGURATIONS), whose configuration the messages are read at; any other tvm: network
+    is tvm/network-malformed. read and build apply it, and bound holds the option a presented payment echoes to it."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = o.get("network")
@@ -255,7 +255,7 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("tvm/option-malformed")
     if "responseDestination" in extra and raw_address(extra["responseDestination"]) is None:
         return Refusal("tvm/option-malformed")
-    if _decimal_below(o.get("amount"), COINS_LIMIT) is None:
+    if not is_amount(o.get("amount")) or _decimal_below(o.get("amount"), COINS_LIMIT) is None:
         return Refusal("tvm/option-malformed")
     timeout = timeout_seconds(o.get("maxTimeoutSeconds"))
     if timeout is None or timeout >= UINT32_LIMIT:

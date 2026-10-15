@@ -22,7 +22,7 @@ from ._borsh_near import (
 from ._codec import b64_decode, js_json
 from ._jose import js_length, parse_json
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/near"
 FT_TRANSFER_GAS = 30_000_000_000_000
@@ -62,7 +62,7 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("near/network-malformed")
     if not _account(o.get("asset")) or not _account(o.get("payTo")):
         return Refusal("near/option-malformed")
-    if _decimal_below(o.get("amount"), U128_LIMIT) is None:
+    if not is_amount(o.get("amount")) or _decimal_below(o.get("amount"), U128_LIMIT) is None:
         return Refusal("near/option-malformed")
     if timeout_seconds(o.get("maxTimeoutSeconds")) is None:
         return Refusal("near/option-malformed")

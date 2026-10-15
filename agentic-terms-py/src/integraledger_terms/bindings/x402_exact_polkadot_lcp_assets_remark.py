@@ -14,7 +14,7 @@ from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
 from ._scale import compact, compact_at
 from ._ss58 import ss58_decode
-from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/polkadot/lcp-assets-remark"
 
@@ -136,7 +136,7 @@ def _with_suffix(xt: bytes, call: bytes) -> bool | Refusal:
 
 def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """The pairing's filter: exact on a supported Polkadot network, the profile's transfer method, a u32 asset id, a
-    non-zero u128 amount, a timeout of 1 to 3600 seconds and an SS58 payee."""
+    positive u128 amount (is_amount), a timeout of 1 to 3600 seconds and an SS58 payee."""
     network = option.get("network") if is_object(option) else None
     if not isinstance(network, str) or not network.startswith("polkadot:"):
         return None
@@ -151,7 +151,8 @@ def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("polkadot/option-malformed")
     if _decimal_below(option.get("asset"), _U32_LIMIT) is None:
         return Refusal("polkadot/option-malformed")
-    if _decimal_below(option.get("amount"), _U128_LIMIT) in (None, 0):
+    amount = option.get("amount")
+    if not is_amount(amount) or _decimal_below(amount, _U128_LIMIT) is None:
         return Refusal("polkadot/option-malformed")
     timeout = timeout_seconds(option.get("maxTimeoutSeconds"))
     if timeout is None or timeout > 3600:

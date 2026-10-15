@@ -14,7 +14,7 @@ from .._types import Advertised, Json, Refusal
 from . import _algorand
 from ._codec import b64_decode, b64_encode
 from ._lcp import from_lcp_string, is_list, is_object, is_well_formed, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/algorand"
 
@@ -38,11 +38,11 @@ def _uint64(value: object) -> int | None:
 
 
 def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """The pairing's option filter: True for an option it serves, a refusal naming why an option on an algorand
-    network cannot be served, and None for any other option. It applies the option's scheme, network, asset, payTo and
-    extra (its fee payer, no transfer method, and no flow other than "authorization"), the amount as a decimal below
-    2^64 and maxTimeoutSeconds a positive safe integer, which build writes into the asset transfer and its last valid
-    round. read and build apply it, and bound holds the option a presented payment echoes to it."""
+    """The pairing's option filter: True for an option it serves, a refusal naming why an option on an algorand network
+    cannot be served, and None for any other option. It applies the option's scheme, network, asset, payTo and extra
+    (its fee payer, no transfer method, and no flow other than "authorization"), the amount a positive decimal
+    (is_amount) below 2^64 and maxTimeoutSeconds a positive safe integer, which build writes into the asset transfer and
+    its last valid round. read and build apply it, and bound holds the option a presented payment echoes to it."""
     network = option.get("network") if is_object(option) else None
     if not isinstance(network, str) or not network.startswith("algorand:") or option.get("scheme") != "exact":
         return None
@@ -62,7 +62,8 @@ def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         or ("feePayer" in extra_map and not _algorand.is_address(extra_map["feePayer"]))
     ):
         return Refusal("avm/option-malformed")
-    if _uint64(option.get("amount")) is None or timeout_seconds(option.get("maxTimeoutSeconds")) is None:
+    amount = option.get("amount")
+    if not is_amount(amount) or _uint64(amount) is None or timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("avm/option-malformed")
     return True
 
@@ -228,9 +229,9 @@ class X402ExactAlgorand:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The payment transaction's note, as a hash, under an option the pairing's filter serves: the echoed option's
-        scheme, network, asset, payTo and extra, its amount as a decimal below 2^64 and its maxTimeoutSeconds a positive
-        safe integer, as read and build require them. The transaction's amount, receiver, asset, fee payer and sender
-        are not read, and no signature is verified here."""
+        scheme, network, asset, payTo and extra, its amount a positive decimal below 2^64 and its maxTimeoutSeconds a
+        positive safe integer, as read and build require them. The transaction's amount, receiver, asset, fee payer and
+        sender are not read, and no signature is verified here."""
         p = presented_with(presented, check)
         if isinstance(p, Refusal):
             return p

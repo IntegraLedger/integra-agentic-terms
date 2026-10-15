@@ -33,7 +33,7 @@ from ._svm import (
     to_base64,
     wire_of,
 )
-from ._x402 import accepted_by, chosen, filter_of, is_v2, payment_with, read_for, timeout_seconds
+from ._x402 import accepted_by, chosen, filter_of, is_amount, is_v2, payment_with, read_for, timeout_seconds
 
 ID = "x402/upto/solana"
 MAX_MEMO = 256
@@ -66,10 +66,10 @@ def pairs(option: Mapping[str, Any]) -> bool:
 
 
 def payable(option: Mapping[str, Any]) -> bool:
-    """The amount is a u64 in decimal and the timeout a positive safe integer."""
+    """The amount is a positive u64 in decimal (is_amount) and the timeout a positive safe integer."""
     amount = option.get("amount")
     return (
-        isinstance(amount, str)
+        is_amount(amount)
         and _U64_DECIMAL.fullmatch(amount) is not None
         and int(amount) < U64_LIMIT
         and timeout_seconds(option.get("maxTimeoutSeconds")) is not None

@@ -12,7 +12,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._jose import js_length
 from ._lcp import is_object, normal_hash, safe_int, uint256_of
-from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for, timeout_seconds
+from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds
 
 ID = "x402/exact/casper"
 
@@ -53,6 +53,7 @@ def casper_option(option: object) -> bool:
         and isinstance(asset, str)
         and _PACKAGE.fullmatch(asset) is not None
         and _is_address(option.get("payTo"))
+        and is_amount(option.get("amount"))
         and uint256_of(option.get("amount")) is not None
         and is_object(extra)
         and _is_name(extra.get("name"))

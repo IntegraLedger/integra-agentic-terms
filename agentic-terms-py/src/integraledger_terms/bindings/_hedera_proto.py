@@ -27,8 +27,8 @@ def is_entity(value: object) -> bool:
 
 
 def amount_of(value: object) -> int | None:
-    """A decimal below 2^63, zero included, or None: an x402 Hedera option's amount (x402's Hedera scheme gives the
-    amount no sign rule), and each MPP Hedera charge split's amount."""
+    """A decimal below 2^63, zero included, or None: the width of an x402 Hedera option's amount, which the option
+    filter also holds positive, and each MPP Hedera charge split's amount."""
     if not isinstance(value, str) or _DECIMAL.fullmatch(value) is None:
         return None
     v = int(value)

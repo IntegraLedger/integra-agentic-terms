@@ -20,7 +20,17 @@ from ._mpp import check_challenge, credential_of, echoed_for
 from ._mpp import read as mpp_read
 from ._mpp_checks import decode_object
 from ._lcp import is_object, legal_context_info, normal_hash
-from ._x402 import OptionFilter, accepted_by, chosen, filter_of, is_v2, payment_with, read_for, timeout_seconds
+from ._x402 import (
+    OptionFilter,
+    accepted_by,
+    chosen,
+    filter_of,
+    is_amount,
+    is_v2,
+    payment_with,
+    read_for,
+    timeout_seconds,
+)
 
 LNBTC = "x402/exact/lnbtc"
 NAMED = "x402/exact/lnbtc/invoice-named"
@@ -85,7 +95,7 @@ def check_option(o: Mapping[str, Any], h: AtrHash | Literal["any"] | None) -> Bo
         or o.get("asset") != "BTC"
         or not isinstance(pay_to, str)
         or _PAY_TO.fullmatch(pay_to) is None
-        or not isinstance(amount, str)
+        or not is_amount(amount)
         or _POSITIVE.fullmatch(amount) is None
         or timeout_seconds(o.get("maxTimeoutSeconds")) is None
     ):

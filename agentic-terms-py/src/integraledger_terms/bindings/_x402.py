@@ -1,8 +1,9 @@
 """What every x402 pairing's buyer half shares: reading the legal context and the options a pairing's filter serves,
 checking the chosen option is one the document offers, the payment for it, and reading a presented payment."""
 
+import re
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 
 from .._core import AtrHash
 from .._types import Advertised, Refusal
@@ -22,6 +23,7 @@ from ._lcp import (
 LEGAL_CONTEXT = "legalContext"
 MAX_OPTIONS = 32
 MAX_SIGNATURE_BYTES = 8192
+_AMOUNT = re.compile(r"[1-9][0-9]*")
 
 # A pairing's option filter: True for an option the pairing serves, a refusal naming why an option of this pairing
 # cannot be served, and None for an option that is not this pairing's.
@@ -48,6 +50,15 @@ def timeout_seconds(value: object) -> int | None:
     60.0 is 60. A pairing's own upper bound, where it has one, applies beside it."""
     seconds = safe_int(value)
     return seconds if seconds is not None and seconds > 0 else None
+
+
+def is_amount(value: object) -> TypeGuard[str]:
+    """True when an option's amount is the canonical decimal string of a positive integer: digits only, the first not
+    0, so no sign, point, exponent, space or leading zero. The one rule every x402 pairing's option filter holds the
+    member to; a pairing's own width bound applies beside it. The batch-settlement EVM and Solana filters also take
+    "0", and the XRPL filter takes an issued currency's value in the canonical decimal form of a positive STAmount
+    value, as those schemes define the member."""
+    return isinstance(value, str) and _AMOUNT.fullmatch(value) is not None
 
 
 def is_v2(doc: object) -> bool:
