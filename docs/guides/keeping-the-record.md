@@ -79,8 +79,10 @@ altered bytes signed-not-bound
 Where `finish` or `transact` returned `landed`, put it back into the payment before you check it:
 `check(bytes, { ...signed, landed }, binding)`.
 
-For a pairing whose payment is not a public proof of H, `check` has nothing to read in the payment. The proof is the
-agreement payment, which is itself a public-proof payment: check it with the binding of the pairing it was paid with.
+For a pairing whose payment is not a public proof of H, `check` reads the payment as it reads any other: it confirms
+that the hash the pairing reads from it is the SHA-256 of the kept bytes, and declines `signed-not-bound` where the
+pairing reads none. That payment does not prove H in public. The proof of H is the agreement payment, which is itself a
+public-proof payment: check it with the binding of the pairing it was paid with.
 
 ## A moved payment
 
