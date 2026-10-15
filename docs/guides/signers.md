@@ -94,8 +94,9 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 
 For some requests your signer's action moves the payment itself: a Lightning node paying an invoice, a signer that
 broadcasts an `evm-call`, `tempo-call` or `hedera-body` marked `broadcast: true`, a session opening the signer sends. If
-the gate declines after that (for example because what came back does not carry H), the decline carries `moved`: the
-payment as signed, the ATR's bytes and their hash. Keep it, and present it again rather than signing a new payment.
+the gate declines after that (for example because the pairing does not read H from what came back), the decline carries
+`moved`: the payment as signed, the ATR's bytes and their hash. Keep it, and present it again rather than signing a new
+payment.
 
 ## A signer for several kinds
 

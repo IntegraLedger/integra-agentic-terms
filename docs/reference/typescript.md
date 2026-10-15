@@ -219,4 +219,4 @@ amount signed in the channel.
 | Agreement exchange, whole | `maxTimeoutSeconds + 180` seconds, of the option paid |
 | Agreement option's `maxTimeoutSeconds` | a JSON number with an integral value, from 1 to 2<sup>53</sup> − 1 |
 | Agreement receipt | at most 64 KiB |
-| Agreement retry after `202` | `Retry-After` seconds, at least 1; 2 when absent |
+| Agreement retry after `202` | `Retry-After` seconds, at least 1; 2 when absent or in any other form |

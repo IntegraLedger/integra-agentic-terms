@@ -285,7 +285,7 @@ async def within(
         return _declined("hash-mismatch", "The held ATR does not hash to the held hash.")
     opened = _guarded(lambda: binding.bound(hold["opening"]))
     if not isinstance(opened, str) or not hash_equals(opened, h):
-        return _declined("signed-not-bound", "The held opening does not carry the held ATR's hash.")
+        return _declined("signed-not-bound", "The pairing does not read the held ATR's hash from the held opening.")
     if not _same_channel(_guarded(lambda: binding.channel_ref(hold["opening"])), hold):
         return _declined("signed-not-bound", "The held opening does not name the held channel.")
 

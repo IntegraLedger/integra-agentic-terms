@@ -324,7 +324,7 @@ export async function within(
   if (!hashEquals(hold.h, h)) return declined("hash-mismatch", "The held ATR does not hash to the held hash.");
   const opened = await guarded(() => b.bound(hold.opening));
   if (isRefusal(opened) || !hashEquals(opened, h)) {
-    return declined("signed-not-bound", "The held opening does not carry the held ATR's hash.");
+    return declined("signed-not-bound", "The pairing does not read the held ATR's hash from the held opening.");
   }
   const openedRef = await guarded(() => channel.ref(hold.opening));
   if (isRefusal(openedRef) || openedRef.network !== hold.network || openedRef.channel !== hold.channel) {
