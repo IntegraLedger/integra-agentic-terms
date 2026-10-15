@@ -300,7 +300,10 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
         opening.payload.channelConfig.salt = BV.fixed.Hprime;
         opening.payload.voucher.channelId = BV.EB6.plant.matchedChannelId;
         const signer = counting(evmAccount, evmAnswer);
-        expect(code(await within(evmDoc, { ...hold, opening }, batchEvm, signer))).toBe("signed-not-bound");
+        const out = await within(evmDoc, { ...hold, opening }, batchEvm, signer);
+        expect(isDeclined(out) && out.decline).toEqual({
+          code: "signed-not-bound", detail: "The pairing does not read the held ATR's hash from the held opening.",
+        });
         expect(signer.requests.length).toBe(0);
       }));
     /** batchEvm, with a buildWithin whose payment names salt and channelId once `when` holds for the answers. */

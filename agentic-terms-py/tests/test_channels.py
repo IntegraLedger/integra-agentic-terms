@@ -301,7 +301,9 @@ def test_a_hold_whose_opening_was_edited_to_eb6s_plant() -> None:
     opening["payload"]["channelConfig"]["salt"] = HPRIME
     opening["payload"]["voucher"]["channelId"] = BV["EB6"]["plant"]["matchedChannelId"]
     s = signer()
-    assert code(run_within({**hold, "opening": opening}, s=s)) == "signed-not-bound"
+    assert run_within({**hold, "opening": opening}, s=s) == Declined(
+        "signed-not-bound", "The pairing does not read the held ATR's hash from the held opening."
+    )
     assert s.requests == []
 
 
