@@ -199,17 +199,30 @@ def _carries(call: xdr.Call, entry: xdr.Entry) -> bool:
     return root.call is not None and root.subs == 0 and root.call.raw == call.raw
 
 
-def _operation_of(data: bytes) -> tuple[xdr.Envelope, _Transfer] | Refusal:
-    """The envelope's one invokeHostFunction operation calling transfer(from, to, amount) on a contract, and that
-    transfer."""
+@dataclass(frozen=True, slots=True)
+class _Operation:
+    envelope: xdr.Envelope
+    call: xdr.Call
+    transfer: _Transfer
+
+
+def _operation_of(data: bytes) -> _Operation | Refusal:
+    """The envelope's one invokeHostFunction operation calling transfer(from, to, amount) on a contract, its host
+    function nesting within MAX_DEPTH (stellar/tx-malformed past it), and that transfer. Its authorization entries are
+    left to the caller."""
     try:
         env = xdr.envelope(data)
     except xdr.NotOneTransfer:
         return Refusal("stellar/not-one-transfer")
-    except (xdr.Malformed, RecursionError):
+    except xdr.Malformed:
         return Refusal("stellar/tx-malformed")
-    operation = _transfer_of(env.invoke.call)
-    return Refusal("stellar/not-one-transfer") if operation is None else (env, operation)
+    if env.invoke.nesting > xdr.MAX_DEPTH:
+        return Refusal("stellar/tx-malformed")
+    call = env.invoke.call
+    operation = None if call is None else _transfer_of(call)
+    if call is None or operation is None:
+        return Refusal("stellar/not-one-transfer")
+    return _Operation(env, call, operation)
 
 
 def _address_entries(env: xdr.Envelope, source: str) -> list[tuple[xdr.Entry, xdr.Credentials]]:
@@ -230,19 +243,22 @@ def _parse(data: bytes, network: str, landed: bool) -> _Parsed | Refusal:
     of from whose root invocation is the operation's transfer, byte for byte, with no sub-invocations. The host tries
     the entries in order, skips one whose address or root invocation does not match, and authenticates the first that
     matches, so other entries of from may ride unused. With no such entry, from must have exactly one entry, as
-    without landed."""
+    without landed.
+
+    The entry read nests within MAX_DEPTH (stellar/tx-malformed past it), as the operation does. No other entry's
+    nesting is bounded, so an unused entry nested deeper does not make the transaction unreadable."""
     o = _operation_of(data)
     if isinstance(o, Refusal):
         return o
-    env, operation = o
-    call = env.invoke.call
-    source = operation.source
+    env, call = o.envelope, o.call
+    source = o.transfer.source
     matches = _address_entries(env, source[0])
     used = next(((e, c) for e, c in matches if _carries(call, e)), None) if landed else None
     if used is None and len(matches) != 1:
         return Refusal("stellar/no-address-auth")
     entry, c = used or matches[0]
-    assert c is not None
+    if entry.nesting > xdr.MAX_DEPTH:
+        return Refusal("stellar/tx-malformed")
     root = entry.root
     if root.call is None or root.subs != 0:
         return Refusal("stellar/not-one-transfer")
@@ -268,14 +284,14 @@ def read_source_transfer(text: object, network: object) -> SourcePayment | Refus
     o = _operation_of(data)
     if isinstance(o, Refusal):
         return o
-    env, operation = o
+    env, operation = o.envelope, o.transfer
     source = operation.source[0]
     key = decode_strkey(_ACCOUNT, source)
     if key is None or env.source != key or env.operation_source not in (None, key):
         return Refusal("stellar/no-address-auth")
     if _address_entries(env, source):
         return Refusal("stellar/no-address-auth")
-    if not any(e.kind == 0 and _carries(env.invoke.call, e) for e in env.invoke.entries):
+    if not any(e.kind == 0 and _carries(o.call, e) for e in env.invoke.entries):
         return Refusal("stellar/no-address-auth")
     return SourcePayment(operation.asset, source, operation.to[0], operation.to[1], operation.to[2], operation.amount)
 

@@ -2,18 +2,19 @@
 the one InvokeHostFunction operation's values kept (host function, ScVal, SCAddress, authorization entries and
 invocations). Every read is checked as XDR requires: enum and union values the definitions name, bool and option
 flags of 0 or 1, array and string bounds, zero padding, and no trailing bytes. The parse keeps the byte offsets of
-the spans a signature changes, so the envelope is re-encoded by splicing.
+the spans a signature changes, so the envelope is re-encoded by splicing. Nested values (ScVals, authorized
+invocations, delegates and claim predicates) are read with a stack of their own, so the read takes any nesting the
+bytes hold; it records how deep each ScVal and each authorization entry nests, and the caller bounds what it reads.
 """
 
 from dataclasses import dataclass, field
 from typing import Any
 
-# ScVal vectors and maps (a contract instance's storage counting as a map) nest at most MAX_DEPTH levels within one
-# ScVal, the outermost container being level 1, and authorized invocations at most MAX_DEPTH levels within one
-# authorization entry, the root invocation being level 1. One read holds at most MAX_ELEMENTS vector elements and map
-# entries.
+# The deepest nesting of ScVal vectors and maps (a contract instance's storage counting as a map) within one ScVal, the
+# outermost container being level 1, and of authorized invocations within one authorization entry, the root invocation
+# being level 1, in what the read takes: the operation's host function and the payer's authorization entry. Another
+# entry, the footprint and the other operations are read whole with no bound on their nesting.
 MAX_DEPTH = 64
-MAX_ELEMENTS = 1536
 UNBOUNDED = 0xFFFFFFFF
 
 
@@ -22,21 +23,13 @@ class Malformed(Exception):
 
 
 class NotOneTransfer(Exception):
-    """The operations are not one InvokeHostFunction whose host function is a contract call."""
+    """The operations are not one InvokeHostFunction."""
 
 
 class Reader:
     def __init__(self, data: bytes) -> None:
         self.data = data
         self.at = 0
-        self.elements = 0
-
-    def elements_of(self, n: int) -> int:
-        """n vector elements or map entries, counted against MAX_ELEMENTS."""
-        self.elements += n
-        if self.elements > MAX_ELEMENTS:
-            raise Malformed
-        return n
 
     @property
     def remaining(self) -> int:
@@ -156,13 +149,16 @@ def _asset(r: Reader, pool_share: bool) -> None:
 
 @dataclass(frozen=True, slots=True)
 class Val:
-    """An ScVal's type, its address when it is one, its i128 when it is one, and its span."""
+    """An ScVal's type, its address when it is one, its i128 when it is one, its span, and the deepest nesting of
+    vectors and maps within it (a contract instance's storage counting as a map), itself level 1 when it is one; 0 for
+    any other ScVal."""
 
     kind: int
     address: Address | None
     i128: int | None
     start: int
     end: int
+    nesting: int
 
 
 def _executable(r: Reader) -> None:
@@ -174,20 +170,20 @@ def _executable(r: Reader) -> None:
         r.var_opaque()
 
 
-def _map_entries(r: Reader, depth: int) -> None:
-    for _ in range(r.elements_of(r.count())):
-        sc_val(r, depth + 1)
-        sc_val(r, depth + 1)
-
-
-def sc_val(r: Reader, depth: int = 0) -> Val:
-    """One ScVal inside depth vectors and maps."""
-    start = r.at
+def _sc_head(r: Reader) -> tuple[int, Address | None, int | None, int | None]:
+    """One ScVal's type and what follows it: for a vector, a map or a contract instance, how many ScVals it holds,
+    which follow it in order (a map entry being its key and its value); for any other type, its body, read, with its
+    address or its i128 when it is one, and None for what it holds."""
     kind = r.enum(range(0, 23))
-    if kind in (16, 17, 19) and depth + 1 > MAX_DEPTH:
-        raise Malformed
     address = None
     i128 = None
+    if kind == 16:
+        return kind, None, None, r.count() if r.flag() else 0
+    if kind == 17:
+        return kind, None, None, 2 * r.count() if r.flag() else 0
+    if kind == 19:
+        _executable(r)
+        return kind, None, None, 2 * r.count() if r.flag() else 0
     if kind == 0:
         r.flag()
     elif kind == 2:
@@ -211,22 +207,30 @@ def sc_val(r: Reader, depth: int = 0) -> Val:
         r.var_opaque()
     elif kind == 15:
         r.var_opaque(32)
-    elif kind == 16:
-        if r.flag():
-            for _ in range(r.elements_of(r.count())):
-                sc_val(r, depth + 1)
-    elif kind == 17:
-        if r.flag():
-            _map_entries(r, depth)
     elif kind == 18:
         address = sc_address(r)
-    elif kind == 19:
-        _executable(r)
-        if r.flag():
-            _map_entries(r, depth)
     elif kind == 21:
         r.i64()
-    return Val(kind, address, i128, start, r.at)
+    return kind, address, i128, None
+
+
+def sc_val(r: Reader) -> Val:
+    """One ScVal, read whole with a stack of the containers open around the value read next."""
+    start = r.at
+    kind, address, i128, held = _sc_head(r)
+    nesting = 0 if held is None else 1
+    remaining = [held] if held else []
+    while remaining:
+        if remaining[-1] == 0:
+            remaining.pop()
+            continue
+        remaining[-1] -= 1
+        inner = _sc_head(r)[3]
+        if inner is not None:
+            nesting = max(nesting, len(remaining) + 1)
+            if inner:
+                remaining.append(inner)
+    return Val(kind, address, i128, start, r.at, nesting)
 
 
 def sc_vals(r: Reader) -> list[Val]:
@@ -262,42 +266,61 @@ def _contract_id_preimage(r: Reader) -> None:
         _asset(r, False)
 
 
-def _create_contract(r: Reader, v2: bool) -> None:
+def _nesting_of(values: list[Val]) -> int:
+    return max((v.nesting for v in values), default=0)
+
+
+def _create_contract(r: Reader, v2: bool) -> int:
+    """A contract creation, and the deepest ScVal nesting among its constructor arguments (V2 only)."""
     _contract_id_preimage(r)
     _executable(r)
-    if v2:
-        sc_vals(r)
+    return _nesting_of(sc_vals(r)) if v2 else 0
 
 
 @dataclass(frozen=True, slots=True)
 class Invocation:
-    """A SorobanAuthorizedInvocation: its contract call (None for a contract creation) and how many sub-invocations it
-    holds."""
+    """A SorobanAuthorizedInvocation: its contract call (None for a contract creation), how many sub-invocations it
+    holds, and the deepest nesting within it, of authorized invocations (itself level 1) or of the ScVal vectors and
+    maps of any of their arguments."""
 
     call: Call | None
     subs: int
+    nesting: int
 
 
-def invocation(r: Reader, depth: int = 0) -> Invocation:
-    """One authorized invocation inside depth others."""
-    if depth + 1 > MAX_DEPTH:
-        raise Malformed
+def _invocation_head(r: Reader) -> tuple[Call | None, int, int]:
+    """One authorized invocation's function, how many sub-invocations follow it, and the deepest ScVal nesting among
+    its arguments."""
     kind = r.enum(range(0, 3))
-    call = None
     if kind == 0:
         call = invoke_contract_args(r)
-    else:
-        _create_contract(r, kind == 2)
-    subs = r.count()
-    for _ in range(subs):
-        invocation(r, depth + 1)
-    return Invocation(call, subs)
+        return call, r.count(), _nesting_of(call.args)
+    nesting = _create_contract(r, kind == 2)
+    return None, r.count(), nesting
+
+
+def invocation(r: Reader) -> Invocation:
+    """One authorized invocation with its sub-invocations, read whole with a stack of the invocations open around the
+    one read next."""
+    call, subs, nesting = _invocation_head(r)
+    nesting = max(nesting, 1)
+    remaining = [subs] if subs else []
+    while remaining:
+        if remaining[-1] == 0:
+            remaining.pop()
+            continue
+        remaining[-1] -= 1
+        _, inner, args = _invocation_head(r)
+        nesting = max(nesting, args, len(remaining) + 1)
+        if inner:
+            remaining.append(inner)
+    return Invocation(call, subs, nesting)
 
 
 @dataclass(frozen=True, slots=True)
 class Credentials:
     """An authorization entry's address credentials: V1 or V2, the address, the nonce, the offset of the expiration
-    ledger, and the span of the signature."""
+    ledger, the span of the signature, and the signature's ScVal nesting."""
 
     v2: bool
     address: Address
@@ -306,17 +329,20 @@ class Credentials:
     expiration_at: int
     signature_start: int
     signature_end: int
+    nesting: int
 
 
 @dataclass(frozen=True, slots=True)
 class Entry:
     """An authorization entry: its credentials' kind (0 the source account, 1 address, 2 address V2, 3 address with
-    delegates), its address credentials of kind 1 or 2, its root invocation's bytes, and the root invocation."""
+    delegates), its address credentials of kind 1 or 2, its root invocation's bytes, the root invocation, and the
+    deepest nesting within the address credentials' signature and the invocations."""
 
     kind: int
     credentials: Credentials | None
     invocation: bytes
     root: Invocation
+    nesting: int
 
 
 def _address_credentials(r: Reader, v2: bool) -> Credentials:
@@ -325,16 +351,18 @@ def _address_credentials(r: Reader, v2: bool) -> Credentials:
     expiration_at = r.at
     expiration = r.u32()
     signature = sc_val(r)
-    return Credentials(v2, address, nonce, expiration, expiration_at, signature.start, signature.end)
+    return Credentials(v2, address, nonce, expiration, expiration_at, signature.start, signature.end, signature.nesting)
 
 
-def _delegate(r: Reader, depth: int) -> None:
-    if depth > MAX_DEPTH:
-        raise Malformed
-    sc_address(r)
-    sc_val(r)
-    for _ in range(r.count()):
-        _delegate(r, depth + 1)
+def _delegates(r: Reader) -> None:
+    """A list of delegate signatures, read whole: each delegate's address, its signature and its own delegates, which
+    follow it before its next sibling."""
+    pending = r.count()
+    while pending:
+        pending -= 1
+        sc_address(r)
+        sc_val(r)
+        pending += r.count()
 
 
 def auth_entry(r: Reader) -> Entry:
@@ -344,11 +372,11 @@ def auth_entry(r: Reader) -> Entry:
         credentials = _address_credentials(r, kind == 2)
     elif kind == 3:
         _address_credentials(r, False)
-        for _ in range(r.count()):
-            _delegate(r, 0)
+        _delegates(r)
     start = r.at
     root = invocation(r)
-    return Entry(kind, credentials, r.data[start : r.at], root)
+    signed = 0 if credentials is None else credentials.nesting
+    return Entry(kind, credentials, r.data[start : r.at], root, max(signed, root.nesting))
 
 
 # ── the transaction ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -356,7 +384,11 @@ def auth_entry(r: Reader) -> Entry:
 
 @dataclass
 class Invoke:
-    call: Call
+    """An InvokeHostFunction operation: its contract call (None for another host function), the deepest ScVal nesting
+    among its host function's arguments, and its authorization entries."""
+
+    call: Call | None
+    nesting: int
     entries: list[Entry] = field(default_factory=list)
 
 
@@ -438,18 +470,19 @@ def _price(r: Reader) -> None:
     r.i32()
 
 
-def _claim_predicate(r: Reader, depth: int) -> None:
-    if depth > MAX_DEPTH:
-        raise Malformed
-    kind = r.enum(range(0, 6))
-    if kind in (1, 2):
-        for _ in range(r.count(2)):
-            _claim_predicate(r, depth + 1)
-    elif kind == 3:
-        if r.flag():
-            _claim_predicate(r, depth + 1)
-    elif kind in (4, 5):
-        r.i64()
+def _claim_predicate(r: Reader) -> None:
+    """A claim predicate, read whole: an and or an or holds its predicates, a not one optional predicate, each of which
+    follows it."""
+    pending = 1
+    while pending:
+        pending -= 1
+        kind = r.enum(range(0, 6))
+        if kind in (1, 2):
+            pending += r.count(2)
+        elif kind == 3 and r.flag():
+            pending += 1
+        elif kind in (4, 5):
+            r.i64()
 
 
 def _signer_key(r: Reader) -> None:
@@ -528,7 +561,7 @@ def _operation(r: Reader, kind: int) -> None:
         for _ in range(r.count(10)):
             r.enum(range(0, 1))
             public_key(r)
-            _claim_predicate(r, 0)
+            _claim_predicate(r)
     elif kind in (15, 20):
         r.enum(range(0, 1))
         r.opaque(32)
@@ -562,18 +595,20 @@ def _operation(r: Reader, kind: int) -> None:
             r.u32()
 
 
-def _invoke(r: Reader) -> Invoke | None:
-    """An InvokeHostFunction operation: its contract call and entries, or None for another host function."""
+def _invoke(r: Reader) -> Invoke:
+    """An InvokeHostFunction operation."""
     kind = r.enum(range(0, 4))
     call = None
+    nesting = 0
     if kind == 0:
         call = invoke_contract_args(r)
+        nesting = _nesting_of(call.args)
     elif kind == 2:
         r.var_opaque()
     else:
-        _create_contract(r, kind == 3)
+        nesting = _create_contract(r, kind == 3)
     entries = [auth_entry(r) for _ in range(r.count())]
-    return None if call is None else Invoke(call, entries)
+    return Invoke(call, nesting, entries)
 
 
 @dataclass(frozen=True, slots=True)
@@ -627,7 +662,7 @@ def _v1(r: Reader) -> _V1:
 
 def envelope(data: bytes) -> Envelope:
     """The envelope's one invoke. Raises Malformed for bytes that are not an envelope of a v1 transaction or a fee
-    bump of one, and NotOneTransfer when its operations are not one contract call."""
+    bump of one, and NotOneTransfer when its operations are not one InvokeHostFunction."""
     r = Reader(data)
     kind = r.enum(frozenset({0, 2, 5}))
     if kind == 0:
