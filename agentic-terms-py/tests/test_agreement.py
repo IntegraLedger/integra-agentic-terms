@@ -35,6 +35,7 @@ from integraledger_terms import (
     confirm,
     transact,
 )
+from integraledger_terms.bindings._codec import canonical_or_none
 
 from support import A, ACCOUNT, BUYER, D, HASH_A, LINK_A, NOW, Link, StubBinding, digest, load, recover, row, sign_typed
 
@@ -1112,6 +1113,36 @@ def test_an_approved_option_the_challenge_holds_is_paid_as_approved(required: di
     assert isinstance(out, Agreed) and out.receipt.atr_hash == HASH_A
     assert len(signer.requests) == 1
     assert list(json.loads(base64.b64decode(seller.paid()[0]))["accepted"]) == list(option)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [pytest.param('"\\ud800"', id="a lone surrogate"), pytest.param("1" + "0" * 400, id="an integer of 401 digits")],
+)
+def test_an_option_with_no_rfc_8785_form_approved_unchanged_is_one_of_accepts_by_identity_and_paid(value: str) -> None:
+    """An option whose extra holds a lone surrogate, or an integer JSON.parse reads as infinity, has no RFC 8785 form:
+    canonical_json refuses it, as the protocol package's canonicalJson does, so only identity holds it among accepts, as
+    the protocol package's build compares. The agreement payment the first call returns, approved unchanged, carries the
+    challenge's own entry and is paid; a copy of it is declined offer-unreadable with x402/option-not-in-document,
+    nothing signed or sent."""
+    text = json.dumps(AG["required"], separators=(",", ":")).replace('"version":"2"}', f'"version":"2","k":{value}}}')
+    assert f'"k":{value}}}' in text
+    seller = Challenging(RECORDED, header=written(text))
+    signer = RecordingSigner()
+
+    async def go(c: httpx.AsyncClient) -> tuple[object, object, int]:
+        first = await agree(A, URL, signer, c)
+        assert isinstance(first, ToApprove)
+        assert canonical_or_none(first.approve.option) is None
+        copied = dataclasses.replace(first.approve, option=dict(first.approve.option))
+        copy = await agree(A, URL, signer, c, approved=copied)
+        before = len(signer.requests) + len(seller.paid())
+        return copy, await agree(A, URL, signer, c, approved=first.approve), before
+
+    copy, paid, before = run(seller.link(), go)
+    assert copy == NOT_IN_DOCUMENT and before == 0
+    assert isinstance(paid, Agreed) and paid.receipt.atr_hash == HASH_A
+    assert len(signer.requests) == 1 and len(seller.paid()) == 1
 
 
 # The caller's signal, an asyncio.Event, ends the agreement exchange at its next step. Before the agreement payment is

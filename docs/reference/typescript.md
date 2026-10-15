@@ -42,12 +42,12 @@ declare function transact(
 `confirm`, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer, then
 `finish`. Without `options.approved`, an agreement not yet recorded is returned as `{ approve, bytes, h }`: the agreement
 payment for the agent to approve, with nothing signed. With `options.approved`, the value of `approve` carried back
-unchanged, that payment is signed and paid, and the payment for the resource is signed only with the agreement's
-receipt in hand. On a decline before the signer, the signer is never called. `signed` is `null` when the pairing gives
-the buyer nothing to sign. `agreement` is the agreement's receipt, where the pairing needs one; `landed` where `finish`
-gives one. `options.signal` ends the agreement exchange. Options holding anything but `inputs`, `agreementSigner`,
-`approved` and `signal`, or a member of the wrong kind, and a `signer` or `agreementSigner` whose `account` is not a
-string, are declined before any fetch.
+unchanged, that payment is signed and paid as `agree` pays it, and the payment for the resource is signed only with the
+agreement's receipt in hand. On a decline before the signer, the signer is never called. `signed` is `null` when the
+pairing gives the buyer nothing to sign. `agreement` is the agreement's receipt, where the pairing needs one; `landed`
+where `finish` gives one. `options.signal` ends the agreement exchange. Options holding anything but `inputs`,
+`agreementSigner`, `approved` and `signal`, or a member of the wrong kind, and a `signer` or `agreementSigner` whose
+`account` is not a string, are declined before any fetch.
 
 ### `confirm`
 
@@ -121,7 +121,11 @@ declare function agree(
 The agreement for the hash of `bytes` at `url`, in two calls. Without `options.approved`, asks the agreement URL for its
 payment request and returns `{ approve, bytes, h }`, signing nothing; where the agreement is already recorded, returns
 its receipt. With `options.approved`, the value of `approve` carried back unchanged, signs exactly that payment with
-`signer`, sends it, and returns the receipt once recorded. The option paid is the first, in document order, that
+`signer`, sends it, and returns the receipt once recorded. Before anything is fetched or signed, an approved payment
+whose `required` the protocol package's read refuses for its version, its legal context or agreement URL, or an
+`accepts` that is not a list of at most 32 entries holding an option is declined `offer-unreadable` with the read's
+code, as the unpaid request is, and one whose `option` is not one of `required.accepts`, compared by RFC 8785 form, is
+declined `offer-unreadable` with `x402/option-not-in-document`. The option paid is the first, in document order, that
 `signer` can pay with a pairing whose payment is itself a public proof. `options.inputs` are the buyer's own chain
 values; `options.signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, or a member
 of the wrong kind, and a `signer` whose `account` is not a string, are declined before any fetch.

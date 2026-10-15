@@ -181,7 +181,8 @@ Returns `atrHash`, `atr`, `signed` (and `landed`), and `agreement`, the receipt,
 pairing with a channel, also `mac`, which `atr_channel_open` takes with the opening and `landed`. Where the pairing needs an agreement
 payment that is not yet recorded and `approved` is absent, returns `atrHash`, `atr` and `approve` instead, and signs
 nothing: `approve.option` is the payment's `amount`, `asset`, `payTo` and `network`, `approve.url` the agreement URL and
-`approve.required` its payment request. Annotations: not read-only, not destructive, not idempotent, open-world.
+`approve.required` its payment request. With `approved`, that payment is paid as `atr_agree` pays it. Annotations: not
+read-only, not destructive, not idempotent, open-world.
 
 ### `atr_agree`
 
@@ -198,9 +199,13 @@ Offered with a host `signer` or `agreementSigner`. The agreement payment for the
 
 Without `approved`, returns `atrHash` and `approve`, the agreement payment, and signs nothing; where the agreement is
 already recorded, returns `atrHash` and `receipt`. With `approved`, pays that payment with the host's agreement signer,
-or its signer, and returns `atrHash` and `receipt`. A `chosen` whose `mac` does not verify (one with a member changed,
-added or removed, or one another server process returned) is declined `chosen-unverified` before anything is fetched or
-signed; a verified `chosen` with no `agreement` is declined `offer-unreadable`.
+or its signer, and returns `atrHash` and `receipt`. An `approved` whose `required` the protocol package's read refuses
+for its version, its legal context or agreement URL, or an `accepts` that is not a list of at most 32 entries holding
+an option is declined `offer-unreadable` with the read's code, and one whose `option` is not one of `required.accepts`,
+compared by RFC 8785 form, is declined `offer-unreadable` with `x402/option-not-in-document`, before anything is fetched
+or signed. A `chosen` whose `mac` does not verify (one with a member changed, added or removed, or one another server
+process returned) is declined `chosen-unverified` before anything is fetched or signed; a verified `chosen` with no
+`agreement` is declined `offer-unreadable`.
 Annotations: not read-only, not destructive, not idempotent, open-world.
 
 A client's `notifications/cancelled` for an `atr_transact` or `atr_agree` call ends its agreement exchange, as the

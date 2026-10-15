@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashTypedData, recoverTypedDataAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import type { AtrHash } from "@integraledger/lcp";
+import { canonicalJson, type AtrHash } from "@integraledger/lcp";
 import {
   exactEip3009,
   type Eip3009Payment,
@@ -1098,6 +1098,30 @@ describe("the agreement payment the agent approves", () => {
     expect(signer.requests.length).toBe(1);
     const sent = fromBase64Json(fetch.paid()[0]!) as Eip3009Payment;
     expect(JSON.stringify(sent.accepted)).toBe(JSON.stringify(option));
+  });
+
+  // An option whose extra holds a lone surrogate, or an integer JSON.parse reads as Infinity, has no RFC 8785 form:
+  // the protocol package's canonicalJson refuses it, so only identity holds it among accepts, as the protocol
+  // package's build compares. The agreement payment the first call returns, approved unchanged, carries the
+  // challenge's own entry and is paid; a copy of it is declined offer-unreadable with x402/option-not-in-document,
+  // nothing signed or sent.
+  it.each([
+    ["a lone surrogate", '"\\ud800"'],
+    ["an integer of 401 digits", `1${"0".repeat(400)}`],
+  ])("an option whose extra holds %s, approved unchanged: one of accepts by identity, and paid", async (_, value) => {
+    const text = JSON.stringify(AG.required).replace('"version":"2"}', `"version":"2","k":${value}}`);
+    expect(text).toContain(`"k":${value}}`);
+    const signer = counting();
+    const fetch = challenging(Buffer.from(text, "utf8").toString("base64"), RECORDED);
+    const first = await agree(A, AGREEMENT_URL, signer, fetch);
+    if (!("approve" in first)) throw new Error("the agreement payment is returned for approval");
+    expect(typeof canonicalJson(first.approve.option)).not.toBe("string");
+    const copy = { ...first.approve, option: { ...first.approve.option } };
+    const declinedCopy = await agree(A, AGREEMENT_URL, signer, fetch, { approved: copy });
+    expect(isDeclined(declinedCopy) && declinedCopy.decline).toEqual(NOT_IN_DOCUMENT);
+    expect([signer.requests.length, fetch.paid().length]).toEqual([0, 0]);
+    expect(await agree(A, AGREEMENT_URL, signer, fetch, { approved: first.approve })).toEqual({ receipt: AG.receipt });
+    expect([signer.requests.length, fetch.paid().length]).toEqual([1, 1]);
   });
 });
 

@@ -280,8 +280,9 @@ def _x402_bindings() -> tuple[Binding, ...]:
 
 @dataclass(frozen=True, slots=True)
 class _Selected:
-    """What the gate pays for an agreement: the option, its pairing, its read, the gate's choice, and the deadlines the
-    option's maxTimeoutSeconds gives."""
+    """What the gate pays for an agreement: the option, which is the accepts entry itself, so that the agreement payment
+    handed back unchanged holds it by identity (is_offered); its pairing, its read, the gate's choice, and the deadlines
+    the option's maxTimeoutSeconds gives."""
 
     option: dict[str, Any]
     binding: Binding
@@ -343,7 +344,8 @@ def _select(
         if isinstance(chosen, Refusal):
             unpayable = unpayable if unpayable is not None else chosen.code
             continue
-        return _Selected(option=dict(option), binding=found[0], read=found[1], chosen=chosen, limits=limits)
+        kept = option if isinstance(option, dict) else dict(option)
+        return _Selected(option=kept, binding=found[0], read=found[1], chosen=chosen, limits=limits)
     if unpayable is None and unreadable is not None:
         return Declined("offer-unreadable", unreadable)
     return Declined("no-payable-option", unpayable if unpayable is not None else "x402/no-payable-option")
@@ -421,9 +423,10 @@ async def agree(
     """Without approved: ask the agreement URL for its challenge and return the agreement payment to approve, signing
     nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
     signer, send it to url, and return the receipt once recorded; a payment whose challenge the protocol package's read
-    refuses as a whole is declined as the unpaid request declines that challenge, and one whose option is not one of
-    that challenge's accepts, by RFC 8785 form, is declined offer-unreadable with x402/option-not-in-document, each
-    before any fetch or signer call.
+    refuses for a fault of its own (its version, legal context or agreement URL, or an accepts that is not a list of at
+    most 32 entries holding a mapping) is declined as the unpaid request declines that challenge, and one whose option
+    is not one of that challenge's accepts, by RFC 8785 form, is declined offer-unreadable with
+    x402/option-not-in-document, each before any fetch or signer call.
     atr_bytes are the ATR the gate compared, whose hash the agreement payment carries; inputs are the buyer's own chain
     values; setting signal ends the exchange. An approved value that is not of the agreement payment's form, inputs that
     are not a mapping, a signal that is not an asyncio.Event, or a signer whose account is not a string is declined

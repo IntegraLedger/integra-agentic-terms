@@ -411,9 +411,10 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * Without `approved`: asks the agreement URL for its challenge and returns the agreement payment to approve, signing
  * nothing, or the receipt where the agreement is already recorded. With `approved`: signs exactly that payment with
  * `signer`, sends it to `url`, and returns the receipt once recorded; a payment whose challenge the protocol package's
- * read refuses as a whole is declined as the unpaid request declines that challenge, and one whose option is not one
- * of that challenge's `accepts`, by RFC 8785 form, is declined `offer-unreadable` with `x402/option-not-in-document`,
- * each before any fetch or signer call.
+ * read refuses for a fault of its own (its version, legal context or agreement URL, or an `accepts` that is not a list
+ * of at most 32 entries holding an object) is declined as the unpaid request declines that challenge, and one whose
+ * option is not one of that challenge's `accepts`, by RFC 8785 form, is declined `offer-unreadable` with
+ * `x402/option-not-in-document`, each before any fetch or signer call.
  * `bytes` are the ATR the gate compared, whose hash the agreement payment carries; `inputs` are the buyer's own chain
  * values; `signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, a `signal` that
  * is not an `AbortSignal`, an `approved` that is not of the agreement payment's form, `inputs` that is not an object,
