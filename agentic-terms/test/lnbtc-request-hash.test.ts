@@ -115,6 +115,10 @@ describe("the request binding, from the buyer's own request", () => {
     ["an MCP server with a port of 4,301 digits", "mcp:1", { server: `https://api.example.com:${"1".repeat(4301)}/mcp`, metadata: [] }, { server: `https://api.example.com:${"1".repeat(4301)}/mcp`, name: "get_article" }, "ln/request-binding-malformed"],
     // The parser reads a file URL's whole authority as its host, which takes no port.
     ["an MCP server that is a file URL with a port", "mcp:1", { server: "file://api.example.com:443/mcp", metadata: [] }, { server: "file://api.example.com:443/mcp", name: "get_article" }, "ln/request-binding-malformed"],
+    // The parser reads a percent-encoded host as UTS #46 does: 0à.א holds a right-to-left label, so the bidi rule (RFC 5893
+    // §2) reads every label, and 0à, a left-to-right label that starts with a digit, fails it.
+    ["a URL whose host fails the bidi rule", "http:1", { headers: [] }, { method: "GET", url: "https://0%C3%A0.%D7%90/article/A" }, "ln/request-binding-malformed"],
+    ["an MCP server whose host fails the bidi rule", "mcp:1", { server: "https://0%C3%A0.%D7%90/mcp", metadata: [] }, { server: "https://0%C3%A0.%D7%90/mcp", name: "get_article" }, "ln/request-binding-malformed"],
     // RFC 8785 writes I-JSON, whose names and strings hold no lone surrogate (RFC 7493 §2.1).
     ["a lone-surrogate metadata name", "mcp:1", { server: SERVER, metadata: ["\ud800"] }, { server: SERVER, name: "get_article" }, "ln/request-binding-malformed"],
   ] as const)("%s is refused", async (_case, profile, params, request, expected) => {

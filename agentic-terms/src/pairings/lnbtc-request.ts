@@ -9,7 +9,7 @@
  * - `mcp:1`: `{server, name, arguments?, meta?}`, `server` the MCP server's URI as the buyer's own configuration spells
  *   it, `name` and `arguments` the `tools/call` params, `meta` its `params._meta`.
  */
-import { canonicalJson, hash, type Json, type Refusal } from "@integraledger/lcp/core";
+import { canonicalJson, hash, readUrl, type Json, type Refusal } from "@integraledger/lcp/core";
 import { decodeBolt11, invoiceH } from "@integraledger/lcp/lightning";
 import { bytesOf, isObject, isRefusal, refuse } from "./common.js";
 
@@ -48,9 +48,14 @@ async function valueHash(bytes: Uint8Array | undefined): Promise<string> {
   return sha256Hex(b);
 }
 
-/** An absolute `http` or `https` URL in ASCII syntax, with a host, and no fragment or user information. */
+/**
+ * An absolute `http` or `https` URL in ASCII syntax, with a host, and no fragment or user information, that the WHATWG
+ * URL Standard's basic URL parser reads, with no base, as lcp's `readUrl` reads it.
+ */
 function isTargetUri(url: unknown): url is string {
-  return typeof url === "string" && ASCII_URI.test(url) && HTTP_TARGET.test(url) && URL.canParse(url);
+  if (typeof url !== "string" || !ASCII_URI.test(url) || !HTTP_TARGET.test(url)) return false;
+  const scheme = readUrl(url)?.scheme;
+  return scheme === "http" || scheme === "https";
 }
 
 /** Strictly ascending and without duplicates, by UTF-16 code units, which is RFC 8785's member order. */
@@ -107,9 +112,12 @@ async function mcpBinding(params: Record<string, unknown>, request: Record<strin
   return { domain: MCP_DOMAIN, server, method: "tools/call", name, arguments: args as Json, metadata: bound };
 }
 
-/** An absolute URI in ASCII syntax, with no user information and no fragment. */
+/**
+ * An absolute URI in ASCII syntax, with no user information and no fragment, that the WHATWG URL Standard's basic URL
+ * parser reads, with no base, as lcp's `readUrl` reads it.
+ */
 function isAbsoluteUri(v: unknown): v is string {
-  return typeof v === "string" && ASCII_URI.test(v) && ABSOLUTE_URI.test(v) && !USERINFO.test(v) && URL.canParse(v);
+  return typeof v === "string" && ASCII_URI.test(v) && ABSOLUTE_URI.test(v) && !USERINFO.test(v) && readUrl(v) !== null;
 }
 
 /**

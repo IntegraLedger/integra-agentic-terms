@@ -329,6 +329,7 @@ describe("buyer rows", () => {
   const LINKS: { name: string; case: string; link: string; accept: boolean; refusedAs: string }[] = JSON.parse(
     readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/core-vectors.json", import.meta.url), "utf8"),
   ).links.rows;
+  it("reads the 32 links rows the vector file holds", () => expect(LINKS.length).toBe(32));
   it.each(LINKS.map((r) => [r.name, r.case, r] as const))("the https-link rule, %s (%s)", async (_name, _case, r) => {
     const real = exactEip3009.read(D);
     if ("refused" in real) throw new Error(real.code);

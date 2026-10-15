@@ -48,7 +48,8 @@ def _value_hash(data: bytes | None) -> str:
 
 
 def _is_target_uri(url: object) -> bool:
-    """An absolute http or https URL in ASCII syntax, with a host, and no fragment or user information."""
+    """An absolute http or https URL in ASCII syntax, with a host, and no fragment or user information, that the WHATWG
+    URL Standard's basic URL parser reads, with no base, as _url.read_url reads it."""
     return (
         isinstance(url, str)
         and _ASCII_URI.fullmatch(url) is not None
@@ -60,7 +61,7 @@ def _is_target_uri(url: object) -> bool:
 
 def _is_absolute_uri(value: object) -> bool:
     """An absolute URI in ASCII syntax, with no user information and no fragment, that the WHATWG URL Standard's basic
-    URL parser reads."""
+    URL parser reads, with no base, as _url.read_url reads it."""
     return (
         isinstance(value, str)
         and _ASCII_URI.fullmatch(value) is not None
