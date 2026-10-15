@@ -97,12 +97,14 @@ function mixed(): PaymentRequired {
   return { ...D, extensions: { ...D.extensions, legalContext: { ...lc, info: { ...(lc.info as object), legalContextAgreementUrl: AG.url } } } };
 }
 
-/** The offer and binding a row's `doc` describes: BA6 reads D through the public-proof pairing itself, BA12 through
- * the stub whose read gives no agreement URL, and every other row through the stub whose read gives `url`. */
-function offerOf(name: string, url: string): [PaymentRequired, Binding] {
-  if (name === "BA6") return [mixed(), exactEip3009 as Binding];
-  if (name === "BA12") return [D, noPublicProof(undefined)];
-  return [D, noPublicProof(url)];
+/** The offer and binding a row's `doc` describes: BA6's reads D through the public-proof pairing itself, BA12's
+ * through the stub whose read gives no agreement URL, and BA1's (or "as BA1", or none, for a row run through `agree`)
+ * through the stub whose read gives `url`. A row whose `doc` is any other text is not run as written. */
+function offerOf(doc: string | undefined, url: string): [PaymentRequired, Binding] {
+  if (doc === row("BA6").input.doc) return [mixed(), exactEip3009 as Binding];
+  if (doc === row("BA12").input.doc) return [D, noPublicProof(undefined)];
+  if (doc === undefined || doc === "as BA1" || doc === row("BA1").input.doc) return [D, noPublicProof(url)];
+  throw new Error(`no offer is described by the doc ${doc}`);
 }
 
 /** A body in `coding`, of the bytes given. */
@@ -179,7 +181,7 @@ const paidOf = (calls: Call[]): string[] =>
  * approved, the second. */
 async function exchange(name: string, input: Input, expected: Expect, entry = "transact") {
   const url = named(input.agreementUrl ?? "fixed.agreement.url") as string;
-  const [doc, binding] = offerOf(name, url);
+  const [doc, binding] = offerOf(input.doc, url);
   const fetch = seller(input.agreement ?? [], input.serves === undefined ? A : fromHex(B.fixed[input.serves]));
   const signer = counting();
   const given = input.inputs === undefined ? {} : { inputs: input.inputs as never };
@@ -245,6 +247,7 @@ function compare(input: Input, e: Expect, run: Awaited<ReturnType<typeof exchang
   if (e.paymentSignature !== undefined) expect(signed?.payload.signature).toBe(SIGNATURES[e.paymentSignature]);
   if (e.signed !== undefined) expect(signed?.payload.signature).toBe(SIGNATURES[e.signed]);
   if (e.agreement !== undefined) expect((out as { agreement?: unknown }).agreement).toEqual(AG[e.agreement]);
+  if (e.receipt !== undefined) expect((out as { agreement?: unknown }).agreement).toEqual(AG[e.receipt]);
   if (e.requestHeaders !== undefined) {
     for (const c of fetch.calls) {
       for (const [k, v] of Object.entries(e.requestHeaders)) {
@@ -272,6 +275,7 @@ async function play(name: string, run: Run): Promise<void> {
   for (const k of Object.keys(run.input)) expect(INPUT_KEYS, `${where}: input ${k}`).toContain(k);
   for (const k of Object.keys(run.expect)) expect(EXPECT_KEYS, `${where}: expect ${k}`).toContain(k);
   for (const s of run.input.agreement ?? []) for (const k of Object.keys(s)) expect(STEP_KEYS, `${where}: step ${k}`).toContain(k);
+  expect(run.input.signer, `${where}: signer`).toBe("counting");
   try {
     compare(run.input, run.expect, await exchange(name, run.input, run.expect, run.entry));
   } catch (err) {

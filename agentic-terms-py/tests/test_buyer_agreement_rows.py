@@ -165,13 +165,15 @@ class Run:
     signer: Signer
 
 
-def offer_of(name: str, url: str) -> tuple[Any, Any]:
-    """The offer and binding a row's doc describes: BA6 reads D through the public-proof pairing itself, BA12 through
-    the stub whose read gives no agreement URL, and every other row through the stub whose read gives url."""
-    if name == "BA6":
+def offer_of(doc: str | None, url: str) -> tuple[Any, Any]:
+    """The offer and binding a row's doc describes: BA6's reads D through the public-proof pairing itself, BA12's
+    through the stub whose read gives no agreement URL, and BA1's (or "as BA1", or none, for a row run through agree)
+    through the stub whose read gives url. A row whose doc is any other text is not run as written."""
+    if doc == row("BA6")["input"]["doc"]:
         return mixed(), BINDING
-    if name == "BA12":
+    if doc == row("BA12")["input"]["doc"]:
         return D, without_agreement()
+    assert doc in (None, "as BA1", row("BA1")["input"]["doc"]), f"no offer is described by the doc {doc}"
     return D, with_agreement(url)
 
 
@@ -179,7 +181,7 @@ def exchange(name: str, inputs: dict[str, Any], expected: dict[str, Any], clock:
     """The row's exchange through entry: one call, or, with approve, the call that asks for approval and, when
     approved, the second."""
     url: str = named(inputs.get("agreementUrl", "fixed.agreement.url"))
-    doc, binding = offer_of(name, url)
+    doc, binding = offer_of(inputs.get("doc"), url)
     seller = Seller(inputs.get("agreement", []), bytes.fromhex(BUYER["fixed"][inputs["serves"]]) if "serves" in inputs else A)
     signer = Signer()
     given = {"inputs": inputs["inputs"]} if "inputs" in inputs else {}
@@ -254,10 +256,11 @@ def compare(inputs: dict[str, Any], e: dict[str, Any], run: Run) -> None:
     for key in ("paymentSignature", "signed"):
         if key in e:
             assert signed is not None and signed["payload"]["signature"] == SIGNATURES[e[key]]
-    if "agreement" in e:
-        receipt = out.agreement
-        assert receipt is not None
-        assert {"atrHash": receipt.atr_hash, "agreed": receipt.agreed, "network": receipt.network, "transaction": receipt.transaction} == AG[e["agreement"]]
+    for key in ("agreement", "receipt"):
+        if key in e:
+            receipt = out.agreement
+            assert receipt is not None
+            assert {"atrHash": receipt.atr_hash, "agreed": receipt.agreed, "network": receipt.network, "transaction": receipt.transaction} == AG[e[key]]
     for name, value in e.get("requestHeaders", {}).items():
         assert all(q.headers[name] == value for q in seller.requests)
 
@@ -288,6 +291,7 @@ def play(name: str, run: RowRun, clock: Clock) -> None:
     assert set(run.expect) <= EXPECT_KEYS, (where, set(run.expect) - EXPECT_KEYS)
     for step in run.inputs.get("agreement", []):
         assert set(step) <= STEP_KEYS, (where, set(step) - STEP_KEYS)
+    assert run.inputs.get("signer") == "counting", where
     try:
         compare(run.inputs, run.expect, exchange(name, run.inputs, run.expect, clock, run.entry))
     except AssertionError as err:
