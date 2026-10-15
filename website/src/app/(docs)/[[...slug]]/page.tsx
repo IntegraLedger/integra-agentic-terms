@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { JsonLd } from "@/components/JsonLd";
 import { Mermaid } from "@/components/Mermaid";
+import { Table } from "@/components/Table";
 import { TwoslashPopups } from "@/components/TwoslashPopups";
 import { markdownPath, markdownUrl, ogImagePath } from "@/lib/llms";
 import { absoluteUrl, breadcrumbJsonLd, docSourcePath, repoFile, siteConfig } from "@/lib/site";
@@ -72,7 +73,7 @@ export default async function Page(props: PageProps) {
         />
       </div>
       <DocsBody>
-        <MDX components={{ ...defaultMdxComponents, Mermaid }} />
+        <MDX components={{ ...defaultMdxComponents, Mermaid, table: Table }} />
       </DocsBody>
       {twoslashPopups(page).length > 0 ? <TwoslashPopups src={popupsPath(page.url)} /> : null}
     </DocsPage>

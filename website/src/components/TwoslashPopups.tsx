@@ -42,7 +42,8 @@ export function TwoslashPopups({ src }: { src: string }) {
     popup.id = "twoslash-popup";
     popup.className = "fd-twoslash-popover twoslash-popover";
     popup.setAttribute("role", "dialog");
-    popup.tabIndex = -1;
+    // Focusable, so that a popup taller than its box scrolls with the arrow keys.
+    popup.tabIndex = 0;
     popup.hidden = true;
     document.body.append(popup);
 

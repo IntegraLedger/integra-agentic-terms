@@ -144,3 +144,50 @@ export function rehypeTwoslashPopups() {
     if (popups.length > 0) tree.children?.unshift(exportStrings("twoslashPopups", popups));
   };
 }
+
+/** A heading's text as a name: each image's alt text, and no footnote reference. */
+function headingName(node: HastNode): string {
+  if (node.type === "text") return node.value ?? "";
+  if (node.type === "element" && node.tagName === "img") {
+    return typeof node.properties?.alt === "string" ? node.properties.alt : "";
+  }
+  if (node.type === "element" && node.tagName === "sup" && node.children?.some((c) => c.properties?.dataFootnoteRef)) {
+    return "";
+  }
+  return (node.children ?? []).map(headingName).join("");
+}
+
+/**
+ * Names each table by the heading it sits under, as `data-name`, which the table's region takes as its accessible name
+ * (src/components/Table.tsx). Tables that would share a name, such as two under one heading, are told apart by their
+ * place among them ("Stellar, table 2 of 2"), so each region of a page has its own name. A heading's name is its text,
+ * with each image's alt text and without its footnote references. A table before any heading, or under a heading with
+ * no name, is named "Table".
+ */
+export function rehypeTableNames() {
+  return (tree: HastNode) => {
+    const tables: { table: HastNode; name: string }[] = [];
+    let heading = "Table";
+    const visit = (node: HastNode) => {
+      for (const child of node.children ?? []) {
+        if (child.type === "element" && /^h[1-6]$/.test(child.tagName ?? "")) {
+          heading = headingName(child).replace(/\s+/g, " ").trim() || "Table";
+        } else if (child.type === "element" && child.tagName === "table") {
+          tables.push({ table: child, name: heading });
+        } else {
+          visit(child);
+        }
+      }
+    };
+    visit(tree);
+    const counts = new Map<string, number>();
+    for (const { name } of tables) counts.set(name, (counts.get(name) ?? 0) + 1);
+    const seen = new Map<string, number>();
+    for (const { table, name } of tables) {
+      const total = counts.get(name) ?? 1;
+      const place = (seen.get(name) ?? 0) + 1;
+      seen.set(name, place);
+      table.properties = { ...table.properties, dataName: total > 1 ? `${name}, table ${place} of ${total}` : name };
+    }
+  };
+}

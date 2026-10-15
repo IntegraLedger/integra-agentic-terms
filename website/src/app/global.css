@@ -10,7 +10,8 @@
 @source "../../node_modules/fumadocs-twoslash/dist/**/*.js";
 
 /* Colours. Each text colour clears WCAG AA (4.5:1) on the background and card it sits on, the primary text of the
-   active sidebar entry included, which sits on a tenth of the primary over the card. */
+   active sidebar entry included, which sits on a tenth of the primary over the card, and the muted text of the selected
+   search result, which sits on the accent over the popover. */
 @theme {
   --color-fd-primary: hsl(220, 70%, 46%);
   --color-fd-primary-foreground: hsl(0, 0%, 98%);
@@ -25,7 +26,7 @@ html.dark {
   --color-fd-background: hsl(222, 47%, 11%);
   --color-fd-foreground: hsl(210, 40%, 92%);
   --color-fd-muted: hsl(223, 47%, 15%);
-  --color-fd-muted-foreground: hsla(215, 20%, 65%, 0.8);
+  --color-fd-muted-foreground: hsl(215, 20%, 65%);
   --color-fd-popover: hsl(222, 47%, 13%);
   --color-fd-popover-foreground: hsl(210, 40%, 88%);
   --color-fd-card: hsl(222, 47%, 13%);
@@ -69,14 +70,15 @@ html:not(.dark) figure.shiki {
   background-color: #ffffff;
 }
 
-/* The one Twoslash popup on a page (src/components/TwoslashPopups.tsx), placed in page coordinates. Its code sits on
-   white in light mode, as the code samples do. */
+/* The one Twoslash popup on a page (src/components/TwoslashPopups.tsx), placed in page coordinates. Its code, the
+   samples in its documentation included, sits on white in light mode, as the code samples do. */
 .twoslash-popover {
   position: absolute;
   z-index: 50;
 }
 
-html:not(.dark) .twoslash-popover {
+html:not(.dark) .twoslash-popover,
+html:not(.dark) .twoslash-popover pre code {
   background-color: #ffffff;
 }
 
@@ -87,9 +89,14 @@ html:not(.dark) .twoslash-popover {
   border-radius: 2px;
 }
 
-/* A table (in the wrapper the docs layout gives it) is laid out and painted only when it nears the viewport, so the
-   long reference tables, the decline codes and the pairings above all, cost no rendering work while they are off
-   screen. */
+/* A keyboard user sees which table has focus: its region scrolls with the arrow keys (src/components/Table.tsx). */
+.prose div[role="region"]:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 2px;
+}
+
+/* A table (in its region) is laid out and painted only when it nears the viewport, so the long reference tables, the
+   decline codes and the pairings above all, cost no rendering work while they are off screen. */
 .prose div:has(> table) {
   content-visibility: auto;
   contain-intrinsic-size: auto 480px;

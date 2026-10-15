@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { type RehypeCodeOptions, rehypeCodeDefaultOptions } from "fumadocs-core/mdx-plugins";
 import { applyMdxPreset, defineConfig, defineDocs } from "fumadocs-mdx/config";
 import { transformerTwoslash } from "fumadocs-twoslash";
-import { rehypeMermaid, rehypeTwoslashPopups } from "./src/lib/rehype-docs";
+import { rehypeMermaid, rehypeTableNames, rehypeTwoslashPopups } from "./src/lib/rehype-docs";
 import { remarkDocLinks } from "./src/lib/remark-doc-links";
 
 /** The repository root. The site builds in website/, and this file is compiled into website/.source/. */
@@ -40,7 +40,10 @@ export const api = defineDocs({
   dir: "content",
   docs: {
     postprocess: { includeProcessedMarkdown: { headingIds: false } },
-    mdxOptions: applyMdxPreset({ rehypeCodeOptions: codeOptions }),
+    mdxOptions: applyMdxPreset({
+      rehypeCodeOptions: codeOptions,
+      rehypePlugins: (plugins) => [...plugins, rehypeTableNames],
+    }),
   },
 });
 
@@ -81,8 +84,9 @@ export default defineConfig({
   mdxOptions: {
     remarkPlugins: [[remarkDocLinks, { root: DOCS_DIR }]],
     // Each Mermaid diagram is rendered to SVG before code highlighting (src/lib/mermaid.ts); each page's Twoslash
-    // popups are taken out of the page after it, into a file the page fetches when a reader first opens one.
-    rehypePlugins: (plugins) => [rehypeMermaid, ...plugins, rehypeTwoslashPopups],
+    // popups are taken out of the page after it, into a file the page fetches when a reader first opens one; each table
+    // is named by its heading, for its region (src/components/Table.tsx).
+    rehypePlugins: (plugins) => [rehypeMermaid, ...plugins, rehypeTwoslashPopups, rehypeTableNames],
     rehypeCodeOptions: {
       ...codeOptions,
       transformers: [...(rehypeCodeDefaultOptions.transformers ?? []), twoslash],
