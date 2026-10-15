@@ -1111,13 +1111,14 @@ def test_sui_v2_carried() -> None:
 
 
 def test_sui_the_validity_expiration() -> None:
+    """Each row's reference: the digest, and the epoch bound as a decimal string, or null for a transaction that sets
+    no maximum epoch."""
     for row in SUI["validity"]["rows"]:
         tx = sui_decoded(row["tx"])
         assert X402_EXACT_SUI.bound(sui_payment(row["tx"]["transactionBase64"])) == row["expectBound"]
-        if isinstance(row["expectReference"], str):
-            assert (row["case"], tx.until_epoch) == (row["case"], None)
-        else:
-            assert (tx.digest, str(tx.until_epoch)) == (row["expectReference"]["digest"], row["expectReference"]["untilEpoch"])
+        until = None if tx.until_epoch is None else str(tx.until_epoch)
+        ref = row["expectReference"]
+        assert (row["case"], tx.digest, until) == (row["case"], ref["digest"], ref["untilEpoch"])
 
 
 def test_sui_v3_refusals() -> None:
@@ -1148,11 +1149,14 @@ def test_sui_agreed_refusals() -> None:
     assert decode_sui_tx("AAA") == Refusal(rows["a transaction that is not padded standard base64"])
     network = "an option with scheme exact and a sui: network other than mainnet, testnet or devnet"
     assert X402_EXACT_SUI.bound(sui_payment(SUI["V2"]["tx"]["transactionBase64"], {**SUI_F["O"], "network": "sui:localnet"})) == Refusal(rows[network])
-    signature = "payload.signature not a string, empty, or over 8192 characters"
-    for bad in (1, "", "A" * 8193):
+    signature = "payload.signature not a string, or empty"
+    for bad in (1, ""):
         p = sui_payment(SUI["V2"]["tx"]["transactionBase64"])
         p["payload"]["signature"] = bad
         assert X402_EXACT_SUI.bound(p) == Refusal(rows[signature])
+    p = sui_payment(SUI["V2"]["tx"]["transactionBase64"])
+    p["payload"]["signature"] = "A" * 8193
+    assert X402_EXACT_SUI.bound(p) == SUI["V2"]["expectBound"]
     p = sui_payment(SUI["V2"]["tx"]["transactionBase64"])
     p["payload"]["transaction"] = 1
     assert X402_EXACT_SUI.bound(p) == Refusal(rows["payload.transaction not a string"])
