@@ -5,7 +5,7 @@ Values take one form each: u8 to u32 as ints, u64 to u256 as decimal strings, by
 its fields in order, an enum as {"$kind": name, name: value} (True for a variant with no value), an option as its
 value or None, and a map as a dict. Reading accepts a ULEB128 in any length whose value is at most 2^53 - 1 and a
 bool byte other than 1 as false; writing produces the one canonical encoding, so parsing and writing back gives the
-same bytes only for canonical input. Every failure raises BcsError."""
+same bytes only for canonical input. parse_transaction_data turns every failure into BcsError."""
 
 import functools
 from collections.abc import Callable, Sequence
