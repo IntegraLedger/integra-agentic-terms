@@ -747,6 +747,32 @@ def test_an_approved_payment_for_another_agreement_url_fails_with_nothing_signed
     assert signer.requests == [] and seller.requests == []
 
 
+@pytest.mark.parametrize("levels", [64, 65, 100_000])
+def test_an_agreement_payment_nested_past_64_levels_is_declined_and_not_sent(levels: int) -> None:
+    # The signed payment nests `levels` levels: the payment 1, accepted 2, its extra 3, the list from 4. The protocol
+    # package reads JSON nested at most 64 levels, so a deeper payment is declined after the signer's one call, unsent.
+    deep: list[Any] = []
+    for _ in range(levels - 4):
+        deep = [deep]
+    seller = Seller(row("BA1")["input"]["agreement"])
+    signer = RecordingSigner()
+
+    async def go(c: httpx.AsyncClient) -> Any:
+        first = await agree(A, URL, signer, c)
+        assert isinstance(first, ToApprove)
+        option = {**first.approve.option, "extra": {**first.approve.option["extra"], "deep": deep}}
+        return await agree(A, URL, signer, c, approved=dataclasses.replace(first.approve, option=option))
+
+    out = run(seller.link(), go)
+    assert len(signer.requests) == 1
+    if levels <= 64:
+        assert isinstance(out, Agreed)
+        assert len(seller.paid()) == row("BA1")["expect"]["paidRequests"] and len(set(seller.paid())) == 1
+    else:
+        assert out == Declined("signed-not-bound", "The agreement payment is not plain JSON.")
+        assert seller.paid() == []
+
+
 def test_an_approved_value_that_is_not_an_agreement_payment_is_no_payable_option() -> None:
     seller = Seller([])
     out = run(seller.link(), lambda c: agree(A, URL, RecordingSigner(), c, approved={"url": URL}))  # type: ignore[arg-type]

@@ -86,6 +86,19 @@ function toBase64(text: string): string {
 }
 
 /**
+ * The JSON text `JSON.stringify` writes for the agreement payment, which the protocol package reads back: nested at
+ * most 64 levels. Undefined when it nests deeper, or `JSON.stringify` writes nothing for it or throws.
+ */
+function paymentText(signed: unknown): string | undefined {
+  try {
+    const text = JSON.stringify(signed);
+    return text !== undefined && parseJson(text) !== undefined ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The JSON value a header of at most 64 KiB carries as padded standard base64 (RFC 4648 section 4) whose final
  * character's unused bits are zero, of UTF-8 JSON text nested at most 64 levels deep whose leading byte order mark is
  * kept as a character; undefined for anything else.
@@ -400,7 +413,9 @@ export async function exchange(
   if (paid.signed === null) return declined("offer-unreadable", "The agreement payment gave nothing to sign.");
   if (isEnded(signal)) return ended();
   const signed: Presented = paid.signed;
-  const payment = toBase64(JSON.stringify(signed));
+  const text = paymentText(signed);
+  if (text === undefined) return declined("signed-not-bound", "The agreement payment is not plain JSON.");
+  const payment = toBase64(text);
   const moved = { signed, bytes, h };
   const keep = (d: Declined): Declined => ({ ...d, moved });
   const pending = (detail: string): Declined => keep(declined("agreement-pending", detail));

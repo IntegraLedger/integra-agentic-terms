@@ -121,10 +121,15 @@ def _server_error(status: int) -> bool:
     return 500 <= status <= 599
 
 
-def _to_base64(value: object) -> str:
+def _to_base64(value: object) -> str | None:
     """Standard base64 of the UTF-8 bytes of the JSON text JSON.stringify writes for value, each lone surrogate
-    escaped and each number that is not finite written as null, as JSON.stringify writes them."""
-    return base64.b64encode(js_json(value, null_non_finite=True).encode("utf-8")).decode("ascii")
+    escaped and each number that is not finite written as null, as JSON.stringify writes them; None when js_json
+    cannot write it: nested more than 64 levels, as the protocol package reads JSON, or not JSON data."""
+    try:
+        text = js_json(value, null_non_finite=True)
+    except (TypeError, ValueError):
+        return None
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
 def _from_base64_json(header: str) -> object | None:
@@ -428,6 +433,8 @@ async def exchange(
     if _is_ended(signal):
         return _ended()
     payment = _to_base64(paid.signed)
+    if payment is None:
+        return Declined("signed-not-bound", "The agreement payment is not plain JSON.")
     moved = Moved(paid.signed, atr_bytes, h)
     pending = Declined("agreement-pending", "The agreement payment was sent and is not yet recorded.", moved)
     stopped = Declined(

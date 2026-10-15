@@ -799,6 +799,31 @@ describe("the agreement payment the agent approves", () => {
     expect(fetch.calls.length).toBe(0);
   });
 
+  it.each([64, 65, 100_000])("an agreement payment nested %i levels: sent within 64, else signed-not-bound", async (levels) => {
+    // The signed payment nests `levels` levels: the payment 1, accepted 2, its extra 3, the array from 4. The protocol
+    // package reads JSON nested at most 64 levels, so a deeper payment is declined after the signer's one call, unsent.
+    let deep: unknown = [];
+    for (let i = 0; i < levels - 4; i++) deep = [deep];
+    const fetch = seller(row("BA1").input.agreement);
+    const signer = counting();
+    const first = await agree(A, AGREEMENT_URL, signer, fetch);
+    if (!("approve" in first)) throw new Error("the agreement payment is returned for approval");
+    const option = { ...first.approve.option, extra: { ...first.approve.option.extra, deep } } as PaymentRequirements;
+    const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, { approved: { ...first.approve, option } }));
+    expect(signer.requests.length).toBe(1);
+    if (levels <= 64) {
+      expect(value).toEqual({ receipt: AG.receipt });
+      expect(fetch.paid().length).toBe(row("BA1").expect.paidRequests);
+      expect(new Set(fetch.paid()).size).toBe(1);
+    } else {
+      expect(isDeclined(value) && value.decline).toEqual({
+        code: "signed-not-bound",
+        detail: "The agreement payment is not plain JSON.",
+      });
+      expect(fetch.paid().length).toBe(0);
+    }
+  });
+
   it("an approved value that is not an agreement payment: no-payable-option, nothing fetched", async () => {
     const fetch = seller([]);
     const approved = { url: AGREEMENT_URL } as unknown as AgreeOptions["approved"];
