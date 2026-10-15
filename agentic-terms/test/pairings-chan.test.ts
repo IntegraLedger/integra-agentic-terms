@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { concat, hashTypedData, keccak256, toBytes, toHex, toRlp, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount, sign } from "viem/accounts";
+import { Transaction as TempoTransaction } from "viem/tempo";
 import { sessionEvm, sessionTempo, subscriptionTempo, type MppChallenge } from "@integraledger/lcp/mpp";
 import { batchCloudflare, batchEvm, batchSvm } from "@integraledger/lcp/x402-batch-settlement";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
@@ -464,21 +465,37 @@ async function sig65(hash: Hex, key: Hex): Promise<Hex> {
 }
 const num = (n: number | bigint): Hex => (BigInt(n) === 0n ? "0x" : toHex(BigInt(n)));
 
+type TempoEntry = { chainId: number; address: Hex; nonce: number; signature: string };
+type TempoRow = {
+  case: string;
+  sessionProtocol?: string;
+  transactionChainId?: number;
+  senderSignature?: string;
+  authorizationList?: TempoEntry[];
+  accessKey?: Hex;
+  expectSha256?: string;
+  expect: string;
+};
+
 describe("mpp/session/tempo", () => {
   const T = vectors<{
-    fixed: Fixed & { requestV2: string; deposit: string; escrowV2: Hex; pathUSD: Hex };
+    fixed: Fixed & { requestV2: string; requestV1: string; deposit: string; escrowV2: Hex; pathUSD: Hex };
     TS1: { expectLength: number; expectSelector: string };
     TS2: { expectSha256: string };
     TS3: { expectChannelId: string };
     TS4: { expectVoucher0: string };
+    agreedRefusals: { rows: TempoRow[] };
   }>("mpp-session-tempo.json");
   const f = T.fixed;
   const doc = mppDoc(sessionTempo, issued("tempo", "session", f.requestV2));
   const account = `eip155:42431:${f.payer}`;
   const payer = privateKeyToAccount(f.payerKey);
   const seen: SigningRequest[] = [];
-  /** TS2's wire: the open call in a `0x76` transaction, signed by the payer over keccak256(0x76 ‖ rlp(fields)). */
-  async function openWire(r: SigningRequest): Promise<Hex> {
+  /**
+   * A `0x76` transaction of TS2's fields around the request's call, whose aa_authorization_list holds `list`, signed as
+   * `signer` gives over keccak256(0x76 ‖ rlp(fields)).
+   */
+  async function signedWire(r: SigningRequest, signer: (hash: Hex) => Promise<Hex>, list: readonly unknown[] = []): Promise<Hex> {
     if (r.kind !== "tempo-call") throw new Error(r.kind);
     const fields = [
       num(r.chainId),
@@ -493,11 +510,13 @@ describe("mpp/session/tempo", () => {
       "0x",
       f.pathUSD,
       "0x",
-      [],
+      list,
     ] as const;
-    const signature = await sig65(keccak256(concat(["0x76", toRlp(fields as never)])), f.payerKey);
+    const signature = await signer(keccak256(concat(["0x76", toRlp(fields as never)])));
     return concat(["0x76", toRlp([...fields, signature] as never)]);
   }
+  /** TS2's wire: the open call in a `0x76` transaction, signed by the payer over keccak256(0x76 ‖ rlp(fields)). */
+  const openWire = (r: SigningRequest): Promise<Hex> => signedWire(r, (hash) => sig65(hash, f.payerKey));
   async function answer(r: SigningRequest): Promise<Signature> {
     seen.push(r);
     if (r.kind === "tempo-call") return openWire(r);
@@ -535,6 +554,60 @@ describe("mpp/session/tempo", () => {
     at(f.now, () => b10(mppHttpLink(doc), sessionTempo, account, "mpp", p.inputs)));
   it("B16: another namespace, and another chain, are no-payable-option before any fetch", () =>
     at(f.now, () => b16(doc, sessionTempo, ["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:x", `eip155:1:${f.payer}`], p.inputs)));
+  // mpp-session-tempo.json's agreedRefusals rows whose subject the gate reads: the transaction the signer answers for
+  // the open call, which the gate's buyer piece gives to the build's voucher and then, with the voucher signature, to
+  // its complete. Either's refusal is finish's signed-not-bound detail. The gate reads no Tempo opening of its own: the
+  // rows only bound and reference read (the descriptor, channelId and faults rows) are left to the binding's runners,
+  // and counted. A senderSignature row's transaction is the opening's in the form the row names, each signature a
+  // keychain signature for fixed.payer by the row's accessKey written with ox's SignatureEnvelope.serialize, and its
+  // bytes hash to the row's expectSha256; an aa_authorization_list entry signs EIP-7702's keccak256(0x05 ‖
+  // rlp([chainId, address, nonce])).
+  it("agreedRefusals: the gate declines the transaction the build refuses, with the row's code", () =>
+    at(f.now, async () => {
+      const all = T.agreedRefusals.rows;
+      const rows = all.filter((r) => r.transactionChainId !== undefined || r.senderSignature !== undefined);
+      const left = all.length - rows.length;
+      const name = "mpp-session-tempo.json agreedRefusals.rows, the transactionChainId and senderSignature rows";
+      console.log(`${name}: ${rows.length} run, ${left} left to the binding's runners`);
+      expect([rows.length, left]).toEqual([6, 32]);
+      const MEMBERS = ["case", "sessionProtocol", "transactionChainId", "senderSignature", "authorizationList", "accessKey", "expectSha256", "expect"];
+      const Sig = TempoTransaction.z_SignatureEnvelope;
+      const VERSION: Record<string, "v1" | "v2" | undefined> = { "keychain-v1": "v1", "keychain-v2": "v2" };
+      const keychain = async (form: string, hash: Hex, key: Hex): Promise<Hex> => {
+        const version = VERSION[form];
+        if (version === undefined) throw new Error(`no keychain form ${form}`);
+        const inner = await sign({ hash: version === "v1" ? hash : keccak256(concat(["0x04", hash, f.payer])), privateKey: key });
+        const signature = { r: BigInt(inner.r), s: BigInt(inner.s), yParity: inner.yParity };
+        return Sig.serialize({ type: "keychain", version, userAddress: f.payer, inner: { type: "secp256k1", signature } } as never) as Hex;
+      };
+      for (const row of rows) {
+        expect(Object.keys(row).filter((k) => !MEMBERS.includes(k)), row.case).toEqual([]);
+        const challenges = mppDoc(sessionTempo, issued("tempo", "session", row.sessionProtocol === "v1" ? f.requestV1 : f.requestV2));
+        const confirmed = await confirm(challenges, sessionTempo, account, serving(ABC), p.inputs);
+        if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
+        const r = confirmed.request;
+        if (r?.kind !== "tempo-call") throw new Error("not a tempo call");
+        const chosen = JSON.parse(JSON.stringify(confirmed.chosen));
+        expect(await finish(ABC, chosen, await openWire(r), sessionTempo), row.case).toHaveProperty("next");
+        let wire: Hex;
+        if (row.transactionChainId !== undefined) {
+          wire = await openWire({ ...r, chainId: row.transactionChainId });
+        } else {
+          const key = row.accessKey!;
+          const list: unknown[] = [];
+          for (const a of row.authorizationList ?? []) {
+            expect(Object.keys(a).sort(), row.case).toEqual(["address", "chainId", "nonce", "signature"]);
+            const tuple = [num(a.chainId), a.address, num(a.nonce)];
+            list.push([...tuple, await keychain(a.signature, keccak256(concat(["0x05", toRlp(tuple as never)])), key)]);
+          }
+          wire = await signedWire(r, (hash) => keychain(row.senderSignature!, hash, key), list);
+          expect(sha256(toBytes(wire)), row.case).toBe(row.expectSha256);
+        }
+        const declined = { decline: { code: "signed-not-bound", detail: row.expect } };
+        expect(await finish(ABC, chosen, wire, sessionTempo), row.case).toMatchObject(declined);
+        expect(await finish(ABC, chosen, [wire, `0x${"66".repeat(65)}`], sessionTempo), row.case).toMatchObject(declined);
+      }
+    }));
   it("a v1 session naming no chainId pays on 4217, the Tempo session's default, and not on 42431", () =>
     at(f.now, async () => {
       const R = JSON.parse((f as unknown as { requestV1: string }).requestV1);

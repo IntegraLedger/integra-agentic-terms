@@ -149,7 +149,11 @@ function tempoWire(r: SigningRequest): Hex {
 const sha256 = (h: Hex) => `0x${createHash("sha256").update(toBytes(h)).digest("hex")}`;
 
 describe("mpp/charge/tempo/memo", () => {
-  const M = vectors<{ fixed: Fixed; MV7: { expectCalldata: string; expectWireSha256: string } }>("mpp-charge-tempo-memo.json");
+  const M = vectors<{
+    fixed: Fixed;
+    MV7: { expectCalldata: string; expectWireSha256: string };
+    agreedRefusals: { rows: { case: string; transactionChainId: number; expect: string }[] };
+  }>("mpp-charge-tempo-memo.json");
   const p: Pairing = {
     binding: tempoMemo,
     doc: docOf(tempoMemo, issued("tempo", V.fixed.R_T)),
@@ -164,6 +168,31 @@ describe("mpp/charge/tempo/memo", () => {
         expect(r.broadcast).toBe(false);
         expect(sha256(tempoWire(r))).toBe(M.MV7.expectWireSha256);
       });
+    }));
+  // mpp-charge-tempo-memo.json's agreedRefusals rows: MV7's wire T with its chain id, its first field, the row's
+  // transactionChainId (draft-tempo-charge-00 binds the transaction to the challenge's chainId). The gate's buyer piece
+  // gives the signer's transaction to the build's complete, whose refusal is finish's signed-not-bound detail; so is
+  // its refusal of "0x76" and "0x", which decode as no Tempo transaction (tempo/tx-malformed).
+  it("agreedRefusals: the gate declines a transaction signed for another chain with the row's code", () =>
+    at(M.fixed.now, async () => {
+      const rows = M.agreedRefusals.rows;
+      expect(rows.length).toBeGreaterThan(0);
+      const confirmed = await confirm(p.doc, tempoMemo, p.account, serving(ABC));
+      if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
+      const r = confirmed.request;
+      if (r?.kind !== "tempo-call") throw new Error("not a tempo call");
+      const chosen = JSON.parse(JSON.stringify(confirmed.chosen));
+      expect(sha256(tempoWire(r))).toBe(M.MV7.expectWireSha256);
+      expect(await finish(ABC, chosen, tempoWire(r), tempoMemo)).toHaveProperty("signed");
+      for (const row of rows) {
+        expect(Object.keys(row).sort(), row.case).toEqual(["case", "expect", "transactionChainId"]);
+        const other = tempoWire({ ...r, chainId: row.transactionChainId });
+        expect(await finish(ABC, chosen, other, tempoMemo), row.case).toMatchObject({ decline: { code: "signed-not-bound", detail: row.expect } });
+      }
+      for (const undecodable of ["0x76", "0x"]) {
+        const out = await finish(ABC, chosen, undecodable, tempoMemo);
+        expect(out, undecodable).toMatchObject({ decline: { code: "signed-not-bound", detail: "tempo/tx-malformed" } });
+      }
     }));
 });
 
