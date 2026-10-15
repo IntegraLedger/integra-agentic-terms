@@ -240,7 +240,9 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     await c.close();
     expect(at(here, "result.isError")).toBeUndefined();
     expect(at(kept, "result.isError")).toBeUndefined();
-  });
+    // No clock bounds this test (0): each request to the binary ends with its answer or with its process closing, and
+    // the servers in this process answer here.
+  }, 0);
 });
 
 // `chosen` carries this process's `mac` too. For a pairing with a channel, `atr_finish` returns the opening with a
