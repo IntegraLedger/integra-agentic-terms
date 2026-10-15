@@ -29,6 +29,7 @@ from integraledger_terms import (
 )
 from integraledger_terms._types import Refusal
 from integraledger_terms.bindings._channel import BatchUnsigned
+from integraledger_terms.bindings._svm import PAYMENT_CHANNELS, key_bytes
 from integraledger_terms.bindings.mpp_session import MppSessionEvm
 
 from breadth import ABC, H, LINK, Recording, offered, run
@@ -167,6 +168,37 @@ def test_solana_build_within_at_100_is_sv3s_voucher_for_the_opening_s_signer() -
         },
     }
     assert unsigned.complete(["0x" + "11" * 64]) == Refusal("mpp/credential-malformed")
+
+
+def with_a_short_channel_instruction(wire_b64: str) -> str:
+    """The wire with one more top-level instruction to the channel program before the others: six accounts, account 4
+    static key 0, and the open discriminator as its only data byte, shorter than an open. The message's key and
+    instruction counts are below 128, so each is one byte (Solana's compact-u16); no signature is read here."""
+    wire = base64.b64decode(wire_b64)
+    signed = 1 + 64 * wire[0]
+    message = wire[signed:]
+    keys = message[4]
+    assert message[0] == 0x80 and keys < 128
+    channel_program = key_bytes(PAYMENT_CHANNELS)
+    assert channel_program is not None
+    program = [message[5 + 32 * k : 37 + 32 * k] for k in range(keys)].index(channel_program)
+    at = 5 + 32 * keys + 32
+    assert message[at] < 127
+    short = bytes([program, 6, 1, 1, 1, 1, 0, 1, 1, 1])
+    return base64.b64encode(wire[:signed] + message[:at] + bytes([message[at] + 1]) + short + message[at + 1 :]).decode()
+
+
+def test_solana_build_within_names_the_signer_of_the_opening_s_one_open() -> None:
+    # The opening's open is its one instruction to the channel program with an open's data and accounts: an
+    # instruction before it that only starts with the open discriminator is not an open, and its account 4 does not
+    # sign the voucher. The voucher's signer is SV2's open's authorizedSigner, SV3's payer.
+    wire = with_a_short_channel_instruction(HS["SV2"]["wireBase64"])
+    opening = {**SOLANA_OPENING, "payload": {**SOLANA_OPENING["payload"], "transaction": wire}}
+    assert MPP_SESSION_SOLANA.bound(opening) == H
+    unsigned = build(MPP_SESSION_SOLANA, opening, 100)
+    assert unsigned.requests == [
+        {"kind": "ed25519-raw", "message": bytes.fromhex(HS["SV3"]["expectVoucher"]), "signer": HS["SV3"]["payer"]}
+    ]
 
 
 def test_solana_build_within_refuses_an_operator_channel_s_voucher() -> None:

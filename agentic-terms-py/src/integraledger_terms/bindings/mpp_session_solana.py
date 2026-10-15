@@ -51,12 +51,14 @@ def session_proof(channel_id: str, payer: str, challenge_id: str) -> bytes:
 @dataclass(frozen=True, slots=True)
 class Open:
     salt: int
+    signer: str | None
     channel: str
 
 
 def open_of(tx: SvmTx, program: object) -> Open | Refusal:
     """The one top-level instruction of program whose data starts with the open discriminator, with at least 33 bytes
-    of data and 6 accounts: its salt (data bytes 1-8, little-endian) and its channel (account 5)."""
+    of data and 6 accounts: its salt (data bytes 1-8, little-endian), its authorizedSigner (account 4; None for an
+    account the static keys do not hold) and its channel (account 5)."""
     program_key = key_bytes(program)
     if program_key is None:
         return Refusal("svm/open-not-found")
@@ -75,19 +77,24 @@ def open_of(tx: SvmTx, program: object) -> Open | Refusal:
     position = ix.accounts[OPEN_CHANNEL_ACCOUNT]
     if position >= len(tx.keys):
         return Refusal("svm/open-not-found")
-    return Open(int.from_bytes(ix.data[1:9], "little"), key_string(tx.keys[position]))
+    signer = ix.accounts[OPEN_SIGNER_ACCOUNT]
+    return Open(
+        int.from_bytes(ix.data[1:9], "little"),
+        key_string(tx.keys[signer]) if signer < len(tx.keys) else None,
+        key_string(tx.keys[position]),
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class Opening:
-    """A checked opening: its H, its echoed challenge, its payload, its signed transaction and the channel program
-    that opens it."""
+    """A checked opening: its H, its echoed challenge, its payload, its signed transaction, and its open's
+    authorizedSigner."""
 
     h: AtrHash
     checked: EchoedChallenge
     payload: Mapping[str, Any]
     tx: SvmTx
-    program: str
+    signer: str | None
 
 
 def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
@@ -128,28 +135,7 @@ def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
         auth = e.payload["authentication"]
         if not is_object(auth) or auth.get("challengeId") != presented["challenge"].get("id"):
             return Refusal("svm/proof-not-challenge")
-    return Opening(e.h, e.checked, e.payload, tx, program)
-
-
-def open_signer(tx: SvmTx, program: object) -> str | Refusal:
-    """The authorizedSigner account of the first top-level instruction of program whose data starts with the open
-    discriminator."""
-    program_key = key_bytes(program)
-    ix = next(
-        (
-            i
-            for i in tx.instructions
-            if program_key is not None
-            and i.program < len(tx.keys)
-            and tx.keys[i.program] == program_key
-            and len(i.data) > 0
-            and i.data[0] == OPEN_DISCRIMINATOR
-        ),
-        None,
-    )
-    if ix is None or len(ix.accounts) <= OPEN_SIGNER_ACCOUNT or ix.accounts[OPEN_SIGNER_ACCOUNT] >= len(tx.keys):
-        return Refusal("svm/open-not-found")
-    return key_string(tx.keys[ix.accounts[OPEN_SIGNER_ACCOUNT]])
+    return Opening(e.h, e.checked, e.payload, tx, opened.signer)
 
 
 def _kind(presented: object) -> ChannelKind | Refusal:
@@ -294,7 +280,7 @@ class MppSessionSolana:
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         """A voucher, or a close's voucher, on the channel the held opening opened, for its client voucher signer: one
         ed25519-raw request over the channel voucher message (channel id, cumulative amount, no expiry), for the
-        signer the opening's open instruction named. An operator channel's vouchers are the operator's, and are not
+        authorizedSigner of the opening's one open instruction. An operator channel's vouchers are the operator's, and are not
         built, nor are a topUp or a use; an action draft-solana-session-00 does not define, such as bearer, is
         mpp/session-action."""
         o = within_checks(w, h, "session/solana", _opening, U64_LIMIT, ("topUp", "use"))
@@ -302,9 +288,9 @@ class MppSessionSolana:
             return o
         if o.checked.details.get("voucherSigner") == "operator":
             return Refusal("mpp/within-action-not-built")
-        signer = open_signer(o.tx, o.program)
-        if isinstance(signer, Refusal):
-            return signer
+        signer = o.signer
+        if signer is None:
+            return Refusal("svm/open-not-found")
         channel = key_bytes(w["opening"]["payload"].get("channelId"))
         if channel is None:
             return Refusal("mpp/credential-malformed")
