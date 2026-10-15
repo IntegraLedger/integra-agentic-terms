@@ -153,6 +153,7 @@ describe("mpp/charge/usdc/stacks", () => {
     const { signed } = await buildAndSign(p, (r: SigningRequest) => {
       expect(r).toEqual({
         kind: "stacks-contract-call",
+        chainId: Number(f.network.slice("stacks:".length)),
         contract: f.contract,
         functionName: "transfer",
         args: { amount: f.amount, sender: f.sender, recipient: f.recipient, memo: H },

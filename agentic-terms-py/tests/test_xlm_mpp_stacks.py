@@ -3,6 +3,7 @@ Expected values are the vector file's (M4); the wallet stub answers with M4's si
 gate's test does."""
 
 import base64
+import copy
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -43,6 +44,7 @@ def test_mpp_charge_usdc_stacks_b6_wallet_is_handed_m4_transfer_and_signed_trans
     def inspect(request: Any) -> None:
         assert request == {
             "kind": "stacks-contract-call",
+            "chainId": int(F["network"].removeprefix("stacks:")),
             "contract": F["contract"],
             "functionName": "transfer",
             "args": {"amount": F["amount"], "sender": F["sender"], "recipient": F["recipient"], "memo": H},
@@ -66,6 +68,13 @@ def credential(wire: bytes, form: str | None = "stacks_transaction_v1") -> dict[
     return {"challenge": STACKS.doc[0], "source": STACKS.account, "payload": payload}
 
 
+def unsigned_for(challenge: dict[str, Any]) -> Any:
+    """The build's unsigned transfer for the buyer F's sender, on challenge."""
+    u = MPP_CHARGE_USDC_STACKS.build({"challenge": challenge, "from": F["sender"]}, H)
+    assert not isinstance(u, Refusal), u
+    return u
+
+
 def test_mpp_charge_usdc_stacks_m4_bound_memo_none_and_other_format() -> None:
     assert len(WIRE) == M4["expectLength"]
     assert M4["wireHex"].startswith(M4["expectPrefix"]) and M4["wireHex"].endswith(M4["expectSuffix"][2:])
@@ -86,9 +95,12 @@ def test_mpp_charge_usdc_stacks_malformed_and_type() -> None:
 
 
 def test_mpp_charge_usdc_stacks_truncated_or_extended_transaction_is_malformed() -> None:
-    # SIP-005: a transaction is exactly its encoding, so bytes read short, or bytes after the encoding, are not one.
+    # SIP-005: a transaction is exactly its encoding, so bytes read short, or bytes after the encoding, are not one. The
+    # build's complete reads the signed bytes as bound reads them.
+    u = unsigned_for(STACKS.doc[0])
     for wire in (WIRE[:-1], WIRE + b"\x00"):
         assert MPP_CHARGE_USDC_STACKS.bound(credential(wire)) == Refusal("mpp/stacks-tx-malformed")
+        assert u.complete(wire) == Refusal("mpp/stacks-tx-malformed")
 
 
 # ── Clarity values and a Stacks node's depth bound ───────────────────────────────────────────────────────────────
@@ -333,10 +345,10 @@ def test_mpp_charge_usdc_stacks_reader_bounds_value_lengths() -> None:
         for n in (most, most + 1):
             wire = first_argument(prefix + word(n, 4) + unit * n)
             if n == most:
-                assert _stacks.contract_call(wire) is not None
+                assert _stacks.transaction(wire).call is not None
             else:
                 with pytest.raises(_stacks.Malformed):
-                    _stacks.contract_call(wire)
+                    _stacks.transaction(wire)
 
 
 def test_mpp_charge_usdc_stacks_principal_value_has_version_below_32_and_a_contract_name() -> None:
@@ -747,3 +759,68 @@ def test_mpp_charge_usdc_stacks_agreed_refusals() -> None:
     for row in rows:
         out = MPP_CHARGE_USDC_STACKS.bound(credential(bytes.fromhex(row["wireHex"][2:])))
         assert (row["case"], out) == (row["case"], Refusal(row["expect"]))
+
+
+def test_mpp_charge_usdc_stacks_a_transaction_for_another_network_is_refused_by_bound_and_complete() -> None:
+    # A Stacks node takes a transaction only on its own chain id, and on mainnet only at version 0x00, elsewhere only at
+    # 0x80 (stacks-core 4.0.5, stackslib/src/chainstate/stacks/db/transactions/processing/validation.rs:49-79). The
+    # agreedRefusals rows that carry chainId are M4's transfer signed at the row's transactionVersion and chainId; M4's
+    # challenge names chain id 2147483648, so bound and the build's complete refuse each with the row's code.
+    rows = [r for r in V["agreedRefusals"]["rows"] if "chainId" in r]
+    pairs = [(r["transactionVersion"], r["chainId"]) for r in rows]
+    assert pairs == [(0x80, 1), (0x80, 0x80000001), (0x00, 0x80000000), (0x00, 1)]
+    u = unsigned_for(STACKS.doc[0])
+    for row in rows:
+        wire = bytes.fromhex(row["wireHex"][2:])
+        tx = _stacks.transaction(wire)
+        assert (row["case"], tx.version, tx.chain_id) == (row["case"], row["transactionVersion"], row["chainId"])
+        assert (row["case"], MPP_CHARGE_USDC_STACKS.bound(credential(wire))) == (row["case"], Refusal(row["expect"]))
+        assert (row["case"], u.complete(wire)) == (row["case"], Refusal(row["expect"]))
+
+
+def test_mpp_charge_usdc_stacks_a_mainnet_challenge_takes_version_0x00_on_chain_1_and_refuses_m4() -> None:
+    # The control: a challenge naming chainId 1, mainnet, reads the agreedRefusals row signed at version 0x00 on chain 1
+    # (M4's transfer as network mainnet signs it), and refuses M4, signed for testnet.
+    request = copy.deepcopy(F["request"])
+    request["methodDetails"]["stacks"] |= {"network": "mainnet", "chainId": "1"}
+    asked = issued("usdc", "charge", json.dumps(request, separators=(",", ":")), F["realm"], F["expires"])
+    doc = placed_doc(asked, H, LINK)
+    mainnet = [r for r in V["agreedRefusals"]["rows"] if (r.get("transactionVersion"), r.get("chainId")) == (0x00, 1)]
+    assert len(mainnet) == 1
+    wire = bytes.fromhex(mainnet[0]["wireHex"][2:])
+
+    def on_mainnet(signed: bytes) -> dict[str, Any]:
+        return {**credential(signed), "challenge": doc[0]}
+
+    assert MPP_CHARGE_USDC_STACKS.bound(on_mainnet(wire)) == H
+    u = unsigned_for(doc[0])
+    assert u.request["chainId"] == 1
+    done = u.complete(wire)
+    assert not isinstance(done, Refusal) and base64.b64decode(done["payload"]["transaction"]) == wire
+    assert MPP_CHARGE_USDC_STACKS.bound(on_mainnet(WIRE)) == Refusal("stacks/chain-mismatch")
+    assert u.complete(WIRE) == Refusal("stacks/chain-mismatch")
+
+
+def test_mpp_charge_usdc_stacks_bound_and_complete_take_1_to_16384_bytes() -> None:
+    # One size bound for bound and the build's complete: a transaction is 1 to 16,384 bytes, and an empty one or one
+    # over 16,384 bytes is mpp/stacks-tx-malformed, the code of bytes a Stacks node does not decode. The rows that carry
+    # bytes are 0 bytes, 1 byte, and M4's transfer with a fifth argument, a buffer of fifthArgumentBytes zero bytes, at
+    # 16,385 bytes. The same transfer with a buffer one byte shorter is 16,384 bytes, which both take: neither verifies
+    # the signature, so the shorter buffer leaves a transaction a Stacks node decodes. complete refuses a value that is
+    # not bytes with mpp/credential-malformed.
+    rows = [r for r in V["agreedRefusals"]["rows"] if "bytes" in r]
+    wires = [bytes.fromhex(r["wireHex"][2:]) for r in rows]
+    assert [(r["bytes"], len(w)) for r, w in zip(rows, wires, strict=True)] == [(0, 0), (1, 1), (16_385, 16_385)]
+    u = unsigned_for(STACKS.doc[0])
+    for row, wire in zip(rows, wires, strict=True):
+        assert (row["bytes"], MPP_CHARGE_USDC_STACKS.bound(credential(wire))) == (row["bytes"], Refusal(row["expect"]))
+        assert (row["bytes"], u.complete(wire)) == (row["bytes"], Refusal(row["expect"]))
+    fifth: int = rows[2]["fifthArgumentBytes"]
+    argument = b"\x02" + fifth.to_bytes(4, "big") + bytes(fifth)
+    assert wires[2].endswith(argument)
+    largest = wires[2][: -len(argument)] + b"\x02" + (fifth - 1).to_bytes(4, "big") + bytes(fifth - 1)
+    assert len(largest) == 16_384
+    assert MPP_CHARGE_USDC_STACKS.bound(credential(largest)) == H
+    done = u.complete(largest)
+    assert not isinstance(done, Refusal) and base64.b64decode(done["payload"]["transaction"]) == largest
+    assert u.complete(M4["wireHex"]) == Refusal("mpp/credential-malformed")

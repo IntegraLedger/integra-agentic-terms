@@ -77,7 +77,7 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 | `ton-w5` | The representation hash of a W5 wallet request. | The 64-byte Ed25519 signature, `0x` hex. |
 | `casper-eip712` | CEP-3009 typed data whose nonce is H. | `{ publicKey, signature }`, each hex digits without `0x`, led by its one-byte algorithm tag (`01` or `02`). |
 | `ccd-transfer` | A Concordium transfer whose memo carries H, which the wallet assembles. | The sender-signed V1 sponsored transaction in x402's wire form: with `@concordium/web-sdk`, `JSON.parse(Transaction.toJSONString(tx))`. |
-| `stacks-contract-call` | A SIP-010 `transfer` whose memo is H. | The signed transaction's bytes, `0x` hex. |
+| `stacks-contract-call` | A SIP-010 `transfer` whose memo is H, on the chain the request's `chainId` names. | The signed transaction's bytes, `0x` hex: 1 to 16,384 bytes, signed for `chainId` at that network's version, `0x00` on chain 1 (mainnet) and `0x80` on any other, as a Stacks node requires. Chain 1 is read as mainnet by the CAIP-2 convention, under which `stacks:1` is Stacks mainnet. Another chain id or version is declined `signed-not-bound` (`stacks/chain-mismatch`). |
 | `bolt11-pay` | A BOLT11 invoice. Your Lightning node pays exactly this invoice. | The payment preimage: 64 lower-case hex digits, no `0x`. |
 
 ### Protocols without a chain signature

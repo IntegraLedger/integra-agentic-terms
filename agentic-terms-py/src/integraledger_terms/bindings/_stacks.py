@@ -1,7 +1,7 @@
 """The Stacks transaction the buyer half reads, by the rule lcp reads by: a transaction a Stacks node decodes and
 serializes back to the same bytes (stacks-core 4.0.5). It is read field by field as stacks-core's
-StacksTransaction::consensus_deserialize reads it, to find a contract call's function name and each argument's bytes;
-any other bytes are malformed.
+StacksTransaction::consensus_deserialize reads it, to find its version and chain id, and a contract call's function name
+and each argument's bytes; any other bytes are malformed.
 
 Among the node's rules: the bytes are one transaction's encoding, read to their end; the version byte is 0x00 or 0x80;
 every address and principal has a version below 32; a multisig authorization holds exactly the signatures it requires,
@@ -388,12 +388,24 @@ def _payload(r: _Reader) -> tuple[int, Call | None]:
     return kind, None
 
 
-def contract_call(data: bytes) -> Call | None:
-    """The contract call a transaction's payload makes, or None for any other payload. Raises Malformed for bytes
-    that are not a transaction a Stacks node decodes and serializes back to the same bytes."""
+@dataclass(frozen=True, slots=True)
+class Transaction:
+    """A transaction's version byte (0x00 or 0x80), its chain id, and the contract call its payload makes, or None for
+    any other payload."""
+
+    version: int
+    chain_id: int
+    call: Call | None
+
+
+def transaction(data: bytes) -> Transaction:
+    """The version, the chain id (the four bytes after the version, big-endian: stacks-codec/src/transaction.rs:3085)
+    and the contract call of a transaction. Raises Malformed for bytes that are not a transaction a Stacks node decodes
+    and serializes back to the same bytes."""
     r = _Reader(data)
-    _need(r.byte() in (0x00, 0x80))
-    r.read(4)
+    version = r.byte()
+    _need(version in (0x00, 0x80))
+    chain_id = r.number(4)
     auth = r.byte()
     _need(auth in (4, 5))
     _spending_condition(r)
@@ -406,4 +418,4 @@ def contract_call(data: bytes) -> Call | None:
     kind, call = _payload(r)
     _need(anchor == 1 or kind not in (3, 4, 5, 8))
     _need(r.at == len(data))
-    return call
+    return Transaction(version, chain_id, call)
