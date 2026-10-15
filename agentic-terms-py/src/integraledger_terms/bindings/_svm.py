@@ -132,7 +132,9 @@ class _Cursor:
 
 
 def decode_svm_tx(wire: object) -> SvmTx | Refusal:
-    """A legacy or v0 wire transaction of at most 1,232 bytes, decoded."""
+    """A legacy or v0 wire transaction of at most 1,232 bytes, decoded. Bytes that are not one well-formed transaction
+    are svm/tx-malformed, as is a v0 message with an address table lookup that names no index, which the runtime
+    refuses ("each lookup table must be used to load at least one account")."""
     if not isinstance(wire, (bytes, bytearray)) or len(wire) == 0:
         return Refusal("svm/tx-malformed")
     if len(wire) > MAX_WIRE:
@@ -170,8 +172,12 @@ def decode_svm_tx(wire: object) -> SvmTx | Refusal:
         if versioned:
             for _ in range(c.compact()):
                 c.take(32)
-                c.take(c.compact())
-                c.take(c.compact())
+                writable = c.take(c.compact())
+                readonly = c.take(c.compact())
+                # A v0 message's sanitize refuses a lookup that loads no account (anza-xyz/solana-sdk 648387ee, tag
+                # message@v3.0.0, message/src/versions/v0/mod.rs:118-129).
+                if not writable and not readonly:
+                    return Refusal("svm/tx-malformed")
         if c.at != len(data):
             return Refusal("svm/tx-malformed")
     except (IndexError, ValueError):
