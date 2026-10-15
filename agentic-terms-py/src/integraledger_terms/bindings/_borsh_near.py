@@ -1,14 +1,15 @@
 """Borsh for NEP-366's DelegateAction and SignedDelegate, as nearcore defines them, for the one shape the NEAR pairing
 reads and writes: a delegate action holding one FunctionCall action, under an Ed25519 or secp256k1 key, with a signature
-of either type. Integers are little-endian; a byte vector is a u32 length and its bytes, and a string is the same with
-its bytes strict UTF-8, as borsh writes a String; an enum is a u8 index and its variant. A Vec<Action> of one action is
-its u32 length 1, then the action's u8 variant index, FunctionCall's 2, then the FunctionCall."""
+of either type; and the NEAR account id rule its sender and receiver are read by. Integers are little-endian; a byte
+vector is a u32 length and its bytes, and a string is the same with its bytes strict UTF-8, as borsh writes a String;
+an enum is a u8 index and its variant. A Vec<Action> of one action is its u32 length 1, then the action's u8 variant
+index, FunctionCall's 2, then the FunctionCall."""
 
 import hashlib
 import re
 import struct
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeGuard
 
 from ._codec import b58_decode, b58_encode
 
@@ -21,6 +22,8 @@ _KEY_TYPES = {"ed25519": 0, "secp256k1": 1}
 _KEY_SIZES = (32, 64)
 _SIGNATURE_SIZES = (64, 65)
 _FUNCTION_CALL = 2
+_ACCOUNT_ID_LENGTH = (2, 64)
+_SEPARATORS = ("-", "_", ".")
 _ASCII_LOWERCASE = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 # Base58 of 64 bytes is at most 88 characters, and a longer text always decodes to more.
 _BASE58_KEY = re.compile(r"[1-9A-HJ-NP-Za-km-z]{1,88}")
@@ -50,6 +53,28 @@ def public_key_of(encoded: object) -> PublicKey | None:
         return None
     data = b58_decode(text)
     return PublicKey(key_type, data) if data is not None and len(data) == _KEY_SIZES[key_type] else None
+
+
+def is_near_account_id(value: object) -> TypeGuard[str]:
+    """True for a NEAR account id: what near-account-id 3.0.0, the version nearcore locks, reads as an AccountId
+    (src/validation.rs: validate, MIN_LEN and MAX_LEN). Its borsh reader, through which nearcore reads a delegate
+    action's sender and receiver, and its serde reader, through which a NEP-141 contract reads ft_transfer's
+    receiver_id, each refuse any other string. An id is 2 to 64 characters, each a lowercase ASCII letter, a digit,
+    '-', '_' or '.'; a separator ('-', '_' or '.') is never first, never last, and never follows another. The length
+    bounds count bytes, and every character an id may hold is one byte, so counting characters gives the same answer.
+    The typed forms the crate names (64 lowercase hex digits, or 0x, 0s or 0u and lowercase hex or base32 digits) are
+    kinds of ids that meet these rules, and none changes which strings are ids."""
+    if not isinstance(value, str) or not _ACCOUNT_ID_LENGTH[0] <= len(value) <= _ACCOUNT_ID_LENGTH[1]:
+        return False
+    after_separator = True
+    for c in value:
+        separator = c in _SEPARATORS
+        if not separator and not ("a" <= c <= "z" or "0" <= c <= "9"):
+            return False
+        if separator and after_separator:
+            return False
+        after_separator = separator
+    return not after_separator
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,15 +211,17 @@ def is_near_ed25519_signature(data: bytes) -> bool:
 
 def decode_signed_delegate(data: bytes) -> tuple[DelegateAction, int, bytes] | DelegateRefused:
     """The DelegateAction, the signature's key type and bytes of a SignedDelegate, read in the order nearcore reads its
-    bytes. The sender and the receiver come first, each strict UTF-8, or the bytes are "malformed". Then a count of
-    actions other than one is "action-count", and a first action whose variant index is not FunctionCall's is
-    "not-function-call", the bytes after it unread. Otherwise the bytes must be exactly the borsh of the one-action
-    delegate and its signature, each key and signature Ed25519 or secp256k1, and an Ed25519 signature one nearcore
-    reads, or they are "malformed"."""
+    bytes. The sender and the receiver come first, each strict UTF-8 and a NEAR account id (is_near_account_id), as
+    nearcore's AccountId reader requires, or the bytes are "malformed". Then a count of actions other than one is
+    "action-count", and a first action whose variant index is not FunctionCall's is "not-function-call", the bytes
+    after it unread. Otherwise the bytes must be exactly the borsh of the one-action delegate and its signature, each
+    key and signature Ed25519 or secp256k1, and an Ed25519 signature one nearcore reads, or they are "malformed"."""
     r = _Reader(data)
     try:
         sender_id = r.string()
         receiver_id = r.string()
+        if not is_near_account_id(sender_id) or not is_near_account_id(receiver_id):
+            return "malformed"
         if r.u32() != 1:
             return "action-count"
         if r.u8() != _FUNCTION_CALL:

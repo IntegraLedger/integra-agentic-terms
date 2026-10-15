@@ -10,11 +10,30 @@ import { bigintOf, bytesOf, choiceOf, inputsOf, isObject, isRefusal, refuse, x40
 import { identified, railOption } from "./x402-account-rails.js";
 
 const PAIRING = "x402/exact/near";
-const NEAR_ACCOUNT = /^[a-z0-9._-]{2,64}$/;
+
+/**
+ * True for a NEAR account id: what near-account-id 3.0.0, the version nearcore locks, reads as an `AccountId`
+ * (src/validation.rs: `validate`, `MIN_LEN` and `MAX_LEN`), as the delegate action's sender is read. An id is 2 to 64
+ * characters, each a lowercase ASCII letter, a digit, `-`, `_` or `.`; a separator (`-`, `_` or `.`) is never first,
+ * never last, and never follows another. The length bounds count bytes, and every character an id may hold is one
+ * byte, so counting UTF-16 code units gives the same answer.
+ */
+function isNearAccountId(id: string): boolean {
+  if (id.length < 2 || id.length > 64) return false;
+  let afterSeparator = true;
+  for (let i = 0; i < id.length; i++) {
+    const c = id.charCodeAt(i);
+    const separator = c === 0x2d || c === 0x5f || c === 0x2e;
+    if (!separator && !((c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39))) return false;
+    if (separator && afterSeparator) return false;
+    afterSeparator = separator;
+  }
+  return !afterSeparator;
+}
 
 export const x402ExactNear: BuyerPiece = Object.freeze({
   choose(read: Read, account: string, inputs: Inputs, _now: number, ref: string): Chosen | Refusal {
-    const o = railOption(read, account, ["near"], PAIRING, (a) => NEAR_ACCOUNT.test(a));
+    const o = railOption(read, account, ["near"], PAIRING, isNearAccountId);
     if (isRefusal(o)) return o;
     const given = inputsOf(inputs, PAIRING, { publicKey: "string", accessKeyNonce: "decimal", finalHeight: "decimal" });
     if (isRefusal(given)) return given;

@@ -4,14 +4,15 @@ Expected values are x402-exact-near.json's."""
 import base64
 import dataclasses
 import hashlib
+from collections import Counter
 from typing import Any
 
 import pytest
 
-from integraledger_terms import X402_EXACT_NEAR, Refusal, _gate
+from integraledger_terms import X402_EXACT_NEAR, Confirmed, Declined, Refusal, _gate
 
 import ed25519
-from breadth import Pairing, build_and_sign, plant, x402_doc
+from breadth import Pairing, build_and_sign, link_calls, plant, x402_doc
 from hbar_support import EVM_ACCOUNT, b10, b16, identifier_row, inputs_row
 from support import hexb, load
 
@@ -61,6 +62,38 @@ def test_x402_exact_near_b10_http_link() -> None:
 
 def test_x402_exact_near_b16_other_accounts() -> None:
     b16(NEAR, [EVM_ACCOUNT, f"near:mainnet:{F['payer']}"])
+
+
+# Account addresses that are NEAR account ids, from near-account-id 3.0.0's own test data (src/test_data.rs), and
+# addresses that are not: each of which that test data refuses, of one character, of 65, with an uppercase letter,
+# with a character outside ASCII or with '@'; and of 2 to 64 lowercase letters, digits, '-', '_' and '.' whose
+# separator is first, last or after another, each of which that test data refuses or whose form it refuses.
+NEAR_ACCOUNTS = [
+    "a-a", "b-o_w_e-n", "illia.cheapaccounts.near", "0123456789012345678901234567890123456789012345678901234567890123",
+]  # fmt: skip
+NOT_NEAR_ACCOUNTS = [
+    "a", "01234567890123456789012345678901234567890123456789012345678901234", "A", "nEar", "неар", "near@",
+    "-near", "near-", "-near-", "near.", ".near", "0__0", "0_-_0", "..", "a..near", "_bowen", "payer-.testnet",
+]  # fmt: skip
+
+
+def caip10(address: str) -> str:
+    """The address as a CAIP-10 account writes it: each UTF-8 byte other than '-', '.', an ASCII letter or a digit as
+    %XX."""
+    escaped = (chr(b) if (b < 0x80 and chr(b).isalnum()) or chr(b) in "-." else f"%{b:02X}" for b in address.encode())
+    return "".join(escaped)
+
+
+def test_x402_exact_near_accounts() -> None:
+    # An account whose address is a NEAR account id is chosen, its link fetched, and the build pays from it; any other
+    # has no payable option, and nothing is fetched.
+    for address in NEAR_ACCOUNTS + NOT_NEAR_ACCOUNTS:
+        out, calls = link_calls(NEAR, f"{F['O']['network']}:{caip10(address)}")
+        if address in NEAR_ACCOUNTS:
+            assert isinstance(out, Confirmed) and out.chosen.choice["payer"] == address, (address, out)
+            assert out.request is not None and out.request["kind"] == "near-delegate" and calls == 1, (address, out)
+        else:
+            assert out == Declined("no-payable-option", "x402/no-payable-option") and calls == 0, (address, out)
 
 
 def test_x402_exact_near_inputs() -> None:
@@ -179,7 +212,9 @@ def with_byte(at: int, value: int) -> bytes:
 
 def test_x402_exact_near_strings_are_utf8() -> None:
     # The borsh specification writes a String as its UTF-8 bytes, so a delegate action whose sender, receiver or method
-    # name is not UTF-8 is near/sda-malformed, and a UTF-8 one reads and writes back to the same bytes.
+    # name is not UTF-8 is near/sda-malformed. A sender in UTF-8 beyond ASCII is a string but no NEAR account id, which
+    # nearcore's AccountId reader refuses (near-account-id src/borsh.rs); a sender that is one reads and writes back to
+    # the same bytes.
     from integraledger_terms.bindings._borsh_near import decode_signed_delegate, encode_signed_delegate
 
     receiver_at = 4 + int.from_bytes(V2_SDA[:4], "little") + 4
@@ -196,11 +231,14 @@ def test_x402_exact_near_strings_are_utf8() -> None:
     ]
     for sda in not_utf8:
         assert X402_EXACT_NEAR.bound(presented(base64.b64encode(sda).decode())) == Refusal("near/sda-malformed"), sda
-    utf8 = with_sender("payer-é.testnet".encode("utf-8"))
-    assert X402_EXACT_NEAR.bound(presented(base64.b64encode(utf8).decode())) == N["V2"]["expectBound"]
-    decoded = decode_signed_delegate(utf8)
-    assert not isinstance(decoded, str) and decoded[0].sender_id == "payer-é.testnet"
-    assert encode_signed_delegate(*decoded) == utf8
+    beyond_ascii = with_sender("payer-é.testnet".encode("utf-8"))
+    assert X402_EXACT_NEAR.bound(presented(base64.b64encode(beyond_ascii).decode())) == Refusal("near/sda-malformed")
+    assert decode_signed_delegate(beyond_ascii) == "malformed"
+    named = with_sender(b"payer-e.testnet")
+    assert X402_EXACT_NEAR.bound(presented(base64.b64encode(named).decode())) == N["V2"]["expectBound"]
+    decoded = decode_signed_delegate(named)
+    assert not isinstance(decoded, str) and decoded[0].sender_id == "payer-e.testnet"
+    assert encode_signed_delegate(*decoded) == named
 
 
 def test_x402_exact_near_key_type_written_as_a_float() -> None:
@@ -251,13 +289,15 @@ TYPESCRIPT_ONLY = {"near/unreadable", "near/no-relayer", "near/peer-missing"}
 
 def test_x402_exact_near_agreed_refusals() -> None:
     """Each agreedRefusals row through the functions its input names, every member read: an option through build, a
-    signedDelegateAction through near_carrier and bound, a publicKey through build, and signatureBytes zero bytes, the
-    last set to signatureLastByte when the row gives one, through complete. A row with no input is one of the
-    TypeScript implementation's alone; a row with any other set of members fails."""
+    signedDelegateAction through near_carrier and bound, a publicKey or a payer through build, and signatureBytes zero
+    bytes, the last set to signatureLastByte when the row gives one, through complete. A row with no input is one of
+    the TypeScript implementation's alone; a row with any other set of members fails. The rows of each input are
+    counted: the file holds 7 option rows, 26 signedDelegateAction rows, 4 publicKey rows, 1 payer row and 2
+    signatureBytes rows."""
     from integraledger_terms.bindings.x402_exact_near import near_carrier
 
     rows = N["agreedRefusals"]["rows"]
-    ran, left = 0, 0
+    ran, left = Counter[str](), 0
     for row in rows:
         want = Refusal(row["expect"])
         members = set(row) - {"case", "expect"}
@@ -269,6 +309,8 @@ def test_x402_exact_near_agreed_refusals() -> None:
             got = X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"]))
         elif members == {"publicKey"}:
             got = X402_EXACT_NEAR.build(near_choice(publicKey=row["publicKey"]), F["H"])
+        elif members == {"payer"}:
+            got = X402_EXACT_NEAR.build(near_choice(payer=row["payer"]), F["H"])
         elif members in ({"signatureBytes"}, {"signatureBytes", "signatureLastByte"}):
             unsigned = X402_EXACT_NEAR.build(near_choice(), F["H"])
             assert not isinstance(unsigned, Refusal)
@@ -282,8 +324,9 @@ def test_x402_exact_near_agreed_refusals() -> None:
         else:
             pytest.fail(f"no runner for the agreedRefusals row {row['case']!r} with members {sorted(members)}")
         assert got == want, row["case"]
-        ran += 1
-    assert (ran, left) == (len(rows) - len(TYPESCRIPT_ONLY), len(TYPESCRIPT_ONLY))
+        ran[min(members)] += 1
+    assert left == len(TYPESCRIPT_ONLY)
+    assert ran == {"option": 7, "signedDelegateAction": 26, "publicKey": 4, "payer": 1, "signatureBytes": 2}
 
 
 def test_x402_exact_near_key_forms() -> None:
@@ -316,10 +359,10 @@ def overwrite(data: bytes, at: int, new: bytes) -> bytes:
 def test_x402_exact_near_reads_the_sender_and_receiver_then_the_count_then_the_variant() -> None:
     # nearcore reads a delegate action's sender and receiver as account ids, each a borsh String that must be UTF-8
     # (near-account-id src/borsh.rs), then the u32 count of actions, then the first action's u8 variant index, where
-    # FunctionCall is 2 (core/primitives/src/action/mod.rs). A sender or receiver that is not UTF-8 is
-    # near/sda-malformed whatever the count; a count other than one is near/actions whatever follows it; and a variant
-    # index other than 2 is near/not-ft-transfer whatever bytes follow it. Each case is V2's signed delegate action
-    # with those bytes changed.
+    # FunctionCall is 2 (core/primitives/src/action/mod.rs). A sender or receiver that is not UTF-8, or not a NEAR
+    # account id, is near/sda-malformed whatever the count; a count other than one is near/actions whatever follows it;
+    # and a variant index other than 2 is near/not-ft-transfer whatever bytes follow it. Each case is V2's signed
+    # delegate action with those bytes changed.
     from integraledger_terms.bindings.x402_exact_near import near_carrier
 
     sender_end = 4 + int.from_bytes(V2_SDA[:4], "little")
@@ -332,7 +375,8 @@ def test_x402_exact_near_reads_the_sender_and_receiver_then_the_count_then_the_v
             sda = base64.b64encode(overwrite(two, at, lead)).decode()
             assert near_carrier(sda) == Refusal("near/sda-malformed"), (at, lead)
             assert X402_EXACT_NEAR.bound(presented(sda)) == Refusal("near/sda-malformed"), (at, lead)
-    assert near_carrier(base64.b64encode(overwrite(two, 4, "é".encode())).decode()) == Refusal("near/actions")
+    assert near_carrier(base64.b64encode(overwrite(two, 4, "é".encode())).decode()) == Refusal("near/sda-malformed")
+    assert near_carrier(base64.b64encode(overwrite(two, 4, b"ab")).decode()) == Refusal("near/actions")
     for count in (0, 2, 2**32 - 1):
         for variant in (2, 3, 11):
             sda = base64.b64encode(overwrite(V2_SDA, count_at, count.to_bytes(4, "little") + bytes([variant]))).decode()

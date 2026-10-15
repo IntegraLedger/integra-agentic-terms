@@ -711,6 +711,40 @@ describe("x402/exact/tvm accounts", () => {
     }));
 });
 
+describe("x402/exact/near accounts", () => {
+  // Account addresses that are NEAR account ids, from near-account-id 3.0.0's own test data (src/test_data.rs), and
+  // addresses that are not: each of which that test data refuses, of one character, of 65, with an uppercase letter,
+  // with a character outside ASCII or with `@`; and of 2 to 64 lowercase letters, digits, `-`, `_` and `.` whose
+  // separator is first, last or after another, each of which that test data refuses or whose form it refuses.
+  const nearAccounts = ["a-a", "b-o_w_e-n", "illia.cheapaccounts.near", "0123456789012345678901234567890123456789012345678901234567890123"];
+  const notNearAccounts = [
+    ...["a", "01234567890123456789012345678901234567890123456789012345678901234", "A", "nEar", "\u043d\u0435\u0430\u0440", "near@"],
+    ...["-near", "near-", "-near-", "near.", ".near", "0__0", "0_-_0", "..", "a..near", "_bowen", "payer-.testnet"],
+  ];
+  // The address as a CAIP-10 account writes it: each UTF-8 byte other than `-`, `.`, an ASCII letter or a digit as %XX.
+  const caip10 = (address: string) =>
+    Array.from(new TextEncoder().encode(address), (b) =>
+      /^[-.A-Za-z0-9]$/.test(String.fromCharCode(b)) ? String.fromCharCode(b) : `%${b.toString(16).toUpperCase().padStart(2, "0")}`,
+    ).join("");
+
+  // An account whose address is a NEAR account id is chosen, its link fetched, and the build pays from it; any other
+  // has no payable option, and nothing is fetched.
+  it("an account whose address is a NEAR account id is chosen and its link fetched; any other is no-payable-option with no fetch", () =>
+    at(nearRow.now, async () => {
+      for (const address of [...nearAccounts, ...notNearAccounts]) {
+        const fetch = serving(new TextEncoder().encode("abc"));
+        const account = `${NEAR.fixed.O.network}:${caip10(address)}`;
+        const out = await confirm(nearRow.p.doc, nearRow.p.binding, account, fetch, nearRow.p.inputs);
+        if (nearAccounts.includes(address)) {
+          if ("decline" in out) throw new Error(`${address}: ${out.decline.code}: ${out.decline.detail}`);
+          expect([address, (out.chosen.choice as { payer: string }).payer, out.request?.kind, fetch.calls]).toEqual([address, address, "near-delegate", 1]);
+        } else {
+          expect([address, out, fetch.calls]).toEqual([address, { decline: { code: "no-payable-option", detail: "x402/no-payable-option" } }, 0]);
+        }
+      }
+    }));
+});
+
 describe("x402/exact/tron/lcp-trc20-memo agreedRefusals", () => {
   // The rows whose transaction holds a character beyond the BMP, which JavaScript's String length, the file's measure,
   // counts as two UTF-16 code units.

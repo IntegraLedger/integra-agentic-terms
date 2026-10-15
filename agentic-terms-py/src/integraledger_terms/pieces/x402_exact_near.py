@@ -2,23 +2,21 @@
 carries the ATR hash in its memo. The buyer supplies its key and the key's nonce and the final block height from its
 RPC; the key answers {keyType, bytes}, with the 64- or 65-byte signature as 0x hex."""
 
-import re
 from typing import Any
 
 from .._types import Advertised, Chosen, Inputs, Json, Refusal, Signature
+from ..bindings._borsh_near import is_near_account_id
 from ..bindings.x402_exact_near import ID
 from ._base import BasePiece
 from ._common import bigint_of, bytes_of, choice_of, inputs_of
 from ._x402_account_rails import identified, rail_option
-
-_NEAR_ACCOUNT = re.compile(r"[a-z0-9._-]{2,64}")
 
 
 class X402ExactNearPiece(BasePiece):
     pairing = ID
 
     def choose(self, read: Advertised, account: str, inputs: Inputs, now: int, ref: str, doc: Json) -> Chosen | Refusal:
-        o = rail_option(read, account, ("near",), ID, lambda a: _NEAR_ACCOUNT.fullmatch(a) is not None)
+        o = rail_option(read, account, ("near",), ID, is_near_account_id)
         if isinstance(o, Refusal):
             return o
         given = inputs_of(inputs, ID, {"publicKey": "string", "accessKeyNonce": "decimal", "finalHeight": "decimal"})

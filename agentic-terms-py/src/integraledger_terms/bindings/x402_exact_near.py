@@ -17,11 +17,12 @@ from ._borsh_near import (
     decode_signed_delegate,
     delegate_hash,
     encode_signed_delegate,
+    is_near_account_id,
     is_near_ed25519_signature,
     public_key_of,
 )
 from ._codec import b64_decode, js_json
-from ._jose import js_length, parse_json
+from ._jose import js_length, member_names, parse_json
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
 
@@ -30,12 +31,12 @@ FT_TRANSFER_GAS = 30_000_000_000_000
 MAX_SDA_BASE64 = 8192
 MAX_ARGS_BYTES = 4096
 
-_ACCOUNT = re.compile(r"[a-z0-9._-]{2,64}")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
-
-
-def _account(value: object) -> bool:
-    return isinstance(value, str) and _ACCOUNT.fullmatch(value) is not None
+_AMOUNT = re.compile(r"[1-9][0-9]*")
+# The keys the token contract's ft_transfer reads.
+_TRANSFER_KEYS = frozenset({"receiver_id", "amount", "memo"})
+# u128::from_str's text: an optional '+', then one or more ASCII digits.
+_U128_TEXT = re.compile(r"\+?[0-9]+")
 
 
 def _decimal_below(value: object, limit: int) -> int | None:
@@ -45,8 +46,17 @@ def _decimal_below(value: object, limit: int) -> int | None:
     return n if n < limit else None
 
 
+def _is_transfer_amount(value: object) -> bool:
+    """True for an amount ft_transfer_args writes: the canonical decimal string of a positive integer below 2^128,
+    digits only and the first not 0, so no sign, point, exponent, space or leading zero."""
+    if not isinstance(value, str) or _AMOUNT.fullmatch(value) is None:
+        return False
+    return _decimal_below(value, U128_LIMIT) is not None
+
+
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """True for an exact option on near:mainnet or near:testnet that this pairing pays."""
+    """True for an exact option on near:mainnet or near:testnet that this pairing pays: its asset and payTo are each
+    a NEAR account id (is_near_account_id), or the option is near/option-malformed."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = o.get("network")
@@ -61,7 +71,7 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("x402/option-not-this-pairing")
     if network not in ("near:mainnet", "near:testnet"):
         return Refusal("near/network-malformed")
-    if not _account(o.get("asset")) or not _account(o.get("payTo")):
+    if not is_near_account_id(o.get("asset")) or not is_near_account_id(o.get("payTo")):
         return Refusal("near/option-malformed")
     if not is_amount(o.get("amount")) or _decimal_below(o.get("amount"), U128_LIMIT) is None:
         return Refusal("near/option-malformed")
@@ -71,18 +81,52 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
 
 
 def ft_transfer_args(pay_to: str, amount: str, h: AtrHash) -> bytes | Refusal:
-    """ft_transfer's arguments: receiver_id, amount and memo, in that order, as JSON.stringify writes them. A value
-    that is not a 32-byte hash is x402/payload-malformed."""
+    """ft_transfer's arguments: receiver_id, amount and memo, in that order, as JSON.stringify writes them. A pay_to
+    that is not a NEAR account id is near/option-malformed, as the option filter answers an option carrying it, since
+    the token contract reads receiver_id as an AccountId. So is an amount that is not the canonical decimal string of
+    a positive integer below 2^128 (no sign, no leading zero, not "0"), within the U128 the contract reads amount as.
+    Then a value that is not a 32-byte hash is x402/payload-malformed."""
+    if not is_near_account_id(pay_to):
+        return Refusal("near/option-malformed")
+    if not _is_transfer_amount(amount):
+        return Refusal("near/option-malformed")
     nh = normal_hash(h)
     if nh is None:
         return Refusal("x402/payload-malformed")
     return js_json({"receiver_id": pay_to, "amount": amount, "memo": to_lcp_string(nh)}).encode("utf-8")
 
 
+def _token_reads(text: str, parsed: Mapping[str, Any]) -> bool:
+    """True for ft_transfer arguments the token contract reads. near-sdk reads a JSON method's arguments with
+    serde_json::from_slice into a struct serde derives from the method's parameters, here receiver_id: AccountId,
+    amount: U128 and memo: Option<String>, and it refuses unknown keys only for a method marked
+    deny_unknown_arguments. serde_json reads each key of the object as a string, refusing an escape that decodes to a
+    lone surrogate. The derived reader refuses a key it names that appears twice, and skips any other key each time it
+    appears. AccountId is a NEAR account id; U128 is a string that Rust's u128::from_str reads: an optional '+', then
+    one or more ASCII digits, leading zeros allowed, at most 2^128 - 1. The memo is read after, by _memo_of."""
+    named: set[str] = set()
+    for key in member_names(text):
+        if any("\ud800" <= c <= "\udfff" for c in key):
+            return False
+        if key not in _TRANSFER_KEYS:
+            continue
+        if key in named:
+            return False
+        named.add(key)
+    if not is_near_account_id(parsed.get("receiver_id")):
+        return False
+    amount = parsed.get("amount")
+    if not isinstance(amount, str) or _U128_TEXT.fullmatch(amount) is None:
+        return False
+    digits = amount.removeprefix("+").lstrip("0")
+    return len(digits) <= len(str(U128_LIMIT)) and int(digits or "0") < U128_LIMIT
+
 
 def _memo_of(args: bytes) -> AtrHash | Refusal:
-    """The hash in the memo of a JSON object of ft_transfer arguments, strict UTF-8 text whose leading byte-order mark
-    is a character, so arguments that begin with one are not JSON."""
+    """The hash in the memo of ft_transfer arguments read only as the token contract reads them: strict UTF-8 JSON
+    text of at most 4096 bytes, whose leading byte-order mark is a character, so arguments that begin with one are not
+    JSON, and whose value is an object that _token_reads takes; anything else is near/args-malformed. Then a memo that
+    is not a string is near/memo-missing, and one that is not an LCP string near/memo-not-lcp."""
     if len(args) > MAX_ARGS_BYTES:
         return Refusal("near/args-malformed")
     try:
@@ -90,7 +134,7 @@ def _memo_of(args: bytes) -> AtrHash | Refusal:
     except UnicodeDecodeError:
         return Refusal("near/args-malformed")
     parsed = parse_json(text)
-    if not isinstance(parsed, dict):
+    if not isinstance(parsed, dict) or not _token_reads(text, parsed):
         return Refusal("near/args-malformed")
     memo = parsed.get("memo")
     if not isinstance(memo, str):
@@ -108,13 +152,23 @@ _DELEGATE_REFUSED = {
 
 def near_carrier(signed_delegate_action: object) -> AtrHash | Refusal:
     """The hash in a SignedDelegateAction, padded standard base64 in its canonical form (RFC 4648 §3.5) of at most
-    8192 UTF-16 code units, whose one action is a FunctionCall of ft_transfer with a JSON object of arguments whose memo
-    is an LCP string. The bytes are read in the order nearcore reads them: the sender and the receiver, where one that
-    is not UTF-8 is near/sda-malformed, then the count of actions, where a count other than one is near/actions, then
-    the action's variant index, where any index other than FunctionCall's is near/not-ft-transfer, the bytes after it
-    unread. Otherwise the bytes must be exactly the borsh encoding of what is read, every string in it UTF-8, the key
-    and the signature each Ed25519 or secp256k1, and an Ed25519 signature's last byte below 0x20, as nearcore reads
-    one, or they are near/sda-malformed."""
+    8192 UTF-16 code units, whose one action is a FunctionCall of ft_transfer with a JSON object of arguments whose
+    receiver_id is a NEAR account id and whose memo is an LCP string. The bytes are read in the order nearcore reads
+    them: the sender and the receiver, where one that is not UTF-8, or not a NEAR account id, is near/sda-malformed,
+    then the count of actions, where a count other than one is near/actions, then the action's variant index, where
+    any index other than FunctionCall's is near/not-ft-transfer, the bytes after it unread. Otherwise the bytes must be
+    exactly the borsh encoding of what is read, every string in it UTF-8, the key and the signature each Ed25519 or
+    secp256k1, and an Ed25519 signature's last byte below 0x20, as nearcore reads one, or they are near/sda-malformed.
+    The arguments are strict UTF-8 JSON text whose leading byte-order mark is kept as a character, so arguments that
+    begin with one are near/args-malformed. So are arguments the token contract refuses: it reads them as near-sdk does,
+    with serde's derived reader over receiver_id: AccountId, amount: U128 and memo: Option<String>. Those are arguments
+    whose object names receiver_id, amount or memo more than once, each key read with its escapes decoded, or has a key
+    that decodes to a lone surrogate, or whose receiver_id is not a NEAR account id, or whose amount is not a string of
+    an optional '+' and one or more ASCII digits below 2^128, leading zeros allowed (Rust's u128::from_str). Any other
+    key is ignored, however often it repeats. Then a memo that is not a string is near/memo-missing, and one that is not
+    an LCP string near/memo-not-lcp. The amount is not compared with the option's. A NEAR account id is 2 to 64
+    characters, each a lowercase ASCII letter, a digit, '-', '_' or '.', where a separator ('-', '_' or '.') is never
+    first, never last, and never follows another (near-account-id's AccountId)."""
     if not isinstance(signed_delegate_action, str):
         return Refusal("near/sda-malformed")
     if js_length(signed_delegate_action) > MAX_SDA_BASE64:
@@ -185,7 +239,7 @@ class X402ExactNear:
         if nh is None:
             return Refusal("x402/payload-malformed")
         payer = c.get("payer")
-        if not isinstance(payer, str) or not _account(payer):
+        if not is_near_account_id(payer):
             return Refusal("x402/option-malformed")
         key = public_key_of(c.get("publicKey"))
         if key is None:
