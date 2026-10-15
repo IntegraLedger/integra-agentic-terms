@@ -65,9 +65,12 @@ sequenceDiagram
 5. **Pay.** With `approved`, the gate first reads its `required` whole, as step 3 reads the agreement URL's request: a
    request the protocol package's read refuses as a whole, for its version, its legal context or agreement URL, or an
    `accepts` that is not a list of at most 32 entries holding an option, is declined `offer-unreadable` with the read's
-   code, as the unpaid request declines it, and nothing is fetched or signed. The gate then builds exactly that payment
-   with H and hands it to your signer (or to `agreementSigner`, where you gave one). It sends it in the
-   `PAYMENT-SIGNATURE` header, with no second unpaid request.
+   code, as the unpaid request declines it, and nothing is fetched or signed. Its `option` must then be one of
+   `required.accepts`, compared as the protocol package compares JSON values, by RFC 8785 form: member order does not
+   count, and `60.0` is `60`. Any other option is declined `offer-unreadable` with `x402/option-not-in-document`, and
+   nothing is fetched or signed. The gate then builds exactly that payment with H and hands it to your signer (or to
+   `agreementSigner`, where you gave one). It sends it in the `PAYMENT-SIGNATURE` header, with no second unpaid
+   request.
    A signed payment nested past 64 levels, or one JSON cannot write, is declined `signed-not-bound`, "The agreement
    payment is not plain JSON.", and is not sent.
 6. **Wait for the receipt.** After a `202`, the gate waits the `Retry-After` seconds (one to nine digits, surrounding

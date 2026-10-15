@@ -11,6 +11,7 @@
  */
 import {
   BINDINGS,
+  canonicalJson,
   fromBase64,
   hash,
   hashEquals,
@@ -284,7 +285,9 @@ interface Selected {
  * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it. An `accepts` that is
  * not a list, holds more than 32 entries or holds no object serves no option, and is declined `offer-unreadable` with
  * the code the read gives the whole challenge (`unservedCode`). With `approved`, the challenge is checked whole in the
- * same way, and `approved` is the one option read and chosen.
+ * same way and for a fault of its own (`challengeFault`), declined `offer-unreadable` with that code; then `approved`
+ * must be one of `accepts` (`isOffered`), else it is declined `offer-unreadable` with `x402/option-not-in-document`;
+ * and it is the one option read and chosen.
  */
 async function select(
   required: Record<string, unknown>,
@@ -295,6 +298,11 @@ async function select(
   const accepts = required["accepts"];
   if (!Array.isArray(accepts) || accepts.length > MAX_OPTIONS || !accepts.some((option) => isObject(option))) {
     return declined("offer-unreadable", unservedCode(required));
+  }
+  if (approved !== undefined) {
+    const fault = challengeFault(required);
+    if (fault !== undefined) return declined("offer-unreadable", fault);
+    if (!isOffered(accepts, approved)) return declined("offer-unreadable", "x402/option-not-in-document");
   }
   const now = Math.floor(Date.now() / 1000);
   let unreadable: string | undefined;
@@ -340,6 +348,32 @@ function unservedCode(required: Record<string, unknown>): string {
 }
 
 /**
+ * The code the x402 reads give a challenge that none of them serves for a fault of its own beside its options, such as
+ * its version, legal context or agreement URL (`unservedCode`); undefined when a read serves it, or when none refuses it
+ * with a code other than `x402/no-payable-option`.
+ */
+function challengeFault(required: Record<string, unknown>): string | undefined {
+  if (X402.some((binding) => !isRefusal((binding as unknown as { read(d: unknown): Read | Refusal }).read(required)))) {
+    return undefined;
+  }
+  const code = unservedCode(required);
+  return code === "x402/no-payable-option" ? undefined : code;
+}
+
+/**
+ * Whether `option` is one of `accepts`, by identity or by equal RFC 8785 form (`canonicalJson`), as the protocol
+ * package's build holds a chosen option to the document's: member order is not compared, and a number is its JSON
+ * value.
+ */
+function isOffered(accepts: readonly unknown[], option: unknown): boolean {
+  return accepts.some((a) => {
+    if (a === option) return true;
+    const text = canonicalJson(a);
+    return typeof text === "string" && text === canonicalJson(option);
+  });
+}
+
+/**
  * The paid request's deadline and the whole exchange's, in seconds, from the option's `maxTimeoutSeconds`: a JSON number
  * with an integral value from 1 to 2^53 - 1.
  */
@@ -377,7 +411,9 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * Without `approved`: asks the agreement URL for its challenge and returns the agreement payment to approve, signing
  * nothing, or the receipt where the agreement is already recorded. With `approved`: signs exactly that payment with
  * `signer`, sends it to `url`, and returns the receipt once recorded; a payment whose challenge the protocol package's
- * read refuses as a whole is declined as the unpaid request declines that challenge, before any fetch or signer call.
+ * read refuses as a whole is declined as the unpaid request declines that challenge, and one whose option is not one
+ * of that challenge's `accepts`, by RFC 8785 form, is declined `offer-unreadable` with `x402/option-not-in-document`,
+ * each before any fetch or signer call.
  * `bytes` are the ATR the gate compared, whose hash the agreement payment carries; `inputs` are the buyer's own chain
  * values; `signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, a `signal` that
  * is not an `AbortSignal`, an `approved` that is not of the agreement payment's form, `inputs` that is not an object,

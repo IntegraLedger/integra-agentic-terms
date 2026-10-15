@@ -801,6 +801,7 @@ describe("the agreement payment the agent approves", () => {
   it.each([64, 65, 100_000])("an agreement payment nested %i levels: sent within 64, else signed-not-bound", async (levels) => {
     // The signed payment nests `levels` levels: the payment 1, accepted 2, its extra 3, the array from 4. The protocol
     // package reads JSON nested at most 64 levels, so a deeper payment is declined after the signer's one call, unsent.
+    // The approved challenge holds the approved option.
     let deep: unknown = [];
     for (let i = 0; i < levels - 4; i++) deep = [deep];
     const fetch = seller(row("BA1").input.agreement);
@@ -808,7 +809,8 @@ describe("the agreement payment the agent approves", () => {
     const first = await agree(A, AGREEMENT_URL, signer, fetch);
     if (!("approve" in first)) throw new Error("the agreement payment is returned for approval");
     const option = { ...first.approve.option, extra: { ...first.approve.option.extra, deep } } as PaymentRequirements;
-    const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, { approved: { ...first.approve, option } }));
+    const required = { ...first.approve.required, accepts: [option] };
+    const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, { approved: { ...first.approve, option, required } }));
     expect(signer.requests.length).toBe(1);
     if (levels <= 64) {
       expect(value).toEqual({ receipt: AG.receipt });
@@ -1040,6 +1042,62 @@ describe("the agreement payment the agent approves", () => {
     expect(isDeclined(value) && value.decline).toEqual({ code: "offer-unreadable", detail: read.code });
     expect(signer.requests.length).toBe(0);
     expect(fetch.calls.length).toBe(0);
+  });
+
+  // The approved option is one its challenge holds, compared as the protocol package compares JSON values, by RFC 8785
+  // form: member order is not compared, and a number is its JSON value. Any other option is declined offer-unreadable
+  // with the protocol package's x402/option-not-in-document, the code its build gives a chosen option the document does
+  // not offer, before anything is signed or sent.
+  const NOT_IN_DOCUMENT = { code: "offer-unreadable", detail: "x402/option-not-in-document" };
+  const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  /** `o` with its members, and those of each object in it, in reverse order. */
+  const reversed = (o: Record<string, unknown>): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(o).reverse().map(([k, v]) => [k, isPlain(v) ? reversed(v) : v]));
+
+  it.each([
+    ["an option of another pairing", [SOLANA_OPTION], OPTION],
+    ["its amount", [OPTION], { ...OPTION, amount: "2" }],
+    ["its payTo", [OPTION], { ...OPTION, payTo: ACCOUNT.split(":")[2] }],
+    ["its maxTimeoutSeconds", [OPTION], { ...OPTION, maxTimeoutSeconds: 61 }],
+    ["its extra's version", [OPTION], { ...OPTION, extra: { ...OPTION.extra, version: "1" } }],
+  ])("an approved option the challenge does not hold, differing in %s: offer-unreadable, nothing signed or sent", async (_, accepts, option) => {
+    const required = { ...AG.required, accepts };
+    const signer = counting();
+    const fetch = challenging(base64Json(required), RECORDED);
+    const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, approving(required, option)));
+    expect(isDeclined(value) && value.decline).toEqual(NOT_IN_DOCUMENT);
+    expect(signer.requests.length).toBe(0);
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it.each([
+    ["x402Version 1", { x402Version: 1 }],
+    ["a hash value of one byte", { extensions: withInfo({ value: "0x12" }) }],
+  ])("%s beside an approved option the challenge does not hold: the unpaid request's decline", async (_, patch) => {
+    const required = challenge(patch, [OPTION]);
+    const read = exactEip3009.read(required as unknown as PaymentRequired);
+    if (!("refused" in read)) throw new Error("the protocol package's read refuses the challenge");
+    const unpaid = await agree(A, AGREEMENT_URL, counting(), challenging(base64Json(required), RECORDED));
+    expect(isDeclined(unpaid) && unpaid.decline).toEqual({ code: "offer-unreadable", detail: read.code });
+    const signer = counting();
+    const fetch = challenging(base64Json(required), RECORDED);
+    const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, approving(required, { ...OPTION, amount: "2" })));
+    expect(isDeclined(value) && value.decline).toEqual({ code: "offer-unreadable", detail: read.code });
+    expect(signer.requests.length).toBe(0);
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it.each([
+    ["with its members in another order", AG.required, reversed(OPTION)],
+    ["of a challenge whose JSON text writes maxTimeoutSeconds 60.0", JSON.parse(AG.requiredTimeoutText), OPTION],
+  ])("an approved option the challenge holds, %s: paid as approved", async (_, required, option) => {
+    const signer = counting();
+    const fetch = challenging(base64Json(required), RECORDED);
+    const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, approving(required, option)));
+    expect(value).toEqual({ receipt: AG.receipt });
+    expect(signer.requests.length).toBe(1);
+    const sent = fromBase64Json(fetch.paid()[0]!) as Eip3009Payment;
+    expect(JSON.stringify(sent.accepted)).toBe(JSON.stringify(option));
   });
 });
 

@@ -24,7 +24,7 @@ from ._core import atr_hash as hash_of
 from .bindings._codec import b64_decode, js_json
 from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
-from .bindings._x402 import MAX_OPTIONS
+from .bindings._x402 import MAX_OPTIONS, is_offered
 from ._types import (
     Advertised,
     AgreementPayment,
@@ -299,7 +299,9 @@ def _select(
     whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it. An accepts that is
     not a list, holds more than 32 entries or holds no mapping serves no option, and is declined offer-unreadable with
     the code the read gives the whole challenge (_unserved_code). With approved, the challenge is checked whole in the
-    same way, and approved is the one option read and chosen."""
+    same way and for a fault of its own (_challenge_fault), declined offer-unreadable with that code; then approved
+    must be one of accepts (is_offered: by identity or by equal RFC 8785 form), else it is declined offer-unreadable
+    with x402/option-not-in-document; and it is the one option read and chosen."""
     accepts = required.get("accepts")
     if (
         not isinstance(accepts, Sequence)
@@ -308,6 +310,12 @@ def _select(
         or not any(isinstance(option, Mapping) for option in accepts)
     ):
         return Declined("offer-unreadable", _unserved_code(required))
+    if approved is not None:
+        fault = _challenge_fault(required)
+        if fault is not None:
+            return Declined("offer-unreadable", fault)
+        if not is_offered(accepts, approved):
+            return Declined("offer-unreadable", "x402/option-not-in-document")
     now = _gate._now()
     unreadable: str | None = None
     unpayable: str | None = None
@@ -350,6 +358,16 @@ def _unserved_code(required: Mapping[str, Any]) -> str:
         if isinstance(read, Refusal) and read.code != "x402/no-payable-option":
             return read.code
     return "x402/no-payable-option"
+
+
+def _challenge_fault(required: Mapping[str, Any]) -> str | None:
+    """The code the x402 reads give a challenge that none of them serves for a fault of its own beside its options, such
+    as its version, legal context or agreement URL (_unserved_code); None when a read serves it, or when none refuses it
+    with a code other than x402/no-payable-option."""
+    if any(isinstance(binding.read(required), Advertised) for binding in _x402_bindings()):
+        return None
+    code = _unserved_code(required)
+    return None if code == "x402/no-payable-option" else code
 
 
 def _bounds(option: Mapping[str, Any]) -> tuple[int, int] | None:
@@ -403,7 +421,9 @@ async def agree(
     """Without approved: ask the agreement URL for its challenge and return the agreement payment to approve, signing
     nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
     signer, send it to url, and return the receipt once recorded; a payment whose challenge the protocol package's read
-    refuses as a whole is declined as the unpaid request declines that challenge, before any fetch or signer call.
+    refuses as a whole is declined as the unpaid request declines that challenge, and one whose option is not one of
+    that challenge's accepts, by RFC 8785 form, is declined offer-unreadable with x402/option-not-in-document, each
+    before any fetch or signer call.
     atr_bytes are the ATR the gate compared, whose hash the agreement payment carries; inputs are the buyer's own chain
     values; setting signal ends the exchange. An approved value that is not of the agreement payment's form, inputs that
     are not a mapping, a signal that is not an asyncio.Event, or a signer whose account is not a string is declined

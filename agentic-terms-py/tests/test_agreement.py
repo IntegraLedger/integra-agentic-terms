@@ -751,6 +751,7 @@ def test_an_approved_payment_for_another_agreement_url_fails_with_nothing_signed
 def test_an_agreement_payment_nested_past_64_levels_is_declined_and_not_sent(levels: int) -> None:
     # The signed payment nests `levels` levels: the payment 1, accepted 2, its extra 3, the list from 4. The protocol
     # package reads JSON nested at most 64 levels, so a deeper payment is declined after the signer's one call, unsent.
+    # The approved challenge holds the approved option.
     deep: list[Any] = []
     for _ in range(levels - 4):
         deep = [deep]
@@ -761,7 +762,8 @@ def test_an_agreement_payment_nested_past_64_levels_is_declined_and_not_sent(lev
         first = await agree(A, URL, signer, c)
         assert isinstance(first, ToApprove)
         option = {**first.approve.option, "extra": {**first.approve.option["extra"], "deep": deep}}
-        return await agree(A, URL, signer, c, approved=dataclasses.replace(first.approve, option=option))
+        required = {**first.approve.required, "accepts": [option]}
+        return await agree(A, URL, signer, c, approved=dataclasses.replace(first.approve, option=option, required=required))
 
     out = run(seller.link(), go)
     assert len(signer.requests) == 1
@@ -776,7 +778,8 @@ def test_an_agreement_payment_nested_past_64_levels_is_declined_and_not_sent(lev
 @pytest.mark.parametrize("value", [{1: "a"}, {(1, 2): "a"}, b"ab", {1, 2}], ids=["int key", "tuple key", "bytes", "set"])
 def test_an_agreement_payment_json_cannot_write_is_declined_and_not_sent(value: Any) -> None:
     # A dict keyed by other than strings (RFC 8259 section 4: member names are strings), bytes and a set have no JSON
-    # text, so the payment carrying one is declined after the signer's one call, unsent.
+    # text, so the payment carrying one is declined after the signer's one call, unsent. The approved challenge holds
+    # the approved option.
     seller = Seller(row("BA1")["input"]["agreement"])
     signer = RecordingSigner()
 
@@ -784,7 +787,8 @@ def test_an_agreement_payment_json_cannot_write_is_declined_and_not_sent(value: 
         first = await agree(A, URL, signer, c)
         assert isinstance(first, ToApprove)
         option = {**first.approve.option, "extra": {**first.approve.option["extra"], "value": value}}
-        return await agree(A, URL, signer, c, approved=dataclasses.replace(first.approve, option=option))
+        required = {**first.approve.required, "accepts": [option]}
+        return await agree(A, URL, signer, c, approved=dataclasses.replace(first.approve, option=option, required=required))
 
     out = run(seller.link(), go)
     assert len(signer.requests) == 1
@@ -1035,6 +1039,79 @@ def test_an_approved_payment_whose_challenge_the_read_refuses_whole_is_declined_
     out = run(seller.link(), lambda c: agree(A, URL, signer, c, approved=approved))
     assert out == Declined("offer-unreadable", read.code)
     assert signer.requests == [] and seller.requests == []
+
+
+# The approved option is one its challenge holds, compared as the protocol package compares JSON values, by RFC 8785
+# form: member order is not compared, and a number is its JSON value. Any other option is declined offer-unreadable with
+# the protocol package's x402/option-not-in-document, the code its build gives a chosen option the document does not
+# offer, before anything is signed or sent.
+NOT_IN_DOCUMENT = Declined("offer-unreadable", "x402/option-not-in-document")
+
+
+def _reversed(o: dict[str, Any]) -> dict[str, Any]:
+    """o with its members, and those of each mapping in it, in reverse order."""
+    return {k: _reversed(v) if isinstance(v, dict) else v for k, v in reversed(list(o.items()))}
+
+
+@pytest.mark.parametrize(
+    ("accepts", "option"),
+    [
+        pytest.param([SOLANA_OPTION], OPTION, id="an option of another pairing"),
+        pytest.param([OPTION], {**OPTION, "amount": "2"}, id="its amount"),
+        pytest.param([OPTION], {**OPTION, "payTo": ACCOUNT.split(":")[2]}, id="its payTo"),
+        pytest.param([OPTION], {**OPTION, "maxTimeoutSeconds": 61}, id="its maxTimeoutSeconds"),
+        pytest.param([OPTION], {**OPTION, "extra": {**OPTION["extra"], "version": "1"}}, id="its extra's version"),
+    ],
+)
+def test_an_approved_option_the_challenge_does_not_hold_is_declined_with_nothing_signed_or_sent(
+    accepts: list[dict[str, Any]], option: dict[str, Any]
+) -> None:
+    required = {**AG["required"], "accepts": accepts}
+    signer = RecordingSigner()
+    seller = Challenging(RECORDED, header=b64(required))
+    approved = AgreementPayment(url=URL, option=option, required=required)
+    out = run(seller.link(), lambda c: agree(A, URL, signer, c, approved=approved))
+    assert out == NOT_IN_DOCUMENT
+    assert signer.requests == [] and seller.requests == []
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [pytest.param({"x402Version": 1}, id="x402Version 1"), pytest.param({"extensions": _info(value="0x12")}, id="a hash value of one byte")],
+)
+def test_a_fault_of_the_challenge_beside_an_approved_option_it_does_not_hold_is_the_unpaid_requests_decline(
+    patch: dict[str, Any],
+) -> None:
+    required = _challenge(patch, [OPTION])
+    read = BINDING.read(required)
+    assert isinstance(read, Refusal)
+    unpaid = run(Challenging(RECORDED, header=b64(required)).link(), lambda c: agree(A, URL, RecordingSigner(), c))
+    assert unpaid == Declined("offer-unreadable", read.code)
+    signer = RecordingSigner()
+    seller = Challenging(RECORDED, header=b64(required))
+    approved = AgreementPayment(url=URL, option={**OPTION, "amount": "2"}, required=required)
+    out = run(seller.link(), lambda c: agree(A, URL, signer, c, approved=approved))
+    assert out == Declined("offer-unreadable", read.code)
+    assert signer.requests == [] and seller.requests == []
+
+
+@pytest.mark.parametrize(
+    ("required", "option"),
+    [
+        pytest.param(AG["required"], _reversed(OPTION), id="with its members in another order"),
+        pytest.param(
+            json.loads(AG["requiredTimeoutText"]), OPTION, id="of a challenge whose JSON text writes maxTimeoutSeconds 60.0"
+        ),
+    ],
+)
+def test_an_approved_option_the_challenge_holds_is_paid_as_approved(required: dict[str, Any], option: dict[str, Any]) -> None:
+    signer = RecordingSigner()
+    seller = Challenging(RECORDED, header=b64(required))
+    approved = AgreementPayment(url=URL, option=option, required=required)
+    out = run(seller.link(), lambda c: agree(A, URL, signer, c, approved=approved))
+    assert isinstance(out, Agreed) and out.receipt.atr_hash == HASH_A
+    assert len(signer.requests) == 1
+    assert list(json.loads(base64.b64decode(seller.paid()[0]))["accepted"]) == list(option)
 
 
 # The caller's signal, an asyncio.Event, ends the agreement exchange at its next step. Before the agreement payment is
