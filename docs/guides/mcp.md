@@ -92,7 +92,9 @@ far, in order, as a list.
 
 ### Nothing to sign
 
-If `request` is `null`, the pairing gives the buyer nothing to sign: the comparison was the agent's whole step, and the
+If `request` is `null`, the wallet signs nothing. For `x402/batch-settlement/cloudflare`, whose build is itself the
+payment, the agent calls `atr_finish` with `atr.base64`, `chosen` unchanged and `signature: null`; it returns the
+payment as `signed`, which the agent sends. For every other pairing, the comparison was the agent's whole step, and the
 seller's own flow completes the payment.
 
 ### Pairings that pay an agreement first

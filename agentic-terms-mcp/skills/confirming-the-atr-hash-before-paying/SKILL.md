@@ -37,8 +37,10 @@ is for you and your principal to judge.
 5. If `atr_finish` returns `next`, have your wallet sign exactly `next`, then call `atr_finish` again with every answer
    so far, in order, as a list. When it returns `signed`, send only that payment. If it also returns `landed`, keep it
    with the payment.
-6. If `request` is `null`, there is nothing for you to sign: the comparison was your whole step, and the seller's own
-   flow completes the payment.
+6. If `request` is `null`, there is nothing for your wallet to sign. For `x402/batch-settlement/cloudflare`, whose
+   build is itself the payment, call `atr_finish` with `atr.base64`, `chosen` unchanged and `signature` set to `null`,
+   and send only the `signed` payment it returns. For every other pairing, the comparison was your whole step, and the
+   seller's own flow completes the payment.
 7. A result with `isError: true` means the payment would not carry a confirmed hash. Do not send a payment for that
    request. If the result carries `moved`, your wallet already moved the payment: keep `moved.signed` with the ATR, and
    present it again rather than signing a new one. Whether to deal with this seller another way is your principal's

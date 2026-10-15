@@ -262,6 +262,36 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
   });
 });
 
+// x402/batch-settlement/cloudflare's build is itself the payment (x402-batch-settlement.json EC1): once the agreement's
+// receipt is passed, atr_confirm returns `request: null`, and atr_finish with `signature: null` returns the payment.
+describe("x402/batch-settlement/cloudflare over MCP, whose build is the payment", () => {
+  const pairing = "x402/batch-settlement/cloudflare";
+  const option = BV.EC1.payload.accepted;
+  const document = () => bindingOf(pairing).advertise({ x402Version: 2, resource: BV.fixed.resource, accepts: [option] }, H, LINK, option, AG.url);
+  const account = "cloudflare:402:agent.example";
+
+  it("atr_finish with signature null returns the payment, which atr_check reads H from", async () => {
+    const c = connect({ fetch: seller() });
+    const unpaid = await call(c, "atr_confirm", { pairing, document: document(), account });
+    expect(at(unpaid, "result.structuredContent.chosen.agreement")).toBe(AG.url);
+    expect(at(unpaid, "result.structuredContent")).not.toHaveProperty("request");
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receipt });
+    expect(at(confirmed, "result.isError")).toBeUndefined();
+    expect(at(confirmed, "result.structuredContent.request")).toBeNull();
+    const atr = at(confirmed, "result.structuredContent.atr.base64");
+    const m = await call(c, "atr_finish", { pairing, atr, chosen: at(confirmed, "result.structuredContent.chosen"), signature: null });
+    const signed = at(m, "result.structuredContent.signed");
+    const checked = await call(c, "atr_check", { pairing, atr, presented: signed });
+    await c.close();
+    expect(at(m, "result.isError")).toBeUndefined();
+    expect(at(m, "result.structuredContent.atrHash")).toBe(H);
+    expect(at(signed, "payload")).toEqual(BV.EC1.payload.payload);
+    expect(at(signed, "accepted")).toEqual(option);
+    expect(at(signed, "extensions.legalContext.info.value")).toBe(H);
+    expect(at(checked, "result.structuredContent")).toEqual({ atrHash: H });
+  });
+});
+
 describe("a channel over MCP: x402/batch-settlement/eip155", () => {
   const pairing = "x402/batch-settlement/eip155";
   const EV = BV.fixed.evm;
