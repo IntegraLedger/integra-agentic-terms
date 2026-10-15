@@ -71,7 +71,7 @@ const D: PaymentRequired = B.fixed.D;
 const O: PaymentRequirements = D.accepts[0]!;
 const ACCOUNT: string = B.fixed.account;
 const HASH_A: AtrHash = row("B1").expect.h;
-const LINK_A = `https://atr.seller.example/${HASH_A}`;
+const LINK_A: string = B.fixed.link;
 const binding: Binding = exactEip3009;
 
 /** A fetch stub that counts its calls and records what it was given. */

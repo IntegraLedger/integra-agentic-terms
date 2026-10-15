@@ -28,7 +28,7 @@ CARD = load("mpp-charge-card.json")
 STRIPE = load("mpp-charge-stripe.json")
 SUB = load("mpp-subscription-stripe.json")
 NEAR = load("mpp-charge-nearintents.json")
-AGREEMENT = f"https://pay.seller.example/agreement/{H}"
+AGREEMENT: str = CARD["fixed"]["agreementUrl"]
 EVM_ACCOUNT = "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 
 

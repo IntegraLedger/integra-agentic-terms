@@ -1,7 +1,7 @@
 // B2 and B6 for MPP's charge pairings. Expected values are the vector files': the challenges
 // C_E and C_T, the digests and signatures of the published Anvil key #0, the Tempo calldata and wire, and the landed
 // receipt of the push form.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { concat, hashTypedData, toBytes, toHex as viemHex, toRlp, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -404,7 +404,7 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
     fixed: Fixed & { R_ENoTypes: string };
     MV11: { transaction: { chainId: number; nonce: number; maxPriorityFeePerGas: string; maxFeePerGas: string; gas: number }; expectTxHash: Hex };
   }>("mpp-charge-evm-transaction.json");
-  const AGREEMENT_URL = `https://seller.example/agreement/${H}`;
+  const AGREEMENT_URL = `https://seller.example/agreement/${randomUUID()}`;
   // The x402 EVM vectors' option O, paying the nominal agreement amount, 1.
   const O: PaymentRequirements = {
     scheme: "exact",

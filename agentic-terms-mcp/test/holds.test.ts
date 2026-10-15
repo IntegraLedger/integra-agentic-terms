@@ -23,7 +23,7 @@ const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelco
 /** `abc`, whose SHA-256 (FIPS 180-2) is the hash the batch-settlement vectors carry, and its link. */
 const ABC = new TextEncoder().encode("abc");
 const H_ABC = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-const LINK_ABC = `https://atr.seller.example/${H_ABC}`;
+const LINK_ABC: string = vectors("mpp-challenge.json").fixed.link;
 const atr = Buffer.from(ABC).toString("base64");
 
 const pairing = "x402/batch-settlement/eip155";

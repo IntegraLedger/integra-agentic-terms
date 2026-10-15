@@ -3,7 +3,7 @@
 // ids are the vector files' (the batch-settlement file's EB1-EB6 and ES1-ES4; the Tempo session file's TS3); the
 // arithmetic of the voucher ceiling is x402 batch-settlement's client rule: "the client sets the voucher's
 // `maxClaimableAmount` to `chargedCumulativeAmount + amount`".
-import { createHash, createPrivateKey, sign as edSign } from "node:crypto";
+import { createHash, createPrivateKey, randomUUID, sign as edSign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { concat, hashTypedData, keccak256, recoverTypedDataAddress, toHex, toRlp, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount, sign } from "viem/accounts";
@@ -89,7 +89,7 @@ const hex = (b: Uint8Array): string => Buffer.from(b).toString("hex");
 
 function x402Doc(binding: Binding, option: PaymentRequirements, h: string = H): PaymentRequired {
   const base = { x402Version: 2, resource: BV.fixed.resource, accepts: [option] } as PaymentRequired;
-  const link = `https://atr.seller.example/${h}`;
+  const link = `https://atr.seller.example/${randomUUID()}`;
   const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown): unknown }).advertise(base, h, link, option);
   if (typeof placed === "object" && placed !== null && "refused" in placed) throw new Error(JSON.stringify(placed));
   return placed as PaymentRequired;

@@ -15,7 +15,7 @@ const B = vectors("buyer.json");
 const E = vectors("x402-exact-eip155-erc7710.json");
 const A = Uint8Array.from(Buffer.from(B.fixed.A, "hex"));
 const H: string = B.rows.find((r: { name: string }) => r.name === "B1").expect.h;
-const LINK = `https://atr.seller.example/${H}`;
+const LINK: string = B.fixed.link;
 const AGREEMENT_URL: string = B.fixed.agreement.url;
 const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} };
 

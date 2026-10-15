@@ -6,6 +6,7 @@ import asyncio
 import copy
 import dataclasses
 import hashlib
+import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,8 +34,9 @@ from support import AGREEMENT_BASE, Link, load, receipt_for, serving
 ABC = b"abc"
 ABD = b"abd"
 H = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-LINK = "https://atr.seller.example/" + H
-AGREEMENT_URL = AGREEMENT_BASE + H
+# The vectors' link for H, a random token's path; the agreement URL, a random token's path too.
+LINK: str = load("mpp-challenge.json")["fixed"]["link"]
+AGREEMENT_URL = AGREEMENT_BASE + str(uuid.uuid4())
 assert "0x" + hashlib.sha256(ABC).hexdigest() == H
 
 LEGAL_CONTEXT_SCHEMA: dict[str, Any] = load("x402-exact-eip155-eip3009.json")["fixed"]["legalContextSchema"]

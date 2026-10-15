@@ -196,7 +196,7 @@ def test_b9_signed_not_bound() -> None:
 def test_b10_http_link() -> None:
     b10 = row("B10")
     link = serving(A)
-    result = run_confirm(document(link="http://atr.seller.example/" + HASH_A), link)
+    result = run_confirm(document(link=LINK_A.replace("https://", "http://", 1)), link)
     assert result == Declined(b10["expect"][0]["decline"], b10["expect"][0]["detail"])
     stub = StubBinding(BINDING, read_answer=Advertised(h=HASH_A, link=b10["input"][1]["stubRead"]["link"],
                                                        offer={"required": document(), "options": [O]}))

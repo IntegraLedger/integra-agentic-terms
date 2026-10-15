@@ -10,14 +10,14 @@ import { transact, type Binding, type Fetch, type SigningRequest } from "../src/
 import { transactApproved, vectors } from "./support.js";
 
 const B = vectors<{
-  fixed: { A: string; D: PaymentRequired; account: string; payerKey: `0x${string}`; now: number; agreement: { url: string } };
+  fixed: { A: string; D: PaymentRequired; link: string; account: string; payerKey: `0x${string}`; now: number; agreement: { url: string } };
   rows: { name: string; expect: { h: string } }[];
 }>("buyer.json");
 const PERMIT2 = vectors<{ fixed: { option: PaymentRequirements } }>("x402-exact-eip155-permit2.json");
 
 const A = Uint8Array.from(Buffer.from(B.fixed.A, "hex"));
 const H = B.rows.find((r) => r.name === "B1")!.expect.h;
-const LINK = `https://atr.seller.example/${H}`;
+const LINK = B.fixed.link;
 const URL_ = B.fixed.agreement.url;
 const RECEIPT = { atrHash: H, agreed: true, network: "eip155:84532", transaction: `0x${"cd".repeat(32)}` };
 const key = privateKeyToAccount(B.fixed.payerKey);

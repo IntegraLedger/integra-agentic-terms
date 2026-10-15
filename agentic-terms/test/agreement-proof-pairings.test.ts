@@ -11,7 +11,7 @@ import type { TypedDataDefinition } from "viem";
 import { evmHash, evmTransaction, type MppChallenge } from "@integraledger/lcp/mpp";
 import { exactEip3009, type PaymentRequirements } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { ABC, H, LINK, transactApproved, vectors } from "./support.js";
+import { ABC, AGREEMENT_URL, H, LINK, transactApproved, vectors } from "./support.js";
 
 const MC = vectors<{ fixed: { realm: string; expires: string } }>("mpp-challenge.json");
 const X = vectors<{
@@ -24,7 +24,6 @@ const X = vectors<{
 const MV12 = vectors<{ MV12: { hash: `0x${string}` } }>("mpp-charge-evm-hash.json").MV12;
 const AG = vectors<{ fixed: { agreement: { option: PaymentRequirements } } }>("buyer.json").fixed.agreement;
 
-const AGREEMENT_URL = `https://pay.seller.example/agreement/${H}`;
 const RECEIPT = { atrHash: H, agreed: true, network: "eip155:84532", transaction: `0x${"cd".repeat(32)}` };
 const ACCOUNT = `eip155:84532:${X.fixed.payer}`;
 const payer = privateKeyToAccount(X.fixed.payerKey);

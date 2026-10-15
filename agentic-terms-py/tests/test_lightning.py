@@ -268,7 +268,7 @@ def test_x402_lightning_9a_each_read_serves_only_its_own_options() -> None:
     doc_n = x402_doc(FN["O_N"], FN["resource"])
     assert X402_EXACT_LNBTC_INVOICE_NAMED.read(doc_m) == Refusal("x402/no-payable-option")
     assert X402_EXACT_LNBTC.read(doc_n) == Refusal("x402/no-payable-option")
-    assert H == F["H"] and LINK.endswith(F["H"])
+    assert (H, LINK) == (F["H"], F["link"])
 
 
 # ── mpp/charge/lightning and mpp/session/lightning ──

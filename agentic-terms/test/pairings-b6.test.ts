@@ -1,5 +1,6 @@
 // B2 and B6 for the Casper, Concordium and Lightning pairings. Expected values are their vector files'; the signer
 // answers with the values those files publish.
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { assemble, type AtrHash } from "@integraledger/lcp";
 import { exactCasper } from "@integraledger/lcp/casper";
@@ -136,7 +137,7 @@ describe("x402/exact/lnbtc/invoice-named", () => {
       const a = await atrN();
       expect(a.bytes.length).toBe(V.L6.expectAtrLength);
       expect(a.atrHash).toBe(V.L6.expectH_N);
-      const link = `https://atr.seller.example/${a.atrHash}`;
+      const link = `https://atr.seller.example/${randomUUID()}`;
       const doc = x402Doc(exactLnbtcNamed, f.resource, f.O_N, a.atrHash, link);
       const account = `${f.O_N.network}:${f.payee}`;
       const signer = counting(account, async () => f.preimage);

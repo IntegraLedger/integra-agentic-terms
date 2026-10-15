@@ -17,13 +17,12 @@ import {
   type MppCredential,
 } from "@integraledger/lcp/mpp";
 import { check, confirm, transact, type Binding, type SigningRequest } from "../src/index.js";
-import { ABC, buildAndSign, counting, fromHex, H, isDeclined, LINK, offered, RECEIPT, serving, toHex, vectors, type Pairing } from "./support.js";
+import { ABC, AGREEMENT_URL as AGREEMENT, buildAndSign, counting, fromHex, H, isDeclined, LINK, offered, RECEIPT, serving, toHex, vectors, type Pairing } from "./support.js";
 
 // Vector files are read as loose JSON data; each row names the fields it uses.
 type Loose = any;
 
 const b64u = (s: string) => Buffer.from(s, "utf8").toString("base64url");
-const AGREEMENT = `https://pay.seller.example/agreement/${H}`;
 const ANVIL = privateKeyToAccount("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
 
 function issued(method: string, intent: string, request: unknown, realm: string, expires: string): MppChallenge {

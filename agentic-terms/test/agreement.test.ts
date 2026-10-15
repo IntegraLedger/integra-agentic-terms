@@ -44,7 +44,7 @@ const A = fromHex(B.fixed.A);
 const D: PaymentRequired = B.fixed.D;
 const ACCOUNT: string = B.fixed.account;
 const H: AtrHash = row("B1").expect.h;
-const LINK_A = `https://atr.seller.example/${H}`;
+const LINK_A: string = B.fixed.link;
 const AG = B.fixed.agreement;
 const AGREEMENT_URL: string = AG.url;
 const OPTION: PaymentRequirements = AG.option;
@@ -171,9 +171,8 @@ describe("fixed agreement inputs", () => {
     const base: PaymentRequired = { x402Version: 2, resource: { url: AGREEMENT_URL }, accepts: [OPTION] };
     expect(exactEip3009.advertise(base, H, LINK_A, OPTION)).toEqual(AG.required);
     const hashC: AtrHash = B.fixed.hashC;
-    expect(exactEip3009.advertise(base, hashC, `https://atr.seller.example/${hashC}`, OPTION)).toEqual(
-      AG.requiredOtherHash,
-    );
+    const linkC: string = AG.requiredOtherHash.extensions.legalContext.info.legalContextUrl;
+    expect(exactEip3009.advertise(base, hashC, linkC, OPTION)).toEqual(AG.requiredOtherHash);
   });
 });
 

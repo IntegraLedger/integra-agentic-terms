@@ -29,14 +29,15 @@ export function vectors<T>(name: string): T {
 export const ABC = new TextEncoder().encode("abc");
 export const ABD = new TextEncoder().encode("abd");
 export const H: AtrHash = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-export const LINK = `https://atr.seller.example/${H}`;
+/** The vectors' link and agreement URL for H, each a random token's path. */
+const FIXED = vectors<{ fixed: { link: string; agreementUrl: string } }>("mpp-challenge.json").fixed;
+export const LINK = FIXED.link;
 
 export const fromHex = (h: string): Uint8Array => Uint8Array.from(Buffer.from(h.replace(/^0x/, ""), "hex"));
 export const toHex = (b: Uint8Array): `0x${string}` => `0x${Buffer.from(b).toString("hex")}`;
 
 /** The agreement URL a `publicProof: false` pairing's offer names, and its receipt once the agreement is recorded. */
-const AGREEMENT_BASE = "https://api.seller.example/agreement/";
-export const AGREEMENT_URL = `${AGREEMENT_BASE}${H}`;
+export const AGREEMENT_URL = FIXED.agreementUrl;
 /** The agreement resource's receipt for `h`. */
 export const receiptFor = (h: string) => ({ atrHash: h, agreed: true, network: "eip155:84532", transaction: `0x${"cd".repeat(32)}` });
 export const RECEIPT = receiptFor(H);

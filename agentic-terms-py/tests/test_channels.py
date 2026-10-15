@@ -10,6 +10,7 @@ import copy
 import hashlib
 import json
 import math
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -69,7 +70,7 @@ def signer() -> Recording:
 
 
 def doc_for(h: str) -> dict[str, Any]:
-    return x402_doc(E["option"], BV["fixed"]["resource"], h=h, link=f"https://atr.seller.example/{h}")
+    return x402_doc(E["option"], BV["fixed"]["resource"], h=h, link=f"https://atr.seller.example/{uuid.uuid4()}")
 
 
 def unwrap(value: Any) -> Any:

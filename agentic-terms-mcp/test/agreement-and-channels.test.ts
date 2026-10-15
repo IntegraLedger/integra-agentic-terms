@@ -20,7 +20,7 @@ const E = vectors("x402-exact-eip155-erc7710.json");
 const BV = vectors("x402-batch-settlement.json");
 const A = Uint8Array.from(Buffer.from(B.fixed.A, "hex"));
 const H: string = B.rows.find((r: { name: string }) => r.name === "B1").expect.h;
-const LINK = `https://atr.seller.example/${H}`;
+const LINK: string = B.fixed.link;
 const AG = B.fixed.agreement;
 const S: string = B.rows.find((r: { name: string }) => r.name === "B6").input.then.finish.signature;
 const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} };
@@ -45,7 +45,7 @@ function recording(account: string, answer: (r: SigningRequest) => unknown): Rec
 /** `abc`, whose SHA-256 (FIPS 180-2) is the hash the batch-settlement vectors carry, and its link. */
 const ABC = new TextEncoder().encode("abc");
 const H_ABC = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-const LINK_ABC = `https://atr.seller.example/${H_ABC}`;
+const LINK_ABC: string = vectors("mpp-challenge.json").fixed.link;
 
 /**
  * The ATR links serve A and `abc`; the agreement URL answers 402 with the vector challenge unpaid, and the receipt once

@@ -1,4 +1,5 @@
 // The signing request as built, and the gate's EVM account form.
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { hash } from "@integraledger/lcp";
 import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
@@ -16,7 +17,7 @@ async function offer(): Promise<{ doc: PaymentRequired; fetch: Fetch; fetches: {
   const h = await hash(ATR);
   const doc = exactEip3009.advertise(
     { x402Version: 2, resource: { url: "https://api.seller.example/v1/quote" }, accepts: [O] },
-    h, `https://atr.seller.example/${h}`, O,
+    h, `https://atr.seller.example/${randomUUID()}`, O,
   ) as PaymentRequired;
   const fetches = { n: 0 };
   const fetch: Fetch = async () => { fetches.n++; return new Response(ATR, { status: 200 }); };

@@ -1,5 +1,6 @@
 // The agent tools' rows over raw JSON-RPC lines on stdio. The ATRs A and C, the document D, the signature S, the clock
 // and the account are the gate's rows in @integraledger/lcp's vectors/buyer.json; the protocol values are MCP's.
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
@@ -17,6 +18,8 @@ const vectors = (name: string) =>
   JSON.parse(readFileSync(new URL(`../node_modules/@integraledger/lcp/vectors/${name}`, import.meta.url), "utf8"));
 /** SHA-256 of `abc` (FIPS 180-2), the hash the MPP vectors advertise. */
 const H_ABC = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+/** The vectors' link and agreement URL for H_ABC, each a random token's path. */
+const ABC_FIXED: { link: string; agreementUrl: string } = vectors("mpp-challenge.json").fixed;
 const row = (name: string) => B.rows.find((r: { name: string }) => r.name === name);
 const fromHex = (h: string) => Uint8Array.from(Buffer.from(h.replace(/^0x/, ""), "hex"));
 const A = fromHex(B.fixed.A);
@@ -158,7 +161,7 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
       request: Buffer.from(JSON.stringify(f.request), "utf8").toString("base64url"),
       expires: f.expires,
     };
-    const doc = chargeHedera.advertise([issued] as never, H_ABC as never, `https://atr.seller.example/${H_ABC}`, issued as never);
+    const doc = chargeHedera.advertise([issued] as never, H_ABC as never, ABC_FIXED.link, issued as never);
     const abc = new TextEncoder().encode("abc");
     const inputs = { node: f.node, validStart: f.validStart, maxFee: f.maxFee, credentialType: "hash" };
     const confirmed = await confirm(doc, chargeHedera as never, `hedera:testnet:${f.payer}`, serving(abc), inputs);
@@ -182,13 +185,13 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
   it("atr_finish of a Lightning payment the node moved, answered with no preimage, keeps the answer as moved", async () => {
     const L = vectors("x402-exact-lnbtc.json");
     const abc = new TextEncoder().encode("abc");
-    const link = `https://atr.seller.example/${H_ABC}`;
+    const link = ABC_FIXED.link;
     const doc = exactLnbtc.advertise(
       { x402Version: 2, resource: L.fixed.resource, accepts: [L.fixed.O] },
       H_ABC as never,
       link,
       L.fixed.O,
-      `https://api.seller.example/agreement/${H_ABC}`,
+      ABC_FIXED.agreementUrl,
     );
     const account = `${L.fixed.O.network}:${L.fixed.payee}`;
     // The buyer's own request: x402's lnbtc example, GET of the vector's resource with an empty body.
@@ -245,7 +248,7 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
     const h = "0xa8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89";
     const doc = structuredClone(D);
     doc.extensions.legalContext.info.value = h;
-    doc.extensions.legalContext.info.legalContextUrl = `https://atr.seller.example/${h}`;
+    doc.extensions.legalContext.info.legalContextUrl = `https://atr.seller.example/${randomUUID()}`;
     const c = connect({ fetch: serving(Uint8Array.of(0xff)) });
     const m = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: doc, account: ACCOUNT });
     results.push(m);
@@ -264,7 +267,7 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
       request: Buffer.from(V.fixed.R_E, "utf8").toString("base64url"),
       expires: V.fixed.expires,
     };
-    const document = evmAuthorization.advertise([issued] as never, H_ABC, `https://atr.seller.example/${H_ABC}`, issued as never);
+    const document = evmAuthorization.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never);
     const c = connect({ fetch: serving(new TextEncoder().encode("abc")) });
     const pairing = "mpp/charge/evm/authorization";
     const account = `eip155:84532:${Z.fixed.payer}`;
@@ -292,7 +295,7 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
       request: Buffer.from(G.M5.requestJson, "utf8").toString("base64url"),
       expires: f.expires,
     };
-    const document = chargeUsdcGateway.advertise([issued] as never, H_ABC, `https://atr.seller.example/${H_ABC}`, issued as never);
+    const document = chargeUsdcGateway.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never);
     const pairing = "mpp/charge/usdc/gateway";
     const preimage = { id: f.MV1, realm: f.realm, requestHash: G.M5.expectRequestHash, recipient: G.M5.saltInput.recipient };
     const c = connect({ fetch: serving(new TextEncoder().encode("abc")) });
@@ -329,7 +332,7 @@ describe("the MCP server over stdio", { timeout: 60_000 }, () => {
     const E = vectors("x402-exact-eip155-erc7710.json");
     const AG = B.fixed.agreement;
     const H: string = row("B1").expect.h;
-    const link = `https://atr.seller.example/${H}`;
+    const link: string = B.fixed.link;
     const pairing = "x402/exact/eip155/erc7710";
     const binding = BINDINGS.find((b) => b.id === pairing) as unknown as {
       advertise(d: object, h: string, l: string, o: object, agreementUrl: string): object;

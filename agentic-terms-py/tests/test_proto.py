@@ -788,7 +788,7 @@ def test_ap2_checkout_mandate_a_non_https_link_gives_one_code_on_read_and_bound(
         return json.dumps(value, separators=(",", ":")).encode("utf-8")
 
     hx = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-    context = {"type": "sha256", "value": hx, "legalContextUrl": f"http://atr.seller.example/{hx}"}
+    context = {"type": "sha256", "value": hx, "legalContextUrl": LINK.replace("https://", "http://", 1)}
     signature = "A" * 86
     jwt_header = b64u(compact({"alg": "ES256", "typ": "JWT"}))
     j = f"{jwt_header}.{b64u(compact({'id': 'chk_2', 'legalContext': context}))}.{signature}"
