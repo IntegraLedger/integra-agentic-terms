@@ -68,7 +68,7 @@ the gate itself writes:
 
 | Detail | Meaning |
 | --- | --- |
-| `<protocol>/no-payable-option` | No option or challenge serves the signer's account. An MPP challenge the protocol package's checks refuse serves none, whatever their refusal code. |
+| `<protocol>/no-payable-option` | No option or challenge serves the signer's account. When `transact` or `confirm` chooses among MPP challenges, one the protocol package's checks refuse serves none, whatever their refusal code; `within` reads the challenge that names the held channel, and declines its faults `offer-unreadable`. |
 | `<protocol>/input-missing` | A value the build reads from `inputs` is absent or of the wrong form. See [rails](../guides/rails.md). |
 | `<protocol>/input-malformed` | `transact`'s or `agree`'s options, or a session's inputs, are malformed, the `inputs` given to `confirm`, `agree` or `within` are not an object, the `account` of the signer or agreement signer given to `transact` or `agree` is not a string, or a Solana refund value, or a Solana refund's `paymentResponse` or its `errorReason`, is given in another form. See [refunds](../guides/channels-and-sessions.md#refunds-and-closing). |
 | `<protocol>/choice-malformed` | The `chosen` handed to `finish` does not carry the choice the pairing built from. |
