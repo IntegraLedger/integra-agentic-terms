@@ -241,6 +241,48 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
       expect(code(recordCharge(at500, "499"))).toBe("offer-unreadable");
     }));
 
+  // A hold not of the form the channels guide states (an object whose pairing, network, channel, h, atr, charged and
+  // signedMax are strings, charged and signedMax decimals, and whose opening is an object) is a counterparty's data,
+  // not a programming error: within and recordCharge decline it, never throwing, and within calls no signer.
+  it("a hold of another form: within and recordCharge decline signed-not-bound, the hold malformed, 0 signer calls", () =>
+    at(E.now, async () => {
+      const { hold } = await evmHold();
+      const without = (k: string): unknown => Object.fromEntries(Object.entries(hold).filter(([m]) => m !== k));
+      const members = ["pairing", "network", "channel", "h", "atr", "charged", "signedMax"];
+      const malformed: [string, unknown][] = [
+        ["null", null],
+        ["undefined", undefined],
+        ["an array", [hold]],
+        ["its JSON text", JSON.stringify(hold)],
+        ["a number", 0],
+        ...members.flatMap((k): [string, unknown][] => [
+          [`no ${k}`, without(k)],
+          [`${k} a number`, { ...hold, [k]: 1 }],
+          [`${k} null`, { ...hold, [k]: null }],
+        ]),
+        ...["charged", "signedMax"].flatMap((k) =>
+          ["", "-1", "1e3", "1.5", "0x10", " 1"].map((v): [string, unknown] => [`${k} ${JSON.stringify(v)}`, { ...hold, [k]: v }]),
+        ),
+        ["no opening", without("opening")],
+        ["an opening of null", { ...hold, opening: null }],
+        ["an opening that is an array", { ...hold, opening: [hold.opening] }],
+        ["an opening that is its JSON text", { ...hold, opening: JSON.stringify(hold.opening) }],
+      ];
+      const expected = { code: "signed-not-bound", detail: "The channel hold is malformed." };
+      for (const [name, value] of malformed) {
+        const signer = counting(evmAccount, evmAnswer);
+        const out = await within(evmDoc, value as ChannelHold, batchEvm, signer);
+        expect(isDeclined(out) && out.decline, name).toEqual(expected);
+        expect(signer.requests.length, name).toBe(0);
+        const recorded = recordCharge(value as ChannelHold, "0");
+        expect(isDeclined(recorded) && recorded.decline, name).toEqual(expected);
+      }
+      const signer = counting(evmAccount, evmAnswer);
+      unwrap(await within(evmDoc, hold, batchEvm, signer));
+      expect(signer.requests.length).toBe(1);
+      expect(unwrap(recordCharge(hold, "0")).charged).toBe("0");
+    }));
+
   describe("plant: a voucher is signed only under the held agreement", () => {
     it("a within challenge advertising H′, another ATR's hash: hash-mismatch, 0 signer calls", () =>
       at(E.now, async () => {

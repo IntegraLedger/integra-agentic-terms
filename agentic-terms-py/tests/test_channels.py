@@ -221,6 +221,46 @@ def test_record_charge_between_the_recorded_charge_and_the_largest_signed() -> N
     assert code(record_charge(at500, "499")) == "offer-unreadable"
 
 
+def malformed_holds(hold: ChannelHold) -> list[tuple[str, Any]]:
+    """Holds not of the form the channels guide states: a mapping whose pairing, network, channel, h, atr, charged and
+    signedMax are strings, charged and signedMax decimals, and whose opening is a mapping."""
+
+    def without(member: str) -> dict[str, Any]:
+        return {k: v for k, v in hold.items() if k != member}
+
+    members = ["pairing", "network", "channel", "h", "atr", "charged", "signedMax"]
+    return [
+        ("None", None),
+        ("a list", [hold]),
+        ("its JSON text", json.dumps(hold)),
+        ("a number", 0),
+        *[(f"no {k}", without(k)) for k in members],
+        *[(f"{k} a number", {**hold, k: 1}) for k in members],
+        *[(f"{k} None", {**hold, k: None}) for k in members],
+        *[(f"{k} {v!r}", {**hold, k: v}) for k in ("charged", "signedMax") for v in ("", "-1", "1e3", "1.5", "0x10", " 1")],
+        ("no opening", without("opening")),
+        ("an opening of None", {**hold, "opening": None}),
+        ("an opening that is a list", {**hold, "opening": [hold["opening"]]}),
+        ("an opening that is its JSON text", {**hold, "opening": json.dumps(hold["opening"])}),
+    ]
+
+
+def test_a_hold_of_another_form_is_declined_by_within_and_record_charge() -> None:
+    # A malformed hold is a counterparty's data, not a programming error: within and record_charge decline it, never
+    # raising, and within calls no signer.
+    hold, _ = evm_hold()
+    expected = Declined("signed-not-bound", "The channel hold is malformed.")
+    for name, value in malformed_holds(hold):
+        s = signer()
+        assert run_within(value, s=s) == expected, name
+        assert s.requests == [], name
+        assert record_charge(value, "0") == expected, name
+    s = signer()
+    assert isinstance(run_within(hold, s=s), Within)
+    assert len(s.requests) == 1
+    assert unwrap(record_charge(hold, "0"))["charged"] == "0"
+
+
 # ── plant: a voucher is signed only under the held agreement.
 
 
