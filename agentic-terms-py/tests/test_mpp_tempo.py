@@ -218,16 +218,29 @@ def test_mpp_charge_tempo_memo_chain_rows_are_read() -> None:
 @pytest.mark.parametrize("row", MEMO_REFUSALS, ids=[r["case"] for r in MEMO_REFUSALS])
 def test_mpp_charge_tempo_memo_a_transaction_for_another_chain_is_refused(row: dict[str, Any]) -> None:
     """The vector file's chain rows: MV7's wire T with its chain id, its first field, the row's transactionChainId,
-    presented against C_T placed at position 0, as MV7's is. draft-tempo-charge-00 binds the transaction to the
-    challenge's chainId, 42431 where it names none."""
+    presented against C_T placed at position 0, as MV7's is, and given to the complete of build's answer for that
+    challenge. draft-tempo-charge-00 binds the transaction to the challenge's chainId, 42431 where it names none. bound
+    and complete refuse it with the row's code."""
+    assert set(row) <= {"case", "transactionChainId", "expect"}, row["case"]
     presented = next(r for r in MEMO["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
     call = {"to": MEMO["fixed"]["pathUSD"], "data": MEMO["MV7"]["expectCalldata"]}
     valid_before = int(datetime.fromisoformat(presented["challenge"]["expires"]).timestamp())
     assert tempo_wire([call], 42431, valid_before) == presented["payload"]["signature"]
     assert MPP_CHARGE_TEMPO_MEMO.bound(copy.deepcopy(presented)) == H
+    unsigned = MPP_CHARGE_TEMPO_MEMO.build({"challenge": copy.deepcopy(presented["challenge"]), "from": MEMO["fixed"]["payer"]}, H)
+    assert not isinstance(unsigned, Refusal), unsigned
+    assert unsigned.complete(presented["payload"]["signature"]) == presented
     wire = tempo_wire([call], row["transactionChainId"], valid_before)
     other = {**copy.deepcopy(presented), "payload": {"type": "transaction", "signature": wire}}
     assert MPP_CHARGE_TEMPO_MEMO.bound(other) == Refusal(row["expect"])
+    assert unsigned.complete(wire) == Refusal(row["expect"])
+    # "0x76", the type byte with no RLP list after it, and "0x", no bytes at all, decode as no Tempo transaction
+    # (viem's tempo Transaction.deserialize reads neither): complete refuses each with tempo/tx-malformed, the code bound
+    # gives the credential that carries it.
+    for undecodable in ("0x76", "0x"):
+        assert unsigned.complete(undecodable) == Refusal("tempo/tx-malformed"), undecodable
+        carried = {**copy.deepcopy(presented), "payload": {"type": "transaction", "signature": undecodable}}
+        assert MPP_CHARGE_TEMPO_MEMO.bound(carried) == Refusal("tempo/tx-malformed"), undecodable
 
 
 @pytest.mark.parametrize("row", MEMO_REFUSALS, ids=[f"signed for {r['transactionChainId']}" for r in MEMO_REFUSALS])
@@ -235,6 +248,7 @@ def test_mpp_charge_tempo_memo_a_challenge_naming_no_chain_is_paid_on_42431(row:
     """The vector file's chain rows, under C_T without methodDetails.chainId: draft-tempo-charge-00 has the payer sign
     for 42431 where the challenge names no chain. MV7's wire T, signed for 42431, binds H, and the same T signed for
     the row's transactionChainId is the row's refusal."""
+    assert set(row) <= {"case", "transactionChainId", "expect"}, row["case"]
     presented = next(r for r in MEMO["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
     raw = b64u_decode(presented["challenge"]["request"])
     assert raw is not None

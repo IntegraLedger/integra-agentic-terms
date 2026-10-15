@@ -16,6 +16,7 @@ from integraledger_terms import (
     Refusal,
 )
 from integraledger_terms.bindings._codec import b64u_decode
+from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
 from integraledger_terms.bindings.mpp_session import session_resume
 from integraledger_terms.bindings._mpp import (
     attribution_memo,
@@ -302,6 +303,28 @@ def test_a_charge_build_refuses_an_h_its_challenge_id_does_not_derive_from() -> 
             assert (name, h, binding.build(_choice(name), h)) == (name, h, expect)
 
 
+def _tempo_wire_of(size: int) -> str:
+    """A 0x76 transaction of exactly size bytes on C_T's chain, which memo's complete decodes as bound does: the memo
+    build's call, then one more call to C_T's currency whose input is zero bytes enough to reach size, in
+    rlp([chainId, 1, 2, 100000, calls, [], 0, 0, validBefore, "", currency, "", [], 0x11 × 65])."""
+    request = _built("memo").request
+    calls = [request["call"]["to"], request["call"]["data"]]
+
+    def wire(n: int) -> bytes:
+        both = [(calls[0], calls[1]), (calls[0], "0x" + "00" * n)]
+        call_list = rlp_list([rlp_list([rlp_bytes(bytes.fromhex(t[2:])), rlp_uint_bytes(0), rlp_bytes(bytes.fromhex(d[2:]))]) for t, d in both])
+        fields = [rlp_uint_bytes(request["chainId"]), rlp_uint_bytes(1), rlp_uint_bytes(2), rlp_uint_bytes(100000), call_list, rlp_list([]),
+                  rlp_uint_bytes(0), rlp_uint_bytes(0), rlp_uint_bytes(request["validBefore"]), rlp_bytes(b""),
+                  rlp_bytes(bytes.fromhex(calls[0][2:])), rlp_bytes(b""), rlp_list([]), rlp_bytes(b"\x11" * 65)]  # fmt: skip
+        return b"\x76" + rlp_list(fields)
+
+    for n in range(size - len(wire(0)) - 8, size):
+        w = wire(n)
+        if len(w) == size:
+            return "0x" + w.hex()
+    raise AssertionError(f"no padding gives {size} bytes")
+
+
 def test_a_charge_complete_refuses_an_answer_past_its_bound() -> None:
     """mpp-challenge.json's agreedRefusals row for complete with a signature outside 1 to 8192 bytes, a transaction hash
     not 32 bytes, or a signed transaction over 64 KiB: an answer at each bound completes, and one past it is the row's
@@ -309,7 +332,7 @@ def test_a_charge_complete_refuses_an_answer_past_its_bound() -> None:
     expect = refused(_agreed("complete with a signature outside 1 to 8192 bytes"))
     wire, over = "0x" + "11" * 65_536, "0x" + "11" * 65_537
     at_bound = [("authorization", "0x11"), ("authorization", "0x" + "11" * 8192), ("hash", H), ("push", H),
-                ("transaction", wire), ("memo", wire)]  # fmt: skip
+                ("transaction", wire), ("memo", _tempo_wire_of(65_536))]  # fmt: skip
     past = [("authorization", "0x"), ("authorization", "0x" + "11" * 8193), ("hash", "0x" + "11" * 31),
             ("push", "0x" + "11" * 33), ("transaction", over), ("memo", over)]  # fmt: skip
     for name, answer in at_bound:

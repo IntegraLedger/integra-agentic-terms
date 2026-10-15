@@ -41,7 +41,11 @@ _HEX_EVEN = re.compile(r"0x[0-9a-fA-F]*")
 def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     """Without splits, a tempo-call: the one transferWithMemo of amount, carrying the attribution memo. With splits,
     tempo-calls: that call for amount less the splits, then one call per split in array order, transferWithMemo where
-    the split names a memo and transfer otherwise, all on currency. The pairing's filter has read the splits."""
+    the split names a memo and transfer otherwise, all on currency. The pairing's filter has read the splits. On push,
+    complete takes the transaction hash; on memo, the signed transaction, read as bound reads it: one that is not hex
+    bytes, or is over 64 KiB, is mpp/credential-malformed; one that does not decode, an empty one among them, gives
+    decode_tempo_tx's refusal, tempo/tx-malformed; and one signed for a chain other than the request's chainId is
+    tempo/tx-malformed."""
     o = offer_for(choice, h, pairing)
     if isinstance(o, Refusal):
         return o
@@ -76,8 +80,13 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
             if normal_hash(signed_or_hash) is None:
                 return Refusal("mpp/credential-malformed")
             return {"challenge": challenge, "source": source, "payload": {"type": "hash", "hash": signed_or_hash}}
-        if not is_hex_bytes(signed_or_hash, 1, MAX_WIRE_BYTES):
+        if not is_hex_bytes(signed_or_hash, 0, MAX_WIRE_BYTES):
             return Refusal("mpp/credential-malformed")
+        tx = decode_tempo_tx(bytes.fromhex(signed_or_hash[2:]))
+        if isinstance(tx, Refusal):
+            return tx
+        if tx.chain_id != chain_id:
+            return Refusal("tempo/tx-malformed")
         return {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
 
     shared = {"chainId": chain_id, "validBefore": valid_before, "broadcast": broadcast}

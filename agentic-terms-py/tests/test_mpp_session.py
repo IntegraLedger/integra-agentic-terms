@@ -245,16 +245,30 @@ class TempoAnswer:
         return sign_typed(request["typedData"])
 
 
+VOUCHER_SIGNATURE = "0x" + "66" * 65  # a test value: build's complete reads its length only
+
+
+def tempo_built(request_text: str, payer: str = TF["payer"]) -> Any:
+    """The binding's build for a challenge of request_text and payer."""
+    unsigned = MPP_SESSION_TEMPO.build(
+        {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": payer, "deposit": int(TF["deposit"])}, H
+    )
+    assert not isinstance(unsigned, Refusal), unsigned
+    return unsigned
+
+
+def carrying(opening: dict[str, Any], wire: str) -> dict[str, Any]:
+    """The opening, carrying wire in place of its transaction."""
+    return {**opening, "payload": {**opening["payload"], "transaction": wire}}
+
+
 def tempo_opening(
     request_text: str, chain: int, signature: Any = None, payer: str = TF["payer"], dirty: int | None = None
 ) -> dict[str, Any]:
     """The opening the binding's build writes for a challenge of request_text and payer, completed with its open call
     in a transaction of TS2's other fields for chain, signed with fixed.payerKey or as signature gives, and the payer's
     voucher. With dirty, the open call's argument word of that index has a non-zero first byte."""
-    unsigned = MPP_SESSION_TEMPO.build(
-        {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": payer, "deposit": int(TF["deposit"])}, H
-    )
-    assert not isinstance(unsigned, Refusal), unsigned
+    unsigned = tempo_built(request_text, payer)
     call = unsigned.funding["call"]
     if dirty is not None:
         at = 10 + 64 * dirty
@@ -275,15 +289,40 @@ def voucher_within(opening: dict[str, Any]) -> Any:
 
 def test_mpp_session_tempo_rows_whose_transaction_is_for_another_chain() -> None:
     # mpp-session-tempo.json's agreedRefusals rows with transactionChainId (draft-tempo-session-00 L315-316, L356-357
-    # and L1227-1228, as the rows' about cites them): the transaction is signed for the challenge's chain.
+    # and L1227-1228, as the rows' about cites them): the transaction is signed for the challenge's chain. build's
+    # voucher and complete refuse a transaction signed for the row's chain with the row's code, and bound and
+    # build_within refuse it in the credential complete gives for the transaction signed for the challenge's chain.
     rows = [r for r in TEMPO["agreedRefusals"]["rows"] if "transactionChainId" in r]
     assert rows
     for row in rows:
         request_text = TF["requestV1"] if row.get("sessionProtocol") == "v1" else TF["requestV2"]
-        assert MPP_SESSION_TEMPO.bound(tempo_opening(request_text, TF["chainId"])) == H
-        opening = tempo_opening(request_text, row["transactionChainId"])
-        assert MPP_SESSION_TEMPO.bound(opening) == Refusal(row["expect"]), row["case"]
-        assert voucher_within(opening) == Refusal(row["expect"]), row["case"]
+        unsigned = tempo_built(request_text)
+        own = unsigned.complete(open_wire({**unsigned.funding, "chainId": TF["chainId"]}), VOUCHER_SIGNATURE)
+        assert MPP_SESSION_TEMPO.bound(own) == H, row["case"]
+        other = open_wire({**unsigned.funding, "chainId": row["transactionChainId"]})
+        refused = Refusal(row["expect"])
+        assert unsigned.voucher(other) == refused, row["case"]
+        assert unsigned.complete(other, VOUCHER_SIGNATURE) == refused, row["case"]
+        assert MPP_SESSION_TEMPO.bound(carrying(own, other)) == refused, row["case"]
+        assert voucher_within(carrying(own, other)) == refused, row["case"]
+        # "0x76", the type byte with no RLP list after it, and "0x", no bytes at all, decode as no Tempo transaction
+        # (viem's tempo Transaction.deserialize reads neither): voucher and complete refuse each with
+        # tempo/tx-malformed, the code bound gives the credential that carries it.
+        for undecodable in ("0x76", "0x"):
+            assert unsigned.voucher(undecodable) == Refusal("tempo/tx-malformed"), undecodable
+            assert unsigned.complete(undecodable, VOUCHER_SIGNATURE) == Refusal("tempo/tx-malformed"), undecodable
+            assert MPP_SESSION_TEMPO.bound(carrying(own, undecodable)) == Refusal("tempo/tx-malformed"), undecodable
+    # A v1 challenge naming no chainId is on 4217 (draft-tempo-session-00 L613): a transaction signed for 42431 is
+    # refused by complete, and by bound in the credential complete gives for the one signed for 4217.
+    bare = json.loads(TF["requestV1"])
+    del bare["methodDetails"]["chainId"]
+    unsigned = tempo_built(json.dumps(bare))
+    assert unsigned.funding["chainId"] == 4217
+    on_default = unsigned.complete(open_wire(unsigned.funding), VOUCHER_SIGNATURE)
+    assert MPP_SESSION_TEMPO.bound(on_default) == H
+    off = open_wire({**unsigned.funding, "chainId": 42431})
+    assert unsigned.complete(off, VOUCHER_SIGNATURE) == Refusal("tempo/tx-malformed")
+    assert MPP_SESSION_TEMPO.bound(carrying(on_default, off)) == Refusal("tempo/tx-malformed")
 
 
 OPERATOR = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"  # the published Anvil key #2's address, a test value

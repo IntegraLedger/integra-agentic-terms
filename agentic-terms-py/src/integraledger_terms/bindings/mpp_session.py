@@ -656,6 +656,11 @@ def _tempo_bound(presented: Any) -> AtrHash | Refusal:
 
 
 def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
+    """The open call for the buyer's signer, and the voucher and credential of the signed transaction. That
+    transaction is read as bound reads it: one that is not hex bytes, or is over 64 KiB, is mpp/credential-malformed;
+    one that does not decode, an empty one among them, gives decode_tempo_tx's refusal, tempo/tx-malformed; and one
+    signed for a chain other than the challenge's, methodDetails.chainId, is tempo/tx-malformed. The sender is not
+    compared with the buyer's from, nor the transaction's calls with the open call: bound reads those."""
     o = offer_for(choice, h, SESSION_TEMPO)
     if isinstance(o, Refusal):
         return o
@@ -691,9 +696,14 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     source = f"did:pkh:eip155:{p.chain_id}:{from_}"
 
     def opened(signed_tx: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(signed_tx, 1, MAX_WIRE):
+        if not is_hex_bytes(signed_tx, 0, MAX_WIRE):
             return Refusal("mpp/credential-malformed")
         wire = bytes.fromhex(signed_tx[2:])
+        tx = decode_tempo_tx(wire)
+        if isinstance(tx, Refusal):
+            return tx
+        if tx.chain_id != p.chain_id:
+            return Refusal("tempo/tx-malformed")
         if p.version == "v1":
             channel_id = evm_channel_id(from_, recipient, currency, salt, signer, p.escrow, p.chain_id)
             return channel_id if isinstance(channel_id, Refusal) else {"channelId": channel_id}
