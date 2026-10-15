@@ -850,19 +850,18 @@ def test_ap2_checkout_mandate_b16_unnamed_buyer() -> None:
 
 
 def test_ap2_checkout_mandate_v4_build() -> None:
-    binding: Any = AP2_CHECKOUT_MANDATE
-    read = binding.read(AP2_J)
+    read = AP2_CHECKOUT_MANDATE.read(AP2_J)
     assert isinstance(read, Advertised)
     assert {"h": read.h, "link": read.link, "checkout": read.offer["checkout"]} == AP2["V2"]["expectRead"]
     assert read.offer["checkoutJwt"] == AP2_J
-    unsigned = binding.build(read.offer, AP2_F["H"])
+    unsigned = AP2_CHECKOUT_MANDATE.build(read.offer, AP2_F["H"])
     assert unsigned.content == {
         "vct": AP2["V4"]["expectVct"],
         "checkout_jwt": AP2_J,
         "checkout_hash": AP2["V4"]["expectCheckoutHash"],
     }
     assert unsigned.complete(AP2_M) == {"checkout_mandate": AP2_M, "checkout_jwt": AP2_J}
-    assert binding.build(read.offer, AP2["V4"]["otherHash"]) == refusal(AP2["V4"]["otherHashExpect"])
+    assert AP2_CHECKOUT_MANDATE.build(read.offer, AP2["V4"]["otherHash"]) == refusal(AP2["V4"]["otherHashExpect"])
 
 
 def test_ap2_checkout_mandate_v5_bound() -> None:
@@ -1095,8 +1094,7 @@ def test_ucp_v4_bound_build_and_complete() -> None:
     signed = _signed_by(UCP["V2"]["expectCheckout"])
     r = UCP_CHECKOUT_AP2_MANDATE.read(signed)
     assert isinstance(r, Advertised)
-    binding: Any = UCP_CHECKOUT_AP2_MANDATE
-    unsigned = binding.build(r.offer, UCP_F["H"])
+    unsigned = UCP_CHECKOUT_AP2_MANDATE.build(r.offer, UCP_F["H"])
     assert unsigned.checkout is signed
     assert unsigned.complete(m) == presented
 
@@ -1210,18 +1208,17 @@ def test_acp_v2_read() -> None:
 
 def test_acp_v4_build_complete_and_bound() -> None:
     v4 = ACP["V4"]
-    binding: Any = ACP_CHECKOUT_DELEGATED
-    unsigned = binding.build(v4["choice"], v4["h"])
+    unsigned = ACP_CHECKOUT_DELEGATED.build(v4["choice"], v4["h"])
     assert unsigned.allowance == v4["expectAllowance"]
     assert list(unsigned.allowance) == list(v4["expectAllowance"])
     request = {"allowance": unsigned.allowance, "payment_method": {"type": "card"}}
     assert unsigned.complete(request) is request
-    assert binding.bound(request) == v4["expectBound"]
+    assert ACP_CHECKOUT_DELEGATED.bound(request) == v4["expectBound"]
     changed = {**request, "allowance": {**unsigned.allowance, "checkout_session_id": v4["changedSessionId"]["checkout_session_id"]}}
     assert unsigned.complete(changed) == refusal(v4["changedSessionId"]["expect"])
-    upper = binding.build({**v4["choice"], "currency": v4["upperCurrency"]["currency"]}, v4["h"])
+    upper = ACP_CHECKOUT_DELEGATED.build({**v4["choice"], "currency": v4["upperCurrency"]["currency"]}, v4["h"])
     assert upper == refusal(v4["upperCurrency"]["expect"])
-    given = binding.build(v4["choice"], v4["h"])
+    given = ACP_CHECKOUT_DELEGATED.build(v4["choice"], v4["h"])
     given.allowance["checkout_session_id"] = ACP_F["otherH"]
     assert given.complete({"allowance": given.allowance}) == refusal(v4["changedSessionId"]["expect"])
 

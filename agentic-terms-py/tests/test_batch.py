@@ -207,11 +207,13 @@ CALLS = {"build": "build", "buildWithin": "build_within"}
 def test_a_choice_that_is_not_an_object_is_not_v2() -> None:
     """The EVM build and build_within, and the Cloudflare build, answer x402/not-v2 before they read the choice, as
     @integraledger/lcp's evmBuild, evmBuildWithin and cfBuild do."""
-    evm: Any = X402_BATCH_SETTLEMENT_EIP155
-    cloudflare: Any = X402_BATCH_SETTLEMENT_CLOUDFLARE
     values: list[Any] = [None, "x", [], 42]
     for value in values:
-        for call in (evm.build, evm.build_within, cloudflare.build):
+        for call in (
+            X402_BATCH_SETTLEMENT_EIP155.build,
+            X402_BATCH_SETTLEMENT_EIP155.build_within,
+            X402_BATCH_SETTLEMENT_CLOUDFLARE.build,
+        ):
             assert call(value, H) == Refusal("x402/not-v2"), (call, value)
 
 

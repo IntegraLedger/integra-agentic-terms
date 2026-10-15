@@ -287,8 +287,7 @@ def echoed(placed: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
 def test_mpp_session_lightning_bound_and_build_read_the_named_network_alike(case: str, details: object, expected: str) -> None:
     challenge = echoed(challenge_with(MAINNET_INVOICE), {**S["S1"]["request"], "methodDetails": details})
     assert MPP_SESSION_LIGHTNING.bound({"challenge": challenge, "payload": OPEN}) == Refusal(expected)
-    binding: Any = MPP_SESSION_LIGHTNING
-    assert binding.build({"challenge": challenge, **SESSION_INPUTS}, H) == Refusal(expected)
+    assert MPP_SESSION_LIGHTNING.build({"challenge": challenge, **SESSION_INPUTS}, H) == Refusal(expected)
 
 
 def test_mpp_session_lightning_a_regtest_invoice_echoed_naming_regtest_binds_h() -> None:
@@ -313,8 +312,7 @@ def test_mpp_charge_lightning_bound_and_build_read_the_named_network_alike(case:
     request = {**C["L3"]["request"], "methodDetails": {**md, **details} if isinstance(details, dict) else details}
     challenge = echoed(charge_placed(), request)
     assert MPP_CHARGE_LIGHTNING.bound({"challenge": challenge, "payload": {"preimage": C["fixed"]["preimage"]}}) == Refusal(expected)
-    binding: Any = MPP_CHARGE_LIGHTNING
-    assert binding.build({"challenge": challenge}, H) == Refusal(expected)
+    assert MPP_CHARGE_LIGHTNING.build({"challenge": challenge}, H) == Refusal(expected)
 
 
 def test_mpp_charge_lightning_with_no_network_binds_h() -> None:
