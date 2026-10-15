@@ -166,7 +166,7 @@ describe("mpp/charge/usdc/stacks", () => {
   });
 
   // Each agreedRefusals row is M4's signed transaction with its payload replaced, presented as the credential's
-  // transaction: the pairing's bound refuses it with the row's code, the outcome @stacks/transactions 7.6.0 gives, and
+  // transaction: the pairing's bound refuses it with the row's code, the outcome stacks-core's own decoder gives, and
   // the gate's check declines it. The rows are selected by their input, and the file holds at least one.
   it("agreedRefusals: each row's transaction is refused with the row's code, and check declines it", async () => {
     const rows = ((V.agreedRefusals?.rows ?? []) as { case: string; wireHex?: unknown; expect: string }[]).filter(
