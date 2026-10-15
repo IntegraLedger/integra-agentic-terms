@@ -24,6 +24,9 @@ _UINT64_LIMIT = 1 << 64
 MAX_GROUP = 16
 MAX_ENTRY = 8192
 MAX_NOTE = 4096
+# A 64-byte signature that is not all zero bytes, which the encoding writes in full: the entry build checks is as long
+# as any complete writes.
+FULL_SIGNATURE = bytes([1]) * 64
 MAX_TXN_LIFE = 1000
 
 
@@ -90,7 +93,21 @@ def carrier(payload: object) -> Carried | Refusal:
     index = safe_int(payload.get("paymentIndex"))
     if index is None or index < 0 or index >= len(group):
         return Refusal("avm/index-out-of-range")
-    entry = group[index]
+    txn = _payment_entry(group[index])
+    if isinstance(txn, Refusal):
+        return txn
+    try:
+        note = txn.note.decode("utf-8")
+    except UnicodeDecodeError:
+        return Refusal("avm/note-not-lcp")
+    h = from_lcp_string(note)
+    return Refusal("avm/note-not-lcp") if h is None else Carried(h)
+
+
+def _payment_entry(entry: object) -> _algorand.SignedRead | Refusal:
+    """One payment entry as carrier reads it: base64 of at most MAX_ENTRY characters, read by _algorand.read_signed,
+    with a note of at most MAX_NOTE bytes. An entry algod reads as another transaction type is avm/not-axfer; any other
+    entry outside these bounds is avm/txn-malformed."""
     if not isinstance(entry, str) or len(entry) > MAX_ENTRY:
         return Refusal("avm/txn-malformed")
     data = b64_decode(entry)
@@ -104,12 +121,7 @@ def carrier(payload: object) -> Carried | Refusal:
         return Refusal("avm/not-axfer")
     if len(txn.note) > MAX_NOTE:
         return Refusal("avm/txn-malformed")
-    try:
-        note = txn.note.decode("utf-8")
-    except UnicodeDecodeError:
-        return Refusal("avm/note-not-lcp")
-    h = from_lcp_string(note)
-    return Refusal("avm/note-not-lcp") if h is None else Carried(h)
+    return txn
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +159,9 @@ class X402ExactAlgorand:
         option names a fee payer. The suggested parameters' genesis id is written as each transaction's gen, a msgpack
         string, so one holding a lone surrogate, which UTF-8 cannot encode, is avm/option-malformed, checked before the
         genesis hash; any other genesis id, a leading byte-order mark included, is written as given. The payment entry
-        is read as carrier reads it, so build writes no payment bound refuses."""
+        is read as carrier reads it, with a 64-byte signature in place, as complete writes it, so build writes no
+        payment bound refuses: an entry carrier would refuse, one whose base64 is longer than 8,192 characters included,
+        is avm/option-malformed."""
         if not is_object(choice):
             return Refusal("avm/option-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
@@ -209,10 +223,10 @@ class X402ExactAlgorand:
                     txn.group = grp
                 index = 1
             to_sign = group[index].bytes_to_sign()
-            payment = _algorand.read_signed(group[index].signed(None))
+            signed = group[index].signed(FULL_SIGNATURE)
         except (ValueError, TypeError, OverflowError, _algorand.Malformed):
             return Refusal("avm/option-malformed")
-        if not isinstance(payment, _algorand.SignedRead):
+        if isinstance(_payment_entry(b64_encode(signed)), Refusal):
             return Refusal("avm/option-malformed")
         return AvmUnsigned(
             request={"kind": "algorand-txn", "bytes": to_sign},

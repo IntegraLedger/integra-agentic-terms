@@ -634,6 +634,19 @@ def test_x402_exact_algorand_build_rows() -> None:
         assert X402_EXACT_ALGORAND.bound(presented(payment["payload"])) == row["expectBound"], row["case"]
 
 
+def test_x402_exact_algorand_build_refuses_a_payment_entry_longer_than_carrier_reads() -> None:
+    """build reads the payment entry as complete writes it, with a 64-byte signature in place, so it writes no payment
+    bound refuses. With the file's fee payer, a genesis id of 5,780 x gives an entry of 8,192 base64 characters, which
+    builds and is bound; 5,781 x gives 8,196 and is avm/option-malformed, as lcp's build.rows[4] holds."""
+    unsigned = build_with("x" * 5780)
+    assert isinstance(unsigned, AvmUnsigned) and len(unsigned._group) == 2
+    payment = unsigned.complete(bytes.fromhex(F["signature"]))
+    assert isinstance(payment, dict)
+    assert len(payment["payload"]["paymentGroup"][unsigned._index]) == 8192
+    assert X402_EXACT_ALGORAND.bound(presented(payment["payload"])) == H
+    assert build_with("x" * 5781) == Refusal("avm/option-malformed")
+
+
 def test_x402_exact_algorand_v3_presented_options_are_bound_without_their_amount_or_timeout() -> None:
     """V2's payment under each V3.presentedOptions option, whose amount or timeout no build could use: bound reads the
     signed transaction and gives the row's expectBound, while read serves no such option and build refuses it, as lcp's
