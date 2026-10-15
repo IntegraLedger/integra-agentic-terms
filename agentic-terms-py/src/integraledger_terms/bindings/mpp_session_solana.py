@@ -155,19 +155,25 @@ def open_signer(tx: SvmTx, program: object) -> str | Refusal:
 def _kind(presented: object) -> ChannelKind | Refusal:
     """The kind of a Solana session payment by its action, read against the echoed challenge's voucherSigner (client
     when absent), as draft-solana-session-00 says: a voucher authorizes service only for client, and in operator mode
-    does not authenticate the caller; a use is valid only for operator. A voucher whose challenge names operator, or a
-    use whose challenge names client or no voucherSigner, is mpp/session-action."""
+    does not authenticate the caller; a use is valid only for operator; a close carries voucher and no authentication
+    for client, and authentication and no voucher for operator. A voucher whose challenge names operator, or a use
+    whose challenge names client or no voucherSigner, is mpp/session-action; a close that lacks the member its mode
+    requires, or carries the one its mode forbids, is mpp/credential-malformed."""
     k = action_kind(presented, WITHIN_ACTIONS)
     if isinstance(k, Refusal):
         return k
     assert is_object(presented)
-    action = presented["payload"].get("action")
-    if action not in ("voucher", "use"):
+    payload = presented["payload"]
+    action = payload.get("action")
+    if action not in ("voucher", "use", "close"):
         return k
     details = echoed_details(presented, "solana")
     if isinstance(details, Refusal):
         return details
     operator = details.get("voucherSigner") == "operator"
+    if action == "close":
+        voucher, authenticated = "voucher" in payload, "authentication" in payload
+        return k if voucher != operator and authenticated == operator else Refusal("mpp/credential-malformed")
     return k if operator == (action == "use") else Refusal("mpp/session-action")
 
 
@@ -233,14 +239,14 @@ class MppSessionSolana:
         return o if isinstance(o, Refusal) else o.h
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
-        """open, close, or within for a topUp, a voucher under a client voucher signer, or a use under an operator
-        one."""
+        """open; close, carrying voucher under a client voucher signer and authentication under an operator one; or
+        within for a topUp, a voucher under a client voucher signer, or a use under an operator one."""
         return _kind(presented)
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The network and the payload's channelId, re-encoded from its 32 bytes; on a within or close payment, read
-        from the payment itself. A voucher whose challenge's voucherSigner is operator, and a use whose challenge's is
-        not, are refused as channel_kind refuses them."""
+        from the payment itself. A voucher whose challenge's voucherSigner is operator, a use whose challenge's is not,
+        and a close whose voucher and authentication are not its mode's, are refused as channel_kind refuses them."""
         kind = _kind(presented)
         if isinstance(kind, Refusal):
             return kind
@@ -266,8 +272,9 @@ class MppSessionSolana:
 
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
         """A use credential echoing the opening challenge, whose bearer proof names that challenge's id, gives its H.
-        A voucher or topUp signs no value holding H. A voucher whose challenge's voucherSigner is operator, and a use
-        whose challenge's is not, are refused as channel_kind refuses them."""
+        A voucher or topUp signs no value holding H. A voucher whose challenge's voucherSigner is operator, a use whose
+        challenge's is not, and a close whose voucher and authentication are not its mode's, are refused as
+        channel_kind refuses them."""
         credential = credential_of(presented)
         if isinstance(credential, Refusal):
             return credential

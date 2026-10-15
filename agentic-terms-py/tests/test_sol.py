@@ -1552,6 +1552,33 @@ def test_mpp_session_solana_a_voucher_is_within_under_client_and_a_use_under_ope
             assert got == expected[payload["action"]], (placed is operator, payload["action"])
 
 
+def test_mpp_session_solana_a_close_carries_its_voucher_signer_s_member() -> None:
+    # draft-solana-session-00 L1361-1362 at tempoxyz/mpp-specs 08e7dd87, as the session file's rows cite it: a close's
+    # voucher is REQUIRED for client and MUST be absent for operator, and its authentication the reverse.
+    under_client = session_agreed("a solana close without voucher or with authentication")
+    under_operator = session_agreed("a solana close with voucher or without authentication")
+    operator = operator_doc()[0]
+    voucher = {"voucher": {"channelId": SV["SV2"]["channel"], "cumulativeAmount": "100"}, "signer": SV["SV3"]["payer"], "signature": "x", "signatureType": "ed25519"}
+    for placed in (SV["SS1"]["solana"]["placed"], client_doc()[0], operator):
+        authentication = {**SV["SV5"]["expectAuthentication"], "challengeId": placed["id"], "signature": "x"}
+        forms = {
+            "voucher": {"voucher": voucher},
+            "authentication": {"authentication": authentication},
+            "both": {"voucher": voucher, "authentication": authentication},
+            "neither": {},
+        }
+        mode = "authentication" if placed is operator else "voucher"
+        for name, members in forms.items():
+            close = credential(placed, {"action": "close", "channelId": SV["SV2"]["channel"], **members})
+            if name == mode:
+                expected: tuple[Any, ...] = ("close", ChannelRef(DEVNET, SV["SV2"]["channel"]), Refusal("mpp/not-bound-within"))
+            else:
+                refused = Refusal(under_operator if placed is operator else under_client)
+                expected = (refused, refused, refused)
+            got = (MPP_SESSION_SOLANA.channel_kind(close), MPP_SESSION_SOLANA.channel_ref(close), MPP_SESSION_SOLANA.bound_within(close))
+            assert got == expected, (mode, name)
+
+
 def test_mpp_session_solana_without_operator_mode_the_open_alone_completes_the_credential() -> None:
     p = session_pairing()
     signer = Recording(p.account, session_answer)
