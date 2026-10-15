@@ -199,7 +199,7 @@ def test_x402_exact_near_strings_are_utf8() -> None:
     utf8 = with_sender("payer-é.testnet".encode("utf-8"))
     assert X402_EXACT_NEAR.bound(presented(base64.b64encode(utf8).decode())) == N["V2"]["expectBound"]
     decoded = decode_signed_delegate(utf8)
-    assert decoded is not None and decoded[0].sender_id == "payer-é.testnet"
+    assert not isinstance(decoded, str) and decoded[0].sender_id == "payer-é.testnet"
     assert encode_signed_delegate(*decoded) == utf8
 
 
@@ -244,16 +244,123 @@ def test_x402_exact_near_agreed_refusals_args_led_by_a_byte_order_mark() -> None
         assert X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"])) == Refusal(row["expect"]), row["case"]
 
 
+# The agreedRefusals rows whose code the file's about gives to the TypeScript implementation alone: the two recover rows
+# and the missing-peer row. The Python half has no recover, and decodes NEAR with no optional package.
+TYPESCRIPT_ONLY = {"near/unreadable", "near/no-relayer", "near/peer-missing"}
+
+
 def test_x402_exact_near_agreed_refusals() -> None:
-    for row in N["agreedRefusals"]["rows"]:
-        if "option" in row:
-            assert X402_EXACT_NEAR.build(near_choice(row["option"]), F["H"]) == Refusal(row["expect"]), row["case"]
-        elif "signedDelegateAction" in row:
-            assert X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"])) == Refusal(row["expect"]), row["case"]
-        elif "publicKey" in row:
-            assert X402_EXACT_NEAR.build(near_choice(publicKey=row["publicKey"]), F["H"]) == Refusal(row["expect"])
-        elif "signatureBytes" in row:
+    """Each agreedRefusals row through the functions its input names, every member read: an option through build, a
+    signedDelegateAction through near_carrier and bound, a publicKey through build, and signatureBytes zero bytes, the
+    last set to signatureLastByte when the row gives one, through complete. A row with no input is one of the
+    TypeScript implementation's alone; a row with any other set of members fails."""
+    from integraledger_terms.bindings.x402_exact_near import near_carrier
+
+    rows = N["agreedRefusals"]["rows"]
+    ran, left = 0, 0
+    for row in rows:
+        want = Refusal(row["expect"])
+        members = set(row) - {"case", "expect"}
+        got: object
+        if members == {"option"}:
+            got = X402_EXACT_NEAR.build(near_choice(row["option"]), F["H"])
+        elif members == {"signedDelegateAction"}:
+            assert near_carrier(row["signedDelegateAction"]) == want, row["case"]
+            got = X402_EXACT_NEAR.bound(presented(row["signedDelegateAction"]))
+        elif members == {"publicKey"}:
+            got = X402_EXACT_NEAR.build(near_choice(publicKey=row["publicKey"]), F["H"])
+        elif members in ({"signatureBytes"}, {"signatureBytes", "signatureLastByte"}):
             unsigned = X402_EXACT_NEAR.build(near_choice(), F["H"])
             assert not isinstance(unsigned, Refusal)
-            answer = {"keyType": 0, "bytes": bytes(row["signatureBytes"])}
-            assert unsigned.complete(answer) == Refusal(row["expect"])
+            data = bytearray(row["signatureBytes"])
+            if "signatureLastByte" in row:
+                data[-1] = row["signatureLastByte"]
+            got = unsigned.complete({"keyType": 0, "bytes": bytes(data)})
+        elif not members and row["expect"] in TYPESCRIPT_ONLY:
+            left += 1
+            continue
+        else:
+            pytest.fail(f"no runner for the agreedRefusals row {row['case']!r} with members {sorted(members)}")
+        assert got == want, row["case"]
+        ran += 1
+    assert (ran, left) == (len(rows) - len(TYPESCRIPT_ONLY), len(TYPESCRIPT_ONLY))
+
+
+def test_x402_exact_near_key_forms() -> None:
+    """keyForms: build reads each spelling of the payer's key that nearcore's PublicKey::from_str reads and gives the
+    row's expectRequestHash. The payment it completes is V2's signed delegate action under fixed.publicKey's key, signed
+    with the seed, or the secp256k1 vector's under its key, signed with its signature: each carries the key's type
+    byte and bytes, whatever the spelling, and bound reads V2's hash from it."""
+    rows = N["keyForms"]["rows"]
+    assert rows, "the vector file holds no keyForms rows"
+    secp = N["secp256k1"]
+    for row in rows:
+        unsigned = X402_EXACT_NEAR.build(near_choice(publicKey=row["publicKey"]), F["H"])
+        assert not isinstance(unsigned, Refusal), row["case"]
+        assert unsigned.request["hash"].hex() == row["expectRequestHash"], row["case"]
+        if row["expectRequestHash"] == secp["expectRequestHash"]:
+            signed = unsigned.complete({"keyType": 1, "bytes": bytes.fromhex(secp["signature"])})
+            want = secp["expectSignedDelegateAction"]
+        else:
+            signed = unsigned.complete({"keyType": 0, "bytes": ed25519.sign(SEED, unsigned.request["hash"])})
+            want = N["V2"]["expectSignedDelegateAction"]
+        assert not isinstance(signed, Refusal), row["case"]
+        assert signed["payload"]["signedDelegateAction"] == want, row["case"]
+        assert X402_EXACT_NEAR.bound(signed) == N["V2"]["expectBound"], row["case"]
+
+
+def overwrite(data: bytes, at: int, new: bytes) -> bytes:
+    return data[:at] + new + data[at + len(new) :]
+
+
+def test_x402_exact_near_reads_the_sender_and_receiver_then_the_count_then_the_variant() -> None:
+    # nearcore reads a delegate action's sender and receiver as account ids, each a borsh String that must be UTF-8
+    # (near-account-id src/borsh.rs), then the u32 count of actions, then the first action's u8 variant index, where
+    # FunctionCall is 2 (core/primitives/src/action/mod.rs). A sender or receiver that is not UTF-8 is
+    # near/sda-malformed whatever the count; a count other than one is near/actions whatever follows it; and a variant
+    # index other than 2 is near/not-ft-transfer whatever bytes follow it. Each case is V2's signed delegate action
+    # with those bytes changed.
+    from integraledger_terms.bindings.x402_exact_near import near_carrier
+
+    sender_end = 4 + int.from_bytes(V2_SDA[:4], "little")
+    receiver_at = sender_end + 4
+    count_at = receiver_at + int.from_bytes(V2_SDA[sender_end:receiver_at], "little")
+    assert V2_SDA[count_at : count_at + 5] == (1).to_bytes(4, "little") + b"\x02"
+    two = overwrite(V2_SDA, count_at, (2).to_bytes(4, "little"))
+    for at in (4, receiver_at):
+        for lead in (b"\xc3\x41", b"\xc0\x80", b"\xed\xa0\x80", b"\xff"):
+            sda = base64.b64encode(overwrite(two, at, lead)).decode()
+            assert near_carrier(sda) == Refusal("near/sda-malformed"), (at, lead)
+            assert X402_EXACT_NEAR.bound(presented(sda)) == Refusal("near/sda-malformed"), (at, lead)
+    assert near_carrier(base64.b64encode(overwrite(two, 4, "é".encode())).decode()) == Refusal("near/actions")
+    for count in (0, 2, 2**32 - 1):
+        for variant in (2, 3, 11):
+            sda = base64.b64encode(overwrite(V2_SDA, count_at, count.to_bytes(4, "little") + bytes([variant]))).decode()
+            assert near_carrier(sda) == Refusal("near/actions"), (count, variant)
+            assert X402_EXACT_NEAR.bound(presented(sda)) == Refusal("near/actions"), (count, variant)
+    for variant in range(256):
+        sda = base64.b64encode(overwrite(V2_SDA, count_at + 4, bytes([variant]))).decode()
+        want = N["V2"]["expectBound"] if variant == 2 else Refusal("near/not-ft-transfer")
+        assert near_carrier(sda) == want, variant
+        assert X402_EXACT_NEAR.bound(presented(sda)) == want, variant
+
+
+def test_x402_exact_near_ed25519_signature_last_byte_below_0x20() -> None:
+    # nearcore's Signature reader refuses an Ed25519 signature whose last byte has any of its top three bits set
+    # (core/crypto/src/signature.rs). The last 32 bytes are S, little-endian, and RFC 8032 §5.1.7 requires S below the
+    # group order, which is below 2^253, so every valid signature's last byte is below 0x20, as V2's is. With 0x20,
+    # 0x40 or 0x80 set it is near/sda-malformed when read and x402/signature-malformed in complete; 0x1f is read.
+    from integraledger_terms.bindings.x402_exact_near import near_carrier
+
+    assert V2_SDA[-1] < 0x20
+    unsigned = X402_EXACT_NEAR.build(near_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    signature = ed25519.sign(SEED, unsigned.request["hash"])
+    for bit in (0x20, 0x40, 0x80):
+        sda = base64.b64encode(V2_SDA[:-1] + bytes([V2_SDA[-1] | bit])).decode()
+        assert near_carrier(sda) == Refusal("near/sda-malformed"), bit
+        assert X402_EXACT_NEAR.bound(presented(sda)) == Refusal("near/sda-malformed"), bit
+        high = signature[:-1] + bytes([signature[-1] | bit])
+        assert unsigned.complete({"keyType": 0, "bytes": high}) == Refusal("x402/signature-malformed"), bit
+    assert near_carrier(base64.b64encode(V2_SDA[:-1] + b"\x1f").decode()) == N["V2"]["expectBound"]
+    assert not isinstance(unsigned.complete({"keyType": 0, "bytes": signature[:-1] + b"\x1f"}), Refusal)

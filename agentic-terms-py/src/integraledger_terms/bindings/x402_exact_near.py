@@ -17,6 +17,7 @@ from ._borsh_near import (
     decode_signed_delegate,
     delegate_hash,
     encode_signed_delegate,
+    is_near_ed25519_signature,
     public_key_of,
 )
 from ._codec import b64_decode, js_json
@@ -98,10 +99,22 @@ def _memo_of(args: bytes) -> AtrHash | Refusal:
     return h if h is not None else Refusal("near/memo-not-lcp")
 
 
+_DELEGATE_REFUSED = {
+    "malformed": "near/sda-malformed",
+    "action-count": "near/actions",
+    "not-function-call": "near/not-ft-transfer",
+}
+
+
 def near_carrier(signed_delegate_action: object) -> AtrHash | Refusal:
     """The hash in a SignedDelegateAction, padded standard base64 in its canonical form (RFC 4648 §3.5) of at most
     8192 UTF-16 code units, whose one action is a FunctionCall of ft_transfer with a JSON object of arguments whose memo
-    is an LCP string. The bytes must be exactly the borsh encoding of what is read, every string in it UTF-8."""
+    is an LCP string. The bytes are read in the order nearcore reads them: the sender and the receiver, where one that
+    is not UTF-8 is near/sda-malformed, then the count of actions, where a count other than one is near/actions, then
+    the action's variant index, where any index other than FunctionCall's is near/not-ft-transfer, the bytes after it
+    unread. Otherwise the bytes must be exactly the borsh encoding of what is read, every string in it UTF-8, the key
+    and the signature each Ed25519 or secp256k1, and an Ed25519 signature's last byte below 0x20, as nearcore reads
+    one, or they are near/sda-malformed."""
     if not isinstance(signed_delegate_action, str):
         return Refusal("near/sda-malformed")
     if js_length(signed_delegate_action) > MAX_SDA_BASE64:
@@ -110,13 +123,10 @@ def near_carrier(signed_delegate_action: object) -> AtrHash | Refusal:
     if data is None:
         return Refusal("near/sda-malformed")
     decoded = decode_signed_delegate(data)
-    if decoded is None:
-        return Refusal("near/sda-malformed")
-    da = decoded[0]
-    if len(da.actions) != 1:
-        return Refusal("near/actions")
-    call = da.actions[0][1]
-    if not isinstance(call, FunctionCall) or call.method_name != "ft_transfer":
+    if isinstance(decoded, str):
+        return Refusal(_DELEGATE_REFUSED[decoded])
+    call = decoded[0].function_call
+    if call.method_name != "ft_transfer":
         return Refusal("near/not-ft-transfer")
     return _memo_of(call.args)
 
@@ -133,11 +143,13 @@ class NearUnsigned:
 
     def complete(self, signature: object) -> dict[str, Any] | Refusal:
         """Takes {keyType: 0 for Ed25519 or 1 for secp256k1, bytes: its 64- or 65-byte signature}. keyType is a JSON
-        number: an integral float reads as its integer."""
+        number: an integral float reads as its integer. An Ed25519 signature whose last byte is 0x20 or more is
+        x402/signature-malformed: nearcore reads none, and a valid signature never has one."""
         if not is_object(signature) or not isinstance(signature.get("bytes"), bytes):
             return Refusal("x402/signature-malformed")
         key_type, data = safe_int(signature.get("keyType")), signature["bytes"]
-        if key_type is None or (key_type, len(data)) not in ((0, 64), (1, 65)):
+        ed25519 = key_type == 0 and is_near_ed25519_signature(data)
+        if key_type is None or not (ed25519 or (key_type == 1 and len(data) == 65)):
             return Refusal("x402/signature-malformed")
         sda = base64.b64encode(encode_signed_delegate(self._delegate, key_type, data)).decode("ascii")
         return payment_with(self._required, self._accepted, {"signedDelegateAction": sda})
@@ -158,7 +170,10 @@ class X402ExactNear:
 
     def build(self, c: Json, h: AtrHash) -> NearUnsigned | Refusal:
         """The delegate action for the chosen option: one ft_transfer whose memo is the hash's LCP string, with the
-        key's next nonce and a window of maxTimeoutSeconds blocks past the final height."""
+        key's next nonce and a window of maxTimeoutSeconds blocks past the final height. publicKey is read as
+        nearcore's PublicKey::from_str reads it: the key type before the first ':', ed25519 or secp256k1 in ASCII
+        letters of either case, or no key type, which is Ed25519; then the base58 of exactly that type's key size, 32
+        bytes or 64. Any other text is x402/option-malformed."""
         if not is_object(c):
             return Refusal("x402/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
@@ -189,7 +204,7 @@ class X402ExactNear:
         if isinstance(args, Refusal):
             return args
         call = FunctionCall("ft_transfer", args, FT_TRANSFER_GAS, 1)
-        delegate = DelegateAction(payer, accepted["asset"], ((2, call),), nonce + 1, height + window, key)
+        delegate = DelegateAction(payer, accepted["asset"], call, nonce + 1, height + window, key)
         request = {"kind": "near-delegate", "hash": delegate_hash(delegate)}
         return NearUnsigned(request=request, _delegate=delegate, _required=required, _accepted=accepted)
 

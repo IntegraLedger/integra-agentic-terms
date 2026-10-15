@@ -1,11 +1,14 @@
-"""Borsh for NEP-366: a DelegateAction and a SignedDelegate, read and written, with the NEAR action, public-key and
-signature enums. Integers are little-endian; a byte vector is a u32 length and its bytes, and a string is the same with
-its bytes strict UTF-8, as borsh writes a String; an enum is a u8 index and its variant; an option is a u8 0 or 1."""
+"""Borsh for NEP-366's DelegateAction and SignedDelegate, as nearcore defines them, for the one shape the NEAR pairing
+reads and writes: a delegate action holding one FunctionCall action, under an Ed25519 or secp256k1 key, with a signature
+of either type. Integers are little-endian; a byte vector is a u32 length and its bytes, and a string is the same with
+its bytes strict UTF-8, as borsh writes a String; an enum is a u8 index and its variant. A Vec<Action> of one action is
+its u32 length 1, then the action's u8 variant index, FunctionCall's 2, then the FunctionCall."""
 
 import hashlib
+import re
 import struct
 from dataclasses import dataclass
-from typing import Any
+from typing import Literal
 
 from ._codec import b58_decode, b58_encode
 
@@ -17,6 +20,10 @@ U128_LIMIT = 1 << 128
 _KEY_TYPES = {"ed25519": 0, "secp256k1": 1}
 _KEY_SIZES = (32, 64)
 _SIGNATURE_SIZES = (64, 65)
+_FUNCTION_CALL = 2
+_ASCII_LOWERCASE = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+# Base58 of 64 bytes is at most 88 characters, and a longer text always decodes to more.
+_BASE58_KEY = re.compile(r"[1-9A-HJ-NP-Za-km-z]{1,88}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,26 +36,20 @@ class PublicKey:
 
 
 def public_key_of(encoded: object) -> PublicKey | None:
-    """<curve>:<base58> or <base58>. With no curve, or with ed25519, a 64-byte key is secp256k1 and any other is
-    ed25519; the key must then be 32 or 64 bytes as its type says. None for anything else."""
+    """A public key as nearcore's PublicKey::from_str reads it (core/crypto/src/signature.rs): the key type before the
+    first ':', ed25519 or secp256k1, matched once its ASCII letters are lowercased (to_ascii_lowercase, so a letter
+    outside ASCII matches none), or no ':', which is Ed25519; then the base58 of exactly that type's key size, 32 bytes
+    or 64. None for anything else."""
     if not isinstance(encoded, str):
         return None
-    parts = encoded.split(":")
-    if len(parts) == 1:
-        text, key_type = parts[0], 0
-    elif len(parts) == 2:
-        named = _KEY_TYPES.get(parts[0].lower())
-        if named is None:
-            return None
-        text, key_type = parts[1], named
-    else:
+    named, colon, text = encoded.partition(":")
+    if not colon:
+        named, text = "ed25519", encoded
+    key_type = _KEY_TYPES.get(named.translate(_ASCII_LOWERCASE))
+    if key_type is None or _BASE58_KEY.fullmatch(text) is None:
         return None
     data = b58_decode(text)
-    if data is None:
-        return None
-    if key_type == 0:
-        key_type = 1 if len(data) == _KEY_SIZES[1] else 0
-    return PublicKey(key_type, data) if len(data) == _KEY_SIZES[key_type] else None
+    return PublicKey(key_type, data) if data is not None and len(data) == _KEY_SIZES[key_type] else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,10 +62,11 @@ class FunctionCall:
 
 @dataclass(frozen=True, slots=True)
 class DelegateAction:
+    """A delegate action holding one FunctionCall action."""
+
     sender_id: str
     receiver_id: str
-    # Each action as (enum index, value); a FunctionCall's value is a FunctionCall.
-    actions: tuple[tuple[int, Any], ...]
+    function_call: FunctionCall
     nonce: int
     max_block_height: int
     public_key: PublicKey
@@ -98,13 +100,13 @@ def _function_call(call: FunctionCall) -> bytes:
 
 
 def encode_delegate_action(da: DelegateAction) -> bytes:
-    """Borsh of a DelegateAction whose actions are FunctionCalls."""
-    actions = b"".join(bytes([index]) + _function_call(value) for index, value in da.actions)
+    """Borsh of a DelegateAction whose one action is its FunctionCall."""
     return (
         _string(da.sender_id)
         + _string(da.receiver_id)
-        + _u32(len(da.actions))
-        + actions
+        + _u32(1)
+        + bytes([_FUNCTION_CALL])
+        + _function_call(da.function_call)
         + _u64(da.nonce)
         + _u64(da.max_block_height)
         + bytes([da.public_key.key_type])
@@ -171,66 +173,40 @@ class _Reader:
         key_type = self.enum(2)
         return PublicKey(key_type, self.take(_KEY_SIZES[key_type]))
 
-    def option_u128(self) -> None:
-        flag = self.u8()
-        if flag == 1:
-            self.u128()
-        elif flag != 0:
-            raise _Malformed
 
-    def access_key(self) -> None:
-        self.u64()
-        if self.enum(2) == 0:
-            self.option_u128()
-            self.string()
-            for _ in range(self.u32()):
-                self.string()
-
-    def action(self) -> tuple[int, Any]:
-        """One of NEAR's eleven action variants; only a FunctionCall's value is kept."""
-        index = self.enum(11)
-        if index == 1:
-            self.vec()
-        elif index == 2:
-            return index, FunctionCall(self.string(), self.vec(), self.u64(), self.u128())
-        elif index == 3:
-            self.u128()
-        elif index == 4:
-            self.u128()
-            self.public_key()
-        elif index == 5:
-            self.public_key()
-            self.access_key()
-        elif index == 6:
-            self.public_key()
-        elif index in (7, 8):
-            self.string()
-        elif index == 9:
-            self.vec()
-            self.enum(2)
-        elif index == 10:
-            if self.enum(2) == 0:
-                self.take(32)
-            else:
-                self.string()
-        return index, None
+DelegateRefused = Literal["malformed", "action-count", "not-function-call"]
 
 
-def decode_signed_delegate(data: bytes) -> tuple[DelegateAction, int, bytes] | None:
-    """The DelegateAction, the signature's key type and bytes of a SignedDelegate that is exactly its borsh; None
-    otherwise. Every action takes at least one byte, so the actions read are bounded by the bytes given."""
+def is_near_ed25519_signature(data: bytes) -> bool:
+    """True when nearcore reads these bytes as an Ed25519 signature: 64 bytes whose last byte is below 0x20, the top
+    three bits clear (core/crypto/src/signature.rs, Signature's borsh reader). The last 32 bytes are S, little-endian,
+    and a valid signature's S is below the group order, under 2^253, so every valid signature is read."""
+    return len(data) == _SIGNATURE_SIZES[0] and data[-1] < 0x20
+
+
+def decode_signed_delegate(data: bytes) -> tuple[DelegateAction, int, bytes] | DelegateRefused:
+    """The DelegateAction, the signature's key type and bytes of a SignedDelegate, read in the order nearcore reads its
+    bytes. The sender and the receiver come first, each strict UTF-8, or the bytes are "malformed". Then a count of
+    actions other than one is "action-count", and a first action whose variant index is not FunctionCall's is
+    "not-function-call", the bytes after it unread. Otherwise the bytes must be exactly the borsh of the one-action
+    delegate and its signature, each key and signature Ed25519 or secp256k1, and an Ed25519 signature one nearcore
+    reads, or they are "malformed"."""
     r = _Reader(data)
     try:
         sender_id = r.string()
         receiver_id = r.string()
-        actions = tuple(r.action() for _ in range(r.u32()))
+        if r.u32() != 1:
+            return "action-count"
+        if r.u8() != _FUNCTION_CALL:
+            return "not-function-call"
+        call = FunctionCall(r.string(), r.vec(), r.u64(), r.u128())
         nonce = r.u64()
         max_block_height = r.u64()
         public_key = r.public_key()
         key_type = r.enum(2)
         signature = r.take(_SIGNATURE_SIZES[key_type])
     except _Malformed:
-        return None
-    if r.at != len(data):
-        return None
-    return DelegateAction(sender_id, receiver_id, actions, nonce, max_block_height, public_key), key_type, signature
+        return "malformed"
+    if r.at != len(data) or (key_type == 0 and not is_near_ed25519_signature(signature)):
+        return "malformed"
+    return DelegateAction(sender_id, receiver_id, call, nonce, max_block_height, public_key), key_type, signature
