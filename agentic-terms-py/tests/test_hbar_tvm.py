@@ -237,7 +237,7 @@ def test_x402_exact_tvm_v2b_undeployed_wallet() -> None:
     assert root.refs[1].refs[0].refs[1].refs[0].hash.hex() == W["expectTransferBodyHash"]
     assert BINDING.bound(signed) == F["H"]
     for row in W["refusals"]:
-        assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
+        assert BINDING.build(_deploying(row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
 
 
 def test_x402_exact_tvm_v2b_build_refuses_a_state_init_that_holds_libraries_and_bound_reads_one() -> None:
@@ -293,8 +293,17 @@ def _shared_libraries(forks: int) -> Cell:
     return _state_init(Builder().uint(0b11, 2).bit(0).uint(256 - forks, _width(256)).ref(node).ref(node).end())
 
 
+def _deploying(state_init: Cell | str, **changes: Any) -> dict[str, Any]:
+    """A choice for a wallet not yet deployed: the state init, and the wallet its hash on workchain 0, the address TON
+    deploys from it (ton-blockchain/ton crypto/block/transaction.cpp, check_in_msg_state_hash)."""
+    boc = boc_of(state_init) if isinstance(state_init, Cell) else state_init
+    init = root_of(boc)
+    wallet = f"0:{init.hash.hex()}" if isinstance(init, Cell) else F["wallet"]
+    return tvm_choice(**{"wallet": wallet, "stateInit": boc, **changes})
+
+
 def _carried(given: Cell) -> bool:
-    unsigned = BINDING.build(tvm_choice(stateInit=boc_of(given)), F["H"])
+    unsigned = BINDING.build(_deploying(given), F["H"])
     assert not isinstance(unsigned, Refusal), unsigned
     signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
     assert not isinstance(signed, Refusal)
@@ -336,7 +345,7 @@ def test_x402_exact_tvm_build_takes_only_a_state_init_ton_deploys_a_wallet_from(
         "a state init cell that is exotic": library,
     }
     for name, given in bad.items():
-        assert BINDING.build(tvm_choice(stateInit=boc_of(given)), F["H"]) == Refusal("x402/option-malformed"), name
+        assert BINDING.build(_deploying(given), F["H"]) == Refusal("x402/option-malformed"), name
 
 
 # TON validates a message's state init reading at most 1,024 cells, the state init's first and each dictionary cell
@@ -366,7 +375,7 @@ def test_x402_exact_tvm_build_refuses_a_state_init_that_holds_libraries_within_t
 
     cases = {"9 levels": shared(9), "10 levels": shared(10), "30 levels": shared(30), "512 entries": plain(512), "513 entries": plain(513)}
     for name, given in cases.items():
-        assert BINDING.build(tvm_choice(stateInit=boc_of(given)), F["H"]) == Refusal("x402/option-malformed"), name
+        assert BINDING.build(_deploying(given), F["H"]) == Refusal("x402/option-malformed"), name
 
 
 # addr_std's workchain_id is an int8 (ton-blockchain/ton crypto/block/block.tlb): a raw address outside [-128, 127] is
@@ -405,11 +414,13 @@ def test_x402_exact_tvm_a_raw_address_whose_workchain_is_outside_int8_is_not_an_
 
 
 def test_x402_exact_tvm_agreed_refusals_with_a_state_init() -> None:
-    # The agreedRefusals rows that give build a stateInit TON does not read as one StateInitWithLibs.
+    # The agreedRefusals rows that give build a stateInit TON deploys no wallet from, each for the wallet the row
+    # names, else for the wallet its hash names.
     rows = [r for r in V["agreedRefusals"]["rows"] if "stateInit" in r]
     assert len(rows) >= 1
     for row in rows:
-        assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
+        choice = _deploying(row["stateInit"], **({"wallet": row["stateInitWallet"]} if "stateInitWallet" in row else {}))
+        assert BINDING.build(choice, F["H"]) == Refusal(row["expect"]), row["case"]
 
 
 def test_x402_exact_tvm_agreed_refusals() -> None:
@@ -515,15 +526,16 @@ def test_x402_exact_tvm_an_exotic_cell_is_refused_by_the_check_that_parses_it() 
     for row in carried:
         init = root_of(row["stateInit"])
         assert isinstance(init, Cell) and init.hash.hex() == row["stateInitHash"], row["case"]
-        unsigned = BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"])
+        unsigned = BINDING.build(_deploying(row["stateInit"]), F["H"])
         assert not isinstance(unsigned, Refusal), row["case"]
         signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
         assert not isinstance(signed, Refusal)
-        assert signed["payload"]["settlementBoc"] == row["settlementBoc"], row["case"]
+        assert settlement_root(signed).refs[0].hash.hex() == row["stateInitHash"], row["case"]
+        assert BINDING.bound(signed) == F["H"], row["case"]
     refused = [r for r in rows if "stateInit" in r and r not in carried]
     assert len(refused) >= 1
     for row in refused:
-        assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
+        assert BINDING.build(_deploying(row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
 
 
 # A pruned branch reads its level byte after its type byte (@ton/core 0.63.1 exoticPruned), so a cell marked exotic
@@ -966,11 +978,11 @@ def test_x402_exact_tvm_build_takes_a_fixed_prefix_of_at_most_8_and_two_merkle_l
     for prefix in (None, 1, 8):
         assert _carried(_with_code(code, prefix)), prefix
     for prefix in (9, 30, 31):
-        built = BINDING.build(tvm_choice(stateInit=boc_of(_with_code(code, prefix))), F["H"])
+        built = BINDING.build(_deploying(_with_code(code, prefix)), F["H"])
         assert built == Refusal("x402/option-malformed"), prefix
     assert BINDING.bound(presented(_settlement(init=_init_by_ref(_with_code(code, 9))))) == F["H"]
     assert _carried(_with_code(_proofs(code, 2)))
-    assert BINDING.build(tvm_choice(stateInit=boc_of(_with_code(_proofs(code, 3)))), F["H"]) == Refusal("x402/option-malformed")
+    assert BINDING.build(_deploying(_with_code(_proofs(code, 3))), F["H"]) == Refusal("x402/option-malformed")
 
 
 def _canonical(boc: object) -> bool:
@@ -995,3 +1007,89 @@ def test_x402_exact_tvm_agreed_refusals_of_outgoing_messages_ton_does_not_send()
     assert len(rows) >= 1
     for row in rows:
         assert BINDING.bound(presented(row["settlementBoc"])) == Refusal(row["expect"]), row["case"]
+
+
+def _w5(signed_part: Callable[[Builder, Cell], Builder], head_bits: int = 128) -> str:
+    """V2's settlement whose W5 request is the first head_bits bits of V2's op, wallet id, valid_until and seqno,
+    then what signed_part writes, given V2's action list, then V2's 512-bit signature."""
+    request = _v2_request()
+    head, signature = request.value >> (request.length - 128), request.value & ((1 << 512) - 1)
+    b = signed_part(Builder().uint(head >> (128 - head_bits), head_bits), request.refs[0])
+    return boc_of(_message(F["wallet"], b.uint(signature, 512).end()))
+
+
+# W5 runs a request from an internal message as its internal_signed path reads it (ton-blockchain/wallet-contract-v5
+# contracts/wallet_v5.fc, recv_internal, process_signed_request and process_actions): a body of at least 640 bits, the
+# signature its last 512 bits, and the signed part the rest with all its references, from which it reads the wallet
+# id, valid_until, seqno, the action list's Maybe ^Cell and has_other_actions, and nothing after has_other_actions 0.
+# TON's emulator sends the Jetton transfer for each request that binds below and nothing for the others, and lcp's
+# exactTvm.bound answers each case the same.
+def test_x402_exact_tvm_the_w5_request_is_read_as_w5_reads_it() -> None:
+    sends: dict[str, Callable[[Builder, Cell], Builder]] = {
+        "V2's request": lambda b, a: b.bit(1).ref(a).bit(0),
+        "one bit after has_other_actions 0": lambda b, a: b.bit(1).ref(a).bit(0).bit(1),
+        "64 bits after has_other_actions 0": lambda b, a: b.bit(1).ref(a).bit(0).uint(0, 64),
+        "an empty cell's reference after the action list": lambda b, a: b.bit(1).ref(a).bit(0).ref(Builder().end()),
+        "a library cell's reference after the action list": lambda b, a: b.bit(1).ref(a).bit(0).ref(_LIBRARY),
+    }
+    for name, write in sends.items():
+        assert BINDING.bound(presented(_w5(write))) == F["H"], name
+    refused = {
+        "a body of 639 bits": (_w5(lambda b, a: b, 127), "tvm/not-w5-signed"),
+        "a signed part that ends after the seqno": (_w5(lambda b, a: b), "tvm/not-w5-signed"),
+        "the action list's Maybe bit set with no reference": (_w5(lambda b, a: b.bit(1).bit(0)), "tvm/not-w5-signed"),
+        "no has_other_actions bit": (_w5(lambda b, a: b.bit(1).ref(a)), "tvm/not-w5-signed"),
+        "no action list and no has_other_actions bit": (_w5(lambda b, a: b.bit(0)), "tvm/not-w5-signed"),
+        "no action list": (_w5(lambda b, a: b.bit(0).bit(0)), "tvm/actions"),
+        "has_other_actions 1": (_w5(lambda b, a: b.bit(1).ref(a).bit(1)), "tvm/actions"),
+    }
+    for name, (boc, code) in refused.items():
+        assert BINDING.bound(presented(boc)) == Refusal(code), name
+
+
+# TON deploys an account from a message's state init only when the init's representation hash is the account's
+# address, its first fixed_prefix_length bits aside, whatever the workchain (ton-blockchain/ton
+# crypto/block/transaction.cpp, check_in_msg_state_hash). lcp's build answers each case so, and its bound reads a
+# settlement whose state init does not hash to its destination, since whether the wallet deploys is chain state.
+def test_x402_exact_tvm_build_takes_a_state_init_that_hashes_to_the_wallet() -> None:
+    code, _ = _v2b_code_and_data()
+
+    def flipped(init: Cell, bit: int, workchain: int = 0) -> str:
+        return f"{workchain}:{(int.from_bytes(init.hash, 'big') ^ (1 << (255 - bit))).to_bytes(32, 'big').hex()}"
+
+    v2b = root_of(W["stateInit"])
+    assert isinstance(v2b, Cell) and W["wallet"] == f"0:{v2b.hash.hex()}" and F["wallet"] != W["wallet"]
+    assert BINDING.build(tvm_choice(stateInit=W["stateInit"]), F["H"]) == Refusal("x402/option-malformed")
+    assert not isinstance(BINDING.build(tvm_choice(wallet=f"-1:{v2b.hash.hex()}", stateInit=W["stateInit"]), F["H"]), Refusal)
+    assert BINDING.build(tvm_choice(wallet=flipped(v2b, 0), stateInit=W["stateInit"]), F["H"]) == Refusal("x402/option-malformed")
+    prefixed = _with_code(code, 8)
+    for bit in range(8):
+        assert not isinstance(BINDING.build(tvm_choice(wallet=flipped(prefixed, bit), stateInit=boc_of(prefixed)), F["H"]), Refusal)
+    for bit in (8, 255):
+        built = BINDING.build(tvm_choice(wallet=flipped(prefixed, bit), stateInit=boc_of(prefixed)), F["H"])
+        assert built == Refusal("x402/option-malformed"), bit
+    assert BINDING.bound(presented(_settlement(init=_init_by_ref(v2b)))) == F["H"]
+
+
+# The agreedRefusals rows whose settlement message, carrying the wallet's state init by reference, holds a W5 request
+# W5 does not run as a signed request, or whose action list W5 does not take.
+def test_x402_exact_tvm_agreed_refusals_of_w5_requests() -> None:
+    def with_init(boc: str) -> bool:
+        return len(parse_boc(base64.b64decode(boc)).refs) == 2
+
+    rows = [
+        r
+        for r in V["agreedRefusals"]["rows"]
+        if r["expect"] in ("tvm/not-w5-signed", "tvm/actions") and "settlementBoc" in r and with_init(r["settlementBoc"])
+    ]
+    assert len(rows) >= 1
+    for row in rows:
+        assert BINDING.bound(presented(row["settlementBoc"])) == Refusal(row["expect"]), row["case"]
+
+
+# V3b: W5 requests carrying bits or references after has_other_actions 0, which W5 does not read and sends from.
+def test_x402_exact_tvm_v3b_a_w5_request_binds_with_what_w5_does_not_read() -> None:
+    rows = V.get("V3b", {}).get("rows", [])
+    assert len(rows) >= 1
+    for row in rows:
+        assert BINDING.bound(presented(row["settlementBoc"])) == row["expectBound"], row["case"]

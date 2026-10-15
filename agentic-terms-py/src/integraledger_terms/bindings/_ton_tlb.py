@@ -139,12 +139,14 @@ def is_state_init(root: Cell) -> bool:
         return False
 
 
-def deploys_from(root: Cell, config: TonConfiguration) -> bool:
-    """True when TON deploys an account from a state init is_state_init holds, at the configuration
-    (ton-blockchain/ton crypto/block/transaction.cpp, unpack_msg_state and prepare_compute_phase): from global version
-    15 its library:(HashmapE 256 SimpleLib) is hme_empty ("libraries are not null"), and from global version 10 its
-    fixed_prefix_length is absent or at most the configuration's max_acc_fixed_prefix_length ("too big fixed prefix
-    length")."""
+def deploys_from(root: Cell, config: TonConfiguration, address: Address) -> bool:
+    """True when TON deploys the account at address from a state init is_state_init holds, at the configuration
+    (ton-blockchain/ton crypto/block/transaction.cpp, unpack_msg_state, prepare_compute_phase and
+    check_in_msg_state_hash): from global version 15 its library:(HashmapE 256 SimpleLib) is hme_empty ("libraries are
+    not null"), from global version 10 its fixed_prefix_length is absent or at most the configuration's
+    max_acc_fixed_prefix_length ("too big fixed prefix length"), and its representation hash is the address's 256
+    bits, except the first fixed_prefix_length bits, which may differ ("in_msg_state hash mismatch"). The workchain
+    is not part of the hash."""
     s = root.slice()
     prefix = s.uint(5) if s.bit() else 0
     if s.bit():
@@ -154,7 +156,10 @@ def deploys_from(root: Cell, config: TonConfiguration) -> bool:
     libraries = s.bit()
     if config.global_version >= 15 and libraries:
         return False
-    return not (config.global_version >= 10 and prefix > config.max_acc_fixed_prefix_length)
+    if config.global_version >= 10 and prefix > config.max_acc_fixed_prefix_length:
+        return False
+    differ = int.from_bytes(root.hash, "big") ^ int.from_bytes(address.hash, "big")
+    return differ & ((1 << (256 - prefix)) - 1) == 0
 
 
 def _inline_state_init(s: Slice) -> Cell:

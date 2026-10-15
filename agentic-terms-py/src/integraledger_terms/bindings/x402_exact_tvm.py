@@ -40,6 +40,9 @@ MAX_DEPTH = 32
 COINS_LIMIT = 1 << 120
 UINT32_LIMIT = 1 << 32
 SIGNATURE_BITS = 512
+# The fewest bits of a request W5 reads as signed: the op, wallet id, valid_until and seqno, then the signature
+# (wallet_v5.fc, recv_internal). W5 takes a shorter body as a plain transfer and runs no request.
+_REQUEST_MIN_BITS = 32 + 32 + 32 + 32 + SIGNATURE_BITS
 SEND_MODE = 3
 # The send modes TON's action phase sends a message with (try_action_send_msg): +16 is bounce-on-fail and is set aside
 # from global version 4, and the rest must be +1, +2, +32, +64 and +128 alone, never +64 with +128. Any other mode is
@@ -156,7 +159,14 @@ def _sends_with(mode: int, config: TonConfiguration) -> bool:
 def tvm_carrier(settlement_boc: object, network: object) -> tuple[AtrHash, Cell] | Refusal:
     """The hash and the forward payload of the signed request in a settlement bag of cells: an internal message whose
     body is a W5 internal_signed request with exactly one action_send_msg behind an empty list, carrying a Jetton
-    transfer whose forward payload is a reference to a text comment holding an LCP string. Each message is read as
+    transfer whose forward payload is a reference to a text comment holding an LCP string. The request is read as
+    W5's internal_signed path reads it (ton-blockchain/wallet-contract-v5 contracts/wallet_v5.fc, recv_internal,
+    process_signed_request and process_actions): at least 640 bits, its signature the body's last 512 bits, and the
+    signed part the rest with all its references, in which the wallet id, valid_until, seqno, the action list's
+    Maybe ^Cell and has_other_actions are read; W5 reads nothing after has_other_actions 0, and neither does this, so
+    bits and references there are carried, not read. A body W5 does not run as a signed request, or whose signed part
+    ends before those fields, is tvm/not-w5-signed, and an empty action list or has_other_actions 1 is tvm/actions.
+    The signature is not verified. Each message is read as
     TON's action phase sends it (message_of), at the configuration held for the network: a source of addr_none or an addr_std with no
     anycast (the outgoing message's the W5 wallet's own), a destination TON sends to, a value and an extra_flags of at
     most 3 each in its shortest form, no extra currency, its state init validated as TON validates it, a referenced
@@ -175,18 +185,20 @@ def tvm_carrier(settlement_boc: object, network: object) -> tuple[AtrHash, Cell]
     message = message_of(root, None, config)
     if message is None:
         return Refusal("tvm/boc-malformed")
+    body = message.body
     try:
-        s = message.body.slice()
-        if s.remaining_bits < 32 or s.uint(32) != OP_INTERNAL_SIGNED:
+        op = body.slice()
+        if op.remaining_bits < 32 or op.uint(32) != OP_INTERNAL_SIGNED or body.length < _REQUEST_MIN_BITS:
             return Refusal("tvm/not-w5-signed")
+        s = Cell(body.value >> SIGNATURE_BITS, body.length - SIGNATURE_BITS, body.refs).slice()
+        s.uint(32)
         s.uint(32)
         s.uint(32)
         s.uint(32)
         actions = s.maybe_ref()
-        if actions is None or s.bit():
+        has_other_actions = s.bit()
+        if actions is None or has_other_actions:
             return Refusal("tvm/actions")
-        if s.remaining_bits != SIGNATURE_BITS or s.remaining_refs != 0:
-            return Refusal("tvm/not-w5-signed")
     except Malformed:
         return Refusal("tvm/not-w5-signed")
     send = _send_message(actions)
@@ -308,9 +320,11 @@ class X402ExactTvm:
         which must be the option's extra.forwardPayload. wallet and jettonWallet are on a workchain the option's
         network's configuration holds, -1 or 0. A stateInit must be exactly one StateInitWithLibs, as TON validates a
         message's state init, with at most two Merkle proofs or updates nested in it, and one TON deploys a wallet
-        from at that configuration (deploys_from): no libraries dictionary, and a fixed prefix length of at most
-        ConfigParam 43's max_acc_fixed_prefix_length, 8. Else x402/option-malformed. The settlement message carries
-        that cell as given, so its hash stays the address the wallet derives from it."""
+        from at that configuration (deploys_from): no libraries dictionary, a fixed prefix length of at most
+        ConfigParam 43's max_acc_fixed_prefix_length, 8, and a representation hash that is wallet's 256-bit address,
+        except the first fixed-prefix-length bits, which may differ, since TON deploys an account only from a state
+        init whose hash is its address. Else x402/option-malformed. The settlement message carries that cell as
+        given."""
         if not is_object(c):
             return Refusal("x402/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
@@ -380,7 +394,7 @@ class X402ExactTvm:
         if init_cell is not None and (
             not is_state_init(init_cell)
             or merkle_depth([init_cell]) > MAX_MERKLE_DEPTH
-            or not deploys_from(init_cell, config)
+            or not deploys_from(init_cell, config, wallet)
         ):
             return Refusal("x402/option-malformed")
         return TvmUnsigned(
@@ -395,8 +409,8 @@ class X402ExactTvm:
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The hash in the forward payload of the transfer the payer's W5 wallet signed, which must be the option's.
         The echoed option's amount and timeout are not read. The signature is not verified here. A state init that
-        holds a libraries dictionary, or a fixed prefix longer than 8 bits, is read, since whether TON deploys the
-        wallet from it is chain state."""
+        holds a libraries dictionary, has a fixed prefix longer than 8 bits, or does not hash to the settlement
+        message's destination is read, since whether TON deploys the wallet from it is chain state."""
         p = presented_with(presented, _presentable)
         if isinstance(p, Refusal):
             return p
