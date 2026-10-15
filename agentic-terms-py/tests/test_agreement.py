@@ -773,6 +773,25 @@ def test_an_agreement_payment_nested_past_64_levels_is_declined_and_not_sent(lev
         assert seller.paid() == []
 
 
+@pytest.mark.parametrize("value", [{1: "a"}, {(1, 2): "a"}, b"ab", {1, 2}], ids=["int key", "tuple key", "bytes", "set"])
+def test_an_agreement_payment_json_cannot_write_is_declined_and_not_sent(value: Any) -> None:
+    # A dict keyed by other than strings (RFC 8259 section 4: member names are strings), bytes and a set have no JSON
+    # text, so the payment carrying one is declined after the signer's one call, unsent.
+    seller = Seller(row("BA1")["input"]["agreement"])
+    signer = RecordingSigner()
+
+    async def go(c: httpx.AsyncClient) -> Any:
+        first = await agree(A, URL, signer, c)
+        assert isinstance(first, ToApprove)
+        option = {**first.approve.option, "extra": {**first.approve.option["extra"], "value": value}}
+        return await agree(A, URL, signer, c, approved=dataclasses.replace(first.approve, option=option))
+
+    out = run(seller.link(), go)
+    assert len(signer.requests) == 1
+    assert out == Declined("signed-not-bound", "The agreement payment is not plain JSON.")
+    assert seller.paid() == []
+
+
 def test_an_approved_value_that_is_not_an_agreement_payment_is_no_payable_option() -> None:
     seller = Seller([])
     out = run(seller.link(), lambda c: agree(A, URL, RecordingSigner(), c, approved={"url": URL}))  # type: ignore[arg-type]

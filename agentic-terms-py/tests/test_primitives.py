@@ -1,6 +1,8 @@
 """The primitives the bindings share, against published values: Keccak-256, base58, strict base64url and base64, and
 numbers and strings as ECMAScript writes them."""
 
+from typing import Any
+
 import pytest
 
 from integraledger_terms._keccak import keccak256
@@ -84,6 +86,15 @@ def test_a_lone_surrogate_is_escaped_as_json_stringify_escapes_it() -> None:
     assert js_json("\ud83d\ude00") == '"\U0001f600"'
     assert js_json('"\n\u0001') == '"\\"\\n\\u0001"'
     js_json(["\ud800"]).encode("utf-8")
+
+
+@pytest.mark.parametrize("key", [1, 1.5, True, None, (1, 2)])
+def test_js_json_refuses_a_member_name_that_is_not_a_string(key: Any) -> None:
+    # RFC 8259 section 4: an object's member names are strings, so a dict keyed otherwise has no JSON text.
+    with pytest.raises(TypeError):
+        js_json({key: "a"})
+    with pytest.raises(TypeError):
+        js_json([{"k": {key: "a"}}])
 
 
 HIGH, LOW = chr(0xD83D), chr(0xDE00)
