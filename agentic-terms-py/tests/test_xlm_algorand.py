@@ -358,8 +358,11 @@ def test_x402_exact_algorand_a_key_near_a_members_name_is_refused(near: bytes) -
 
 def test_x402_exact_algorand_a_transaction_keyed_by_an_array_is_refused() -> None:
     """V2's entry with txn's key written as an array of its bytes, which algod reads as txn and the facilitator does
-    not read as a key."""
+    not read as a key. The fee payer's entry, a payment, keyed so is read by algod as a payment, so it is not-axfer
+    before its keys are judged."""
     assert_read(once(V2_BYTES, key("txn"), msgpack_numbers(b"txn")), None)
+    fee_payer = base64.b64decode(V2_GROUP[1 - V2_INDEX])
+    assert _algorand.read_signed(once(fee_payer, key("txn"), msgpack_numbers(b"txn"))) == "not-axfer"
 
 
 def test_x402_exact_algorand_a_map_key_the_facilitators_decoder_does_not_take_is_refused() -> None:
@@ -388,6 +391,11 @@ def test_x402_exact_algorand_an_address_written_as_its_text_is_read_when_both_re
 
 
 LEASE = key("lx") + msgpack_bin(bytes([7]) * 32)
+# A key registration's voting key, a 32-byte member the facilitator does not read: written again shorter, algod keeps
+# the bytes the later write does not hold, so votekey stays set, another type's member on an asset transfer.
+VOTEKEY = key("votekey") + msgpack_bin(bytes([1]) * 32)
+# V2's payment entry whose transaction's map header counts two more members, which follow it.
+TWO_MORE = once(V2_BYTES, TXN_HEAD, b"\xa3txn\x8d")
 
 
 @pytest.mark.parametrize(
@@ -406,6 +414,12 @@ LEASE = key("lx") + msgpack_bin(bytes([7]) * 32)
         pytest.param(with_txn_member(key("gh") + msgpack_bin(bytes(31))), None, id="V2's gh, then 31 zero bytes"),
         pytest.param(with_txn_member(key("gh") + msgpack_bin(bin_member("gh")[1] + b"\x00")), None,
                      id="V2's gh, then V2's gh and a zero byte"),
+        pytest.param(TWO_MORE + VOTEKEY + key("votekey") + msgpack_bin(bytes(1)), None,
+                     id="votekey as 32 bytes of 01, then one zero byte"),
+        pytest.param(TWO_MORE + VOTEKEY + key("votekey") + msgpack_bin(bytes(32)), V2_TXID,
+                     id="votekey as 32 bytes of 01, then 32 zero bytes"),
+        pytest.param(TWO_MORE + LEASE + key("lx") + b"\xc0", V2_TXID,
+                     id="a lease, then lx nil"),
     ],
 )  # fmt: skip
 def test_x402_exact_algorand_a_repeated_member_is_read_when_both_readers_read_one_transaction(
@@ -587,6 +601,17 @@ def test_x402_exact_algorand_build_reads_the_genesis_id_before_the_genesis_hash(
     assert build_with("testnet-v1.\ud800", mainnet) == Refusal("avm/option-malformed")
     assert build_with("testnet-v1.0", mainnet) == Refusal("avm/network-mismatch")
     assert build_with("\ufeff" + "x" * 198, mainnet) == Refusal("avm/network-mismatch")
+
+
+def test_x402_exact_algorand_build_refuses_a_payment_entry_carrier_does_not_read() -> None:
+    """build reads the payment entry it writes as carrier reads it. Under a genesis hash of 32 zero bytes, which the
+    transaction's canonical encoding leaves out, the facilitator computes no transaction id, so build refuses, as lcp's
+    exactAvm.build does for the same option and parameters."""
+    option = {**F["O"], "network": "algorand:" + "A" * 32}
+    params = {**F["params"], **{k: int(F["params"][k]) for k in ("firstValid", "minFee", "feePerByte")}}
+    params["genesisHash"] = base64.b64encode(bytes(32)).decode("ascii")
+    choice = {"required": x402_doc(option, F["resource"]), "accepted": option, "payer": F["payer"], "params": params}
+    assert X402_EXACT_ALGORAND.build(choice, H) == Refusal("avm/option-malformed")
 
 
 def test_x402_exact_algorand_build_rows() -> None:
