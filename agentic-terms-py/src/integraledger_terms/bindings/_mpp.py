@@ -444,7 +444,9 @@ def _json_within(value: object, limit: int) -> bool:
         elif is_object(x):
             budget -= 2
             for k, y in x.items():
-                budget -= (js_length(k) if isinstance(k, str) else 0) + 3
+                if not isinstance(k, str):
+                    return False
+                budget -= js_length(k) + 3
                 if not walk(y):
                     return False
         else:

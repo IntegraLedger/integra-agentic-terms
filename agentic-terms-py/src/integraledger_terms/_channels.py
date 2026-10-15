@@ -21,7 +21,7 @@ from ._core import MAX_ATR_BYTES, atr_hash, hash_equals
 from ._types import Advertised, Declined, DeclineCode, Json, Refusal, Signer
 from .bindings._channel import BatchUnsigned, ChannelRef
 from .bindings._codec import b64_decode
-from .bindings._jose import within_depth
+from .bindings._jose import json_bytes, within_depth
 from .bindings._lcp import from_lcp_string
 from .bindings._mpp import network as mpp_network
 from .bindings._mpp_checks import decode_string_map
@@ -86,9 +86,10 @@ def _has_channel(binding: Any) -> bool:
 
 def _as_json(value: object) -> Any:
     """The value as plain JSON, as json.dumps writes it with allow_nan=False and json.loads reads it back, its arrays
-    and objects nested at most 64 levels, as the protocol package reads JSON; None when it nests deeper or json.dumps
-    cannot write it."""
-    if not within_depth(value):
+    and objects nested at most 64 levels, as the protocol package reads JSON; None when it nests deeper, holds a member
+    name that is not a string (RFC 8259 section 4), which json.dumps would write as a string, or json.dumps cannot
+    write it."""
+    if not within_depth(value) or json_bytes(value) is None:
         return None
     try:
         return json.loads(json.dumps(value, allow_nan=False))

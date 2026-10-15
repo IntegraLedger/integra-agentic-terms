@@ -435,6 +435,16 @@ def test_open_channel_declines_an_opening_holding_a_number_that_is_not_finite(n:
     assert out == Declined("signed-not-bound", "The opening is not plain JSON.")
 
 
+@pytest.mark.parametrize("key", [1, 1.5, True, None], ids=["int key", "float key", "bool key", "null key"])
+def test_open_channel_declines_an_opening_holding_a_member_name_that_is_not_a_string(key: Any) -> None:
+    # RFC 8259 §4: an object's member names are strings. json.dumps would write this key as a string, so the hold would
+    # record a member the opening does not hold: the opening is not held, as an agreement payment holding one is not
+    # sent.
+    _, opening = evm_hold()
+    out = open_channel(ABC, {**opening, "extensions": {key: 1}}, BINDING)
+    assert out == Declined("signed-not-bound", "The opening is not plain JSON.")
+
+
 def _nested(opening: dict[str, Any], levels: int) -> dict[str, Any]:
     # The opening is level 1 and its extensions level 2, so levels lists below them reach level levels + 2.
     n: object = 0

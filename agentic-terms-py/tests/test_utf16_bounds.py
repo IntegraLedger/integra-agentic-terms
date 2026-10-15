@@ -77,3 +77,11 @@ def test_the_echoed_request_budget_counts_a_string_in_units(piece: str) -> None:
 
 def test_the_echoed_request_budget_the_control_an_astral_string_costs_two_units_a_code_point() -> None:
     assert not _mpp._json_within(ASTRAL * 7, len(ASTRAL * 7) + 2)
+
+
+@pytest.mark.parametrize("key", [1, 1.5, True, None, (1, 2)])
+def test_the_echoed_request_budget_refuses_a_member_name_that_is_not_a_string(key: object) -> None:
+    """RFC 8259 section 4: an object's member names are strings, so a mapping keyed otherwise is not JSON data."""
+    assert _mpp._json_within({"k": 1}, 100)
+    assert not _mpp._json_within({key: 1}, 100)
+    assert not _mpp._json_within({"k": [{key: 1}]}, 100)
