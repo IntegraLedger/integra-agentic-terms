@@ -6,9 +6,9 @@ minimumReleaseAge: 1440
 trustPolicy: no-downgrade
 strictDepBuilds: true
 
-allowBuilds:
-  esbuild: false
-  secp256k1: false
-
 minimumReleaseAgeExclude:
-  - "@integraledger/*"
+  - '@integraledger/lcp@0.4.0'
+
+permissions:
+  esbuild: {build: false}
+  secp256k1: {build: false}
