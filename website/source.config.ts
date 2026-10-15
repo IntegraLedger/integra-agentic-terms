@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { rehypeCodeDefaultOptions, remarkMdxMermaid } from "fumadocs-core/mdx-plugins";
+import { type RehypeCodeOptions, rehypeCodeDefaultOptions, remarkMdxMermaid } from "fumadocs-core/mdx-plugins";
 import { applyMdxPreset, defineConfig, defineDocs } from "fumadocs-mdx/config";
 import { transformerTwoslash } from "fumadocs-twoslash";
 import { remarkDocLinks } from "./src/lib/remark-doc-links";
@@ -18,6 +18,16 @@ export const docs = defineDocs({
 });
 
 /**
+ * How every code block is highlighted. Each token colour of these two themes is at least 4.5:1 on its code background
+ * (global.css): white in light mode, the card colour in dark mode.
+ */
+const codeOptions: RehypeCodeOptions = {
+  ...rehypeCodeDefaultOptions,
+  themes: { light: "github-light-default", dark: "github-dark-default" },
+  langs: ["ts", "typescript", "python", "json", "sh"],
+};
+
+/**
  * The API pages TypeDoc writes from the packages' TypeScript source (`pnpm api`). Their code blocks are declarations,
  * not samples, so they are highlighted without Twoslash.
  */
@@ -25,7 +35,7 @@ export const api = defineDocs({
   dir: "content",
   docs: {
     postprocess: { includeProcessedMarkdown: { headingIds: false } },
-    mdxOptions: applyMdxPreset({}),
+    mdxOptions: applyMdxPreset({ rehypeCodeOptions: codeOptions }),
   },
 });
 
@@ -66,8 +76,7 @@ export default defineConfig({
   mdxOptions: {
     remarkPlugins: [remarkMdxMermaid, [remarkDocLinks, { root: DOCS_DIR }]],
     rehypeCodeOptions: {
-      ...rehypeCodeDefaultOptions,
-      langs: ["ts", "typescript", "python", "json", "sh"],
+      ...codeOptions,
       transformers: [...(rehypeCodeDefaultOptions.transformers ?? []), twoslash],
     },
   },
