@@ -681,7 +681,7 @@ def _message(to: str, body: Cell, /, **fields: Write) -> Cell:
 def _outgoing(**fields: Write) -> Cell:
     """V2's outgoing message to fixed.jettonWallet, bounceable, with V2's Jetton transfer body, written by _message."""
     transfer = _v2_request().refs[0].refs[1].refs[0]
-    flags: Write = lambda b: b.bit(1).bit(1).bit(0)  # noqa: E731
+    flags: Write = lambda b: b.bit(1).bit(1).bit(0)
     return _message(F["jettonWallet"], transfer, **{"flags": flags, **fields})
 
 
@@ -787,11 +787,11 @@ _ONE_CURRENCY = Builder().uint(0b10, 2).uint(32, 6).uint(1, 32).uint(1, 5).uint(
 # the same answer; the number after a case is the action phase's result code.
 def test_x402_exact_tvm_a_message_is_read_as_ton_s_action_phase_sends_it() -> None:
     wallet, jetton, other = F["wallet"], F["jettonWallet"], f"0:{'12' * 32}"
-    tail: Write = lambda b: b.bit(1)  # noqa: E731
-    library: Write = lambda b: b.bit(1).ref(_LIBRARY)  # noqa: E731
+    tail: Write = lambda b: b.bit(1)
+    library: Write = lambda b: b.bit(1).ref(_LIBRARY)
     extra = _extra(_ONE_CURRENCY)
-    flags_4: Write = lambda b: b.coins(4)  # noqa: E731
-    flags_3: Write = lambda b: b.coins(3)  # noqa: E731
+    flags_4: Write = lambda b: b.coins(4)
+    flags_3: Write = lambda b: b.coins(3)
     sends = {
         "the settlement written field by field": _settlement(),
         "the settlement's src, another account's addr_std (TON sends it when that account relays it)": _settlement(src=_std(other)),
