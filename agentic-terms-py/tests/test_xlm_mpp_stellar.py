@@ -77,6 +77,31 @@ def test_mpp_charge_stellar_b6_preimage_is_v3_digest_and_signature_completes_v3_
     assert signed["payload"] == {"type": "transaction", "transaction": V["V3"]["envelope"]}
 
 
+def test_mpp_charge_stellar_v3source_completion_sets_the_zero_source_only_under_fee_payer_true() -> None:
+    """V3source: a simulation whose transaction source is the payer's key, not the all-zeros account. The entry's
+    preimage holds no transaction source, so it is x402-exact-stellar.json V2's in both modes. Under the placed
+    challenge (feePayer true) the completion writes the all-zeros source and is V3's envelope; under the sourceAccount
+    section's challenge (feePayer false) it keeps the simulated source and is V3source's expectEnvelopeFeePayerFalse."""
+    row = V["V3source"]
+    modes = [(V["place"]["expect"], V["V3"]["envelope"]), (SA["challenge"], row["expectEnvelopeFeePayerFalse"])]
+    for challenge, envelope in modes:
+        choice = {
+            "challenge": challenge,
+            "simulatedXdr": row["simulatedXdr"],
+            "currentLedger": X["V2"]["currentLedger"],
+            "now": NOW,
+            "payer": X["fixed"]["payer"],
+        }
+        unsigned = MPP_CHARGE_STELLAR.build(choice, F["H"])
+        assert not isinstance(unsigned, Refusal), unsigned
+        preimage = unsigned.request["preimage"]
+        assert isinstance(preimage, bytes)
+        digest = hashlib.sha256(preimage).digest()
+        assert digest.hex() == X["V2"]["expectPreimageSha256"]
+        completed = unsigned.complete(ed25519.sign(SEED, digest))
+        assert completed == {"challenge": challenge, "payload": {"type": "transaction", "transaction": envelope}}
+
+
 def test_mpp_charge_stellar_b10_http_link() -> None:
     mpp_b10(STELLAR)
 
