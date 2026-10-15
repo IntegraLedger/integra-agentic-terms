@@ -29,7 +29,7 @@ import {
   type Signer,
 } from "@integraledger/terms";
 import { BINDINGS as LCP_BINDINGS, hashEquals, type Json } from "@integraledger/lcp";
-import { fromBase64 } from "@integraledger/lcp/core";
+import { fromBase64, toBase64 } from "@integraledger/lcp/core";
 import { macOf, seal, unseal, verifies, type HoldJson } from "./hold.js";
 import { VERSION } from "./version.js";
 
@@ -127,7 +127,10 @@ function jsonOf(v: unknown): Json {
   return v as Json;
 }
 
-/** The exact bytes as standard base64, and as UTF-8 text, or null where they are not valid UTF-8. */
+/**
+ * The exact bytes as padded standard base64 in its canonical form, written by the protocol package, and as UTF-8 text,
+ * or null where they are not valid UTF-8.
+ */
 function atrOf(bytes: Uint8Array): { base64: string; utf8: string | null } {
   let utf8: string | null;
   try {
@@ -135,7 +138,7 @@ function atrOf(bytes: Uint8Array): { base64: string; utf8: string | null } {
   } catch {
     utf8 = null;
   }
-  return { base64: Buffer.from(bytes).toString("base64"), utf8 };
+  return { base64: toBase64(bytes), utf8 };
 }
 
 /** The decline for a hold whose `mac` does not verify: a changed hold, or one another server process returned. */

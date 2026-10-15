@@ -38,6 +38,13 @@ const SPELLINGS: [string, unknown][] = [
   ["a number, 255", 255],
 ];
 
+/** An EIP-3009 payment for buyer.json's document D whose nonce is `h`, signed with B6's signature S. */
+function paymentFor(h: string): object {
+  const option = B.fixed.D.accepts[0];
+  const authorization = { from: B.fixed.account.split(":")[2], to: option.payTo, value: "10000", validAfter: "0", validBefore: "1790000060", nonce: h };
+  return { x402Version: 2, accepted: option, payload: { signature: S, authorization } };
+}
+
 type Advertises = { advertise(d: object, h: string, l: string, o: object, agreementUrl?: string): object };
 const bindingOf = (id: string) => BINDINGS.find((b) => b.id === id) as unknown as Advertises;
 
@@ -89,16 +96,7 @@ const TOOLS: Record<string, Tool> = {
   // An EIP-3009 payment whose nonce is H.
   atr_check: {
     async open(n) {
-      const D = B.fixed.D;
-      const presented = {
-        x402Version: 2,
-        accepted: D.accepts[0],
-        payload: {
-          signature: S,
-          authorization: { from: B.fixed.account.split(":")[2], to: D.accepts[0].payTo, value: "10000", validAfter: "0", validBefore: "1790000060", nonce: H },
-        },
-      };
-      return { c: connect({ fetch: seller(n) }), args: { pairing: "x402/exact/eip155/eip3009", presented } };
+      return { c: connect({ fetch: seller(n) }), args: { pairing: "x402/exact/eip155/eip3009", presented: paymentFor(H) } };
     },
     control(m) {
       expect(at(m, "result.structuredContent")).toEqual({ atrHash: H });
@@ -197,5 +195,45 @@ describe("the atr argument: padded standard base64 in its canonical form", { tim
       ]);
       expect({ fetches: n.fetches - before.fetches, signs: n.signs - before.signs }).toEqual({ fetches: 0, signs: 0 });
     });
+  });
+});
+
+// RFC 4648 §10's test vectors, and every byte value in order (encoded by node:buffer): atr_confirm returns the ATR's
+// bytes as `atr.base64`, that encoding, and atr_check, given that text back, reads the same bytes.
+const EVERY_BYTE = Uint8Array.from({ length: 256 }, (_, i) => i);
+const ROUND_TRIPS: [string, Uint8Array, string][] = [
+  ...(
+    [
+      ["f", "Zg=="],
+      ["fo", "Zm8="],
+      ["foo", "Zm9v"],
+      ["foob", "Zm9vYg=="],
+      ["fooba", "Zm9vYmE="],
+      ["foobar", "Zm9vYmFy"],
+    ] as const
+  ).map(([text, base64]): [string, Uint8Array, string] => [text, new TextEncoder().encode(text), base64]),
+  ["every byte value", EVERY_BYTE, Buffer.from(EVERY_BYTE).toString("base64")],
+];
+
+describe("atr.base64 from atr_confirm, read back by atr_check", { timeout: 60_000 }, () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(B.fixed.now * 1000);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it.each(ROUND_TRIPS)("%s", async (_, bytes, base64) => {
+    const h = `0x${createHash("sha256").update(bytes).digest("hex")}`;
+    const document = structuredClone(B.fixed.D);
+    document.extensions.legalContext.info.value = h;
+    document.extensions.legalContext.info.legalContextUrl = `https://atr.seller.example/${h}`;
+    const c = connect({ fetch: (async () => new Response(new Uint8Array(bytes), { status: 200 })) as unknown as Fetch });
+    const pairing = "x402/exact/eip155/eip3009";
+    const confirmed = await call(c, "atr_confirm", { pairing, document, account: B.fixed.account });
+    const returned = at(confirmed, "result.structuredContent.atr.base64");
+    const checked = await call(c, "atr_check", { pairing, atr: returned, presented: paymentFor(h) });
+    await c.close();
+    expect(returned).toBe(base64);
+    expect(at(checked, "result.structuredContent")).toEqual({ atrHash: h });
   });
 });
