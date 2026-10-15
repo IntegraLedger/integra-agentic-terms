@@ -17,6 +17,7 @@ TypeDoc generates from the packages' TypeScript source at every build.
 | `/md/<page>.md` | One page as Markdown. |
 | `/api/search` | The static search index. |
 | `/sitemap.xml`, `/robots.txt` | For crawlers. |
+| `/.well-known/security.txt` | Where to report a vulnerability ([RFC 9116](https://www.rfc-editor.org/rfc/rfc9116)), under [`SECURITY.md`](../SECURITY.md). It expires 180 days after the commit the site is built from. |
 
 Every TypeScript sample is type-checked by [Twoslash](https://twoslash.netlify.app) against the packages as they are
 built in this repository, and the build fails on a type error. Hovering an identifier shows its type.
