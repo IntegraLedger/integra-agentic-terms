@@ -182,6 +182,11 @@ def recipient_checksum_fails(r: dict[str, Any]) -> None:
     r["recipient"] = to[:-1] + ("p" if to.endswith("r") else "r")
 
 
+def permit2_alone_for_0(r: dict[str, Any]) -> None:
+    r["amount"] = "0"
+    details(r)["credentialTypes"] = ["permit2"]
+
+
 Case = tuple[str, str, Callable[[dict[str, Any]], dict[str, Any]], str, str | None]
 MD = "methodDetails"
 CASES: list[Case] = [
@@ -204,7 +209,7 @@ CASES: list[Case] = [
     ("methodDetails.solana.decimals 1.5", "mpp/charge/usdc/solana", lambda c: with_request(c, set_in([MD, "solana", "decimals"], 1.5)), "svm/input-malformed", None),
     # MPP's EVM charge: permit2 pays the recipient amount less the splits, which "MUST be strictly less than amount".
     ("splits adding up to amount", "mpp/charge/evm/permit2", lambda c: with_request(c, lambda r: details(r).__setitem__("splits", [{"recipient": r["recipient"], "amount": r["amount"]}])), "mpp/input-malformed", None),
-    ("amount 0 with permit2 alone listed", "mpp/charge/evm/permit2", lambda c: with_request(c, lambda r: (r.__setitem__("amount", "0"), details(r).__setitem__("credentialTypes", ["permit2"]))), "mpp/input-malformed", None),
+    ("amount 0 with permit2 alone listed", "mpp/charge/evm/permit2", lambda c: with_request(c, permit2_alone_for_0), "mpp/input-malformed", None),
     ("amount 0 with authorization listed too", "mpp/charge/evm/permit2", lambda c: with_request(c, set_in(["amount"], "0")), "mpp/not-this-pairing", "mpp/charge/evm/authorization"),
     # draft-xrpl-charge-00: build writes no memo but the LCP one; the session's channel id derives from the
     # recipient's AccountID.
