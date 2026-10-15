@@ -45,6 +45,7 @@ from ._tempo import (
     OPEN_V1_SELECTOR,
     OPEN_V2_SELECTOR,
     TRANSFER_WITH_MEMO_SELECTOR,
+    KeyAuthorization,
     decode_key_authorization,
     decode_tempo_tx,
     encode_key_authorization,
@@ -702,7 +703,36 @@ def _subscription_kind(presented: Any) -> str | Refusal:
     return "open" if p.get("type") == "keyAuthorization" else Refusal("mpp/session-action")
 
 
+def _issued_key(details: Mapping[str, Any]) -> tuple[str, int] | Refusal:
+    """The access key the subscription challenge issued, methodDetails.accessKey: its address, lowercase, and its key
+    type as Tempo numbers it (KEY_TYPES); else mpp/access-key-malformed, the code the pairing's filter gives."""
+    key = details.get("accessKey")
+    address = key.get("accessKeyAddress") if is_object(key) else None
+    key_type = key.get("keyType") if is_object(key) else None
+    if not is_address(address) or not isinstance(key_type, str) or key_type not in KEY_TYPES:
+        return Refusal("mpp/access-key-malformed")
+    assert isinstance(address, str)
+    return address.lower(), KEY_TYPES[key_type]
+
+
+def _authorized_key(k: KeyAuthorization, details: Mapping[str, Any]) -> str | Refusal:
+    """The key id of the challenge's issued key (_issued_key), when the payer's key authorization authorizes that key:
+    its key id and its key type are the challenge's. Tempo's subscription draft requires the authorization to name the
+    exact access key methodDetails.accessKey describes, both its accessKeyAddress and its keyType; a key authorization
+    for another key id or key type is tempo/key-not-authorized, so the activation and the payments under the key are
+    read under the one key the challenge issued."""
+    issued = _issued_key(details)
+    if isinstance(issued, Refusal):
+        return issued
+    key_id, key_type = issued
+    if not same_bytes(k.key_id, key_id) or k.key_type != key_type:
+        return Refusal("tempo/key-not-authorized")
+    return key_id
+
+
 def _subscription_witness(presented: Mapping[str, Any]) -> Echoed | Refusal:
+    """The echoed challenge, when the payload's signature carries a key authorization whose witness is H and whose
+    key is the challenge's issued key (_authorized_key)."""
     e = echoed_for(presented, SUBSCRIPTION)
     if isinstance(e, Refusal):
         return e
@@ -718,7 +748,8 @@ def _subscription_witness(presented: Mapping[str, Any]) -> Echoed | Refusal:
         return Refusal("tempo/no-witness")
     if not hash_equals(k.witness, e.h):
         return Refusal("tempo/witness-not-bound")
-    return e
+    key = _authorized_key(k, e.checked.details)
+    return key if isinstance(key, Refusal) else e
 
 
 def _subscription_bound(presented: Any) -> AtrHash | Refusal:
@@ -730,6 +761,8 @@ def _subscription_bound(presented: Any) -> AtrHash | Refusal:
 
 
 def _subscription_ref(presented: Any) -> dict[str, str] | Refusal:
+    """The network and the key authorization's digest, for a key authorization that authorizes the challenge's issued
+    key (_authorized_key)."""
     payload = _payload_of(presented)
     if isinstance(payload, Refusal):
         return payload
@@ -739,7 +772,10 @@ def _subscription_ref(presented: Any) -> dict[str, str] | Refusal:
     if not isinstance(payload.get("signature"), str):
         return Refusal("tempo/key-authorization-malformed")
     k = decode_key_authorization(payload["signature"])
-    return k if isinstance(k, Refusal) else {"network": p.network, "channel": k.digest}
+    if isinstance(k, Refusal):
+        return k
+    key = _authorized_key(k, p.details)
+    return key if isinstance(key, Refusal) else {"network": p.network, "channel": k.digest}
 
 
 def _subscription_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:

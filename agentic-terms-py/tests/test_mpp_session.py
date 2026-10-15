@@ -32,9 +32,10 @@ from integraledger_terms import _gate
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
+from integraledger_terms.bindings._tempo import encode_key_authorization
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, plant, run
-from mpp_docs import http_doc, issued, placed_doc
+from mpp_docs import b64u, http_doc, issued, placed_doc
 from support import digest, load, serving, sign_typed
 
 EVM = load("mpp-session-evm.json")
@@ -349,6 +350,62 @@ def test_mpp_subscription_tempo_b6_sub1_digest_with_witness_h() -> None:
     assert (len(signed["payload"]["signature"]) - 2) // 2 == SUB["SUB1"]["expectSignedLength"]
     channel = MPP_SUBSCRIPTION_TEMPO.channel  # type: ignore[attr-defined]
     assert channel.ref(signed) == {"network": "eip155:42431", "channel": SUB["SUB2"]["expectRefChannel"]}
+
+
+SUB_B6 = next(r for r in SUB["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
+
+
+def sub1_with(member: str, value: Any) -> dict[str, Any]:
+    """B6's credential with SUB1's key authorization, its member in place of SUB1's, signed by the payer key."""
+    a = SUB["SUB1"]["authorization"]
+    authorization = {
+        **a,
+        "chainId": int(a["chainId"]),
+        "expiry": int(a["expiry"]),
+        "limits": [{**lim, "limit": int(lim["limit"]), "period": int(lim["period"])} for lim in a["limits"]],
+        member: value,
+    }
+    unsigned = encode_key_authorization(authorization)
+    assert isinstance(unsigned, bytes), unsigned
+    signed = encode_key_authorization(authorization, sig65(keccak256(unsigned), SF["payerKey"]))
+    assert isinstance(signed, bytes), signed
+    return {**SUB_B6, "payload": {"type": "keyAuthorization", "signature": "0x" + signed.hex()}}
+
+
+def test_mpp_subscription_tempo_rows_whose_key_authorization_names_another_key() -> None:
+    # mpp-subscription-tempo.json's agreedRefusals rows with keyId or keyType (draft-tempo-subscription-00 L463-466, as
+    # the rows' about cites it): the key authorization authorizes the exact access key methodDetails.accessKey describes,
+    # both its accessKeyAddress and its keyType.
+    channel = MPP_SUBSCRIPTION_TEMPO.channel  # type: ignore[attr-defined]
+    assert MPP_SUBSCRIPTION_TEMPO.bound(SUB_B6) == H
+    rows = [r for r in SUB["agreedRefusals"]["rows"] if "keyId" in r or "keyType" in r]
+    assert rows
+    for row in rows:
+        member = "keyId" if "keyId" in row else "keyType"
+        presented = sub1_with(member, row[member])
+        assert MPP_SUBSCRIPTION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
+        assert channel.ref(presented) == Refusal(row["expect"]), row["case"]
+
+
+def test_mpp_subscription_tempo_the_issued_key_is_read_in_any_case_with_its_type() -> None:
+    # Tempo's IAccountKeychain SignatureType numbers the key types (tempoxyz/tempo 9bb63953, account_keychain.rs lines
+    # 24-28): secp256k1 0, P256 1, WebAuthn 2. The key id is the issued address's bytes, whatever case either writes.
+    channel = MPP_SUBSCRIPTION_TEMPO.channel  # type: ignore[attr-defined]
+    request = json.loads(SF["request"])
+    key = request["methodDetails"]["accessKey"]
+    upper = sub1_with("keyId", "0x" + key["accessKeyAddress"][2:].upper())
+    assert MPP_SUBSCRIPTION_TEMPO.bound(upper) == H
+    for key_type, number in (("secp256k1", 0), ("p256", 1), ("webAuthn", 2)):
+        request["methodDetails"]["accessKey"] = {**key, "keyType": key_type}
+        challenge = {**SUB_B6["challenge"], "request": b64u(json.dumps(request))}
+        for n in (0, 1, 2):
+            presented = {**sub1_with("keyType", n), "challenge": challenge}
+            expected: Any = H if n == number else Refusal("tempo/key-not-authorized")
+            assert (key_type, n, MPP_SUBSCRIPTION_TEMPO.bound(presented)) == (key_type, n, expected)
+    # channel.ref reads the challenge without the pairing's filter: an accessKey that is not one is the filter's code.
+    request["methodDetails"]["accessKey"] = {"accessKeyAddress": key["accessKeyAddress"]}
+    unfiltered = {**sub1_with("keyType", 0), "challenge": {**SUB_B6["challenge"], "request": b64u(json.dumps(request))}}
+    assert channel.ref(unfiltered) == Refusal("mpp/access-key-malformed")
 
 
 def test_mpp_subscription_tempo_b10_http_link() -> None:

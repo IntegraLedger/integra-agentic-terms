@@ -240,8 +240,12 @@ def _within_scopes(item: RlpItem, calls: bool) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class KeyAuthorization:
+    """A signed key authorization's digest, its key id, its key type (item 1, as Tempo numbers it: secp256k1 0, P256 1,
+    WebAuthn 2; any other value as given) and its witness."""
+
     digest: str
     key_id: str
+    key_type: int
     witness: str | None
 
 
@@ -263,7 +267,8 @@ def decode_key_authorization(signed: object) -> KeyAuthorization | Refusal:
     key_id = auth.items[2]
     if key_id.is_list or len(key_id.data) != 20:
         return bad
-    if rlp_uint(auth.items[0]) is None or rlp_uint(auth.items[1]) is None:
+    key_type = rlp_uint(auth.items[1])
+    if rlp_uint(auth.items[0]) is None or key_type is None:
         return bad
     for i in (4, 5):
         if i < len(auth.items) and not _within_scopes(auth.items[i], i == 5):
@@ -275,4 +280,4 @@ def decode_key_authorization(signed: object) -> KeyAuthorization | Refusal:
             return bad
         if len(w.data) == 32:
             witness = to_hex(w.data)
-    return KeyAuthorization(digest=to_hex(keccak256(auth.raw)), key_id=to_hex(key_id.data), witness=witness)
+    return KeyAuthorization(digest=to_hex(keccak256(auth.raw)), key_id=to_hex(key_id.data), key_type=key_type, witness=witness)
