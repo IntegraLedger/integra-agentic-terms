@@ -226,32 +226,40 @@ describe("mpp/charge/tempo/memo and push with splits", () => {
         expect(await check(ABC, done.signed, binding)).toEqual({ h: H });
       }
     }));
-  it.each(S.splits.agreedRefusals.rows.map((row) => [row.case, row] as const))(
-    "%s: no-payable-option before any fetch, with the row's refusal",
+  // The splits request placed by the pairing's advertise, then its request swapped for one with other splits: the
+  // challenge a seller sends when it places a request the pairing's filter refuses.
+  const withSplits = (binding: Binding, splits: unknown, broadcast: boolean): MppChallenge[] => {
+    const R = JSON.parse(S.splits.request);
+    if (broadcast) delete R.methodDetails.supportedModes;
+    const [placed] = docOf(binding, issued("tempo", JSON.stringify(R)));
+    return [{ ...placed!, request: b64u(JSON.stringify({ ...R, methodDetails: { ...R.methodDetails, splits } })) }];
+  };
+  const rowsOf = S.splits.agreedRefusals.rows;
+  it("the splits rows are read", () => expect(rowsOf.length).toBeGreaterThan(0));
+  it.each(rowsOf.map((row) => [row.case, row] as const))(
+    "%s: the challenge offers no Tempo pairing, by the row's refusal, and the gate declines before any fetch",
     (_case, row) =>
       at(f.now, async () => {
-        const R = JSON.parse(S.splits.request);
-        const doc = docOf(tempoMemo, issued("tempo", JSON.stringify({ ...R, methodDetails: { ...R.methodDetails, splits: row.splits } })));
+        const doc = withSplits(tempoMemo, row.splits, false);
+        const { id: _id, opaque: _opaque, ...asIssued } = doc[0]!;
+        expect(pairingsOf(asIssued as MppChallenge)).toEqual({ refused: true, code: row.expect });
         const fetch = serving(ABC);
         const out = await confirm(doc, tempoMemo, account(42431, f), fetch);
-        expect(code(out)).toBe("no-payable-option");
-        expect(isDeclined(out) && out.decline.detail).toBe(row.expect);
+        expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
         expect(fetch.calls).toBe(0);
       }),
   );
   // The Tempo charge draft (draft-tempo-charge-00, L223-318): splits, where present, holds at least one entry. A
-  // splits member present as null is no list of entries.
-  it.each(rows)("%#: a splits member present as null is no-payable-option mpp/splits-malformed, with no fetch and no signer call", (binding, broadcast) =>
+  // splits member present as null is no list of entries, so the challenge offers neither Tempo pairing.
+  it.each(rows)("%#: a splits member present as null offers nothing, with no fetch and no signer call", (binding, broadcast) =>
     at(f.now, async () => {
-      const R = JSON.parse(S.splits.request);
-      if (broadcast) delete R.methodDetails.supportedModes;
-      const doc = docOf(binding, issued("tempo", JSON.stringify({ ...R, methodDetails: { ...R.methodDetails, splits: null } })));
+      const doc = withSplits(binding, null, broadcast);
       const fetch = serving(ABC);
       const signer = counting(account(42431, f), async () => {
         throw new Error("the signer was called");
       });
       expect(await transact(doc, binding, signer, fetch)).toEqual({
-        decline: { code: "no-payable-option", detail: "mpp/splits-malformed" },
+        decline: { code: "no-payable-option", detail: "mpp/no-payable-option" },
       });
       expect(fetch.calls).toBe(0);
       expect(signer.requests.length).toBe(0);
