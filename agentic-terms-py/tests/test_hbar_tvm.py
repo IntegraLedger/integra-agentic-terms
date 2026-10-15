@@ -495,7 +495,7 @@ def test_x402_exact_tvm_a_bag_not_in_canonical_base64_is_malformed_before_its_si
 def test_x402_exact_tvm_an_exotic_cell_is_refused_by_the_check_that_parses_it() -> None:
     rows = json.loads((Path(__file__).parent / "tvm_exotic.json").read_text())["rows"]
     read = [r for r in rows if "settlementBoc" in r]
-    codes = {"tvm/boc-malformed", "tvm/not-w5-signed", "tvm/actions", "tvm/not-jetton-transfer", "tvm/payload-not-lcp"}
+    codes = {"tvm/boc-malformed", "tvm/actions", "tvm/not-jetton-transfer", "tvm/payload-not-lcp"}
     assert {r["expect"] for r in read} == codes | {F["H"]}
     for row in read:
         out = BINDING.bound(presented(row["settlementBoc"]))
@@ -629,16 +629,17 @@ def _v2_request() -> Cell:
     return settlement_root(signed).refs[0]
 
 
-def _message(dest: str, body: Cell, **fields: Write) -> Cell:
-    """An int_msg_info message to dest, written field by field: IHR disabled, no source, a value of 0, no extra
+def _message(to: str, body: Cell, /, **fields: Write) -> Cell:
+    """An int_msg_info message to the raw address to, written field by field: IHR disabled, no source, a value of 0, no extra
     currency, zero fees and times, no init and the body by reference. Each keyword writes the field it names instead:
-    flags (ihr_disabled, bounce, bounced), src, dest, value, extra, extra_flags, fwd_fee, times, init or body."""
-    to = raw_address(dest)
-    assert to is not None
+    flags (ihr_disabled, bounce, bounced), src, dest, value, extra, extra_flags, fwd_fee, times, init, body or tail,
+    which writes nothing after the body."""
+    address = raw_address(to)
+    assert address is not None
     write: dict[str, Write] = {
         "flags": lambda b: b.bit(1).bit(0).bit(0),
         "src": lambda b: b.uint(0, 2),
-        "dest": lambda b: b.uint(0b100, 3).sint(to.workchain, 8).buf(to.hash),
+        "dest": lambda b: b.uint(0b100, 3).sint(address.workchain, 8).buf(address.hash),
         "value": lambda b: b.coins(0),
         "extra": lambda b: b.bit(0),
         "extra_flags": lambda b: b.coins(0),
@@ -646,10 +647,11 @@ def _message(dest: str, body: Cell, **fields: Write) -> Cell:
         "times": lambda b: b.uint(0, 64 + 32),
         "init": lambda b: b.bit(0),
         "body": lambda b: b.bit(1).ref(body),
+        "tail": lambda b: b,
         **fields,
     }
     b = Builder().bit(0)
-    for name in ("flags", "src", "dest", "value", "extra", "extra_flags", "fwd_fee", "times", "init", "body"):
+    for name in ("flags", "src", "dest", "value", "extra", "extra_flags", "fwd_fee", "times", "init", "body", "tail"):
         write[name](b)
     return b.end()
 
@@ -721,3 +723,140 @@ def test_x402_exact_tvm_a_message_s_dictionaries_are_validated_as_ton_validates_
     for name, dictionary in currencies.items():
         assert bound(_settlement(extra=_extra(dictionary))) == Refusal("tvm/boc-malformed"), name
         assert bound(_settlement(_outgoing(extra=_extra(dictionary)))) == Refusal("tvm/not-jetton-transfer"), name
+
+
+def _address(raw: str) -> tuple[int, int]:
+    """A raw workchain:hex address's workchain, of any width, and its 256 bits."""
+    workchain, hex_hash = raw.split(":")
+    return int(workchain), int(hex_hash, 16)
+
+
+def _anycast(b: Builder, anycast: bool) -> Builder:
+    """Maybe Anycast: absent, or a rewrite prefix of depth 1."""
+    return b.bit(1).uint(1, 5).bit(0) if anycast else b.bit(0)
+
+
+def _std(raw: str, anycast: bool = False) -> Write:
+    workchain, value = _address(raw)
+    return lambda b: _anycast(b.uint(0b10, 2), anycast).sint(workchain, 8).uint(value, 256)
+
+
+def _var(raw: str, length: int = 256, anycast: bool = False) -> Write:
+    """addr_var of length bits: the address's bits, cut or followed by zeros."""
+    workchain, value = _address(raw)
+    bits = value >> (256 - length) if length <= 256 else value << (length - 256)
+    return lambda b: _anycast(b.uint(0b11, 2), anycast).uint(length, 9).sint(workchain, 32).uint(bits, length)
+
+
+def _on(workchain: int, raw: str) -> str:
+    return f"{workchain}:{raw.split(':')[1]}"
+
+
+# A library cell (exotic type 2 and a 256-bit hash), and a HashmapE 32 (VarUInteger 32) of one entry: key 1, value 5.
+_LIBRARY = Cell((2 << 256) | int.from_bytes(b"\x01" * 32, "big"), 8 + 256, (), True)
+_ONE_CURRENCY = Builder().uint(0b10, 2).uint(32, 6).uint(1, 32).uint(1, 5).uint(5, 8).end()
+
+
+# A message is read as TON's action phase sends it (ton-blockchain/ton crypto/block/transaction.cpp,
+# try_action_send_msg, at mainnet's configuration as @ton/sandbox 0.45.0 ships it): the relayer's sends the settlement
+# message, and the W5 wallet's the outgoing one. Each case is V2's settlement with one field of one message written
+# bit by bit. A form TON refuses to send is tvm/boc-malformed on the settlement message and tvm/not-jetton-transfer on
+# the outgoing one, and a form TON sends binds H. TON's transaction emulator and lcp's exactTvm.bound give each case
+# the same answer; the number after a case is the action phase's result code.
+def test_x402_exact_tvm_a_message_is_read_as_ton_s_action_phase_sends_it() -> None:
+    wallet, jetton, other = F["wallet"], F["jettonWallet"], f"0:{'12' * 32}"
+    tail: Write = lambda b: b.bit(1)  # noqa: E731
+    library: Write = lambda b: b.bit(1).ref(_LIBRARY)  # noqa: E731
+    extra = _extra(_ONE_CURRENCY)
+    flags_4: Write = lambda b: b.coins(4)  # noqa: E731
+    flags_3: Write = lambda b: b.coins(3)  # noqa: E731
+    sends = {
+        "the settlement written field by field": _settlement(),
+        "the settlement's src, another account's addr_std (TON sends it when that account relays it)": _settlement(src=_std(other)),
+        "the settlement's dest, an addr_var of 256 bits on workchain 0": _settlement(dest=_var(wallet)),
+        "the settlement's dest on the masterchain": _settlement(dest=_std(_on(-1, wallet))),
+        "the settlement's extra_flags of 3": _settlement(extra_flags=flags_3),
+        "the outgoing src, the W5 wallet's own addr_std": _settlement(_outgoing(src=_std(wallet))),
+        "the outgoing dest, an addr_var of 256 bits on workchain 0": _settlement(_outgoing(dest=_var(jetton))),
+    }
+    for name, boc in sends.items():
+        assert BINDING.bound(presented(boc)) == F["H"], name
+    malformed, not_transfer = Refusal("tvm/boc-malformed"), Refusal("tvm/not-jetton-transfer")
+    refused = {
+        "the settlement's src, an addr_extern (35)": (_settlement(src=lambda b: b.uint(1, 2).uint(8, 9).uint(0xFF, 8)), malformed),
+        "the settlement's src, an addr_var (35)": (_settlement(src=_var(other)), malformed),
+        "the settlement's src, an addr_std with anycast (35)": (_settlement(src=_std(other, True)), malformed),
+        "the settlement's src, an addr_std on workchain 1 (35)": (_settlement(src=_std(_on(1, other))), malformed),
+        "the settlement's dest, an addr_var of 256 bits with anycast (36)": (_settlement(dest=_var(wallet, 256, True)), malformed),
+        "the settlement's dest, an addr_var of 255 bits (36)": (_settlement(dest=_var(wallet, 255)), malformed),
+        "the settlement's dest, an addr_var on workchain 128 (36)": (_settlement(dest=_var(_on(128, wallet))), malformed),
+        "the settlement's dest, an addr_std on workchain 1 (36)": (_settlement(dest=_std(_on(1, wallet))), malformed),
+        "the settlement's dest, an addr_std with anycast (36)": (_settlement(dest=_std(wallet, True)), malformed),
+        "the settlement's extra currencies, one entry (44)": (_settlement(extra=extra), malformed),
+        "the settlement's extra_flags of 4 (45)": (_settlement(extra_flags=flags_4), malformed),
+        "the settlement's body reference, then one bit": (_settlement(tail=tail), malformed),
+        "the settlement's body reference, a library cell (34)": (_settlement(body=library), malformed),
+        "the outgoing src, another account's addr_std (35)": (_settlement(_outgoing(src=_std(other))), not_transfer),
+        "the outgoing src, the W5 wallet's address as an addr_var (35)": (_settlement(_outgoing(src=_var(wallet))), not_transfer),
+        "the outgoing dest, an addr_std with anycast (36)": (_settlement(_outgoing(dest=_std(jetton, True))), not_transfer),
+        "the outgoing dest, an addr_std on workchain 1 (36)": (_settlement(_outgoing(dest=_std(_on(1, jetton)))), not_transfer),
+        "the outgoing dest, an addr_var of 264 bits (36)": (_settlement(_outgoing(dest=_var(jetton, 264))), not_transfer),
+        "the outgoing extra currencies, one entry (44)": (_settlement(_outgoing(extra=extra)), not_transfer),
+        "the outgoing extra_flags of 4 (45)": (_settlement(_outgoing(extra_flags=flags_4)), not_transfer),
+        "the outgoing body reference, then one bit": (_settlement(_outgoing(tail=tail)), not_transfer),
+        "the outgoing body reference, a library cell (34)": (_settlement(_outgoing(body=library)), not_transfer),
+    }
+    for name, (boc, expect) in refused.items():
+        assert BINDING.bound(presented(boc)) == expect, name
+
+
+def _proofs(c: Cell, levels: int) -> Cell:
+    """The cell under levels Merkle proofs (exotic type 3: the child's level-0 hash and depth)."""
+    for _ in range(levels):
+        c = Cell((3 << 272) | (int.from_bytes(c.hashes[0], "big") << 16) | c.depths[0], 280, (c,), True)
+    return c
+
+
+# TON refuses to send a message whose init and body nest Merkle proofs or updates three deep
+# (ton-blockchain/ton crypto/block/transaction.h, max_allowed_merkle_depth; result 40), counted along every path from
+# the settlement message, the outgoing message under its body included. TON's emulator and lcp's exactTvm.bound send
+# and bind two levels, in the settlement's init and in the outgoing message's, and refuse three in either.
+def test_x402_exact_tvm_a_message_nests_at_most_two_merkle_levels() -> None:
+    code, data = _v2b_code_and_data()
+
+    def init(levels: int) -> Cell:
+        return Builder().bit(0).bit(0).maybe_ref(_proofs(code, levels)).maybe_ref(data).bit(0).end()
+
+    def settlement(c: Cell) -> str:
+        return _settlement(init=_init_by_ref(c))
+
+    def outgoing(c: Cell) -> str:
+        return _settlement(_outgoing(init=_init_by_ref(c)))
+
+    for placed in (settlement, outgoing):
+        assert BINDING.bound(presented(placed(init(2)))) == F["H"]
+        assert BINDING.bound(presented(placed(init(3)))) == Refusal("tvm/boc-malformed")
+
+
+def _canonical(boc: object) -> bool:
+    try:
+        return isinstance(boc, str) and base64.b64encode(base64.b64decode(boc, validate=True)).decode() == boc
+    except ValueError:
+        return False
+
+
+# The agreedRefusals rows whose settlement bag TON reads and whose settlement message TON's action phase refuses to
+# send, or whose bag TON's deserialization refuses: each row's bytes are TON's own emulator's verdict.
+def test_x402_exact_tvm_agreed_refusals_of_settlements_ton_refuses() -> None:
+    rows = [r for r in V["agreedRefusals"]["rows"] if _canonical(r.get("settlementBoc")) and r["expect"] == "tvm/boc-malformed"]
+    assert len(rows) >= 1
+    for row in rows:
+        assert BINDING.bound(presented(row["settlementBoc"])) == Refusal(row["expect"]), row["case"]
+
+
+# The agreedRefusals rows whose outgoing message, the W5 request's one action, TON's action phase does not send.
+def test_x402_exact_tvm_agreed_refusals_of_outgoing_messages_ton_does_not_send() -> None:
+    rows = [r for r in V["agreedRefusals"]["rows"] if "settlementBoc" in r and r["expect"] == "tvm/not-jetton-transfer"]
+    assert len(rows) >= 1
+    for row in rows:
+        assert BINDING.bound(presented(row["settlementBoc"])) == Refusal(row["expect"]), row["case"]

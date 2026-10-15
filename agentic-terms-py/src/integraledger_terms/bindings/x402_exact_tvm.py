@@ -14,11 +14,12 @@ from ._codec import b64_decode
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._ton_cell import Builder, Cell, Malformed, parse_boc, serialize_boc
 from ._ton_tlb import (
+    MAINNET,
     Address,
     is_state_init,
     load_address,
     load_maybe_address,
-    load_message_relaxed,
+    message_of,
     raw_address,
     store_address,
     store_internal_message,
@@ -138,15 +139,19 @@ def _send_message(actions: Cell) -> Cell | Refusal:
 def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
     """The hash and the forward payload of the signed request in a settlement bag of cells: an internal message whose
     body is a W5 internal_signed request with exactly one action_send_msg behind an empty list, carrying a Jetton
-    transfer whose forward payload is a reference to a text comment holding an LCP string."""
+    transfer whose forward payload is a reference to a text comment holding an LCP string. Each message is read as
+    TON's action phase sends it (message_of), at mainnet's configuration: a source of addr_none or an addr_std with no
+    anycast (the outgoing message's the W5 wallet's own), a destination TON sends to, an extra_flags of at most 3, no
+    extra currency, its state init validated as TON validates it, a referenced body that is an ordinary cell with
+    nothing after it, and at most two nested Merkle proofs or updates. The settlement message TON would not send is
+    tvm/boc-malformed, and the outgoing one tvm/not-jetton-transfer. The settlement message's source names the account
+    that relays it, which the bag cannot show: one naming another account is read, and TON sends it when that account
+    relays it."""
     root = root_of(settlement_boc)
     if isinstance(root, Refusal):
         return root
-    try:
-        message = load_message_relaxed(root.slice())
-    except Malformed:
-        return Refusal("tvm/boc-malformed")
-    if not message.internal:
+    message = message_of(root, None, MAINNET)
+    if message is None:
         return Refusal("tvm/boc-malformed")
     try:
         s = message.body.slice()
@@ -165,11 +170,8 @@ def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
     send = _send_message(actions)
     if isinstance(send, Refusal):
         return send
-    try:
-        out = load_message_relaxed(send.slice())
-    except Malformed:
-        return Refusal("tvm/not-jetton-transfer")
-    if not out.internal:
+    out = message_of(send, message.dest, MAINNET)
+    if out is None:
         return Refusal("tvm/not-jetton-transfer")
     payload = _jetton_payload(out.body)
     if isinstance(payload, Refusal):

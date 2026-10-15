@@ -1,15 +1,38 @@
-"""The TL-B the TON pairing reads and writes: raw addresses (MsgAddressInt addr_std, with anycast read), the
-relaxed message (CommonMsgInfoRelaxed, Maybe StateInit, the body), StateInit, and currency collections."""
+"""The TL-B the TON pairing reads and writes: raw addresses (MsgAddressInt addr_std, with anycast read), StateInit, and
+a message as TON's action phase sends it, at a network's configuration."""
 
 import re
 from dataclasses import dataclass
 
-from ._ton_cell import Builder, Cell, Malformed, Slice, Validation
+from ._ton_cell import Builder, Cell, Malformed, Slice, Validation, merkle_depth
 
 _RAW_ADDRESS = re.compile(r"-?[0-9]{1,10}:[0-9a-fA-F]{64}")
 # The cells TON's TL-B validation reads at most (ton-blockchain/ton crypto/tl/tlblib.hpp, default_validate_max_cells):
 # of a message's state init, and of the action that sends a message.
 STATE_INIT_MAX_READS = 1024
+# The Merkle proofs and updates a sent message may nest (ton-blockchain/ton crypto/block/transaction.h,
+# Transaction::max_allowed_merkle_depth).
+MAX_MERKLE_DEPTH = 2
+
+
+@dataclass(frozen=True, slots=True)
+class TonConfiguration:
+    """The network configuration TON's message rules rest on, for one network.
+    - global_version: ConfigParam 8, capabilities#c4 version:uint32. From 10, TON's action phase refuses an anycast
+      address (disable_anycast) and holds a message's extra currencies to max_msg_extra_currencies
+      (extra_currency_v2); from 12, a message's extra_flags may set its two low bits only.
+    - workchains: the workchains a message may name: the masterchain (-1), and ConfigParam 12's workchains that are
+      basic and accept messages. Each takes 256-bit addresses only.
+    - max_msg_extra_currencies: ConfigParam 43, how many extra currencies a sent message may hold."""
+
+    global_version: int
+    workchains: frozenset[int]
+    max_msg_extra_currencies: int
+
+
+# Mainnet's configuration: the one @ton/sandbox 0.45.0 ships (defaultConfig, configuration seqno 92871331, ConfigParam
+# 19 global id -239), read offline. ConfigParam 12 holds one workchain, 0.
+MAINNET = TonConfiguration(global_version=15, workchains=frozenset({-1, 0}), max_msg_extra_currencies=0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,11 +96,6 @@ def load_maybe_address(s: Slice) -> Address | None:
     raise Malformed
 
 
-def _extra_currency(s: Slice) -> bool:
-    s.uint(8 * s.uint(5))
-    return True
-
-
 def _simple_lib(s: Slice) -> bool:
     """simple_lib public:Bool root:^Cell."""
     s.bit()
@@ -123,45 +141,109 @@ def _inline_state_init(s: Slice) -> Cell:
     return Cell((s.cell.value >> (s.cell.length - s.at)) & ((1 << length) - 1), length, s.cell.refs[refs_at : s.ref_at])
 
 
-@dataclass(frozen=True, slots=True)
-class Relaxed:
-    """A relaxed message: internal carries dest; the body is its own cell."""
+def msg_address(s: Slice, config: TonConfiguration) -> tuple[int, Address | None]:
+    """A TL-B MsgAddress read from the slice (block.tlb: addr_none$00, addr_extern$01, addr_std$10 and addr_var$11, an
+    anycast's depth:(#<= 30) { depth >= 1 }): its tag, and the address it names when it has no anycast, 256 bits and a
+    workchain the configuration holds, else None. TON refuses an anycast address from global version 10. Another
+    anycast depth, or a read past the slice's end, is Malformed."""
+    tag = s.uint(2)
+    if tag == 0:
+        return tag, None
+    if tag == 1:
+        s.uint(s.uint(9))
+        return tag, None
+    anycast = s.bit()
+    if anycast:
+        depth = s.uint(5)
+        if not 1 <= depth <= 30:
+            raise Malformed
+        s.uint(depth)
+    length = 256 if tag == 2 else s.uint(9)
+    workchain = s.sint(8) if tag == 2 else s.sint(32)
+    if length != 256:
+        s.uint(length)
+        return tag, None
+    address = Address(workchain, s.buf(32))
+    return tag, None if anycast or workchain not in config.workchains else address
 
-    internal: bool
-    dest: Address | None
+
+@dataclass(frozen=True, slots=True)
+class Message:
+    """A message TON's action phase sends: the address it sends to, and its body."""
+
+    dest: Address
     body: Cell
 
 
-def load_message_relaxed(s: Slice) -> Relaxed:
-    """MessageRelaxed: CommonMsgInfoRelaxed, Maybe (Either StateInit ^StateInit), Either X ^X. An int_msg_info is read
-    in full; any other info is reported as not internal. The init, a ^StateInit or the cell its inline fields make,
-    must be one is_state_init holds, and the extra currencies a HashmapE 32 (VarUInteger 32) validated as TON validates
-    the action that sends the message: within 1,024 cell reads with its node and the message, a ^StateInit and a
-    referenced body."""
-    if s.bit():
-        return Relaxed(False, None, Cell(0, 0))
-    s.bit()
-    s.bit()
-    s.bit()
-    load_maybe_address(s)
-    dest = load_address(s)
-    s.coins()
-    extra = s.maybe_ref()
-    s.coins()
-    s.coins()
-    s.uint(64)
-    s.uint(32)
-    init_ref = False
-    if s.bit():
-        init_ref = s.bit()
-        if not is_state_init(s.ref() if init_ref else _inline_state_init(s)):
-            raise Malformed
-    body_ref = s.bit()
-    body = s.ref() if body_ref else s.as_cell()
-    reads = STATE_INIT_MAX_READS - 2 - init_ref - body_ref
-    if extra is not None and not Validation(reads).hashmap(extra, 32, _extra_currency):
-        raise Malformed
-    return Relaxed(True, dest, body)
+def message_of(c: Cell, sender: Address | None, config: TonConfiguration) -> Message | None:
+    """The message as TON's action phase sends it at the configuration (ton-blockchain/ton
+    crypto/block/transaction.cpp: the action list's t_OutListNode.validate_ref, then try_action_send_msg), or None
+    where TON refuses to send it. The cell is TL-B's MessageRelaxed Any with int_msg_info$0, read to its end:
+    - src is addr_none or the sender's own address (check_replace_src_addr): sender when it is known, else an addr_std
+      with no anycast on a workchain the configuration holds. The settlement message's sender is the account that
+      relays it, which the bytes do not name: a source naming another account is read, and TON sends it when that
+      account relays it;
+    - dest is an address TON sends to (check_rewrite_dest_addr): an addr_std with no anycast, or an addr_var of 256
+      bits with no anycast, which TON sends as that addr_std, on a workchain the configuration holds. The answer's dest
+      is that addr_std;
+    - the extra currencies are a valid HashmapE 32 (VarUInteger 32) of at most the configuration's
+      max_msg_extra_currencies entries, and from global version 12 extra_flags sets no bit above its two low ones;
+    - the init, when present, is a ^StateInit, or a StateInit inline, taken as the cell its fields make, either of
+      them one is_state_init holds;
+    - the body is the remainder, or a reference to an ordinary cell with nothing after it (TL-B validation reads the
+      referenced cell, TLB::validate_ref_internal);
+    - the action list's validation reads at most 1,024 cells: its node, the message, each extra-currency dictionary
+      cell on each path, a ^StateInit and a referenced body;
+    - at most MAX_MERKLE_DEPTH Merkle proofs and updates nest under the init and the body."""
+    if c.exotic:
+        return None
+    try:
+        s = c.slice()
+        if s.bit():
+            return None
+        s.uint(3)
+        tag, src = msg_address(s, config)
+        if tag != 0 and (tag != 2 or src is None or (sender is not None and src != sender)):
+            return None
+        tag, dest = msg_address(s, config)
+        if tag < 2 or dest is None:
+            return None
+        s.coins()
+        extra = s.maybe_ref()
+        flags = s.coins()
+        if config.global_version >= 12 and flags > 3:
+            return None
+        s.coins()
+        s.uint(64 + 32)
+        init: Cell | None = None
+        init_ref = False
+        if s.bit():
+            init_ref = s.bit()
+            init = s.ref() if init_ref else _inline_state_init(s)
+            if not is_state_init(init):
+                return None
+        body_ref = s.bit()
+        body = s.ref() if body_ref else s.as_cell()
+        if body_ref and (body.exotic or s.remaining_bits != 0 or s.remaining_refs != 0):
+            return None
+        if extra is not None:
+            count = 0
+
+            def currency(v: Slice) -> bool:
+                nonlocal count
+                v.uint(8 * v.uint(5))
+                count += 1
+                return True
+
+            reads = STATE_INIT_MAX_READS - 2 - init_ref - body_ref
+            if not Validation(reads).hashmap(extra, 32, currency) or count > config.max_msg_extra_currencies:
+                return None
+        under = ([] if init is None else [init]) + ([body] if body_ref else list(body.refs))
+        if merkle_depth(under) > MAX_MERKLE_DEPTH:
+            return None
+        return Message(dest, body)
+    except Malformed:
+        return None
 
 
 def store_internal_message(

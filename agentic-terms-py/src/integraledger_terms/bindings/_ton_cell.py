@@ -4,7 +4,7 @@ gives it, and a slice of one is Malformed, so each read refuses one where it par
 
 import hashlib
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 MAX_BITS = 1023
@@ -199,6 +199,26 @@ class Cell:
             raise Malformed
         return Slice(self)
 
+
+def merkle_depth(cells: Iterable[Cell]) -> int:
+    """The most Merkle proofs and updates on any path down from these cells, each distinct cell read once
+    (ton-blockchain/ton crypto/vm/boc.cpp, CellStorageStat::add_used_storage)."""
+    depth: dict[bytes, int] = {}
+    most = 0
+    for root in cells:
+        pending = [(root, False)]
+        while pending:
+            c, read = pending.pop()
+            if c.hash in depth:
+                continue
+            if not read:
+                pending.append((c, True))
+                pending.extend((r, False) for r in c.refs)
+                continue
+            merkle = c.exotic and c.value >> (c.length - 8) in (_MERKLE_PROOF, _MERKLE_UPDATE)
+            depth[c.hash] = max((depth[r.hash] for r in c.refs), default=0) + (1 if merkle else 0)
+        most = max(most, depth[root.hash])
+    return most
 
 
 class Builder:

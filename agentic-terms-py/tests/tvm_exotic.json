@@ -14,7 +14,7 @@
   {
    "case": "the signed request replaced by a library cell",
    "settlementBoc": "te6cckEBAgEAVgABYEIADtENNxn3kUIAFNc7yAew3UEFynQJ0dvfenH1I4gDsi+AAAAAAAAAAAAAAAAAAQEIQgIBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAaGHSiE=",
-   "expect": "tvm/not-w5-signed"
+   "expect": "tvm/boc-malformed"
   },
   {
    "case": "the action list replaced by a library cell",
