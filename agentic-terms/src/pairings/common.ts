@@ -140,6 +140,17 @@ export function bytesOf(s: unknown, length?: number): Uint8Array | undefined {
   return out;
 }
 
+/** The bytes of padded standard base64 in its canonical form (RFC 4648 sections 3.5 and 4), else undefined. */
+export function fromBase64(s: string): Uint8Array | undefined {
+  try {
+    const binary = atob(s);
+    if (btoa(binary) !== s) return undefined;
+    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  } catch {
+    return undefined;
+  }
+}
+
 /** `0x` and the lowercase hex of the bytes. */
 export function hexOf(b: Uint8Array): `0x${string}` {
   let s = "0x";

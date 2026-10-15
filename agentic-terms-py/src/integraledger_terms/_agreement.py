@@ -10,7 +10,6 @@ after it was sent carries it as moved. Setting the caller's signal ends the exch
 
 import asyncio
 import base64
-import binascii
 import re
 import time
 from collections.abc import Coroutine, Mapping, Sequence
@@ -22,7 +21,7 @@ import httpx
 from . import _gate
 from ._core import AtrHash, hash_equals, is_hash
 from ._core import atr_hash as hash_of
-from .bindings._codec import js_json
+from .bindings._codec import b64_decode, js_json
 from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
 from .bindings._x402 import MAX_OPTIONS
@@ -132,14 +131,12 @@ def _from_base64_json(header: str) -> object | None:
     """The JSON value a header of at most 64 KiB carries as padded standard base64 (RFC 4648 section 4) whose final
     character's unused bits are zero, of UTF-8 JSON text nested at most 64 levels deep whose leading byte order mark is
     kept as a character; None for anything else."""
-    if len(header) > MAX_ANSWER_BYTES:
+    raw = b64_decode(header) if len(header) <= MAX_ANSWER_BYTES else None
+    if raw is None:
         return None
     try:
-        raw = base64.b64decode(header, validate=True)
-        if base64.b64encode(raw).decode("ascii") != header:
-            return None
         loaded: object = parse_json(raw.decode("utf-8"))
-    except (binascii.Error, UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError):
         return None
     return None if loaded is UNPARSED else loaded
 

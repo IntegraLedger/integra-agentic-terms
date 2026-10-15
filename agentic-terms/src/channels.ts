@@ -10,7 +10,7 @@
 import { fromLcpString, hash, hashEquals, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
-import { fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
+import { fromBase64, fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
 import { KEY } from "./pairings/x402-batch-settlement-solana.js";
 import {
   MAX_ATR_BYTES,
@@ -114,17 +114,6 @@ function toBase64(bytes: Uint8Array): string {
   let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
-}
-
-/** The bytes of padded standard base64 in its canonical form (RFC 4648 sections 3.5 and 4), else undefined. */
-function fromBase64(s: string): Uint8Array | undefined {
-  try {
-    const binary = atob(s);
-    if (btoa(binary) !== s) return undefined;
-    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  } catch {
-    return undefined;
-  }
 }
 
 /**

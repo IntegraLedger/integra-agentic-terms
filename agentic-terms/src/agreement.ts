@@ -21,7 +21,7 @@ import {
 } from "@integraledger/lcp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected } from "./gate.js";
-import { isRefusal } from "./pairings/common.js";
+import { fromBase64, isRefusal } from "./pairings/common.js";
 import type {
   AgreeOptions,
   AgreementPayment,
@@ -51,7 +51,6 @@ const READ_STATUSES: readonly number[] = [200, 402];
 const RETRY_DEFAULT_S = 2;
 const RETRY_MIN_S = 1;
 const DECIMAL = /^[0-9]{1,9}$/;
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 interface Answer {
   status: number;
@@ -92,11 +91,9 @@ function toBase64(text: string): string {
  * kept as a character; undefined for anything else.
  */
 function fromBase64Json(header: string): unknown {
-  if (header.length > MAX_ANSWER_BYTES || !BASE64.test(header)) return undefined;
+  const bytes = header.length > MAX_ANSWER_BYTES ? undefined : fromBase64(header);
+  if (bytes === undefined) return undefined;
   try {
-    const binary = atob(header);
-    if (btoa(binary) !== header) return undefined;
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
     return parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
   } catch {
     return undefined;
