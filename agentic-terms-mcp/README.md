@@ -27,7 +27,8 @@ tools return.
 
 ## Key concepts
 
-- **Agentic Transaction Record (ATR):** the agreement's record, a JSON document the seller serves.
+- **Agentic Transaction Record (ATR):** the agreement's record: the exact bytes the seller serves; `assemble` in
+  `@integraledger/lcp` writes them as one JSON object.
 - **ATR hash (H):** SHA-256 over the ATR's exact bytes.
 - **Legal Context Protocol (LCP):** the pattern these tools implement: the payment carries H, so paying is agreeing to
   that exact record.

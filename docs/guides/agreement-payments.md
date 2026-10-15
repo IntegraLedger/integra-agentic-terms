@@ -63,6 +63,8 @@ sequenceDiagram
    `approve`, unchanged.
 5. **Pay.** With `approved`, the gate builds exactly that payment with H and hands it to your signer (or to
    `agreementSigner`, where you gave one). It sends it in the `PAYMENT-SIGNATURE` header, with no second unpaid request.
+   A signed payment nested past 64 levels, or one JSON cannot write, is declined `signed-not-bound`, "The agreement
+   payment is not plain JSON.", and is not sent.
 6. **Wait for the receipt.** After a `202`, the gate waits the `Retry-After` seconds (one to nine digits, surrounding
    spaces, tabs, CRs and LFs aside, at least 1; 2 when absent or in any other form, an HTTP-date included) and sends
    **the same payment** again. After a `5xx` or a timeout it does the same after 2 seconds.

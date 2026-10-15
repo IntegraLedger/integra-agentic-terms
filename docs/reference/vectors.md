@@ -18,7 +18,7 @@ both gates must produce exactly that.
 | --- | --- |
 | `core-vectors.json` | The ATR's bytes and their hash: assembly, SHA-256 and hash comparison, including a record changed by one byte. |
 | `buyer.json` | The gate's own rows, below: the comparison, the fetch bounds, the build, the finish and the agreement exchange. |
-| A file per pairing, or per family of pairings (`x402-exact-eip155-eip3009.json`, `x402-batch-settlement.json`, …) | The request each pairing builds with H, the payment the signer's answer completes, and where H sits in it. Each file's `buyer` section holds its pairings' changed-record rows (B2) and build-and-sign rows (B6); its `noSignedPayment` names each of its pairings that has no B6 row, and why. |
+| A file per pairing, or per family of pairings (`x402-exact-eip155-eip3009.json`, `x402-batch-settlement.json`, …) | The request each pairing builds with H, the payment the signer's answer completes, and where H sits in it. Each file's `buyer` section holds its pairings' changed-record rows (B2) and bound-check rows (B6); its `noSignedPayment` names each of its pairings that has no B6 row, and why. |
 | `mpp-challenge.json` | The MPP challenge pieces every MPP pairing shares. |
 | `decoder-caps.json` | The depth and size bounds of the rail decoders. |
 

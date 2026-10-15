@@ -24,7 +24,8 @@ record's content: what the record says is for you and your principal to judge.
 
 ## Key concepts
 
-- **Agentic Transaction Record (ATR):** the agreement's record, a JSON document the seller serves.
+- **Agentic Transaction Record (ATR):** the agreement's record: the exact bytes the seller serves; `assemble` in
+  `@integraledger/lcp` writes them as one JSON object.
 - **ATR hash (H):** SHA-256 over the ATR's exact bytes, `0x` and 64 hex digits. It is computed over the bytes as
   received, never over a parsed and re-serialised copy.
 - **Legal Context Protocol (LCP):** the pattern this package implements: the payment carries H, so paying is agreeing
