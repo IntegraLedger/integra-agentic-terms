@@ -12,7 +12,7 @@ from .._keccak import keccak256
 from .._types import Advertised, Refusal
 from ._codec import b64u_decode, b64u_encode, to_hex
 from ._evm import ZERO_ADDRESS
-from ._jose import js_length
+from ._jose import js_length, within_depth
 from ._lcp import (
     agreement_fault,
     from_lcp_string,
@@ -25,6 +25,7 @@ from ._lcp import (
     normal_hash,
 )
 from ._mpp_checks import (
+    MAX_JSON_DEPTH,
     PAIRING_CHECKS,
     USDC_PROFILES,
     decode_object,
@@ -42,7 +43,6 @@ from ._mpp_checks import (
 
 MAX_CHALLENGES = 32
 MAX_CREDENTIAL = 65_536
-MAX_JSON_DEPTH = 16
 MAX_LINK = 2048
 LCP_KEYS = ("legalContext", "legalContextUrl", "legalContextAgreementUrl")
 TEMPO_DEFAULT_CHAIN = 42431
@@ -404,13 +404,15 @@ def network(challenge: object) -> str | Refusal:
 
 
 def _json_within(value: object, limit: int) -> bool:
-    """True when value is JSON data of at most limit bytes as JSON, counted as MPP counts it, and depth 16."""
+    """True when value is JSON data of at most limit bytes as JSON, counted as MPP counts it, nested at most 16 arrays
+    and objects, the outermost counting 1, whatever the innermost holds. The depth is read first, without recursion,
+    so the byte count never walks deeper than 16 levels."""
+    if not within_depth(value, MAX_JSON_DEPTH):
+        return False
     budget = limit
 
-    def walk(x: object, d: int) -> bool:
+    def walk(x: object) -> bool:
         nonlocal budget
-        if d > MAX_JSON_DEPTH:
-            return False
         if isinstance(x, str):
             budget -= utf16_length(x) + 2
         elif x is None or isinstance(x, (bool, int, float)):
@@ -418,19 +420,19 @@ def _json_within(value: object, limit: int) -> bool:
         elif is_list(x):
             budget -= 2
             for y in x:
-                if not walk(y, d + 1):
+                if not walk(y):
                     return False
         elif is_object(x):
             budget -= 2
             for k, y in x.items():
                 budget -= (utf16_length(k) if isinstance(k, str) else 0) + 3
-                if not walk(y, d + 1):
+                if not walk(y):
                     return False
         else:
             return False
         return budget >= 0
 
-    return walk(value, 0)
+    return walk(value)
 
 
 def credential_of(c: object) -> Mapping[str, Any] | Refusal:

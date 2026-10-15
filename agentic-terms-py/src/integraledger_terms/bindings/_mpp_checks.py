@@ -9,13 +9,14 @@ from typing import Any
 from .._types import Refusal
 from ._codec import b58_decode, b64u_decode, canonical_or_none, utf16_key
 from ._hedera_proto import amount_of, is_entity
-from ._jose import parse_json
+from ._jose import parse_json, within_depth
 from ._lcp import is_address, is_list, is_object
 
 Obj = Mapping[str, Any]
 PairingCheck = Callable[[Obj, Obj, Obj], "list[str] | Refusal"]
 
 MAX_DECODED = 8192
+# The depth MPP holds a decoded object or an echoed challenge to, as the protocol package's MPP reads hold them.
 MAX_JSON_DEPTH = 16
 MAX_SAFE_INTEGER = 2**53 - 1
 UINT256_LIMIT = 2**256
@@ -163,16 +164,6 @@ def unix_of(text: object) -> int | None:
 
 
 
-def _depth(value: object, d: int) -> int:
-    """The nesting depth of objects and arrays, counting from d, stopping once past MAX_JSON_DEPTH."""
-    if d > MAX_JSON_DEPTH or not isinstance(value, (dict, list)):
-        return d
-    deepest = d + 1
-    for item in value.values() if isinstance(value, dict) else value:
-        deepest = max(deepest, _depth(item, d + 1))
-    return deepest
-
-
 def decode_object(text: object) -> dict[str, Any] | None:
     """The JSON object a strict base64url-nopad value holds: at most 8 KiB, UTF-8, depth 16, serialisable."""
     raw = b64u_decode(text, MAX_DECODED)
@@ -182,7 +173,7 @@ def decode_object(text: object) -> dict[str, Any] | None:
         value = parse_json(raw.decode("utf-8"))
     except UnicodeDecodeError:
         return None
-    if not isinstance(value, dict) or _depth(value, 0) > MAX_JSON_DEPTH:
+    if not isinstance(value, dict) or not within_depth(value, MAX_JSON_DEPTH):
         return None
     if canonical_or_none(value) is None:
         return None
