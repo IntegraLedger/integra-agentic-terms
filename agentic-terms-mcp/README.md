@@ -185,6 +185,10 @@ and the agent must not send one.
 Byte values cross the tools as JSON: the ATR as `atr: { base64, utf8 }` (`utf8` is `null` when the bytes are not valid
 UTF-8), integers as decimal strings, byte strings as `0x` hex.
 
+An `atr` argument is the ATR's bytes as padded standard base64 in its canonical form (RFC 4648 §3.5), the form
+`atr.base64` is returned in. Any other value fails the tool's input schema, as any malformed argument does, and the tool
+fetches and signs nothing.
+
 ### Always offered
 
 | Tool | Arguments | Returns | Annotations |

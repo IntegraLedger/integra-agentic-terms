@@ -29,6 +29,7 @@ import {
   type Signer,
 } from "@integraledger/terms";
 import { BINDINGS as LCP_BINDINGS, hashEquals, type Json } from "@integraledger/lcp";
+import { fromBase64 } from "@integraledger/lcp/core";
 import { macOf, seal, unseal, verifies, type HoldJson } from "./hold.js";
 import { VERSION } from "./version.js";
 
@@ -187,9 +188,6 @@ async function unsealChosen(chosen: HoldJson): Promise<HoldJson | undefined> {
   return (await verifies("chosen", members, mac)) ? members : undefined;
 }
 
-/** The bytes of a standard base64 string. */
-const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
-
 const JSON_VALUE: z.ZodType<Json> = z.json() as z.ZodType<Json>;
 
 /** The agreement receipt for `h`: `{atrHash, agreed: true, network, transaction}` naming this ATR hash. */
@@ -229,7 +227,17 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
   const byId = new Map(BINDINGS.map((b) => [b.id as string, b]));
   const ids = [...byId.keys()] as [string, ...string[]];
   const pairing = z.enum(ids);
-  const atr = z.base64();
+  /**
+   * An `atr` argument, read as the ATR's bytes: padded standard base64 in its canonical form (RFC 4648 §3.5), through
+   * the protocol package's reader. Any other value fails the tool's input schema, as any malformed argument does, so
+   * the tool fetches and signs nothing for it.
+   */
+  const atr = z.base64().transform((base64, ctx): Uint8Array => {
+    const bytes = fromBase64(base64);
+    if (bytes !== null) return bytes;
+    ctx.addIssue({ code: "custom", input: base64, message: "Not padded standard base64 in its canonical form (RFC 4648 §3.5)" });
+    return z.NEVER;
+  });
   const inputs = z.record(z.string(), JSON_VALUE).optional();
   const approved = z.record(z.string(), JSON_VALUE).optional();
   const bindingOf = (id: string): Binding => byId.get(id)!;
@@ -272,7 +280,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       const { mac: _mac, ...members } = a.chosen;
       const chosen = hasChannel(binding) ? await unsealChosen(a.chosen) : members;
       if (chosen === undefined) return chosenUnverified();
-      const out = await finish(bytesOf(a.atr), chosen as unknown as Chosen, a.signature as Signature, binding);
+      const out = await finish(a.atr, chosen as unknown as Chosen, a.signature as Signature, binding);
       if ("decline" in out) return declinedResult(out);
       if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next) });
       return result({ atrHash: out.h, ...(await signedOf(out, binding)) });
@@ -287,7 +295,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
-      const out = await check(bytesOf(a.atr), a.presented, bindingOf(a.pairing));
+      const out = await check(a.atr, a.presented, bindingOf(a.pairing));
       if ("decline" in out) return declinedResult(out);
       return result({ atrHash: out.h });
     },
@@ -333,7 +341,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
             decline: { code: "offer-unreadable", detail: "The chosen payment names no agreement URL." },
           });
         }
-        const out = await agree(bytesOf(a.atr), url, payer, fetch, {
+        const out = await agree(a.atr, url, payer, fetch, {
           approved: a.approved as AgreementPayment | undefined,
           inputs: (a.inputs ?? {}) as Inputs,
           signal: ctx.mcpReq.signal,
@@ -356,7 +364,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
     async (a) => {
       const landed = a.landed === undefined ? {} : { landed: a.landed };
       if (!(await verifies("opening", { pairing: a.pairing, signed: a.signed, ...landed }, a.mac))) return openingUnverified();
-      const out = await openChannel(bytesOf(a.atr), a.signed as Presented, bindingOf(a.pairing), a.landed);
+      const out = await openChannel(a.atr, a.signed as Presented, bindingOf(a.pairing), a.landed);
       if ("decline" in out) return declinedResult(out);
       return result({ atrHash: out.h, hold: await seal(jsonOf(out) as HoldJson) });
     },

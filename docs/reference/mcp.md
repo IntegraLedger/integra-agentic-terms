@@ -47,6 +47,10 @@ and, where the signer moved the payment, `moved: { signed, atr: { base64, utf8 }
 Values cross as JSON: the ATR as `atr: { base64, utf8 }` (`utf8` is `null` when the bytes are not valid UTF-8), every
 integer as a decimal string, every byte string as `0x` hex.
 
+An `atr` argument is the ATR's bytes as padded standard base64 in its canonical form (RFC 4648 §3.5), the form
+`atr.base64` is returned in. Any other value fails the tool's input schema, as any malformed argument does, and the tool
+fetches and signs nothing.
+
 ## Channel holds
 
 The channel tools take back only what the same server process returned, unchanged. Each such value carries a `mac`: an

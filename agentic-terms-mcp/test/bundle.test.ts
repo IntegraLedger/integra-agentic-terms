@@ -1,14 +1,16 @@
 // The built entry point where there is no filesystem: dist/index.js bundled by esbuild for the neutral platform, with
-// its dependencies (the terms and protocol packages, the MCP server and zod) handed in from outside, then run in a bare
-// node:vm context whose globals are the language's own plus TextEncoder and URL, with no require, no process and no
-// Buffer, and where import.meta.url is not a file URL. The expected values: `initialize` is answered with the version in
-// package.json, and BINDINGS is the protocol package's own list.
+// its dependencies (the terms package, the protocol package's root and ./core entry points, the MCP server and zod)
+// handed in from outside, then run in a bare node:vm context whose globals are the language's own plus TextEncoder,
+// TextDecoder and URL, with no require, no process and no Buffer, and where import.meta.url is not a file URL. The
+// expected values: `initialize` is answered with the version in package.json, and BINDINGS is the protocol package's
+// own list.
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import { build, type Plugin } from "esbuild";
 import { describe, expect, it } from "vitest";
 import * as lcp from "@integraledger/lcp";
+import * as lcpCore from "@integraledger/lcp/core";
 import * as terms from "@integraledger/terms";
 import * as mcp from "@modelcontextprotocol/server";
 import * as zod from "zod";
@@ -20,6 +22,7 @@ const ENTRY = fileURLToPath(new URL("dist/index.js", root));
 const VERSION: string = JSON.parse(readFileSync(new URL("package.json", root), "utf8")).version;
 const DEPS: Record<string, unknown> = {
   "@integraledger/lcp": lcp,
+  "@integraledger/lcp/core": lcpCore,
   "@integraledger/terms": terms,
   "@modelcontextprotocol/server": mcp,
   zod,
@@ -52,7 +55,7 @@ async function loadBundle(): Promise<{ exports: Record<string, unknown>; globals
     plugins: [handedIn],
     logLevel: "silent",
   });
-  const context: Record<string, unknown> = { TextEncoder, URL, deps: DEPS };
+  const context: Record<string, unknown> = { TextEncoder, TextDecoder, URL, deps: DEPS };
   const globals = runInNewContext("[typeof require, typeof process, typeof Buffer].join()", context) as string;
   runInNewContext(out.outputFiles[0]!.text, context, { filename: "bundle.js" });
   return { exports: context["termsMcp"] as Record<string, unknown>, globals };
