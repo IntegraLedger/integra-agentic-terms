@@ -908,6 +908,19 @@ def test_accepts_that_is_not_a_list_is_refused_with_the_reads_code(accepts: obje
     assert signer.requests == []
 
 
+def test_a_malformed_legal_context_beside_an_option_that_gives_no_deadline_is_refused_with_the_reads_code() -> None:
+    """A fault of the whole document is the read's, whatever its options' timeouts: the read gives that code first."""
+    lc = AG["required"]["extensions"]["legalContext"]
+    extensions = {**AG["required"]["extensions"], "legalContext": {**lc, "info": {**lc["info"], "value": "0x12"}}}
+    required = {**AG["required"], "extensions": extensions, "accepts": [{**OPTION, "maxTimeoutSeconds": 60.5}]}
+    read = BINDING.read(required)
+    assert isinstance(read, Refusal) and read.code == "x402/legal-context-malformed"
+    signer = RecordingSigner()
+    out = run(Challenging(RECORDED, header=b64(required)).link(), lambda c: agree(A, URL, signer, c))
+    assert out == Declined("offer-unreadable", "x402/legal-context-malformed")
+    assert signer.requests == []
+
+
 # The caller's signal, an asyncio.Event, ends the agreement exchange at its next step. Before the agreement payment is
 # sent, nothing is signed or sent and the result is agreement-failed; after, the result is agreement-pending with the
 # payment as moved.

@@ -293,8 +293,6 @@ async function select(required: Record<string, unknown>, account: string, inputs
   let unpayable: string | undefined;
   for (const option of accepts) {
     if (!isObject(option)) continue;
-    const limits = bounds(option as unknown as PaymentRequirements);
-    if (limits === undefined) continue;
     const only = { ...required, accepts: [option] };
     let found: { binding: Binding; read: Read } | undefined;
     for (const binding of X402) {
@@ -306,6 +304,8 @@ async function select(required: Record<string, unknown>, account: string, inputs
       if (read.code !== "x402/no-payable-option") unreadable ??= read.code;
     }
     if (found === undefined || !isPublicProof(found.binding)) continue;
+    const limits = bounds(option as unknown as PaymentRequirements);
+    if (limits === undefined) continue;
     const piece = pieceOf(found.binding) as BuyerPiece;
     const chosen = await piece.choose(found.read, account, inputs, now, newRef(), only);
     if (isRefusal(chosen)) {

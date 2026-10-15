@@ -942,6 +942,19 @@ describe("the agreement payment the agent approves", () => {
       expect(signer.requests.length).toBe(0);
     },
   );
+
+  // A fault of the whole document is the read's, whatever its options' timeouts: the read gives that code first.
+  it("a legal context that is malformed, beside an option that gives no deadline: offer-unreadable with the read's code", async () => {
+    const lc = AG.required.extensions.legalContext;
+    const extensions = { ...AG.required.extensions, legalContext: { ...lc, info: { ...lc.info, value: "0x12" } } };
+    const required = { ...AG.required, extensions, accepts: [{ ...OPTION, maxTimeoutSeconds: 60.5 }] };
+    const read = exactEip3009.read(required as unknown as PaymentRequired);
+    expect(read).toMatchObject({ refused: true, code: "x402/legal-context-malformed" });
+    const signer = counting();
+    const out = await agree(A, AGREEMENT_URL, signer, challenging(base64Json(required), RECORDED));
+    expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "x402/legal-context-malformed" });
+    expect(signer.requests.length).toBe(0);
+  });
 });
 
 // The caller's signal ends the agreement exchange at its next step. Before the agreement payment is sent, nothing is

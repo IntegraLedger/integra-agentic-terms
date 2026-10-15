@@ -308,9 +308,6 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
     for option in accepts:
         if not isinstance(option, Mapping):
             continue
-        limits = _bounds(option)
-        if limits is None:
-            continue
         only = {**required, "accepts": [option]}
         found: tuple[Binding, Advertised] | None = None
         for binding in _x402_bindings():
@@ -321,6 +318,9 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
             if read.code != "x402/no-payable-option" and unreadable is None:
                 unreadable = read.code
         if found is None or getattr(found[0], "public_proof", False) is not True:
+            continue
+        limits = _bounds(option)
+        if limits is None:
             continue
         piece = _gate._piece(found[0])
         if piece is None:
