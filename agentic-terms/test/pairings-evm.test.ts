@@ -223,26 +223,37 @@ it("agreedRefusals: each file holds rows, and each row's input gives the row's r
   }
 });
 
-// x402-exact-eip155-eip3009.json's agreedRefusals rows that carry a choice, an info or a legalContext: a choice is
-// build's choice, with H; an info replaces V5's document's extensions.legalContext.info, and a legalContext that
-// document's extensions.legalContext, for read.
-it("x402/exact/eip155/eip3009 agreedRefusals: each row's choice, info or legalContext gives the row's refusal", async () => {
-  type Row = { case: string; expect: string; choice?: unknown; info?: unknown; legalContext?: unknown };
-  const v = vectors<{ fixed: { H: string }; V5: { expectDocument: unknown }; agreedRefusals: { rows: Row[] } }>(
-    "x402-exact-eip155-eip3009.json",
-  );
-  const rows = v.agreedRefusals.rows.filter((r) => "choice" in r || "info" in r || "legalContext" in r);
-  expect(rows.length, "eip3009 agreedRefusals rows that carry an input").toBeGreaterThan(0);
+// x402-exact-eip155-eip3009.json's agreedRefusals rows that carry an input: a choice is build's choice, with H; an
+// info replaces V5's document's extensions.legalContext.info, a legalContext that document's extensions.legalContext
+// and an accepts that document's accepts, for read; an accepted replaces V1's option in build's choice, as the one
+// entry of required.accepts and as accepted.
+it("x402/exact/eip155/eip3009 agreedRefusals: each row's choice, info, legalContext, accepts or accepted gives the row's refusal", async () => {
+  const INPUTS = ["choice", "info", "legalContext", "accepts", "accepted"] as const;
+  type Row = { case: string; expect: string } & Partial<Record<(typeof INPUTS)[number], unknown>>;
+  const v = vectors<{
+    fixed: { H: string; payer: string; now: number; resource: { url: string } };
+    V5: { expectDocument: unknown };
+    agreedRefusals: { rows: Row[] };
+  }>("x402-exact-eip155-eip3009.json");
+  const rows = v.agreedRefusals.rows.filter((r) => INPUTS.some((key) => key in r));
+  for (const key of INPUTS) expect(rows.some((r) => key in r), `an eip3009 agreedRefusals row carries ${key}`).toBe(true);
   for (const row of rows) {
-    const doc = structuredClone(v.V5.expectDocument) as { extensions: { legalContext: unknown } };
+    const doc = structuredClone(v.V5.expectDocument) as { accepts: unknown; extensions: { legalContext: unknown } };
     let got: unknown;
     if ("choice" in row) {
       got = await exactEip3009.build(row.choice as never, v.fixed.H as never);
+    } else if ("accepted" in row) {
+      const required = { x402Version: 2, resource: v.fixed.resource, accepts: [row.accepted] };
+      const choice = { required, accepted: row.accepted, from: v.fixed.payer, now: v.fixed.now };
+      got = await exactEip3009.build(choice as never, v.fixed.H as never);
     } else if ("info" in row) {
       doc.extensions.legalContext = { ...(doc.extensions.legalContext as object), info: row.info };
       got = await exactEip3009.read(doc as never);
-    } else {
+    } else if ("legalContext" in row) {
       doc.extensions.legalContext = row.legalContext;
+      got = await exactEip3009.read(doc as never);
+    } else {
+      doc.accepts = row.accepts;
       got = await exactEip3009.read(doc as never);
     }
     expect(got, row.case).toEqual({ refused: true, code: row.expect });
