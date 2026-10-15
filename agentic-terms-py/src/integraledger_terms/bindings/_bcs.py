@@ -250,17 +250,6 @@ class Transform(Type):
         self.inner.write(self.input(value) if self.input is not None else value, w)
 
 
-class Lazy(Type):
-    def __init__(self, get: Callable[[], Type]) -> None:
-        self.get = get
-
-    def read(self, r: Reader) -> Any:
-        return self.get().read(r)
-
-    def write(self, value: Any, w: bytearray) -> None:
-        self.get().write(value, w)
-
-
 def option(t: Type) -> Type:
     """An Option enum whose value is the Some value, or None."""
     return Transform(
