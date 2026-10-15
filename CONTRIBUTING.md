@@ -101,7 +101,12 @@ measures text through that platform's own font engine, so the site is built in C
 machine. After the build, `node scripts/check-diagrams.mjs` in `website/` draws every diagram twice, the second time
 under a font configuration that changes every font's rendering, and checks that both give the same SVGs, that a
 diagram with a character Inter does not draw is refused, and that the site serves the Inter files the diagrams are
-drawn in.
+drawn in. `node scripts/check-highlighting.mjs` in `website/` highlights a TypeScript and a Python sample with the
+options `website/source.config.ts` gives the code highlighter, once with the clock as it is and once with a clock that
+moves 600 ms at every read while a sample is tokenized and its Twoslash popups are highlighted. It checks that both give
+the same HTML, that `const` and `True` take github-light-default's colours, and that no other source under `website/`
+imports a module that highlights code. Each line is tokenized to its end however long that takes
+(`tokenizeTimeLimit: 0`), so a busy machine colours the code as an idle one does.
 
 ## Submitting a change
 

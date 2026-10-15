@@ -61,6 +61,9 @@ The site is built on Linux x64, in CI or on a maintainer's Linux x64 machine. Th
 platform because a build for another platform measures text through that platform's own font engine, so its diagrams
 could differ; on another platform the build stops and names the platform it is pinned for.
 
+`node scripts/check-highlighting.mjs`, after the build, checks that the code highlighting gives one result however
+long tokenizing takes, in the themes' colours, and that no other source highlights code.
+
 `node scripts/check-diagrams.mjs`, after the build, draws every diagram again under a font configuration that changes
 every font's rendering and checks that the SVGs are the same, that a diagram with a character Inter does not draw is
 refused, and that `out/` serves the Inter files the diagrams are drawn in.
