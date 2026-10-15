@@ -1,9 +1,12 @@
-"""buyer.json's agreement rows (BA1-BA11) and coding rows (BE1, BE2), run from the rows' own data: every input, script
-and expected value is the row's or the file's fixed. A row with input.approve runs transact twice: the first call returns
-the agreement payment for approval, whose option is compared with expect.approval, and signs nothing; with approve true
-the second call carries that payment back as approved. A row with no approve declines, or pays no agreement, in its one
-call. BE1's bodies are the row's hex, served under each case's Content-Encoding; BE2's gzip body is written by Python's
-zlib, and its br answer carries the receipt's JSON under Content-Encoding br, a body the gate declines unread."""
+"""buyer.json's agreement rows (BA1-BA19) and coding rows (BE1, BE2), run from the rows' own data: every input, script
+and expected value is the row's or the file's fixed. A row with input.approve runs its entry twice: the first call
+returns the agreement payment for approval, whose option is compared with expect.approval, and signs nothing; with
+approve true the second call carries that payment back as approved. A row with no approve declines, or pays no
+agreement, in its one call. A row's cases share its input and expect except where a case gives its own; a row runs
+through transact, or through each gate function its entry or entries names. A step's paymentRequiredHeader and bodyHex
+are sent as the fixture's text and bytes are, unchanged. BE1's bodies are the row's hex, served under each case's
+Content-Encoding; BE2's gzip body is written by Python's zlib, and its br answer carries the receipt's JSON under
+Content-Encoding br, a body the gate declines unread."""
 
 import asyncio
 import base64
@@ -18,13 +21,12 @@ import httpx
 import pytest
 
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
-from integraledger_terms import Advertised, Declined, ToApprove, _agreement, _gate, transact
+from integraledger_terms import Advertised, Declined, ToApprove, _agreement, _gate, agree, transact
 
 from support import A, BUYER, D, NOW, Link, StubBinding, digest, row, sign_typed
 
 AG: dict[str, Any] = BUYER["fixed"]["agreement"]
-HASH_A: str = row("B1")["expect"]["h"]
-LINK_A = f"https://atr.seller.example/{HASH_A}"
+LINK_A: str = BUYER["fixed"]["link"]
 SIGNATURES: dict[str, str] = {"B6": row("B6")["expect"]["signature"]}
 
 
@@ -68,18 +70,42 @@ def gzip(data: bytes) -> bytes:
     return compressor.compress(data) + compressor.flush()
 
 
+def named(value: str) -> Any:
+    """A value a row names by its path in the file, as fixed.agreement.url; any other string is the value itself."""
+    if not value.startswith("fixed."):
+        return value
+    out: Any = BUYER
+    for key in value.split("."):
+        out = out[key]
+    return out
+
+
+# The members a step, an input and an expect may hold: a row with any other is not run as written.
+STEP_KEYS = {"status", "paymentRequired", "paymentRequiredText", "paymentRequiredHeader", "retryAfter", "body", "bodyHex"}
+STEP_KEYS |= {"repeats", "contentEncoding"}
+INPUT_KEYS = {"doc", "signer", "agreement", "agreementUrl", "approve", "advanceMs", "entry", "entries", "atr", "serves"}
+INPUT_KEYS |= {"inputs"}
+EXPECT_KEYS = {"decline", "detail", "moved", "signCalls", "paidRequests", "fetches", "agreementFetches", "order"}
+EXPECT_KEYS |= {"approval", "agreementMessage", "agreementDigest", "agreementSignature", "paymentSignature", "signed"}
+EXPECT_KEYS |= {"receipt", "agreement", "requestHeaders"}
+
+
 @dataclass
 class Seller:
-    """Serves A at the ATR link and plays the script at the agreement URL, one step per request, the last repeating."""
+    """Serves atr at the ATR link and plays the script at the agreement URL, one step per request, the last repeating;
+    bare counts the 402 answers it sent with no PAYMENT-REQUIRED and the 200 answers with no body, which no row's step
+    asks for."""
 
     script: list[dict[str, Any]]
+    atr: bytes = A
     requests: list[httpx.Request] = field(default_factory=list)
     step: int = 0
+    bare: int = 0
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if str(request.url) == LINK_A:
-            return httpx.Response(200, content=A)
+            return httpx.Response(200, content=self.atr)
         s = self.script[min(self.step, len(self.script) - 1)]
         if not s.get("repeats"):
             self.step += 1
@@ -88,14 +114,23 @@ class Seller:
             headers["payment-required"] = b64(json.dumps(AG[s["paymentRequired"]]))
         if "paymentRequiredText" in s:
             headers["payment-required"] = b64(AG[s["paymentRequiredText"]])
+        if "paymentRequiredHeader" in s:
+            headers["payment-required"] = AG[s["paymentRequiredHeader"]]
         if "retryAfter" in s:
             headers["retry-after"] = s["retryAfter"]
         if "contentEncoding" in s:
             headers["content-encoding"] = s["contentEncoding"]
-        content = json.dumps(AG[s["body"]]).encode("utf-8") if "body" in s else b""
-        if s.get("contentEncoding") == "gzip":
+        content = json.dumps(AG[s["body"]]).encode("utf-8") if "body" in s else None
+        if "bodyHex" in s:
+            content = bytes.fromhex(AG[s["bodyHex"]])
+        if (s["status"] == 402 and "payment-required" not in headers) or (s["status"] == 200 and content is None):
+            self.bare += 1
+        if content is not None and s.get("contentEncoding") == "gzip":
             content = gzip(content)
-        return httpx.Response(s["status"], headers=headers, content=content)
+        return httpx.Response(s["status"], headers=headers, content=content or b"")
+
+    def link_requests(self) -> list[httpx.Request]:
+        return [r for r in self.requests if str(r.url) == LINK_A]
 
     def agreement_requests(self) -> list[httpx.Request]:
         return [r for r in self.requests if str(r.url) != LINK_A]
@@ -108,6 +143,11 @@ def with_agreement(url: str) -> StubBinding:
     real = BINDING.read(D)
     assert isinstance(real, Advertised)
     return StubBinding(inner=BINDING, public_proof=False, read_answer=dataclasses.replace(real, agreement=url))
+
+
+def without_agreement() -> StubBinding:
+    """The x402/EVM binding as a pairing with no public proof, whose read gives no agreement URL."""
+    return StubBinding(inner=BINDING, public_proof=False)
 
 
 def mixed() -> dict[str, Any]:
@@ -125,19 +165,40 @@ class Run:
     signer: Signer
 
 
-def exchange(r: dict[str, Any], script: list[dict[str, Any]], expected: dict[str, Any], clock: Clock) -> Run:
-    """The row's exchange: one call, or, with approve, the call that asks for approval and, when approved, the second."""
-    inputs = r["input"]
-    doc, binding = (mixed(), BINDING) if r["name"] == "BA6" else (D, with_agreement(inputs.get("agreementUrl", AG["url"])))
-    seller = Seller(script)
+def offer_of(name: str, url: str) -> tuple[Any, Any]:
+    """The offer and binding a row's doc describes: BA6 reads D through the public-proof pairing itself, BA12 through
+    the stub whose read gives no agreement URL, and every other row through the stub whose read gives url."""
+    if name == "BA6":
+        return mixed(), BINDING
+    if name == "BA12":
+        return D, without_agreement()
+    return D, with_agreement(url)
+
+
+def exchange(name: str, inputs: dict[str, Any], expected: dict[str, Any], clock: Clock, entry: str = "transact") -> Run:
+    """The row's exchange through entry: one call, or, with approve, the call that asks for approval and, when
+    approved, the second."""
+    url: str = named(inputs.get("agreementUrl", "fixed.agreement.url"))
+    doc, binding = offer_of(name, url)
+    seller = Seller(inputs.get("agreement", []), bytes.fromhex(BUYER["fixed"][inputs["serves"]]) if "serves" in inputs else A)
     signer = Signer()
+    given = {"inputs": inputs["inputs"]} if "inputs" in inputs else {}
+    atr = bytes.fromhex(named(inputs["atr"])) if "atr" in inputs else A
 
     async def go() -> tuple[Any, float]:
         async with Link(seller.handle).client() as client:
+
+            async def call(approved: Any = None) -> Any:
+                more = {**given, "approved": approved} if approved is not None else given
+                if entry == "agree":
+                    return await agree(atr, url, signer, client, **more)
+                assert entry == "transact", f"{name}: no entry {entry}"
+                return await transact(doc, binding, signer, client, **more)
+
             start = clock.now
-            out = await transact(doc, binding, signer, client)
+            out = await call()
             if "approval" in expected:
-                assert isinstance(out, ToApprove), f"{r['name']}: the agreement payment is returned for approval"
+                assert isinstance(out, ToApprove), f"{name}: the agreement payment is returned for approval"
             if isinstance(out, ToApprove):
                 assert "approve" in inputs
                 option = out.approve.option
@@ -146,29 +207,36 @@ def exchange(r: dict[str, Any], script: list[dict[str, Any]], expected: dict[str
                 assert signer.requests == [] and seller.paid() == []
                 if inputs["approve"] is True:
                     start = clock.now
-                    out = await transact(doc, binding, signer, client, approved=out.approve)
+                    out = await call(out.approve)
             return out, clock.now - start
 
     out, elapsed = asyncio.run(go())
     return Run(out, elapsed, seller, signer)
 
 
-def compare(r: dict[str, Any], e: dict[str, Any], run: Run) -> None:
+def compare(inputs: dict[str, Any], e: dict[str, Any], run: Run) -> None:
     """Every expected value the row states, against what the exchange did."""
     out, seller, signer = run.out, run.seller, run.signer
     paid = seller.paid()
+    assert seller.bare == 0
     if "decline" in e:
         assert isinstance(out, Declined) and out.code == e["decline"], out
     else:
         assert not isinstance(out, Declined), out
+    if "detail" in e:
+        assert out.detail == e["detail"], out
+    if "moved" in e:
+        assert (out.moved is not None) == e["moved"], out
+    if "fetches" in e:
+        assert len(seller.link_requests()) == e["fetches"]
     if "signCalls" in e:
         assert len(signer.requests) == e["signCalls"]
     if "paidRequests" in e:
         assert len(paid) == e["paidRequests"]
     if "agreementFetches" in e:
         assert len(seller.agreement_requests()) == e["agreementFetches"]
-    if "advanceMs" in r["input"]:
-        assert run.elapsed * 1000 == r["input"]["advanceMs"]
+    if "advanceMs" in inputs:
+        assert run.elapsed * 1000 == inputs["advanceMs"]
     if "order" in e:
         amounts = {"agreement": int(AG["option"]["amount"]), "payment": int(D["accepts"][0]["amount"])}
         assert [int(q["typedData"]["message"]["value"]) for q in signer.requests] == [amounts[o] for o in e["order"]]
@@ -194,16 +262,49 @@ def compare(r: dict[str, Any], e: dict[str, Any], run: Run) -> None:
         assert all(q.headers[name] == value for q in seller.requests)
 
 
+@dataclass
+class RowRun:
+    case: str
+    entry: str
+    inputs: dict[str, Any]
+    expect: dict[str, Any]
+
+
+def runs_of(r: dict[str, Any]) -> list[RowRun]:
+    """Each run a row asks for: every case, or the row itself, through every entry it names."""
+    shared = {k: v for k, v in r["input"].items() if k != "cases"}
+    out: list[RowRun] = []
+    for c in r["input"].get("cases", [{"case": r["name"]}]):
+        inputs = {**shared, **{k: v for k, v in c.items() if k not in ("case", "expect")}}
+        for entry in inputs.get("entries", [inputs.get("entry", "transact")]):
+            out.append(RowRun(c["case"], entry, inputs, {**r["expect"], **c.get("expect", {})}))
+    return out
+
+
+def play(name: str, run: RowRun, clock: Clock) -> None:
+    """Runs one of a row's runs, once its members are found to be those this runner reads."""
+    where = f"{name}, {run.case}, through {run.entry}"
+    assert set(run.inputs) <= INPUT_KEYS, (where, set(run.inputs) - INPUT_KEYS)
+    assert set(run.expect) <= EXPECT_KEYS, (where, set(run.expect) - EXPECT_KEYS)
+    for step in run.inputs.get("agreement", []):
+        assert set(step) <= STEP_KEYS, (where, set(step) - STEP_KEYS)
+    try:
+        compare(run.inputs, run.expect, exchange(name, run.inputs, run.expect, clock, run.entry))
+    except AssertionError as err:
+        raise AssertionError(f"{where}: {err}") from err
+
+
 BA = [r for r in BUYER["rows"] if r["name"].startswith("BA")]
 
 
-def test_the_file_holds_ba1_to_ba11() -> None:
-    assert [r["name"] for r in BA] == [f"BA{i}" for i in range(1, 12)]
+def test_the_file_holds_ba1_to_ba19() -> None:
+    assert [r["name"] for r in BA] == [f"BA{i}" for i in range(1, 20)]
 
 
 @pytest.mark.parametrize("r", BA, ids=[r["name"] for r in BA])
 def test_agreement_row(r: dict[str, Any], clock: Clock) -> None:
-    compare(r, r["expect"], exchange(r, r["input"].get("agreement", []), r["expect"], clock))
+    for run in runs_of(r):
+        play(r["name"], run, clock)
 
 
 BE1 = row("BE1")
@@ -253,8 +354,6 @@ def test_be1_control_the_identity_coding_is_paid_as_b6() -> None:
 BE2 = row("BE2")
 
 
-@pytest.mark.parametrize("case", BE2["input"]["cases"], ids=[c["case"] for c in BE2["input"]["cases"]])
-def test_be2_an_agreement_answer_in_another_coding_is_agreement_failed(case: dict[str, Any], clock: Clock) -> None:
-    r = {"name": "BE2", "input": {**BE2["input"], "agreement": case["agreement"]}}
-    e = {**BE2["expect"], **case["expect"]}
-    compare(r, e, exchange(r, case["agreement"], e, clock))
+@pytest.mark.parametrize("run", runs_of(BE2), ids=[r.case for r in runs_of(BE2)])
+def test_be2_an_agreement_answer_in_another_coding_is_agreement_failed(run: RowRun, clock: Clock) -> None:
+    play("BE2", run, clock)
