@@ -146,7 +146,8 @@ class X402ExactAlgorand:
         """The asset transfer with the hash's LCP string as its note, and the fee payer's zero payment first when the
         option names a fee payer. The suggested parameters' genesis id is written as each transaction's gen, a msgpack
         string, so one holding a lone surrogate, which UTF-8 cannot encode, is avm/option-malformed, checked before the
-        genesis hash; any other genesis id, a leading byte-order mark included, is written as given."""
+        genesis hash; any other genesis id, a leading byte-order mark included, is written as given. The payment entry
+        is read as carrier reads it, so build writes no payment bound refuses."""
         if not is_object(choice):
             return Refusal("avm/option-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
@@ -207,10 +208,11 @@ class X402ExactAlgorand:
                 for txn in group:
                     txn.group = grp
                 index = 1
-            for txn in group:
-                _algorand.unpack(txn.signed(None))
             to_sign = group[index].bytes_to_sign()
+            payment = _algorand.read_signed(group[index].signed(None))
         except (ValueError, TypeError, OverflowError, _algorand.Malformed):
+            return Refusal("avm/option-malformed")
+        if not isinstance(payment, _algorand.SignedRead):
             return Refusal("avm/option-malformed")
         return AvmUnsigned(
             request={"kind": "algorand-txn", "bytes": to_sign},

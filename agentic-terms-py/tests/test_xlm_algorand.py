@@ -589,6 +589,26 @@ def test_x402_exact_algorand_build_reads_the_genesis_id_before_the_genesis_hash(
     assert build_with("\ufeff" + "x" * 198, mainnet) == Refusal("avm/network-mismatch")
 
 
+def test_x402_exact_algorand_build_rows() -> None:
+    """build.rows: build of fixed.O for the file's payer and parameters with each row's genesis id, and its genesis hash
+    where it names one. A refused row gives its code; a built row's group id, payment transaction id and bound are the
+    row's. The rows with another network's genesis hash pin the order: the genesis id is read before it."""
+    rows = A.get("build", {}).get("rows", [])
+    assert rows, "x402-exact-algorand.json holds no build rows"
+    for row in rows:
+        unsigned = build_with(row["genesisId"], row.get("genesisHash"))
+        if "expect" in row:
+            assert unsigned == Refusal(row["expect"]), row["case"]
+            continue
+        assert isinstance(unsigned, AvmUnsigned), row["case"]
+        transfer = unsigned._group[unsigned._index]
+        assert transfer.group is not None and base64.b64encode(transfer.group).decode() == row["expectGroupId"]
+        assert txid(_algorand.sha512_256(unsigned.request["bytes"])) == row["expectPaymentTxid"], row["case"]
+        payment = unsigned.complete(bytes.fromhex(F["signature"]))
+        assert isinstance(payment, dict)
+        assert X402_EXACT_ALGORAND.bound(presented(payment["payload"])) == row["expectBound"], row["case"]
+
+
 def test_x402_exact_algorand_v3_presented_options_are_bound_without_their_amount_or_timeout() -> None:
     """V2's payment under each V3.presentedOptions option, whose amount or timeout no build could use: bound reads the
     signed transaction and gives the row's expectBound, while read serves no such option and build refuses it, as lcp's
