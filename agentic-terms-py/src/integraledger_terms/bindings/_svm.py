@@ -15,6 +15,7 @@ from typing import Any, Literal
 from .._core import AtrHash
 from .._types import Refusal
 from ._codec import b58_decode, b58_encode, b64_decode, b64_encode, text_encode
+from ._ed25519 import x_of
 from ._jose import js_length
 from ._lcp import from_lcp_string, to_lcp_string
 
@@ -308,23 +309,11 @@ class SvmSigning:
 
 # ── addresses ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-_P = 2**255 - 19
-_D = -121665 * pow(121666, _P - 2, _P) % _P
-
-
 def is_point(data: bytes) -> bool:
     """Whether 32 bytes decompress as an Ed25519 point as @noble/curves' Point.fromBytes(b, true) does: y is the
     little-endian integer with bit 255 cleared, taken modulo p, and x² = (y² - 1) / (d·y² + 1) must have a square
     root."""
-    if len(data) != 32:
-        return False
-    y = int.from_bytes(data, "little") & ((1 << 255) - 1)
-    y2 = y * y % _P
-    u = (y2 - 1) % _P
-    v = (_D * y2 + 1) % _P
-    x = u * pow(v, 3, _P) * pow(u * pow(v, 7, _P), (_P - 5) // 8, _P) % _P
-    vx2 = v * x * x % _P
-    return vx2 == u or vx2 == (-u) % _P
+    return len(data) == 32 and x_of(int.from_bytes(data, "little") & ((1 << 255) - 1)) is not None
 
 
 def is_curve_key(value: object) -> bool:

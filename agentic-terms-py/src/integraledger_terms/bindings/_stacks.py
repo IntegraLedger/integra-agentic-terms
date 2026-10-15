@@ -24,6 +24,7 @@ UTF-8, a byte-order mark included.
 import re
 from dataclasses import dataclass
 
+from ._ed25519 import L, add, decode
 from ._secp256k1 import N, point_of
 
 # The most bytes a Clarity value's type admits, the most characters a string-utf8 holds, and the deepest a type nests
@@ -40,11 +41,6 @@ _CONTRACT_NAME = re.compile(r"[a-zA-Z]([a-zA-Z0-9]|[-_]){0,127}|__transient")
 # return); and the bytes a smart contract's code holds: printable ASCII, tab and newline.
 _ASCII_TEXT = bytes([*range(0x20, 0x7F), 0x09, 0x0A, 0x0C, 0x0D])
 _CODE_TEXT = bytes([*range(0x20, 0x7F), 0x09, 0x0A])
-# Edwards25519's field prime, curve constant d, a square root of -1 and group order L (RFC 8032, 5.1).
-_ED_P = 2**255 - 19
-_ED_D = -121665 * pow(121666, -1, _ED_P) % _ED_P
-_ED_I = pow(2, (_ED_P - 1) // 4, _ED_P)
-_ED_L = 2**252 + 27742317777372353535851937790883648493
 
 
 class Malformed(Exception):
@@ -324,34 +320,18 @@ def _microblock_header(r: _Reader) -> bytes:
     return header
 
 
-def _ed_add(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
-    """Two Edwards25519 points added, in affine coordinates (RFC 8032, 5.1.4)."""
-    (x1, y1), (x2, y2) = a, b
-    t = _ED_D * x1 * x2 * y1 * y2 % _ED_P
-    x = (x1 * y2 + y1 * x2) * pow(1 + t, -1, _ED_P) % _ED_P
-    y = (y1 * y2 + x1 * x2) * pow(1 - t, -1, _ED_P) % _ED_P
-    return x, y
-
-
 def _vrf_proof(r: _Reader) -> None:
-    """A Nakamoto coinbase's 80-byte VRF proof: Gamma, the canonical encoding of an Edwards25519 point not of small
-    order (RFC 8032, 5.1.3); c, 16 bytes; s, a scalar below the group order L."""
+    """A Nakamoto coinbase's 80-byte VRF proof: Gamma, the canonical encoding of an Edwards25519 point (RFC 8032,
+    5.1.3) not of small order, so that doubling it three times does not reach the neutral element (0, 1); c, 16 bytes;
+    s, a scalar below the group order L."""
     proof = r.read(80)
-    gamma = int.from_bytes(proof[:32], "little")
-    y, sign = gamma & (2**255 - 1), gamma >> 255
-    _need(y < _ED_P)
-    u, v = (y * y - 1) % _ED_P, (_ED_D * y * y + 1) % _ED_P
-    x = u * pow(v, 3, _ED_P) * pow(u * pow(v, 7, _ED_P), (_ED_P - 5) // 8, _ED_P) % _ED_P
-    if v * x * x % _ED_P == (_ED_P - u) % _ED_P:
-        x = x * _ED_I % _ED_P
-    _need(v * x * x % _ED_P == u and not (x == 0 and sign == 1))
-    if x & 1 != sign:
-        x = _ED_P - x
-    point = (x, y)
+    point = decode(proof[:32])
+    if point is None:
+        raise Malformed
     for _ in range(3):
-        point = _ed_add(point, point)
+        point = add(point, point)
     _need(point != (0, 1))
-    _need(int.from_bytes(proof[48:], "little") < _ED_L)
+    _need(int.from_bytes(proof[48:], "little") < L)
 
 
 @dataclass
