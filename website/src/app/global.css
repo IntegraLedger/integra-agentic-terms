@@ -2,17 +2,12 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 @import "fumadocs-twoslash/twoslash.css";
-/* Inter, every weight, the font the Mermaid diagrams are measured and drawn in (src/lib/font.ts). */
+/* Inter, every weight, the font the Mermaid diagrams are measured and drawn in (src/lib/font.ts). Text and code are set
+   in the theme's font stacks, so the build fetches no font. */
 @import "@fontsource-variable/inter/wght.css";
 
 @source "../../node_modules/fumadocs-ui/dist/**/*.js";
 @source "../../node_modules/fumadocs-twoslash/dist/**/*.js";
-
-/* The fonts next/font self-hosts, as the variables Tailwind's font-sans and font-mono resolve to. */
-@theme inline {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
-}
 
 /* Colours. Each text colour clears WCAG AA (4.5:1) on the background and card it sits on, the primary text of the
    active sidebar entry included, which sits on a tenth of the primary over the card. */

@@ -1,15 +1,10 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 import { JsonLd } from "@/components/JsonLd";
 import { organizationJsonLd, siteConfig, softwareJsonLd, webSiteJsonLd } from "@/lib/site";
 import { packageVersion } from "@/lib/version";
 import "./global.css";
-
-// next/font downloads the fonts at build time and serves them from this origin.
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -41,7 +36,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body>
         {/* The llms.txt index that describes this page (https://llmstxt.org); React places it in <head>. */}
         <link rel="describedby" href="/llms.txt" type="text/plain" />

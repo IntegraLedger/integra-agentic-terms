@@ -19,9 +19,9 @@ function git(args: string[]): Buffer {
  * `public/_headers` serves as immutable, so it changes whenever anything the site serves can change:
  * - from a commit with no uncommitted change, it is the commit's sha. The commit fixes the pages, the packages the
  *   samples are checked against, the locked dependencies, each page's last-updated date (its file's last commit) and
- *   the browser build and the font the Mermaid diagrams are drawn in (src/lib/mermaid.ts). The text fonts are the files
- *   Google Fonts serves when next/font fetches them at build time (src/app/layout.tsx). So one commit gives one ID, and
- *   one site byte for byte while Google Fonts serves the same files;
+ *   the browser build and the font the Mermaid diagrams are drawn in (src/lib/mermaid.ts); text and code are set in
+ *   the theme's font stacks (src/app/global.css), so the build fetches no font, and one commit gives one ID and one
+ *   site, byte for byte;
  * - with uncommitted changes, it is the sha, a hyphen and 16 hex digits of a SHA-256 over the changes: the diff of
  *   the tracked files against the commit and each untracked file that is not ignored, by path and content;
  * - outside a git checkout, Next.js draws a random ID, and no page has a last-updated date.
