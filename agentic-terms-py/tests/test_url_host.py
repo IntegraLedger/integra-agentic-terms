@@ -3,7 +3,7 @@ that take a URL through them. Expected values come from the URL Standard (url.sp
 parser results in section 3 and the registrable-domain table in section 3.2, which shows إختبار as the host
 xn--kgbechtv; RFC 3492's own encoder (rfc3492.py) for a long label; web-platform-tests' url/resources/toascii.json at
 42cbc75a for the hosts that IDNA 2003 reads otherwise; and Node.js 26.11.1's URL for the lnbtc request URLs and hosts,
-each of which it reads as the Standard does. The conformance file is run in test_url_conformance.py."""
+each of which it reads as the Standard does. The conformance files are run in test_url_conformance.py."""
 
 from typing import Any
 from urllib.parse import quote
