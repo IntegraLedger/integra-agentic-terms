@@ -105,7 +105,8 @@ usual.
 ## Example
 
 The seller offers an ERC-7710 payment, whose signed form does not carry H, and names an agreement URL beside the link.
-A local stand-in plays the seller and the agreement URL:
+The seller builds the agreement URL from a random token, as it builds the link, not from H: unpaid, the agreement URL
+answers with a challenge that advertises the link. A local stand-in plays the seller and the agreement URL:
 
 ```ts
 import { transact, type Fetch, type Signature, type Signer, type SigningRequest } from "@integraledger/terms";
@@ -116,8 +117,8 @@ const atr = new TextEncoder().encode(
   '{"atrVersion":"1","id":"0f8fad5b-d9cb-469f-a165-70867728950e","x402":{"z":1.0,"a":"caf\\u00e9"},"seller":{"note":"Café — 30 días ✓"}}',
 );
 const H = "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938";
-const link = `https://atr.seller.example/${H}`;
-const agreementUrl = `https://api.seller.example/agreement/${H}`;
+const link = `https://atr.seller.example/${crypto.randomUUID()}`;
+const agreementUrl = `https://api.seller.example/agreement/${crypto.randomUUID()}`;
 const option = {
   scheme: "exact",
   network: "eip155:84532",

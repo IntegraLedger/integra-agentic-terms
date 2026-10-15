@@ -68,7 +68,7 @@ const atr = new TextEncoder().encode(
   '{"atrVersion":"1","id":"0f8fad5b-d9cb-469f-a165-70867728950e","x402":{"z":1.0,"a":"caf\\u00e9"},"seller":{"note":"Café — 30 días ✓"}}',
 );
 const H = "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938";
-const link = `https://atr.seller.example/${H}`;
+const link = `https://atr.seller.example/${crypto.randomUUID()}`;
 
 // The seller's x402 payment request, advertising H and the link.
 const offer = {
@@ -203,7 +203,7 @@ const atr = new TextEncoder().encode(
   '{"atrVersion":"1","id":"0f8fad5b-d9cb-469f-a165-70867728950e","x402":{"z":1.0,"a":"caf\\u00e9"},"seller":{"note":"Café — 30 días ✓"}}',
 );
 const H = "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938";
-const link = `https://atr.seller.example/${H}`;
+const link = `https://atr.seller.example/${crypto.randomUUID()}`;
 const offer = {
   x402Version: 2,
   resource: { url: "https://api.seller.example/v1/quote" },
@@ -301,7 +301,7 @@ const atr = new TextEncoder().encode(
   '{"atrVersion":"1","id":"0f8fad5b-d9cb-469f-a165-70867728950e","x402":{"z":1.0,"a":"caf\\u00e9"},"seller":{"note":"Café — 30 días ✓"}}',
 );
 const H = "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938";
-const link = `https://atr.seller.example/${H}`;
+const link = `https://atr.seller.example/${crypto.randomUUID()}`;
 
 // The seller's batch-settlement offer: 1000 units per request, into a channel.
 const offer = {

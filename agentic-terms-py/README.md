@@ -59,6 +59,7 @@ local stand-in for the network, so it runs offline and prints the same values ev
 
 ```python
 import asyncio
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -74,7 +75,7 @@ ATR = (
     '"seller":{"note":"Café — 30 días ✓"}}'
 ).encode()
 H = "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938"
-LINK = f"https://atr.seller.example/{H}"
+LINK = f"https://atr.seller.example/{uuid.uuid4()}"
 
 # The seller's x402 payment request, advertising H and the link.
 OFFER = {
@@ -183,6 +184,7 @@ it crosses process boundaries with the bytes:
 
 ```python
 import asyncio
+import uuid
 
 import httpx
 from eth_account import Account
@@ -195,7 +197,7 @@ ATR = (
     '"seller":{"note":"Café — 30 días ✓"}}'
 ).encode()
 H = "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938"
-LINK = f"https://atr.seller.example/{H}"
+LINK = f"https://atr.seller.example/{uuid.uuid4()}"
 OFFER = {
     "x402Version": 2,
     "resource": {"url": "https://api.seller.example/v1/quote"},
@@ -286,6 +288,7 @@ channel with the vectors' two development keys and pays two more requests in it:
 
 ```python
 import asyncio
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -300,7 +303,7 @@ ATR = (
     '"seller":{"note":"Café — 30 días ✓"}}'
 ).encode()
 H = "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938"
-LINK = f"https://atr.seller.example/{H}"
+LINK = f"https://atr.seller.example/{uuid.uuid4()}"
 
 # The seller's batch-settlement offer: 1000 units per request, into a channel.
 OFFER = {
