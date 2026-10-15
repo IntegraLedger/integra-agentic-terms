@@ -590,6 +590,17 @@ def test_aptos_agreed_refusals() -> None:
     u = ap_unsigned()
     refusing = "complete with a transaction whose reference refuses"
     assert u.complete({"transaction": "AAA"}) == Refusal(rows[refusing])
+    names = (
+        "a module, function or struct name that is not an ASCII letter or underscore followed by up to 254 ASCII "
+        "letters, digits and underscores, such as one with a leading U+FEFF"
+    )
+    # The four names the transfer carries: the module, the function, and the type argument's module and struct.
+    for name in ("primary_fungible_store", "transfer", "fungible_asset", "Metadata"):
+        led = raw.replace(bcs_str(name), bcs_str("\ufeff" + name), 1)
+        assert led != raw and len(led) == len(raw) + 3
+        for wire in (aptos_reference_wire(led), aptos_signed(led)):
+            assert decode_aptos_tx(wire) == Refusal(rows[names]), name
+            assert u.complete({"transaction": wire}) == Refusal(rows[refusing]), name
 
 
 def test_aptos_agreed_refusals_of_a_transaction_text() -> None:
