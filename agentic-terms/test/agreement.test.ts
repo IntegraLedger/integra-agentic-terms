@@ -902,6 +902,32 @@ describe("the agreement payment the agent approves", () => {
       expect(signer.requests.length).toBe(0);
     },
   );
+
+  // The gate's own rule, whichever pairing reads the option: an option whose maxTimeoutSeconds gives no deadline is
+  // passed over, so it is never chosen. A Sui option is the case here.
+  const SUI = JSON.parse(
+    readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/x402-exact-sui.json", import.meta.url), "utf8"),
+  ).fixed as { sender: string; O: PaymentRequirements };
+  const SUI_ACCOUNT = `${SUI.O.network}:${SUI.sender}`;
+
+  it.each([[60.5], ["60"], [0], [2 ** 53]])(
+    "a Sui option whose maxTimeoutSeconds is %j gives no deadline: no-payable-option, nothing signed",
+    async (t) => {
+      const signer = counting(SUI_ACCOUNT);
+      const fetch = challenging(withAccepts([{ ...SUI.O, maxTimeoutSeconds: t }]), RECORDED);
+      const out = await agree(A, AGREEMENT_URL, signer, fetch);
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/no-payable-option" });
+      expect(signer.requests.length).toBe(0);
+    },
+  );
+
+  it("a Sui option that gives no deadline is passed over for the next Sui option", async () => {
+    const next = { ...SUI.O, amount: "20000" };
+    const fetch = challenging(withAccepts([{ ...SUI.O, maxTimeoutSeconds: 60.5 }, next]), RECORDED);
+    const out = await agree(A, AGREEMENT_URL, counting(SUI_ACCOUNT), fetch);
+    if (!("approve" in out)) throw new Error("the agreement payment is returned for approval");
+    expect(out.approve.option).toEqual(next);
+  });
 });
 
 // The caller's signal ends the agreement exchange at its next step. Before the agreement payment is sent, nothing is

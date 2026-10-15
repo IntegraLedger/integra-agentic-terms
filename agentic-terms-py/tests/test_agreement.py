@@ -872,6 +872,28 @@ def test_max_timeout_seconds_that_is_not_an_integral_number_of_seconds_is_an_opt
     assert signer.requests == []
 
 
+# The gate's own rule, whichever pairing reads the option: an option whose maxTimeoutSeconds gives no deadline is passed
+# over, so it is never chosen. A Sui option is the case here.
+SUI: dict[str, Any] = load("x402-exact-sui.json")["fixed"]
+SUI_ACCOUNT = f"{SUI['O']['network']}:{SUI['sender']}"
+
+
+@pytest.mark.parametrize("value", [60.5, "60", 0, 2**53])
+def test_a_sui_option_whose_max_timeout_seconds_gives_no_deadline_is_no_payable_option(value: object) -> None:
+    signer = RecordingSigner(account=SUI_ACCOUNT)
+    seller = Challenging(RECORDED, header=with_accepts([{**SUI["O"], "maxTimeoutSeconds": value}]))
+    out = run(seller.link(), lambda c: agree(A, URL, signer, c))
+    assert out == Declined("no-payable-option", "x402/no-payable-option")
+    assert signer.requests == []
+
+
+def test_a_sui_option_that_gives_no_deadline_is_passed_over_for_the_next_one() -> None:
+    following = {**SUI["O"], "amount": "20000"}
+    seller = Challenging(RECORDED, header=with_accepts([{**SUI["O"], "maxTimeoutSeconds": 60.5}, following]))
+    out = run(seller.link(), lambda c: agree(A, URL, RecordingSigner(account=SUI_ACCOUNT), c))
+    assert isinstance(out, ToApprove) and out.approve.option == following
+
+
 # The caller's signal, an asyncio.Event, ends the agreement exchange at its next step. Before the agreement payment is
 # sent, nothing is signed or sent and the result is agreement-failed; after, the result is agreement-pending with the
 # payment as moved.

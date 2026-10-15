@@ -265,18 +265,23 @@ const X402: readonly Binding[] = (BINDINGS as readonly Binding[]).filter(
   (b) => String(b.id).startsWith("x402/") && pieceOf(b) !== undefined,
 );
 
-/** What the gate pays for an agreement: the option, its pairing, the challenge holding only that option, and the choice. */
+/**
+ * What the gate pays for an agreement: the option, its pairing, the challenge holding only that option, the choice, and
+ * the deadlines the option's `maxTimeoutSeconds` gives.
+ */
 interface Selected {
   option: PaymentRequirements;
   binding: Binding;
   read: Read;
   chosen: Chosen;
+  limits: { request: number; exchange: number };
 }
 
 /**
  * The option the agreement is paid with, by the main payment's rule: the options in document order, and the first one
  * the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402 pairing,
- * in the protocol package's order, whose read accepts the challenge holding only that option.
+ * in the protocol package's order, whose read accepts the challenge holding only that option. An option whose
+ * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it.
  */
 async function select(required: Record<string, unknown>, account: string, inputs: Inputs): Promise<Selected | Declined> {
   const accepts = required["accepts"];
@@ -287,6 +292,8 @@ async function select(required: Record<string, unknown>, account: string, inputs
   let unpayable: string | undefined;
   for (const option of accepts) {
     if (!isObject(option)) continue;
+    const limits = bounds(option as unknown as PaymentRequirements);
+    if (limits === undefined) continue;
     const only = { ...required, accepts: [option] };
     let found: { binding: Binding; read: Read } | undefined;
     for (const binding of X402) {
@@ -304,7 +311,7 @@ async function select(required: Record<string, unknown>, account: string, inputs
       unpayable ??= chosen.code;
       continue;
     }
-    return { option: option as unknown as PaymentRequirements, binding: found.binding, read: found.read, chosen };
+    return { option: option as unknown as PaymentRequirements, binding: found.binding, read: found.read, chosen, limits };
   }
   if (unpayable === undefined && unreadable !== undefined) return declined("offer-unreadable", unreadable);
   return declined("no-payable-option", unpayable ?? "x402/no-payable-option");
@@ -329,12 +336,10 @@ async function paying(
 ): Promise<{ selected: Selected; limits: { request: number; exchange: number } } | Declined> {
   const selected = await select(required, account, inputs);
   if ("decline" in selected) return selected;
-  const limits = bounds(selected.option);
-  if (limits === undefined) return declined("offer-unreadable", "x402/option-malformed");
   if (!hashEquals(selected.read.h, h)) {
     return declined("hash-mismatch", "The agreement challenge advertises another ATR hash.");
   }
-  return { selected, limits };
+  return { selected, limits: selected.limits };
 }
 
 /** Whether `v` has the form of an agreement payment: an agreement URL, an option and a payment request. */

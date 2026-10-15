@@ -280,18 +280,21 @@ def _x402_bindings() -> tuple[Binding, ...]:
 
 @dataclass(frozen=True, slots=True)
 class _Selected:
-    """What the gate pays for an agreement: the option, its pairing, its read and the gate's choice."""
+    """What the gate pays for an agreement: the option, its pairing, its read, the gate's choice, and the deadlines the
+    option's maxTimeoutSeconds gives."""
 
     option: dict[str, Any]
     binding: Binding
     read: Advertised
     chosen: Chosen
+    limits: tuple[int, int]
 
 
 def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selected | Declined:
     """The option the agreement is paid with, by the main payment's rule: the options in document order, and the first
     one the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402
-    pairing, in the protocol package's order, whose read accepts the challenge holding only that option."""
+    pairing, in the protocol package's order, whose read accepts the challenge holding only that option. An option
+    whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it."""
     accepts = required.get("accepts")
     if not isinstance(accepts, Sequence) or isinstance(accepts, (str, bytes)) or not accepts:
         return Declined("offer-unreadable", "x402/no-payable-option")
@@ -302,6 +305,9 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
     unpayable: str | None = None
     for option in accepts:
         if not isinstance(option, Mapping):
+            continue
+        limits = _bounds(option)
+        if limits is None:
             continue
         only = {**required, "accepts": [option]}
         found: tuple[Binding, Advertised] | None = None
@@ -321,7 +327,7 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
         if isinstance(chosen, Refusal):
             unpayable = unpayable if unpayable is not None else chosen.code
             continue
-        return _Selected(option=dict(option), binding=found[0], read=found[1], chosen=chosen)
+        return _Selected(option=dict(option), binding=found[0], read=found[1], chosen=chosen, limits=limits)
     if unpayable is None and unreadable is not None:
         return Declined("offer-unreadable", unreadable)
     return Declined("no-payable-option", unpayable if unpayable is not None else "x402/no-payable-option")
@@ -359,12 +365,9 @@ def _paying(
     selected = _select(required, account, inputs)
     if isinstance(selected, Declined):
         return selected
-    limits = _bounds(selected.option)
-    if limits is None:
-        return Declined("offer-unreadable", "x402/option-malformed")
     if not hash_equals(selected.read.h, h):
         return Declined("hash-mismatch", "The agreement challenge advertises another ATR hash.")
-    return selected, limits
+    return selected, selected.limits
 
 
 async def agree(

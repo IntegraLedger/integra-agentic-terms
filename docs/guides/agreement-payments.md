@@ -47,10 +47,11 @@ sequenceDiagram
      agreement's payment request.
    - anything else: `agreement-failed`.
 3. **Choose the option.** The gate reads the request's options in document order and takes the first one your signer
-   can pay with a pairing whose payment is itself a public proof, the same rule as for the payment's own options. Its
-   `maxTimeoutSeconds` must be a JSON number with an integral value from 1 to 2<sup>53</sup> − 1 (`60` and `60.0` are
-   the same value), else `offer-unreadable`. The request's legal context must advertise the same H: another H is
-   `hash-mismatch`, and nothing is signed.
+   can pay with a pairing whose payment is itself a public proof, the same rule as for the payment's own options. An
+   option is payable only if its `maxTimeoutSeconds` is a JSON number with an integral value from 1 to
+   2<sup>53</sup> − 1 (`60` and `60.0` are the same value): the gate passes any other over, and declines
+   `no-payable-option` when it finds no option it can pay. The request's legal context must advertise the same H:
+   another H is `hash-mismatch`, and nothing is signed.
 4. **Hand it over for approval.** The call returns `approve`, the agreement payment, and signs nothing:
 
    | Member | What it is |
