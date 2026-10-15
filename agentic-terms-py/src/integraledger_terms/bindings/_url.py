@@ -34,7 +34,8 @@ def _ipv4_number(part: str) -> int | None:
         return int(part[2:] or "0", 16)
     if len(part) > 1 and part[0] == "0":
         return int(part, 8)
-    return int(part)
+    # A decimal part of more than ten digits is past every IPv4 limit (2^32 has ten), so it is not converted.
+    return int(part) if len(part) <= 10 else 1 << 32
 
 
 def _ends_in_a_number(host: str) -> bool:
@@ -102,7 +103,8 @@ def _authority_parses(authority: str, special: bool) -> bool:
         host, colon, port = host_port.partition(":")
     if host == "" and (at or colon):
         return False
-    if port and (not (port.isascii() and port.isdigit()) or int(port) > 65_535):
+    digits = port.lstrip("0")
+    if port and (not (port.isascii() and port.isdigit()) or len(digits) > 5 or int(digits or "0") > 65_535):
         return False
     if host.startswith("["):
         return True

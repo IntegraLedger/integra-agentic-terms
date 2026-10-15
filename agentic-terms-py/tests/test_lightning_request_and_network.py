@@ -96,6 +96,9 @@ def test_mcp_metadata_absent_and_null_hash_as_the_specifications() -> None:
         ("a URL with port 65536", "http:1", {"headers": []}, {"method": "GET", "url": "https://api.example.com:65536/article/A"}, "ln/request-binding-malformed"),
         ("a URL whose host is 256.1.1.1", "http:1", {"headers": []}, {"method": "GET", "url": "https://256.1.1.1/article/A"}, "ln/request-binding-malformed"),
         ("a URL whose host is 1.2.3.4.5", "http:1", {"headers": []}, {"method": "GET", "url": "https://1.2.3.4.5/article/A"}, "ln/request-binding-malformed"),
+        # The parser reads a port or an IPv4 part of any length: one of 4,301 digits is past 65535, or past 255.
+        ("a URL with a port of 4,301 digits", "http:1", {"headers": []}, {"method": "GET", "url": "https://api.example.com:" + "1" * 4301 + "/article/A"}, "ln/request-binding-malformed"),
+        ("a URL whose host is a number of 4,301 digits", "http:1", {"headers": []}, {"method": "GET", "url": "https://" + "1" * 4301 + "/article/A"}, "ln/request-binding-malformed"),
         # The request input's form: body, when present, is 0x hex, and headers, when present, an object whose members are
         # field values; a present null is neither, and is not an absent member.
         ("a null body", "http:1", {"headers": []}, {"method": "GET", "url": ARTICLE_A, "body": None}, "ln/request-binding-malformed"),
@@ -107,6 +110,7 @@ def test_mcp_metadata_absent_and_null_hash_as_the_specifications() -> None:
         ("null arguments", "mcp:1", {"server": SERVER, "metadata": []}, {"server": SERVER, "name": "get_article", "arguments": None}, "ln/request-binding-malformed"),
         # The WHATWG URL Standard's basic URL parser fails a port past 65535.
         ("an MCP server with port 65536", "mcp:1", {"server": "https://api.example.com:65536/mcp", "metadata": []}, {"server": "https://api.example.com:65536/mcp", "name": "get_article"}, "ln/request-binding-malformed"),
+        ("an MCP server with a port of 4,301 digits", "mcp:1", {"server": "https://api.example.com:" + "1" * 4301 + "/mcp", "metadata": []}, {"server": "https://api.example.com:" + "1" * 4301 + "/mcp", "name": "get_article"}, "ln/request-binding-malformed"),
         # The parser reads a file URL's whole authority as its host, which takes no port.
         ("an MCP server that is a file URL with a port", "mcp:1", {"server": "file://api.example.com:443/mcp", "metadata": []}, {"server": "file://api.example.com:443/mcp", "name": "get_article"}, "ln/request-binding-malformed"),
         # RFC 8785 writes I-JSON, whose names and strings hold no lone surrogate (RFC 7493 §2.1).
@@ -145,6 +149,21 @@ def test_another_request_is_no_payable_option_before_any_fetch(request_: Any, de
     out = run(lambda c: confirm(DOC, offered(X402_EXACT_LNBTC), ACCOUNT, c, inputs), link)
     assert out == Declined("no-payable-option", detail)
     assert link.calls == 0
+
+
+def test_a_port_of_4301_digits_is_a_malformed_binding_before_any_fetch() -> None:
+    # The parser reads a port of any length; one of 4,301 digits is past 65535.
+    link = serving(ABC)
+    url = "https://api.example.com:" + "1" * 4301 + "/article/A"
+    out = run(lambda c: confirm(DOC, offered(X402_EXACT_LNBTC), ACCOUNT, c, {"request": {"method": "GET", "url": url}}), link)
+    assert out == Declined("no-payable-option", "ln/request-binding-malformed")
+    assert link.calls == 0
+
+
+def test_a_port_of_leading_zeros_reads_as_its_number() -> None:
+    # The parser reads 4,301 zeros then 443 as port 443, so the URL is a target and its binding hashes.
+    url = "https://api.example.com:" + "0" * 4301 + "443/article/A"
+    assert isinstance(request_hash_of("http:1", {"headers": []}, {"method": "GET", "url": url}, url), str)
 
 
 def test_a_present_null_request_is_a_malformed_binding_before_any_fetch() -> None:
