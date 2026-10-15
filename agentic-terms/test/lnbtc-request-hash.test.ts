@@ -67,6 +67,14 @@ describe("the request binding, from the buyer's own request", () => {
       metadata: [{ name: "m", valueHash: META_NULL }],
     });
   });
+  it("MCP: metadata names ascend by their UTF-16 code units, RFC 8785's member order", async () => {
+    // U+1F600 is the pair D83D DE00, below U+FFFF, though its code point is above it (RFC 8785 section 3.2.3).
+    const call = { server: SERVER, name: "get_article" };
+    const ascending = await bindingOf("mcp:1", { server: SERVER, metadata: ["\u{1F600}", "\uFFFF"] }, call, undefined);
+    expect(ascending).toMatchObject({ metadata: [{ name: "\u{1F600}" }, { name: "\uFFFF" }] });
+    const descending = await requestHashOf("mcp:1", { server: SERVER, metadata: ["\uFFFF", "\u{1F600}"] }, call, undefined);
+    expect(descending).toEqual({ refused: true, code: "ln/request-binding-malformed" });
+  });
   it("MCP: the server the option names must be the buyer's own; omitted arguments are {}", async () => {
     const params = { server: "https://other.example.com/mcp", metadata: [] };
     expect(await requestHashOf("mcp:1", params, { server: SERVER, name: "get_article", arguments: { article: "A" } }, undefined)).toEqual({

@@ -81,6 +81,16 @@ def test_mcp_metadata_absent_and_null_hash_as_the_specifications() -> None:
     assert isinstance(present, dict) and present["metadata"] == [{"name": "m", "valueHash": META_NULL}]
 
 
+def test_mcp_metadata_names_ascend_by_their_utf16_code_units() -> None:
+    # RFC 8785 section 3.2.3 orders member names by their UTF-16 code units. U+1F600 is the pair D83D DE00, below U+FFFF,
+    # though its code point is above it, so the names ascend in that order and not in the other.
+    call = {"server": SERVER, "name": "get_article"}
+    ascending = binding_of("mcp:1", {"server": SERVER, "metadata": ["\U0001f600", "\uffff"]}, call, None)
+    assert isinstance(ascending, dict) and [m["name"] for m in ascending["metadata"]] == ["\U0001f600", "\uffff"]
+    descending = request_hash_of("mcp:1", {"server": SERVER, "metadata": ["\uffff", "\U0001f600"]}, call, None)
+    assert getattr(descending, "code", None) == "ln/request-binding-malformed"
+
+
 @pytest.mark.parametrize(
     ("case", "profile", "params", "request_", "expected"),
     [
