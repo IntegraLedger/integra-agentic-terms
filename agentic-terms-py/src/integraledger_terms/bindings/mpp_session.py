@@ -523,7 +523,10 @@ def _tempo_bound_within(presented: Any) -> AtrHash | Refusal:
 
 def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
     """The echoed challenge, when the signed transaction holds exactly one open call to the escrow whose salt word
-    is H, and on v2 the descriptor's channel carries that salt."""
+    is H, and on v2 the descriptor's channel carries that salt. The transaction is signed for the challenge's chain,
+    methodDetails.chainId (4217 where a v1 challenge names none): draft-tempo-session-00 binds the channel to the escrow
+    and the chain, and the server broadcasts this transaction there. A transaction whose chain id is another is
+    tempo/tx-malformed."""
     e = echoed_for(presented, SESSION_TEMPO)
     if isinstance(e, Refusal):
         return e
@@ -540,6 +543,8 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
     tx = decode_tempo_tx(bytes.fromhex(wire[2:]))
     if isinstance(tx, Refusal):
         return tx
+    if tx.chain_id != p.chain_id:
+        return Refusal("tempo/tx-malformed")
     selector = OPEN_V2_SELECTOR if p.version == "v2" else OPEN_V1_SELECTOR
     opens = [
         c for c in tx.calls if c.to is not None and same_bytes(c.to, p.escrow) and len(c.input) >= 4 and to_hex(c.input[:4]) == selector

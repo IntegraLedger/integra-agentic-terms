@@ -240,6 +240,40 @@ class TempoAnswer:
         return sign_typed(request["typedData"])
 
 
+def tempo_opening(request_text: str, chain: int) -> dict[str, Any]:
+    """The opening the binding's build writes for a challenge of request_text, completed with its open call in a
+    transaction of TS2's other fields for chain, signed with fixed.payerKey, and the payer's voucher."""
+    unsigned = MPP_SESSION_TEMPO.build(
+        {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": TF["payer"], "deposit": int(TF["deposit"])}, H
+    )
+    assert not isinstance(unsigned, Refusal), unsigned
+    signed_tx = open_wire({**unsigned.funding, "chainId": chain})
+    voucher = unsigned.voucher(signed_tx)
+    assert not isinstance(voucher, Refusal), voucher
+    opening = unsigned.complete(signed_tx, sign_typed(voucher))
+    assert isinstance(opening, dict), opening
+    return opening
+
+
+def voucher_within(opening: dict[str, Any]) -> Any:
+    """The Tempo session's build_within for a voucher of 1 on the opening's channel."""
+    w = {"challenge": opening["challenge"], "opening": opening, "cumulativeAmount": 1, "action": "voucher"}
+    return MPP_SESSION_TEMPO.build_within(w, H)  # type: ignore[attr-defined]
+
+
+def test_mpp_session_tempo_rows_whose_transaction_is_for_another_chain() -> None:
+    # mpp-session-tempo.json's agreedRefusals rows with transactionChainId (draft-tempo-session-00 L315-316, L356-357
+    # and L1227-1228, as the rows' about cites them): the transaction is signed for the challenge's chain.
+    rows = [r for r in TEMPO["agreedRefusals"]["rows"] if "transactionChainId" in r]
+    assert rows
+    for row in rows:
+        request_text = TF["requestV1"] if row.get("sessionProtocol") == "v1" else TF["requestV2"]
+        assert MPP_SESSION_TEMPO.bound(tempo_opening(request_text, TF["chainId"])) == H
+        opening = tempo_opening(request_text, row["transactionChainId"])
+        assert MPP_SESSION_TEMPO.bound(opening) == Refusal(row["expect"]), row["case"]
+        assert voucher_within(opening) == Refusal(row["expect"]), row["case"]
+
+
 def tempo_pairing(answer: Any, doc: Any = None) -> Pairing:
     return Pairing(
         binding=MPP_SESSION_TEMPO,
