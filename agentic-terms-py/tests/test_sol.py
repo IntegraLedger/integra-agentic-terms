@@ -39,7 +39,7 @@ from integraledger_terms import (
 from integraledger_terms.bindings import _svm
 from integraledger_terms.bindings._codec import b58_encode
 from integraledger_terms.pieces.x402_batch_settlement_solana import PIECE as X402_BATCH_SETTLEMENT_SOLANA_PIECE
-from integraledger_terms.bindings._mpp import pairings_of
+from integraledger_terms.bindings._mpp import Held, pairings_of
 from integraledger_terms.bindings._mpp_checks import decode_object, decode_string_map
 from integraledger_terms.bindings.x402_batch_settlement_solana import pairs as batch_pairs
 from integraledger_terms.bindings.mpp_session_solana import session_salt
@@ -1619,6 +1619,140 @@ def test_mpp_session_solana_an_operator_mode_open_is_signed_for_the_challenge_s_
     payer_operator = {**operator, "request": b64u(json.dumps(request, separators=(",", ":")))}
     assert MPP_SESSION_SOLANA.bound(credential(payer_operator, {**SV2_OPEN, "authentication": authentication})) == H
     assert MPP_SESSION_SOLANA.bound(credential(payer_operator, {**SV5_OPEN, "authentication": authentication})) == Refusal(code)
+
+
+# The address lookup table each table row's opening names: the address @solana/kit's documentation uses, as each row's
+# composed says.
+SESSION_TABLE = "4QwSwNriKPrz8DLW4ju5uxC2TN5cksJx6tPUPj7DGLAW"
+
+
+def table_openings() -> list[tuple[dict[str, Any], int]]:
+    """The session file's agreedRefusals rows that hold an opening's wire, each with the account of its one open, 4
+    (authorizedSigner) or 5 (channel), that the message names through an address lookup table: the one of the two
+    whose index is past the static keys."""
+    rows = [r for r in SV["agreedRefusals"]["rows"] if "wireBase64" in r]
+    assert rows, "mpp-session-hedera-solana-xrpl.json agreedRefusals holds no row with an opening's wire"
+    program = _svm.key_bytes(SESSION_DETAILS["channelProgram"])
+    found = []
+    for row in rows:
+        tx = _svm.decode_svm_tx(base64.b64decode(row["wireBase64"]))
+        assert not isinstance(tx, Refusal), row["case"]
+        opens = [ix for ix in tx.instructions if tx.keys[ix.program] == program and ix.data[:1] == b"\x01"]
+        assert len(opens) == 1, row["case"]
+        tabled = [a for a in (4, 5) if opens[0].accounts[a] >= len(tx.keys)]
+        assert len(tabled) == 1, row["case"]
+        found.append((row, tabled[0]))
+    return found
+
+
+def with_the_table_resolved(wire_b64: str, entry: str) -> str:
+    """The opening with its table's one entry written as a static key: the message's one lookup names SESSION_TABLE
+    and one index, writable or read-only, which entry fills; the message is compiled again with every account a
+    static key, under the same fee payer, blockhash and instructions. The signature slots are zero: bound, build's
+    complete and build_within read no signature."""
+    wire = base64.b64decode(wire_b64)
+    message = wire[1 + 64 * wire[0] :]
+    table = _svm.key_bytes(SESSION_TABLE)
+    assert table is not None
+    lookup = {b"\x01" + table + b"\x01\x00\x00": _svm.WRITABLE, b"\x01" + table + b"\x00\x01\x00": _svm.READONLY}
+    entry_role = lookup.get(message[-36:])
+    assert entry_role is not None, "the message's one lookup names SESSION_TABLE and one index"
+    tx = _svm.decode_svm_tx(wire)
+    assert not isinstance(tx, Refusal), tx
+    signers, readonly_signed, readonly_unsigned = message[1], message[2], message[3]
+    n = len(tx.keys)
+
+    def role(i: int) -> int:
+        if i == n:
+            return entry_role
+        if i < signers:
+            return _svm.WRITABLE_SIGNER if i < signers - readonly_signed else _svm.READONLY_SIGNER
+        return _svm.WRITABLE if i < n - readonly_unsigned else _svm.READONLY
+
+    keys = [b58_encode(k) for k in tx.keys] + [entry]
+    instructions = [
+        _svm.Instruction(keys[ix.program], tuple((keys[a], role(a)) for a in ix.accounts), ix.data)
+        for ix in tx.instructions
+    ]
+    compiled = _svm.compile_v0(keys[0], b58_encode(tx.blockhash), instructions)
+    assert isinstance(compiled, bytes), compiled
+    return base64.b64encode(bytes([compiled[1]]) + bytes(64 * compiled[1]) + compiled).decode("ascii")
+
+
+def challenge_naming_operator(key: str) -> dict[str, Any]:
+    """operator_doc()'s challenge, its methodDetails.operator the given key."""
+    operator = operator_doc()[0]
+    request = decode_object(operator["request"])
+    assert request is not None
+    request["methodDetails"]["operator"] = key
+    return {**operator, "request": b64u(json.dumps(request, separators=(",", ":")))}
+
+
+def opening_calls(challenge: Mapping[str, Any], payload: Mapping[str, Any]) -> list[Any]:
+    """bound and build's complete of the opening payload answering challenge."""
+    unsigned = MPP_SESSION_SOLANA.build({"challenge": challenge}, H)
+    assert not isinstance(unsigned, Refusal), unsigned
+    return [MPP_SESSION_SOLANA.bound(credential(challenge, payload)), unsigned.complete(dict(payload))]
+
+
+def within_calls(payload: Mapping[str, Any], tables: Any = None) -> list[Any]:
+    """build_within of a voucher under client_doc()'s challenge and of a close under SS1's, each on the opening payload
+    answering that challenge, with tables, where given, held beside it."""
+    out = []
+    for challenge, action in ((client_doc()[0], "voucher"), (SV["SS1"]["solana"]["placed"], "close")):
+        opening = credential(challenge, payload)
+        held = opening if tables is None else Held(opening, tables)
+        w = {"challenge": challenge, "opening": held, "cumulativeAmount": 100, "action": action}
+        out.append(MPP_SESSION_SOLANA.build_within(w, H))
+    return out
+
+
+def held_tables(wire_b64: str, entry: str) -> dict[str, Any]:
+    """The tables read for the opening, as fetched_of holds them: for its message's one lookup, the table's address
+    and entry at the one index the lookup names, writable or read-only."""
+    tx = _svm.decode_svm_tx(base64.b64decode(wire_b64))
+    assert not isinstance(tx, Refusal), tx
+    assert len(tx.lookups) == 1, tx.lookups
+    lookup = tx.lookups[0]
+    assert lookup.table == SESSION_TABLE and len(lookup.writable) + len(lookup.readonly) == 1, lookup
+    return {"tables": [{"address": lookup.table, "writable": [entry] * len(lookup.writable), "readonly": [entry] * len(lookup.readonly)}]}
+
+
+def test_mpp_session_solana_a_lookup_table_opening_with_its_entry_as_a_static_key_is_bound() -> None:
+    # The table rows (test_sol_lookup_tables.py runs them) are svm/read-first without their tables held beside them.
+    # Held beside it, the table's one entry gives the opening H under the same challenges, as does the same opening
+    # with that entry written as a static key, and build_within names that key as the voucher's signer either way. An
+    # account-4 row without an operator holds the opening of the row that names one.
+    rows = table_openings()
+    operators = {row["wireBase64"]: row["operator"] for row, _ in rows if "operator" in row}
+    read_first = Refusal("svm/read-first")
+    for row, tabled in rows:
+        label = f"{row['case']}; composed: {row['composed']}"
+        assert Refusal(row["expect"]) == read_first, label
+        entry = row["channel"] if tabled == 5 else operators[row["wireBase64"]]
+        tables = held_tables(row["wireBase64"], entry)
+        tabled_payload = {"action": "open", "channelId": row["channel"], "transaction": row["wireBase64"]}
+        resolved = with_the_table_resolved(row["wireBase64"], entry)
+        payload = {"action": "open", "channelId": row["channel"], "transaction": resolved}
+        if tabled == 5:
+            for challenge in (client_doc()[0], SV["SS1"]["solana"]["placed"]):
+                assert opening_calls(challenge, tabled_payload) == [read_first, read_first], label
+                assert MPP_SESSION_SOLANA.bound(Held(credential(challenge, tabled_payload), tables)) == H, label
+                assert opening_calls(challenge, payload) == [H, credential(challenge, payload)], label
+        elif "operator" in row:
+            challenge = challenge_naming_operator(row["operator"])
+            authentication = {**SV["SV5"]["expectAuthentication"], "challengeId": challenge["id"], "signature": "x"}
+            tabled_authenticated = {**tabled_payload, "authentication": authentication}
+            assert opening_calls(challenge, tabled_authenticated) == [read_first, read_first], label
+            assert MPP_SESSION_SOLANA.bound(Held(credential(challenge, tabled_authenticated), tables)) == H, label
+            authenticated = {**payload, "authentication": authentication}
+            assert opening_calls(challenge, authenticated) == [H, credential(challenge, authenticated)], label
+        else:
+            voucher = _svm.channel_voucher_message(row["channel"], 100, 0)
+            requests = [[{"kind": "ed25519-raw", "message": voucher, "signer": entry}]] * 2
+            assert within_calls(tabled_payload) == [read_first, read_first], label
+            assert [u.requests for u in within_calls(tabled_payload, tables)] == requests, label
+            assert [u.requests for u in within_calls(payload)] == requests, label
 
 
 def test_mpp_session_solana_without_operator_mode_the_open_alone_completes_the_credential() -> None:
