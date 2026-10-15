@@ -355,7 +355,7 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
       }));
   });
 
-  it("openChannel refuses bytes the opening does not carry, a payment that is not an opening, and a pairing with no channel", () =>
+  it("openChannel refuses other bytes, a payment that is not an opening, and a pairing with no channel", () =>
     at(E.now, async () => {
       const { hold, opening } = await evmHold();
       expect(code(await openChannel(ABD, opening, batchEvm))).toBe("signed-not-bound");
