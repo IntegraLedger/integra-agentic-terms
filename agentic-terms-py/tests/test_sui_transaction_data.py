@@ -108,6 +108,23 @@ def test_a_string_of_bytes_that_are_not_utf8_raises(utf8: str) -> None:
         STRING.parse(bcs_bytes(bytes.fromhex(utf8)))
 
 
+@pytest.mark.parametrize(
+    ("text", "utf8"),
+    [
+        ("\U0001f600", "f09f9880"),
+        ("\ud83d\ude00", "f09f9880"),  # the same pair held as two code points: the one character they form
+        ("a\ud83d\ude00b", "61f09f988062"),
+        ("\ud83d", "efbfbd"),  # a lone high surrogate is U+FFFD
+        ("\ude00", "efbfbd"),  # a lone low surrogate is U+FFFD
+        ("\ude00\ud83d", "efbfbdefbfbd"),  # low then high is no pair
+        ("\ufeffcoin", "efbbbf636f696e"),
+    ],
+)
+def test_a_string_writes_the_utf8_textencoder_writes(text: str, utf8: str) -> None:
+    data = bytes.fromhex(utf8)
+    assert STRING.serialize(text) == bcs_bytes(data)
+
+
 def test_a_call_whose_module_name_is_led_by_a_bom_decodes_and_carries_h() -> None:
     """The name reads as its exact bytes, so the transaction serialises back to itself."""
     data = transaction([pure(H)], [move_call(module=b"\xef\xbb\xbfcoin", function=b"value")])

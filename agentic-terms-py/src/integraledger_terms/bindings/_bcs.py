@@ -11,6 +11,8 @@ import functools
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from ._codec import text_encode
+
 MAX_SAFE_INTEGER = 2**53 - 1
 
 
@@ -137,19 +139,16 @@ def utf8_decode(data: bytes) -> str:
         raise BcsError("not UTF-8") from e
 
 
-def utf8_encode(text: str) -> bytes:
-    """UTF-8 as a WHATWG TextEncoder encodes it: a lone surrogate as U+FFFD."""
-    return "".join("\ufffd" if 0xD800 <= ord(c) <= 0xDFFF else c for c in text).encode("utf-8")
-
-
 class String(Type):
+    """A ULEB128 byte length and the UTF-8: read by utf8_decode, written as TextEncoder writes a JavaScript string."""
+
     def read(self, r: Reader) -> Any:
         return utf8_decode(r.take(r.uleb()))
 
     def write(self, value: Any, w: bytearray) -> None:
         if not isinstance(value, str):
             raise BcsError("not a string")
-        data = utf8_encode(value)
+        data = text_encode(value)
         w += uleb_encode(len(data)) + data
 
 
