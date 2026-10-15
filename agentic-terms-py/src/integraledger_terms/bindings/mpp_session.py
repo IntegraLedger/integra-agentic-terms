@@ -328,7 +328,7 @@ def _evm_opened(presented: Mapping[str, Any]) -> _EvmOpened | Refusal:
 def _evm_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
     """A voucher, or a close's final voucher, on the channel the held opening opened: Voucher(bytes32 channelId,uint128
     cumulativeAmount) under "EVM Payment Channel", with the channel id, the escrow and the chain from the opening."""
-    o = within_checks(w, h, "session/evm", _evm_opened, U128, ("topUp", "use", "bearer"))
+    o = within_checks(w, h, "session/evm", _evm_opened, U128, ("topUp",))
     if isinstance(o, Refusal):
         return o
     channel = normal_hash(w["opening"]["payload"].get("channelId"))
@@ -570,7 +570,7 @@ def _tempo_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
     opening = w.get("opening") if is_object(w) else None
     version = params_of(opening.get("challenge")) if is_object(opening) else Refusal("mpp/input-malformed")
     limit = U96 if not isinstance(version, Refusal) and version.version == "v2" else U128
-    o = within_checks(w, h, "session/tempo", _tempo_opened, limit, ("topUp", "use", "bearer"))
+    o = within_checks(w, h, "session/tempo", _tempo_opened, limit, ("topUp",))
     if isinstance(o, Refusal):
         return o
     p = params_of(w["opening"]["challenge"])

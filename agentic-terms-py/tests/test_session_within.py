@@ -30,7 +30,7 @@ from integraledger_terms import (
 from integraledger_terms._types import Refusal
 from integraledger_terms.bindings._channel import BatchUnsigned
 from integraledger_terms.bindings._svm import PAYMENT_CHANNELS, key_bytes
-from integraledger_terms.bindings.mpp_session import MppSessionEvm
+from integraledger_terms.bindings.mpp_session import MppSessionEvm, MppSessionTempo
 
 from breadth import ABC, H, LINK, Recording, offered, run
 from mpp_docs import issued, placed_doc
@@ -255,6 +255,34 @@ def test_build_within_refuses_an_action_it_does_not_build_and_another_hash() -> 
     w = {"challenge": opening["challenge"], "opening": opening, "cumulativeAmount": 1, "action": "topUp"}
     assert evm.build_within(w, H) == Refusal("mpp/within-action-not-built")
     assert evm.build_within({**w, "action": "voucher"}, H_OTHER) == Refusal("mpp/id-not-ours")
+
+
+# draft-evm-session-00 L1213 and draft-tempo-session-00 L829 at tempoxyz/mpp-specs 08e7dd87: the payload's action is
+# one of open, topUp, voucher and close. An action the draft does not define is mpp/session-action from build_within
+# as from channel_kind; a topUp, which it defines, is within and is not built.
+def test_evm_build_within_refuses_an_action_the_draft_does_not_define_as_channel_kind_does() -> None:
+    evm = MPP_SESSION_EVM
+    assert isinstance(evm, MppSessionEvm)
+    opening = b6(EVM)
+    for action in ("use", "bearer"):
+        w = {"challenge": opening["challenge"], "opening": opening, "cumulativeAmount": 1, "action": action}
+        assert evm.channel_kind({**opening, "payload": {"action": action}}) == Refusal("mpp/session-action")
+        assert evm.build_within(w, H) == Refusal("mpp/session-action")
+    assert evm.channel_kind({**opening, "payload": {"action": "topUp"}}) == "within"
+
+
+def test_tempo_build_within_refuses_an_action_the_draft_does_not_define_as_channel_kind_does() -> None:
+    tempo = MPP_SESSION_TEMPO
+    assert isinstance(tempo, MppSessionTempo)
+    opening = tempo_opened().signed
+    assert opening is not None
+    for action in ("use", "bearer"):
+        w = {"challenge": opening["challenge"], "opening": opening, "cumulativeAmount": 1, "action": action}
+        assert tempo.channel_kind({**opening, "payload": {"action": action}}) == Refusal("mpp/session-action")
+        assert tempo.build_within(w, H) == Refusal("mpp/session-action")
+    w = {"challenge": opening["challenge"], "opening": opening, "cumulativeAmount": 1, "action": "topUp"}
+    assert tempo.channel_kind({**opening, "payload": {"action": "topUp"}}) == "within"
+    assert tempo.build_within(w, H) == Refusal("mpp/within-action-not-built")
 
 
 # ── the seller's own within challenge on a held Tempo channel.
