@@ -19,7 +19,7 @@ from integraledger_terms.bindings._cbor import CborMap, decode_cbor, is_tag, map
 from integraledger_terms.bindings._codec import b58_encode, canonical_json
 from integraledger_terms.bindings.x402_exact_cardano import LCP_MARKER, auxiliary_data, cardano_option_check, decode_cardano_tx
 from integraledger_terms.bindings.x402_exact_ccd import account_bytes, ccd_memo, memo_carrier, plt_memo
-from integraledger_terms.bindings.x402_exact_aptos import aptos_option_check, decode_aptos_tx
+from integraledger_terms.bindings.x402_exact_aptos import _instrument_of, aptos_option_check, decode_aptos_tx
 from integraledger_terms.bindings._ss58 import ss58_decode
 from integraledger_terms.bindings._lcp import to_lcp_string
 from integraledger_terms.bindings.x402_exact_polkadot_lcp_assets_remark import decode_profile_call, encode_profile_call, split_signed
@@ -530,10 +530,10 @@ V1_KEYS = ("arguments", "function", "sender", "sequenceNumber", "typeArguments")
 
 def test_aptos_v2_complete_refuses_a_chain_mismatch_and_a_script() -> None:
     u = ap_unsigned()
-    assert u.complete({"transaction": aptos_reference_wire(aptos_raw(chain_id=2))}) == Refusal("x402/signed-not-bound")
+    assert u.complete({"transaction": aptos_reference_wire(aptos_raw(chain_id=2))}) == Refusal("aptos/chain-mismatch")
     script = uleb(0) + bcs_bytes(bytes([0xA1, 0x1C, 0xEB, 0x0B])) + uleb(0) + uleb(0)
     assert decode_aptos_tx(aptos_reference_wire(aptos_raw(payload=script))) == Refusal(AP["V2"]["script"]["expect"])
-    assert u.complete({"transaction": aptos_signed(aptos_raw(payload=script))}) == Refusal("x402/signed-not-bound")
+    assert u.complete({"transaction": aptos_signed(aptos_raw(payload=script))}) == Refusal(AP["V2"]["script"]["expect"])
     assert decode_aptos_tx(base64.b64encode(bytes(64 * 1024 + 1)).decode()) == Refusal("aptos/tx-too-large")
     assert decode_aptos_tx(base64.b64encode(aptos_raw()[:100]).decode()) == Refusal("aptos/tx-malformed")
 
@@ -563,44 +563,89 @@ def test_aptos_a_module_name_led_by_a_bom_is_no_move_identifier() -> None:
     assert len(bom) == len(raw) + 3
     for wire in (aptos_reference_wire(bom), aptos_signed(bom)):
         assert decode_aptos_tx(wire) == Refusal("aptos/tx-malformed")
-        assert ap_unsigned().complete({"transaction": wire}) == Refusal("x402/signed-not-bound")
+        assert ap_unsigned().complete({"transaction": wire}) == Refusal("aptos/tx-malformed")
+
+
+def ap_code(code: str) -> Refusal:
+    """The refusal of x402-exact-aptos.json's agreedRefusals rows whose expect member is code. A row is found by that
+    member, never by its case text, and the file holds at least one."""
+    assert any(row["expect"] == code for row in AP["agreedRefusals"]["rows"]), code
+    return Refusal(code)
 
 
 def test_aptos_agreed_refusals() -> None:
-    """The buyer-side rows of the vector file's agreedRefusals; the status row is the seller's."""
-    rows = {row["case"]: row["expect"] for row in AP["agreedRefusals"]["rows"]}
+    """The buyer-side rows of the vector file's agreedRefusals, each found by its expect member; the status row is the
+    seller's."""
+    malformed, not_transfer = ap_code("aptos/tx-malformed"), ap_code("aptos/not-an-x402-transfer")
     raw = aptos_raw()
-    assert decode_aptos_tx("AAA") == Refusal(rows["a transaction that is not padded standard base64"])
-    ends_early = "a RawTransaction prefix that ends early, or a ULEB128 that is over 2^32-1 or not in its shortest form"
-    assert decode_aptos_tx(base64.b64encode(raw[:40]).decode()) == Refusal(rows[ends_early])
+    assert decode_aptos_tx("AAA") == malformed
+    # A RawTransaction prefix that ends early, or a ULEB128 that is over 2^32-1 or not in its shortest form.
+    assert decode_aptos_tx(base64.b64encode(raw[:40]).decode()) == malformed
     long_uleb = raw[:40] + bytes([0x82, 0x00]) + raw[41:]
-    assert decode_aptos_tx(base64.b64encode(long_uleb).decode()) == Refusal(rows[ends_early])
+    assert decode_aptos_tx(base64.b64encode(long_uleb).decode()) == malformed
     over = raw[:40] + bytes([0xFF, 0xFF, 0xFF, 0xFF, 0x1F]) + raw[41:]
-    assert decode_aptos_tx(base64.b64encode(over).decode()) == Refusal(rows[ends_early])
-    not_struct = "a type argument that is not a struct, or a struct with type arguments"
+    assert decode_aptos_tx(base64.b64encode(over).decode()) == malformed
+    # A type argument that is not a struct, or a struct with type arguments.
     at = raw.index(bytes([1, 7]) + addr32("0x1")) + 1
-    assert decode_aptos_tx(base64.b64encode(raw[:at] + bytes([1]) + raw[at + 1 :]).decode()) == Refusal(rows[not_struct])
+    assert decode_aptos_tx(base64.b64encode(raw[:at] + bytes([1]) + raw[at + 1 :]).decode()) == not_transfer
     generic = raw.index(bcs_str("Metadata")) + len(bcs_str("Metadata"))
     with_args = raw[:generic] + bytes([1, 1]) + raw[generic + 1 :]
-    assert decode_aptos_tx(base64.b64encode(with_args).decode()) == Refusal(rows[not_struct])
-    network = "an option with scheme exact and an aptos: network whose chain id is not 1 to 255 without a leading zero"
+    assert decode_aptos_tx(base64.b64encode(with_args).decode()) == not_transfer
     for bad in ("aptos:0", "aptos:01", "aptos:256"):
-        assert aptos_option_check({**AP_F["O"], "network": bad}) == Refusal(rows[network])
-    assert X402_EXACT_APTOS.bound(ap_payment(1)) == Refusal(rows["payload.transaction not a string"])  # type: ignore[arg-type]
+        assert aptos_option_check({**AP_F["O"], "network": bad}) == ap_code("aptos/network-malformed")
+    assert X402_EXACT_APTOS.bound(ap_payment(1)) == ap_code("x402/payload-malformed")  # type: ignore[arg-type]
     u = ap_unsigned()
-    refusing = "complete with a transaction whose reference refuses"
-    assert u.complete({"transaction": "AAA"}) == Refusal(rows[refusing])
-    names = (
-        "a module, function or struct name that is not an ASCII letter or underscore followed by up to 254 ASCII "
-        "letters, digits and underscores, such as one with a leading U+FEFF"
-    )
-    # The four names the transfer carries: the module, the function, and the type argument's module and struct.
+    assert u.complete({"transaction": "AAA"}) == malformed
+    # The four names the transfer carries, each led by U+FEFF: the module, the function, and the type argument's module
+    # and struct.
     for name in ("primary_fungible_store", "transfer", "fungible_asset", "Metadata"):
         led = raw.replace(bcs_str(name), bcs_str("\ufeff" + name), 1)
         assert led != raw and len(led) == len(raw) + 3
         for wire in (aptos_reference_wire(led), aptos_signed(led)):
-            assert decode_aptos_tx(wire) == Refusal(rows[names]), name
-            assert u.complete({"transaction": wire}) == Refusal(rows[refusing]), name
+            assert decode_aptos_tx(wire) == malformed, name
+            assert u.complete({"transaction": wire}) == malformed, name
+
+
+def test_aptos_complete_gives_each_transaction_row_the_code_reference_gives() -> None:
+    """One fault, one code: for each agreedRefusals row whose fault is in the transaction, the build's complete gives
+    the row's code, which the payment's read (_instrument_of, the read the protocol package's reference makes) also
+    gives. A row that carries transaction is that text; every other row is found by its expect member, its inputs
+    built as the runners above build them: text that is not padded base64, fixture F cut inside its sequence number
+    and a module name led by U+FEFF; a u64 type argument; a payload transaction that is not a string; V2's script
+    payload, and fixture F on chain 2, each in both wire forms. The option's network row and the status row hold no
+    transaction. Fixture F on chain 1 completes in both wire forms."""
+    raw = aptos_raw()
+    at = raw.index(bytes([1, 7]) + addr32("0x1")) + 1
+    led = raw.replace(bcs_str("primary_fungible_store"), bcs_str("\ufeffprimary_fungible_store"), 1)
+    script = aptos_raw(payload=uleb(0) + bcs_bytes(bytes([0xA1, 0x1C, 0xEB, 0x0B])) + uleb(0) + uleb(0))
+    chain_2 = aptos_raw(chain_id=2)
+    inputs: dict[str, list[object]] = {
+        "aptos/tx-malformed": ["AAA", base64.b64encode(raw[:40]).decode(), aptos_reference_wire(led)],
+        "aptos/not-an-x402-transfer": [base64.b64encode(raw[:at] + bytes([1]) + raw[at + 1 :]).decode()],
+        "x402/payload-malformed": [7, None],
+        "aptos/not-entry-function": [aptos_reference_wire(script), aptos_signed(script)],
+        "aptos/chain-mismatch": [aptos_reference_wire(chain_2), aptos_signed(chain_2)],
+    }
+    rows = AP["agreedRefusals"]["rows"]
+    texts = [r for r in rows if "transaction" in r]
+    keyed = [r for r in rows if "transaction" not in r and r["expect"] in inputs]
+    assert {r["expect"] for r in keyed} == set(inputs)
+    assert {r["expect"] for r in texts} == {"aptos/tx-too-large", "aptos/tx-malformed"}
+    left = [r for r in rows if r not in texts and r not in keyed]
+    assert sorted(r["expect"] for r in left) == ["aptos/network-malformed", "pending unreadable"]
+    cases: list[tuple[str, object]] = [(r["expect"], t) for r in keyed for t in inputs[r["expect"]]]
+    for r in texts:
+        text = r["transaction"] if isinstance(r["transaction"], str) else repeated(r["transaction"])
+        assert text is not None, r["case"]
+        cases.append((r["expect"], text))
+    u = ap_unsigned()
+    for code, transaction in cases:
+        want = (code, transaction, Refusal(code))
+        assert (code, transaction, _instrument_of(ap_payment(transaction))) == want  # type: ignore[arg-type]
+        assert (code, transaction, u.complete({"transaction": transaction})) == want
+    for wire in (aptos_reference_wire(raw), aptos_signed(raw)):
+        assert not isinstance(_instrument_of(ap_payment(wire)), Refusal)
+        assert not isinstance(u.complete({"transaction": wire}), Refusal)
 
 
 def test_aptos_agreed_refusals_of_a_transaction_text() -> None:

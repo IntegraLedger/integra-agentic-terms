@@ -218,9 +218,13 @@ class AptosUnsigned:
     _accepted: Mapping[str, Any]
 
     def complete(self, signed: Mapping[str, str]) -> dict[str, Any] | Refusal:
-        """The payment, when the transaction's prefix is a transfer this pairing reads on the option's chain."""
+        """The payment, when the transaction's prefix is a transfer this pairing reads on the option's chain. A
+        transaction _instrument_of refuses gets the code it gives, the code the protocol package's reference gives,
+        such as aptos/chain-mismatch for a transaction signed for a chain other than the option's network: one fault,
+        one code."""
         payment = payment_with(self._required, self._accepted, signed)
-        return Refusal("x402/signed-not-bound") if isinstance(_instrument_of(payment), Refusal) else payment
+        found = _instrument_of(payment)
+        return found if isinstance(found, Refusal) else payment
 
 
 @dataclass(frozen=True, slots=True)
