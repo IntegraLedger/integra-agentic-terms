@@ -106,7 +106,8 @@ class MppChargeSolana:
     def build(self, choice: Json, h: AtrHash) -> MppUnsigned | Refusal:
         """The message for the payer to sign: the request's transfer (a token TransferChecked, or a System transfer
         for sol) with the memo the request's externalId carries, which must be this H's LCP string. Splits and
-        confidential transfers are not built."""
+        confidential transfers are not built: the pairing's filter refuses a challenge that asks for them
+        (svm/input-malformed)."""
         if not is_object(choice):
             return Refusal("svm/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, self.id)
@@ -117,8 +118,6 @@ class MppChargeSolana:
         memo = to_lcp_string(h)
         if r.get("externalId") != memo:
             return Refusal("svm/carrier-mismatch")
-        if "splits" in d or d.get("confidential") is True:
-            return Refusal("svm/input-malformed")
         payer: Any = choice.get("payer")
         if key_bytes(payer) is None:
             return Refusal("svm/input-malformed")

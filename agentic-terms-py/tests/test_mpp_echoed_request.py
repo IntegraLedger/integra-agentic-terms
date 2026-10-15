@@ -1,8 +1,10 @@
-"""bound and the channel members start from the echoed challenge's H (challenge_bound) and read, and check, only the
-request members their own read keys or derivation use; the request's other checks are pairings_of's and the build's.
-Each credential is a vector file's B6 row as it presents it, whose expected H is that row's; the request is re-encoded
-as base64url of its RFC 8785 JSON after each change. Each expected refusal is the protocol package's answer to the same
-credential, as its own test of these reads (lcp 0.4.0, test/mpp-echoed-request.test.ts) records it."""
+"""bound starts from the echoed challenge's H (challenge_bound) and holds the echoed challenge to the pairing's filter,
+the checks pairings_of makes for it: a challenge pairings_of_placed does not name for the pairing is refused with the
+code pairings_of gives it, and of one it names, bound and the channel members read only the request members their own
+read keys or derivation use. Each credential is a vector file's B6 row as it presents it, whose expected H is that
+row's; the request is re-encoded as base64url of its RFC 8785 JSON after each change. Each expected refusal is the
+protocol package's answer to the same credential, as its own test of these reads (lcp 0.4.0,
+test/mpp-echoed-request.test.ts) records it."""
 
 import copy
 import json
@@ -17,6 +19,7 @@ from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, canoni
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._mpp_checks import hedera_charge_network
 from integraledger_terms.bindings.mpp_charge_usdc import gateway_account, usdc_gateway_salt, usdc_request_hash
+from integraledger_terms.pieces._mpp import pairings_of_placed
 
 from support import load
 
@@ -134,28 +137,35 @@ def without_detail(key: str) -> Edit:
     return lambda r, c: details(r).pop(key)
 
 
-UNREAD: list[tuple[str, str, Edit]] = [
-    ("charge/evm/authorization, no expires", "mpp/charge/evm/authorization", no_expires),
-    ('charge/evm/authorization, amount "abc"', "mpp/charge/evm/authorization", member("amount", "abc")),
-    ("charge/evm/permit2, externalId null", "mpp/charge/evm/permit2", member("externalId", None)),
-    ('charge/tempo/memo, amount "abc"', "mpp/charge/tempo/memo", member("amount", "abc")),
-    ("charge/tempo/push, no expires", "mpp/charge/tempo/push", no_expires),
-    ("charge/solana, no expires", "mpp/charge/solana", no_expires),
-    ('charge/stellar, amount "0"', "mpp/charge/stellar", member("amount", "0")),
-    ("charge/xrpl, no expires", "mpp/charge/xrpl", no_expires),
-    ('charge/nearintents, amount "x"', "mpp/charge/nearintents", member("amount", "x")),
-    ("charge/usdc/evm, no expires", "mpp/charge/usdc/evm", no_expires),
-    ("charge/usdc/solana, no expires", "mpp/charge/usdc/solana", no_expires),
-    ("charge/usdc/stacks, no expires", "mpp/charge/usdc/stacks", no_expires),
-    ("charge/usdc/gateway, no expires", "mpp/charge/usdc/gateway", no_expires),
+# Each edit, and what bound answers: H where the pairing's filter does not read the member, else the filter's code.
+HELD: list[tuple[str, str, Edit, str | None]] = [
+    ("charge/evm/authorization, no expires", "mpp/charge/evm/authorization", no_expires, "mpp/expires-required"),
+    ('charge/evm/authorization, amount "abc"', "mpp/charge/evm/authorization", member("amount", "abc"), "mpp/request-malformed"),
+    ("charge/evm/permit2, externalId null", "mpp/charge/evm/permit2", member("externalId", None), "mpp/request-malformed"),
+    ('charge/tempo/memo, amount "abc"', "mpp/charge/tempo/memo", member("amount", "abc"), "mpp/request-malformed"),
+    ("charge/tempo/push, no expires", "mpp/charge/tempo/push", no_expires, "mpp/expires-required"),
+    ("charge/solana, no expires", "mpp/charge/solana", no_expires, None),
+    ('charge/stellar, amount "0"', "mpp/charge/stellar", member("amount", "0"), None),
+    ("charge/xrpl, no expires", "mpp/charge/xrpl", no_expires, "mpp/expires-required"),
+    ('charge/nearintents, amount "x"', "mpp/charge/nearintents", member("amount", "x"), None),
+    ("charge/usdc/evm, no expires", "mpp/charge/usdc/evm", no_expires, "mpp/expires-required"),
+    ("charge/usdc/solana, no expires", "mpp/charge/usdc/solana", no_expires, None),
+    ("charge/usdc/stacks, no expires", "mpp/charge/usdc/stacks", no_expires, None),
+    ("charge/usdc/gateway, no expires", "mpp/charge/usdc/gateway", no_expires, None),
     (
         'session/evm, no expires and credentialTypes ["other"]',
         "mpp/session/evm",
         both(no_expires, detail("credentialTypes", ["other"])),
+        "mpp/credential-types",
     ),
-    ('session/tempo, amount "abc"', "mpp/session/tempo", member("amount", "abc")),
-    ("session/solana, no expires", "mpp/session/solana", no_expires),
-    ('session/xrpl, no expires and currency "USD"', "mpp/session/xrpl", both(no_expires, member("currency", "USD"))),
+    ('session/tempo, amount "abc"', "mpp/session/tempo", member("amount", "abc"), None),
+    ("session/solana, no expires", "mpp/session/solana", no_expires, None),
+    (
+        'session/xrpl, no expires and currency "USD"',
+        "mpp/session/xrpl",
+        both(no_expires, member("currency", "USD")),
+        "xrpl/currency-not-xrp",
+    ),
     (
         'subscription/tempo, periodCount "0", periodUnit "month", subscriptionExpires "tomorrow", amount "abc", '
         "no expires",
@@ -167,19 +177,31 @@ UNREAD: list[tuple[str, str, Edit]] = [
             member("amount", "abc"),
             no_expires,
         ),
+        "mpp/request-malformed",
     ),
 ]
 
 
-@pytest.mark.parametrize(("name", "pairing", "edit"), UNREAD, ids=[n for n, _, _ in UNREAD])
-def test_bound_reads_no_request_member_it_does_not_use(name: str, pairing: str, edit: Edit) -> None:
+@pytest.mark.parametrize(("name", "pairing", "edit", "code"), HELD, ids=[n for n, _, _, _ in HELD])
+def test_bound_holds_the_echoed_challenge_to_the_filter_and_reads_no_other_member(
+    name: str, pairing: str, edit: Edit, code: str | None
+) -> None:
     assert bound(pairing, presented(pairing)) == expected_h(pairing)
-    assert bound(pairing, presented(pairing, edit)) == expected_h(pairing)
+    c = presented(pairing, edit)
+    assert (pairing in pairings_of_placed(c["challenge"])) == (code is None)
+    if code is None:
+        assert bound(pairing, c) == expected_h(pairing)
+    else:
+        assert pairings_of(offer_of(c)) == Refusal(code)
+        assert bound(pairing, c) == Refusal(code)
 
 
+# An expires that is present is an RFC 3339 date-time, else mpp/expires-required, the code pairings_of gives.
 @pytest.mark.parametrize("pairing", sorted(FILES))
-def test_bound_does_not_read_expires(pairing: str) -> None:
-    assert bound(pairing, presented(pairing, expires_not_a_date)) == expected_h(pairing)
+def test_bound_refuses_an_expires_that_is_not_a_date(pairing: str) -> None:
+    c = presented(pairing, expires_not_a_date)
+    assert pairings_of(offer_of(c)) == Refusal("mpp/expires-required")
+    assert bound(pairing, c) == Refusal("mpp/expires-required")
 
 
 def test_a_usdc_credential_is_read_only_by_the_pairing_of_the_profile_its_method_details_type_names() -> None:
@@ -319,21 +341,27 @@ def test_the_hedera_escrow_and_the_solana_channel_program() -> None:
     assert bound("mpp/session/solana", solana) == Refusal("svm/input-malformed")
 
 
-def test_the_session_openings_read_no_other_request_member() -> None:
-    named = detail("channelId", "0x" + "11" * 32)
-    assert bound("mpp/session/hedera", presented("mpp/session/hedera", named)) == expected_h("mpp/session/hedera")
-    assert bound("mpp/session/hedera", presented("mpp/session/hedera", member("currency", "usdc"))) == expected_h(
-        "mpp/session/hedera"
-    )
-    assert bound("mpp/session/solana", presented("mpp/session/solana", member("currency", "usdc"))) == expected_h(
-        "mpp/session/solana"
-    )
-    assert bound("mpp/session/xrpl", presented("mpp/session/xrpl", without_detail("network"))) == expected_h(
-        "mpp/session/xrpl"
-    )
+# The session openings take only a challenge the filter names: a named channel, a currency or network of another form
+# is refused with the code pairings_of gives the same challenge.
+@pytest.mark.parametrize(
+    ("pairing", "edit", "code"),
+    [
+        ("mpp/session/hedera", detail("channelId", "0x" + "11" * 32), "mpp/channel-named"),
+        ("mpp/session/hedera", member("currency", "usdc"), "mpp/request-malformed"),
+        ("mpp/session/solana", member("currency", "usdc"), "svm/input-malformed"),
+        ("mpp/session/xrpl", without_detail("network"), "xrpl/network-missing"),
+    ],
+    ids=["hedera, channelId named", 'hedera, currency "usdc"', 'solana, currency "usdc"', "xrpl, no network"],
+)
+def test_the_session_openings_hold_the_filter(pairing: str, edit: Edit, code: str) -> None:
+    c = presented(pairing, edit)
+    assert pairings_of(offer_of(c)) == Refusal(code)
+    assert bound(pairing, c) == Refusal(code)
 
 
-def test_subscription_tempo_reads_only_the_chain() -> None:
+# The filter holds the subscription request's terms to their forms (draft-tempo-subscription-00's request members); the
+# challenge's own expires is not one of them.
+def test_subscription_tempo_holds_the_filter_then_reads_only_the_chain() -> None:
     unread = both(
         member("amount", "abc"),
         member("periodUnit", "month"),
@@ -342,6 +370,7 @@ def test_subscription_tempo_reads_only_the_chain() -> None:
         no_expires,
     )
     pairing = "mpp/subscription/tempo"
-    assert bound(pairing, presented(pairing, unread)) == expected_h(pairing)
+    assert bound(pairing, presented(pairing, no_expires)) == expected_h(pairing)
+    assert bound(pairing, presented(pairing, unread)) == Refusal("mpp/request-malformed")
     assert channel_ref(pairing, presented(pairing, unread)) == channel_ref(pairing, presented(pairing))
     assert channel_ref(pairing, presented(pairing, without_detail("chainId"))) == Refusal("mpp/chain-id-required")

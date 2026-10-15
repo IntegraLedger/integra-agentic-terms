@@ -8,10 +8,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._types import Refusal
-from ._codec import b58_decode, b64u_decode, canonical_or_none, utf16_key
+from ._bolt11 import FIELD
+from ._bolt11 import decode as decode_invoice
+from ._codec import b58_decode, b64u_decode, b64u_encode, canonical_or_none, utf16_key
 from ._hedera_proto import amount_of, is_entity
 from ._jose import js_length, parse_json, within_depth
 from ._lcp import is_address, is_list, is_object, uint256_of
+from ._svm import TOKEN, TOKEN_2022
+from ._xrpl_codec import account_id_of
 
 Obj = Mapping[str, Any]
 PairingCheck = Callable[[Obj, Obj, Obj], "list[str] | Refusal"]
@@ -287,6 +291,14 @@ def evm_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
             return Refusal("mpp/request-malformed")
         if _has(r, "externalId") and not isinstance(r["externalId"], str):
             return Refusal("mpp/request-malformed")
+        # permit2 pays the recipient amount less the splits, which must be above zero (MPP's EVM charge: the splits'
+        # sum "MUST be strictly less than amount"); where it is not, permit2 is left out, and a challenge left with no
+        # pairing is mpp/input-malformed, the code its build gives.
+        split = sum(int(s["amount"]) for s in d["splits"]) if _has(d, "splits") else 0
+        if int(r["amount"]) - split <= 0:
+            listed = [p for p in listed if p != "mpp/charge/evm/permit2"]
+            if not listed:
+                return Refusal("mpp/input-malformed")
     return listed
 
 
@@ -404,12 +416,17 @@ def tempo_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 
 
 def subscription_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    """subscription on tempo: an access key with an address and a key type Tempo defines; subscriptionExpires an RFC
+    3339 date-time from 1970, the key authorization's uint64 expiry; chainId a positive safe integer; currency and
+    recipient addresses and amount a decimal; and a period of 1 to 10^16 - 1 days or weeks that is below 2^64 seconds,
+    the key authorization's uint64 period. Else mpp/request-malformed."""
     key = d.get("accessKey")
     if not is_object(key) or not is_address(key.get("accessKeyAddress")):
         return Refusal("mpp/access-key-malformed")
     if key.get("keyType") not in ("p256", "secp256k1", "webAuthn") or not isinstance(key.get("keyType"), str):
         return Refusal("mpp/access-key-malformed")
-    if not isinstance(r.get("subscriptionExpires"), str) or unix_of(r["subscriptionExpires"]) is None:
+    until = unix_of(r["subscriptionExpires"]) if isinstance(r.get("subscriptionExpires"), str) else None
+    if until is None or until < 0:
         return Refusal("mpp/request-malformed")
     if positive_int(d.get("chainId")) is None:
         return Refusal("mpp/chain-id-required")
@@ -420,13 +437,30 @@ def subscription_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     count = r.get("periodCount")
     if not isinstance(count, str) or _PERIOD_COUNT.fullmatch(count) is None:
         return Refusal("mpp/request-malformed")
+    if subscription_period(r) >= 2**64:
+        return Refusal("mpp/request-malformed")
     return ["mpp/subscription/tempo"]
 
 
-def lightning_pairings(pairing: str) -> PairingCheck:
-    """Lightning: the payment hash as 64 lower-case hex digits, in methodDetails (charge) or in request (session), and
-    the invoice, when present, a string. The invoice is made after the hash, so it may be absent here. amount and
-    currency are not read."""
+def subscription_period(r: Obj) -> int:
+    """A Tempo subscription request's period in seconds: periodCount days or weeks, as periodUnit names."""
+    return int(r["periodCount"]) * (604_800 if r.get("periodUnit") == "week" else 86_400)
+
+
+# MPP Lightning's network names and the BOLT11 currency of each.
+LN_CURRENCIES: Mapping[str, str] = {"mainnet": "bc", "signet": "tbs", "regtest": "bcrt"}
+
+
+def lightning_pairings(pairing: str, carried: bool = False) -> PairingCheck:
+    """Lightning: the payment hash as 64 lower-case hex digits, in methodDetails (charge) or in request (session); the
+    request without a description; and methodDetails.network, when present, a network MPP Lightning defines, else
+    ln/currency-network. The invoice (methodDetails.invoice, or the session's depositInvoice), when present, is a string
+    that decodes as BOLT11 with one h field (else mpp/carrier-not-challenge, the code its comparison with H gives) and no
+    d field (ln/description-inline), whose payment hash is the request's (ln/payment-hash-mismatch), whose currency is
+    the one network names, when it names one (ln/currency-network), and whose expiry is no earlier than expires, when
+    the challenge carries one (ln/expires-after-invoice). The seller's node writes the invoice after the hash, so
+    pairings_of takes a challenge without it; with carried, the check of a placed challenge, one without it that passes
+    the checks that do not read the invoice is ln/invoice-malformed. amount and currency are not read."""
     charge = pairing == "mpp/charge/lightning"
 
     def check(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
@@ -436,6 +470,30 @@ def lightning_pairings(pairing: str) -> PairingCheck:
         holder, key = (d, "invoice") if charge else (r, "depositInvoice")
         if _has(holder, key) and not isinstance(holder[key], str):
             return Refusal("mpp/request-malformed")
+        network = d.get("network")
+        currency = LN_CURRENCIES.get(network) if isinstance(network, str) else None
+        if not _has(holder, key):
+            if _has(r, "description"):
+                return Refusal("ln/description-present")
+            if _has(d, "network") and currency is None:
+                return Refusal("ln/currency-network")
+            return Refusal("ln/invoice-malformed") if carried else [pairing]
+        b = decode_invoice(holder[key])
+        if isinstance(b, Refusal):
+            return b
+        if b.tags.count(FIELD["h"]) != 1:
+            return Refusal("mpp/carrier-not-challenge")
+        if FIELD["d"] in b.tags:
+            return Refusal("ln/description-inline")
+        if _has(r, "description"):
+            return Refusal("ln/description-present")
+        if b.payment_hash.hex() != h:
+            return Refusal("ln/payment-hash-mismatch")
+        if _has(d, "network") and currency != b.currency:
+            return Refusal("ln/currency-network")
+        expires = unix_of(c["expires"]) if "expires" in c else None
+        if expires is not None and expires > b.timestamp + b.expiry:
+            return Refusal("ln/expires-after-invoice")
         return [pairing]
 
     return check
@@ -479,18 +537,26 @@ def hedera_charge_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] |
     return currency, amount, every
 
 
-def hedera_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    legs = hedera_charge_legs(r)
+def hedera_charge_request_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] | Refusal:
+    """The checks of a decoded Hedera charge request, which pairings_of makes and the charge's build makes on the
+    request it is given: hedera_charge_legs, then methodDetails absent or an object (mpp/request-malformed) whose
+    chainId, when present, is 295 or 296. Gives the legs."""
+    legs = hedera_charge_legs(request)
     if isinstance(legs, Refusal):
         return legs
-    md = r.get("methodDetails")
-    if _has(r, "methodDetails") and not is_object(md):
+    md = request.get("methodDetails")
+    if _has(request, "methodDetails") and not is_object(md):
         return Refusal("mpp/request-malformed")
     if is_object(md) and _has(md, "chainId"):
         n = hedera_network_of_chain_id(md["chainId"])
         if isinstance(n, Refusal):
             return n
-    return ["mpp/charge/hedera"]
+    return legs
+
+
+def hedera_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    legs = hedera_charge_request_legs(r)
+    return legs if isinstance(legs, Refusal) else ["mpp/charge/hedera"]
 
 
 def is_external_id(r: Obj) -> bool:
@@ -539,15 +605,42 @@ def solana_charge_pairings(r: Obj, d: Obj, c: Obj | None = None) -> list[str] | 
         return Refusal("mpp/request-malformed")
     if d.get("feePayer") is True and not is_key(d.get("feePayerKey")):
         return Refusal("mpp/request-malformed")
+    # What build reads of methodDetails in place of its own inputs, in the form it builds with: no splits and no
+    # confidential transfer, which it does not build; a recentBlockhash that is a string is a key; and, for a mint, a
+    # decimals that is a number is an integer from 0 to 255, and a tokenProgram that is a string is Token or Token-2022.
+    if _has(d, "splits") or d.get("confidential") is True:
+        return Refusal("svm/input-malformed")
+    if isinstance(d.get("recentBlockhash"), str) and not is_key(d["recentBlockhash"]):
+        return Refusal("svm/input-malformed")
+    if currency != "sol":
+        decimals = d.get("decimals")
+        if is_number(decimals) and not _is_byte(decimals):
+            return Refusal("svm/input-malformed")
+        program = d.get("tokenProgram")
+        if isinstance(program, str) and program not in (TOKEN, TOKEN_2022):
+            return Refusal("svm/input-malformed")
     return ["mpp/charge/solana"]
 
 
+def _is_byte(value: object) -> bool:
+    """An integer from 0 to 255, as a JSON number reads: 8 and 8.0 alike."""
+    return (isinstance(value, int) or (isinstance(value, float) and value.is_integer())) and 0 <= value <= 255
+
+
+# The bound of a SEP-41 transfer amount, an i128.
+_I128_LIMIT = 2**127
+
+
 def stellar_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    """charge on stellar: methodDetails.network stellar:pubnet or stellar:testnet, amount a decimal below 2^127 (the
+    token contract's SEP-41 transfer takes an i128, which build writes and the payer signs), currency a contract, and
+    recipient an account, or its muxed form once placed."""
     if d.get("network") not in ("stellar:pubnet", "stellar:testnet") or not isinstance(d.get("network"), str):
         return Refusal("stellar/option-malformed")
     to, currency = r.get("recipient"), r.get("currency")
     if (
         not is_decimal(r.get("amount"))
+        or int(r["amount"]) >= _I128_LIMIT
         or not isinstance(currency, str)
         or _STELLAR_CONTRACT.fullmatch(currency) is None
         or not is_stellar_recipient(to)
@@ -607,6 +700,9 @@ def xrpl_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     for k in ("destinationTag", "sourceTag"):
         if _has(d, k) and not _is_uint32(d[k]):
             return Refusal("mpp/request-malformed")
+    # build writes no memo but the LCP one.
+    if _has(d, "memos"):
+        return Refusal("xrpl/memos-not-carried")
     return ["mpp/charge/xrpl"]
 
 
@@ -653,8 +749,9 @@ def solana_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 
 
 def xrpl_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    """session on xrpl: channelId absent or ""; network named; currency absent or "XRP"; a classic recipient; amount
-    a u64 in drops, written in decimal with no sign, point or leading zero."""
+    """session on xrpl: channelId absent or ""; network named; currency absent or "XRP"; a classic recipient whose
+    checksum holds, as the channel id build derives reads it; amount a u64 in drops, written in decimal with no sign,
+    point or leading zero."""
     if r.get("channelId") is not None:
         named = r["channelId"] != ""
     else:
@@ -666,7 +763,7 @@ def xrpl_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         return network
     if _has(r, "currency") and r["currency"] != "XRP":
         return Refusal("xrpl/currency-not-xrp")
-    if not is_xrpl_address(r.get("recipient")) or not is_drops(r.get("amount")):
+    if not is_xrpl_address(r.get("recipient")) or account_id_of(r["recipient"]) is None or not is_drops(r.get("amount")):
         return Refusal("mpp/request-malformed")
     return ["mpp/session/xrpl"]
 
@@ -727,7 +824,8 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     """charge on usdc: the active profile, amount a positive integer string, recipient a string, and what each
     profile's build reads: EVM chainId and addresses; the Solana charge's checks on the Solana details, whose network is
     required, and on externalId, its carrier; Stacks chainId and the token contract. The Gateway build reads recipient
-    and the request's hash, and none of the Gateway details. No other profile reads externalId."""
+    and the request's hash, and none of the Gateway details. No other profile reads externalId. The EVM and Gateway
+    derivations hash the request as received, so on those profiles it is in its RFC 8785 form (mpp/request-not-jcs)."""
     profile = usdc_profile(d)
     if isinstance(profile, Refusal):
         return profile
@@ -738,7 +836,7 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     if kind == "evm":
         if positive_int(p.get("chainId")) is None or not is_address(r.get("currency")) or not is_address(r.get("recipient")):
             return Refusal("mpp/request-malformed")
-        return ["mpp/charge/usdc/evm"]
+        return ["mpp/charge/usdc/evm"] if is_jcs_request(c["request"], r) else Refusal("mpp/request-not-jcs")
     if kind == "solana":
         network = solana_network_of(p, True)
         if isinstance(network, Refusal):
@@ -756,7 +854,14 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         if not isinstance(name, str) or js_length(name) > 128 or _STACKS_NAME.fullmatch(name) is None:
             return Refusal("mpp/request-malformed")
         return ["mpp/charge/usdc/stacks"]
-    return ["mpp/charge/usdc/gateway"]
+    return ["mpp/charge/usdc/gateway"] if is_jcs_request(c["request"], r) else Refusal("mpp/request-not-jcs")
+
+
+def is_jcs_request(request_param: object, parsed: object) -> bool:
+    """True when a challenge's request parameter is the base64url, without padding, of the UTF-8 of the RFC 8785 form
+    of parsed, its own parse: the bytes usdc's request hash covers."""
+    text = canonical_or_none(parsed)
+    return text is not None and b64u_encode(text.encode("utf-8")) == request_param
 
 
 # Each (intent, method) MPP serves, and the check that names its pairings.
@@ -780,4 +885,12 @@ PAIRING_CHECKS: Mapping[str, PairingCheck] = {
     "charge/stripe": stripe_charge_pairings,
     "subscription/stripe": stripe_subscription_pairings,
     "charge/usdc": usdc_charge_pairings,
+}
+
+# The checks of a placed challenge, with the carrier the seller writes after place required where pairings_of takes a
+# challenge without it: the Lightning invoice.
+CARRIED_PAIRING_CHECKS: Mapping[str, PairingCheck] = {
+    **PAIRING_CHECKS,
+    "charge/lightning": lightning_pairings("mpp/charge/lightning", carried=True),
+    "session/lightning": lightning_pairings("mpp/session/lightning", carried=True),
 }

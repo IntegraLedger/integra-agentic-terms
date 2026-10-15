@@ -25,9 +25,9 @@ from ._lcp import (
     normal_hash,
 )
 from ._mpp_checks import (
+    CARRIED_PAIRING_CHECKS,
     MAX_JSON_DEPTH,
     PAIRING_CHECKS,
-    USDC_PROFILES,
     decode_object,
     decode_string_map,
     hedera_charge_network,
@@ -179,15 +179,17 @@ def expires_of(checked: Checked) -> int | Refusal:
     return Refusal("mpp/expires-required") if checked.expires is None else checked.expires
 
 
-def check_challenge(c: object, placed: bool) -> Checked | Refusal:
-    """The checks of pairings_of. With placed, opaque may carry the LCP members the seller's placement writes. A realm
-    with no UTF-8 form, which the attribution memo and the challenge hash cannot take, is mpp/challenge-malformed."""
+def check_challenge(c: object, placed: bool, carried: bool = False) -> Checked | Refusal:
+    """The checks of pairings_of. With placed, opaque may carry the LCP members the seller's placement writes. With
+    carried, the carrier the seller writes after placement, which pairings_of takes absent (the Lightning invoice), is
+    required. A realm with no UTF-8 form, which the attribution memo and the challenge hash cannot take, is
+    mpp/challenge-malformed."""
     if not is_challenge_shape(c):
         return Refusal("mpp/challenge-malformed")
     assert is_object(c)
     if not is_well_formed(c["realm"]):
         return Refusal("mpp/challenge-malformed")
-    check = PAIRING_CHECKS.get(f"{c['intent']}/{c['method']}")
+    check = (CARRIED_PAIRING_CHECKS if carried else PAIRING_CHECKS).get(f"{c['intent']}/{c['method']}")
     if check is None:
         return Refusal("mpp/not-this-pairing")
     expires = unix_of(c["expires"]) if "expires" in c else None
@@ -220,9 +222,25 @@ def pairings_of(c: object) -> tuple[str, ...] | Refusal:
     Tempo charge whose amount is 0 names none: MPP pays it with a proof credential, which moves no money. An expires
     that is present must be an RFC 3339 date-time, else mpp/expires-required. Without expires, the pairings whose build
     writes it into what the payer signs, and the NEAR Intents and XRP Ledger charges, whose drafts require it, are left
-    out, and a challenge left with no pairing is mpp/expires-required."""
+    out, and a challenge left with no pairing is mpp/expires-required. These checks are each pairing's one filter: they
+    include every check its build and bound make on the challenge alone, and those take only a challenge
+    pairings_of_placed names for the pairing, refusing any other with the code these checks give it
+    (mpp/not-this-pairing where they name only other pairings)."""
     checked = check_challenge(c, False)
     return checked if isinstance(checked, Refusal) else checked.pairings
+
+
+def checked_for(c: object, pairing: str) -> Checked | Refusal:
+    """A challenge as placed, held to pairing's filter: pairings_of's checks over it, with the LCP members the seller's
+    placement writes allowed in opaque and the Lightning invoice required, and pairing among the pairings they name. A
+    challenge they refuse gives their refusal, and one that does not offer pairing (another intent, method, credential
+    type, mode or usdc profile, or no expires where pairing needs it) is mpp/not-this-pairing. Each pairing's build
+    takes the chosen challenge through this one step, and its bound the echoed one (echoed_for), so none of them takes a
+    challenge pairings_of would not name for that pairing."""
+    checked = check_challenge(c, True, True)
+    if isinstance(checked, Refusal):
+        return checked
+    return checked if pairing in checked.pairings else Refusal("mpp/not-this-pairing")
 
 
 # ── The buyer's reading.
@@ -482,8 +500,8 @@ def challenge_bound(c: object) -> Bound | Refusal:
 
 @dataclass(frozen=True, slots=True)
 class EchoedChallenge:
-    """An echoed challenge as a credential presents it: the request decoded, with no member of it checked. Each
-    pairing reads, and checks, only the request members its own read keys or derivation use. details is methodDetails,
+    """An echoed challenge as a credential presents it, held to its pairing's filter (checked_for): the request
+    decoded, and each pairing reads the request members its own read keys or derivation use. details is methodDetails,
     empty when the request has none. expires is unix seconds; None when the challenge carries none; and
     mpp/expires-required, the code pairings_of gives, when it carries one that does not read as a date."""
 
@@ -515,9 +533,8 @@ def echoed_of(challenge: Mapping[str, Any], request: dict[str, Any]) -> EchoedCh
 
 
 def echoed_for(c: object, pairing: str) -> Echoed | Refusal:
-    """The echoed challenge of a credential for pairing: H from challenge_bound, and the challenge's intent and method,
-    which must be pairing's, with, on usdc, the profile methodDetails.type names. The request's checks are not run again
-    here: they are pairings_of's and the build's."""
+    """The echoed challenge of a credential for pairing: H from challenge_bound, the challenge's intent and method,
+    which must be pairing's, and the challenge held to pairing's filter (checked_for), whose refusal it gives."""
     b = challenge_bound(c)
     if isinstance(b, Refusal):
         return b
@@ -526,15 +543,12 @@ def echoed_for(c: object, pairing: str) -> Echoed | Refusal:
     _, intent, method = pairing.split("/")[:3]
     if challenge["intent"] != intent or challenge["method"] != method:
         return Refusal("mpp/not-this-pairing")
+    held = checked_for(challenge, pairing)
+    if isinstance(held, Refusal):
+        return held
     echoed = echoed_of(challenge, b.request)
     if isinstance(echoed, Refusal):
         return echoed
-    if method == "usdc":
-        profile = usdc_profile(echoed.details)
-        if isinstance(profile, Refusal):
-            return profile
-        if USDC_PROFILES[profile[0]] != pairing:
-            return Refusal("mpp/not-this-pairing")
     return Echoed(b.h, echoed, c["payload"])
 
 
@@ -545,14 +559,12 @@ def request_address(e: EchoedChallenge, key: str) -> str | Refusal:
 
 
 def chosen_for(challenge: object, h: object, pairing: str) -> Checked | Refusal:
-    """The buyer's chosen challenge for pairing, checked as placed, whose id derives from h."""
+    """The buyer's chosen challenge for pairing, held to its filter (checked_for), whose id derives from h."""
     if not is_challenge_shape(challenge) or not isinstance(challenge.get("id") if is_object(challenge) else None, str):
         return Refusal("mpp/input-malformed")
-    checked = check_challenge(challenge, True)
+    checked = checked_for(challenge, pairing)
     if isinstance(checked, Refusal):
         return checked
-    if pairing not in checked.pairings:
-        return Refusal("mpp/not-this-pairing")
     assert is_object(challenge)
     from_id = challenge_id_h(challenge)
     if isinstance(from_id, Refusal) or not isinstance(h, str) or not hash_equals(from_id, h):
@@ -561,14 +573,13 @@ def chosen_for(challenge: object, h: object, pairing: str) -> Checked | Refusal:
 
 
 def offer_for(choice: object, h: object, pairing: str) -> Checked | Refusal:
-    """The checked challenge a build answers: its id carries h, it offers pairing, and from is an address."""
+    """The checked challenge a build answers: it is held to pairing's filter (checked_for), its id carries h, and from
+    is an address."""
     if not is_object(choice) or not is_object(choice.get("challenge")):
         return Refusal("mpp/input-malformed")
-    checked = check_challenge(choice["challenge"], True)
+    checked = checked_for(choice["challenge"], pairing)
     if isinstance(checked, Refusal):
         return checked
-    if pairing not in checked.pairings:
-        return Refusal("mpp/not-this-pairing")
     from_id = challenge_id_h(choice["challenge"])
     if isinstance(from_id, Refusal) or not isinstance(h, str) or not hash_equals(from_id, h):
         return Refusal("mpp/id-not-ours")

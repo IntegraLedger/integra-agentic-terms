@@ -62,7 +62,7 @@ class MppChargeXrpl:
     def build(self, choice: Any, h: AtrHash) -> XrplChargeUnsigned | Refusal:
         """The Payment: Destination the request's recipient, Amount from its currency (drops, an issued amount with
         SendMax equal to it, or an MPT amount), InvoiceID the request's invoiceId, which must be this H, and the
-        request's tags. A request with memos is refused."""
+        request's tags. The pairing's filter refuses a request with memos (xrpl/memos-not-carried)."""
         if not is_object(choice):
             return Refusal("mpp/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, ID)
@@ -71,8 +71,6 @@ class MppChargeXrpl:
         r, d = checked.request, checked.details
         if not same_invoice(d.get("invoiceId"), mpp_invoice_id(h)):
             return Refusal("xrpl/carrier-mismatch")
-        if "memos" in d:
-            return Refusal("xrpl/memos-not-carried")
         account, fee = choice.get("account"), choice.get("fee")
         sequence, last = choice.get("sequence"), choice.get("lastLedgerSequence")
         if not isinstance(account, str) or not isinstance(fee, str) or _DROPS.fullmatch(fee) is None:

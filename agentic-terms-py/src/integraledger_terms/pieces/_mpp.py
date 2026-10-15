@@ -10,7 +10,7 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Binding, Chosen, Inputs, Json, Refusal, Signature, Step
-from ..bindings._mpp import network, pairings_of
+from ..bindings._mpp import check_challenge, network
 from ..bindings._mpp_checks import decode_object
 from ._base import BasePiece
 from ._common import InputKind, account_of, bigint_of, broadcasts, bytes_of, inputs_of
@@ -23,12 +23,13 @@ def request_of(c: object) -> dict[str, Any] | None:
 
 
 def pairings_of_placed(c: object) -> tuple[str, ...]:
-    """The pairings a placed challenge offers: MPP's pairings_of over the challenge without its opaque."""
-    if not isinstance(c, Mapping):
-        return ()
-    issued = {k: v for k, v in c.items() if k != "opaque"}
-    p = pairings_of(issued)
-    return () if isinstance(p, Refusal) else p
+    """The pairings a placed challenge offers: pairings_of's checks over the challenge with the LCP members the
+    seller's placement writes allowed in its opaque, which must decode as a map of strings, and with the carrier the
+    seller writes after placement required where pairings_of takes a challenge without it (the Lightning invoice). These
+    are the pairings whose build takes the challenge and whose bound takes it echoed. None when the challenge does not
+    read."""
+    checked = check_challenge(c, True, True)
+    return () if isinstance(checked, Refusal) else checked.pairings
 
 
 def challenges_of(read: Advertised) -> Sequence[Any]:

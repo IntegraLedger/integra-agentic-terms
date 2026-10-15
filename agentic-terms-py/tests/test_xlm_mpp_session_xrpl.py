@@ -11,6 +11,7 @@ from typing import Any
 from integraledger_terms import MPP_SESSION_XRPL, Declined, Refusal, Transacted, Within, open_channel, transact, within
 from integraledger_terms.bindings import _xrpl
 from integraledger_terms.bindings._channel import ChannelRef
+from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 import ed25519
@@ -164,14 +165,16 @@ def test_channel_id_claim_bytes_and_build_refuse_malformed_input_with_the_agreed
     terms = {"publicKey": "ED" + "11" * 32, "settleDelay": 3600, "fee": "12", "sequence": 7, "lastLedgerSequence": 1000}
     choice = {"challenge": SESSION.doc[0], "from": S["account"], "now": 0, "deposit": int(S["deposit"]), "xrpl": terms}
     assert MPP_SESSION_XRPL.build({**choice, "from": _NOT_ADDRESS}, H) == Refusal(agreed["build with a malformed from, deposit or XRPL channel terms"])
-    # The request's recipient holds the shape the challenge check reads, and only its checksum fails: build passes on
-    # the helper's code.
+    # The request's recipient holds the classic address's shape, and only its checksum fails: the challenge check reads
+    # the AccountID the channel id derives from, so the pairing's filter refuses it mpp/request-malformed, the code
+    # mpp-session-hedera-solana-xrpl.json's boundChallenge row gives, and build takes no such challenge.
     asked = V["SS1"]["xrpl"]["challenge"]
     text = asked["request"]
     request = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
     recipient = json.dumps({**request, "recipient": _NOT_ADDRESS}, separators=(",", ":"), sort_keys=True)
-    placed = placed_doc(issued_from(asked, recipient), H, LINK)[0]
-    assert MPP_SESSION_XRPL.build({**choice, "challenge": placed}, H) == helpers
+    assert pairings_of(issued_from(asked, recipient)) == Refusal("mpp/request-malformed")
+    placed = {**SESSION.doc[0], "request": issued_from(asked, recipient)["request"]}
+    assert MPP_SESSION_XRPL.build({**choice, "challenge": placed}, H) == Refusal("mpp/request-malformed")
 
 
 def issued_from(challenge: dict[str, Any], request_json: str) -> dict[str, Any]:

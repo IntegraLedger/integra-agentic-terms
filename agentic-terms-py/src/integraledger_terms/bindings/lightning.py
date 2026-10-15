@@ -255,39 +255,28 @@ class X402ExactLnbtcInvoiceNamed:
 
 MPP_CHARGE = "mpp/charge/lightning"
 MPP_SESSION = "mpp/session/lightning"
-MPP_NETWORKS: Mapping[str, Currency] = {"mainnet": "bc", "signet": "tbs", "regtest": "bcrt"}
 _OPEN = "open"
 
 
-def _ln_fields(pairing: str, request: Mapping[str, Any]) -> tuple[Any, Any]:
-    """Where a pairing's invoice and payment hash sit in the decoded request."""
+def _ln_invoice(pairing: str, request: Mapping[str, Any]) -> Any:
+    """A pairing's invoice in the decoded request: methodDetails.invoice on the charge, depositInvoice on the
+    session."""
     if pairing == MPP_SESSION:
-        return request.get("depositInvoice"), request.get("paymentHash")
+        return request.get("depositInvoice")
     d = request.get("methodDetails")
-    return (d.get("invoice"), d.get("paymentHash")) if is_object(d) else (None, None)
-
-
-def _network_refused(details: Mapping[str, Any], b: Bolt11) -> Refusal | None:
-    """ln/currency-network unless the challenge's network, when it names one, is a network MPP Lightning defines whose
-    currency is the invoice's."""
-    if "network" not in details:
-        return None
-    network = details["network"]
-    named = isinstance(network, str) and network in MPP_NETWORKS
-    return None if named and MPP_NETWORKS[network] == b.currency else Refusal("ln/currency-network")
+    return d.get("invoice") if is_object(d) else None
 
 
 def _ln_challenge_checks(pairing: str, c: object, h: AtrHash, placed: bool) -> Bolt11 | Refusal:
-    """The checks of what the seller's node wrote: the invoice decodes, its one h is h, it has no d, the request has
-    no description, its payment hash is the request's, its currency is the one the challenge's network names, when it
-    names one (a network MPP Lightning defines), and expires, where the challenge carries one, is no later than the
-    invoice's own expiry."""
+    """The checks of what the seller's node wrote: the challenge offers the pairing, which holds the invoice to
+    pairings_of's Lightning checks (it decodes, has one h and no d, carries the request's payment hash, is on the
+    network the challenge names, and expires no earlier than the challenge), and the invoice's h is h."""
     checked = check_challenge(c, placed)
     if isinstance(checked, Refusal):
         return checked
     if pairing not in checked.pairings:
         return Refusal("mpp/not-this-pairing")
-    invoice, payment_hash = _ln_fields(pairing, checked.request)
+    invoice = _ln_invoice(pairing, checked.request)
     if not isinstance(invoice, str):
         return Refusal("ln/invoice-malformed")
     b = decode(invoice)
@@ -296,17 +285,6 @@ def _ln_challenge_checks(pairing: str, c: object, h: AtrHash, placed: bool) -> B
     d = invoice_h(b, "h")
     if isinstance(d, Refusal) or d != normal_hash(h):
         return Refusal("mpp/carrier-not-challenge")
-    if FIELD["d"] in b.tags:
-        return Refusal("ln/description-inline")
-    if "description" in checked.request:
-        return Refusal("ln/description-present")
-    if payment_hash != b.payment_hash.hex():
-        return Refusal("ln/payment-hash-mismatch")
-    network = _network_refused(checked.details, b)
-    if network is not None:
-        return network
-    if checked.expires is not None and checked.expires > b.timestamp + b.expiry:
-        return Refusal("ln/expires-after-invoice")
     return b
 
 
@@ -359,31 +337,25 @@ class MppLightning:
             return Refusal("ln/return-invoice-malformed")
         request = decode_object(challenge["request"])
         assert request is not None
-        invoice, _ = _ln_fields(self.id, request)
+        invoice = _ln_invoice(self.id, request)
         return LnMppUnsigned(
             {"kind": "bolt11-pay", "invoice": invoice}, self.id, challenge, return_invoice
         )
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The echoed challenge's hash, held to the invoice the payer paid, whose currency must be the one the
-        challenge's network names, when it names one, as build checks it; a methodDetails that is not an object is
-        mpp/request-malformed, as build gives it. On the session, only the open action is the session's payment. No
-        signature is verified."""
+        """The echoed challenge's hash, held to the invoice the payer paid: the echoed challenge is held to the
+        pairing's filter (echoed_for), which checks the invoice as build does, and the invoice's h is the hash the
+        challenge's id derives from. On the session, only the open action is the session's payment. No signature is
+        verified."""
         echoed = echoed_for(presented, self.id)
         if isinstance(echoed, Refusal):
             return echoed
-        invoice, payment_hash = _ln_fields(self.id, echoed.checked.request)
-        b = decode(invoice) if isinstance(invoice, str) else Refusal("ln/invoice-malformed")
+        b = decode(_ln_invoice(self.id, echoed.checked.request))
         if isinstance(b, Refusal):
             return b
         d = invoice_h(b, "h")
         if isinstance(d, Refusal) or d != echoed.h:
             return Refusal("mpp/carrier-not-challenge")
-        if payment_hash != b.payment_hash.hex():
-            return Refusal("ln/payment-hash-mismatch")
-        network = _network_refused(echoed.checked.details, b)
-        if network is not None:
-            return network
         if self.id == MPP_SESSION and echoed.payload.get("action") != _OPEN:
             return Refusal("ln/no-payment-in-action")
         return echoed.h

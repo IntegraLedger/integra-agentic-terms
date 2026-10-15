@@ -193,7 +193,8 @@ _READS_ONLY_WHAT_IS_BUILT: list[tuple[str, str, dict[str, Any], tuple[str, ...] 
 def test_each_charge_check_reads_only_what_its_build_reads() -> None:
     assert len(_READS_ONLY_WHAT_IS_BUILT) == 13
     for method, case, request, expect in _READS_ONLY_WHAT_IS_BUILT:
-        out = pairings_of(issued(method, "charge", json.dumps(request)))
+        # The request in its RFC 8785 form, which the usdc EVM and Gateway derivations hash as received.
+        out = pairings_of(issued(method, "charge", json.dumps(request, separators=(",", ":"), sort_keys=True)))
         assert (case, out) == (case, expect if isinstance(expect, tuple) else refused(expect))
 
 

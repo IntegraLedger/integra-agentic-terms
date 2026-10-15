@@ -22,8 +22,8 @@ from ._hedera_proto import (
     write_body,
 )
 from ._lcp import is_object, is_well_formed
-from ._mpp import attribution_memo, challenge_bound, check_attribution, credential_of, read
-from ._mpp_checks import decode_object, hedera_charge_legs
+from ._mpp import attribution_memo, challenge_bound, check_attribution, checked_for, credential_of, read
+from ._mpp_checks import decode_object, hedera_charge_request_legs
 from .x402_exact_hedera import HederaUnsigned
 
 ID = "mpp/charge/hedera"
@@ -51,7 +51,7 @@ def build_charge(challenge: object, request: object, c: object) -> HederaUnsigne
         return Refusal("mpp/challenge-malformed")
     if not is_object(request):
         return Refusal("hedera/option-malformed")
-    legs = hedera_charge_legs(request)
+    legs = hedera_charge_request_legs(request)
     if isinstance(legs, Refusal):
         return legs
     currency, amount, every = legs
@@ -109,9 +109,9 @@ class MppChargeHedera:
         return build_charge({"id": challenge["id"], "realm": challenge.get("realm")}, request, c)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash from the echoed challenge, once the payer's memo is this challenge's attribution memo: from the
-        signed body (type transaction), or from the landed entry's memo written beside the credential (type hash).
-        No transfer, amount, payer or signature is read."""
+        """The hash from the echoed challenge, held to the pairing's filter (checked_for), once the payer's memo is this
+        challenge's attribution memo: from the signed body (type transaction), or from the landed entry's memo written
+        beside the credential (type hash). No transfer, amount, payer or signature is read."""
         credential = credential_of(presented)
         if isinstance(credential, Refusal):
             return credential
@@ -121,6 +121,9 @@ class MppChargeHedera:
         challenge, payload = credential["challenge"], credential["payload"]
         if challenge.get("method") != "hedera" or challenge.get("intent") != "charge":
             return Refusal("mpp/not-this-pairing")
+        held = checked_for(challenge, self.id)
+        if isinstance(held, Refusal):
+            return held
         kind = payload.get("type")
         if kind not in ("transaction", "hash"):
             return Refusal("mpp/credential-type")

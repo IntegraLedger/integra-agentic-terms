@@ -25,7 +25,7 @@ from ._mpp import (
     same_bytes,
     text,
 )
-from ._mpp_checks import MAX_DECODED, positive_int
+from ._mpp_checks import MAX_DECODED, is_jcs_request, positive_int
 from ._mpp_evm import eip3009_typed_data
 
 EVM = "mpp/charge/usdc/evm"
@@ -66,7 +66,7 @@ def usdc_request_hash(request_param: object) -> str | Refusal:
     parsed = parse_json(text_)
     if parsed is UNPARSED:
         return Refusal("mpp/request-malformed")
-    if canonical_or_none(parsed) != text_:
+    if not is_jcs_request(request_param, parsed):
         return Refusal("mpp/request-not-jcs")
     return to_hex(keccak256(raw))
 

@@ -102,11 +102,13 @@ def test_mpp_charge_xrpl_occupied_and_refusals() -> None:
     rows = {r["case"]: r for r in V["refusals"]}
     hash_row = rows["type=hash not yet fetched"]
     assert MPP_CHARGE_XRPL.bound(credential(hash_row["payload"])) == Refusal(hash_row["expect"])
+    # The pairing's filter refuses a request with memos: the seller's placement and the build alike.
+    memos_refused = Refusal(rows["build on a request with methodDetails.memos"]["expect"])
     memos = {**F["request"], "methodDetails": {**F["request"]["methodDetails"], "memos": []}}
-    placed = doc_of(issued("xrpl", "charge", json.dumps(memos), F["realm"], F["expires"]))
-    assert isinstance(placed, list)
-    choice = {"challenge": placed[0], "account": F["account"], **B}
-    assert MPP_CHARGE_XRPL.build(choice, H) == Refusal(rows["build on a request with methodDetails.memos"]["expect"])
+    asked = issued("xrpl", "charge", json.dumps(memos), F["realm"], F["expires"])
+    assert doc_of(asked) == memos_refused
+    choice = {"challenge": {**XRPL.doc[0], "request": asked["request"]}, "account": F["account"], **B}
+    assert MPP_CHARGE_XRPL.build(choice, H) == memos_refused
     good = {"challenge": XRPL.doc[0], "account": F["account"], **B}
     for bad in ({"fee": "-1"}, {"sequence": 2**32}, {"lastLedgerSequence": "1000"}, {"account": 7}):
         assert MPP_CHARGE_XRPL.build({**good, **bad}, H) == Refusal("mpp/input-malformed")

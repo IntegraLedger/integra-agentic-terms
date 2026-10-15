@@ -15,7 +15,6 @@ from ._mpp import (
     Checked,
     EchoedChallenge,
     MppUnsigned,
-    challenge_bound,
     challenge_hash,
     credential_of,
     echoed_for,
@@ -166,8 +165,6 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         [{"to": s["recipient"], "amount": int(s["amount"])} for s in raw_splits] if is_list(raw_splits) else None
     )
     primary = amount - sum(s["amount"] for s in splits or [])
-    if primary <= 0:
-        return Refusal("mpp/input-malformed")
     challenge = dict(choice["challenge"])
     challenge_hash_value = challenge_hash(challenge["id"], challenge["realm"])
     external_id = text(o.request.get("externalId"))
@@ -279,9 +276,11 @@ def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     return MppUnsigned(request, complete)
 
 
-def _no_signed_place(presented: Any) -> AtrHash | Refusal:
-    b = challenge_bound(presented)
-    return b if isinstance(b, Refusal) else Refusal("mpp/no-signed-place")
+def _no_signed_place(presented: Any, pairing: str) -> AtrHash | Refusal:
+    """The echoed challenge, held to pairing's filter (echoed_for); then mpp/no-signed-place: nothing the payer signed
+    carries H."""
+    e = echoed_for(presented, pairing)
+    return e if isinstance(e, Refusal) else Refusal("mpp/no-signed-place")
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,7 +295,7 @@ class MppChargeEvmTransaction:
         return _call_build(TRANSACTION, choice, h)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        return _no_signed_place(presented)
+        return _no_signed_place(presented, TRANSACTION)
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,4 +310,4 @@ class MppChargeEvmHash:
         return _call_build(HASH, choice, h)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        return _no_signed_place(presented)
+        return _no_signed_place(presented, HASH)
