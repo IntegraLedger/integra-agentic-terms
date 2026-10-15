@@ -2,6 +2,8 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 @import "fumadocs-twoslash/twoslash.css";
+/* Inter, every weight, the font the Mermaid diagrams are measured and drawn in (src/lib/font.ts). */
+@import "@fontsource-variable/inter/wght.css";
 
 @source "../../node_modules/fumadocs-ui/dist/**/*.js";
 @source "../../node_modules/fumadocs-twoslash/dist/**/*.js";
@@ -78,13 +80,6 @@ pre,
 kbd,
 samp {
   font-variant-ligatures: none;
-}
-
-/* Diagrams take the width of the text column and centre in it. */
-.mermaid-diagram svg {
-  max-width: 100%;
-  height: auto;
-  margin-inline: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

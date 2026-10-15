@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
-import { type RehypeCodeOptions, rehypeCodeDefaultOptions, remarkMdxMermaid } from "fumadocs-core/mdx-plugins";
+import { type RehypeCodeOptions, rehypeCodeDefaultOptions } from "fumadocs-core/mdx-plugins";
 import { applyMdxPreset, defineConfig, defineDocs } from "fumadocs-mdx/config";
 import { transformerTwoslash } from "fumadocs-twoslash";
+import { rehypeMermaid } from "./src/lib/rehype-docs";
 import { remarkDocLinks } from "./src/lib/remark-doc-links";
 
 /** The repository root. The site builds in website/, and this file is compiled into website/.source/. */
@@ -74,7 +75,9 @@ const twoslash = transformerTwoslash({
 
 export default defineConfig({
   mdxOptions: {
-    remarkPlugins: [remarkMdxMermaid, [remarkDocLinks, { root: DOCS_DIR }]],
+    remarkPlugins: [[remarkDocLinks, { root: DOCS_DIR }]],
+    // Each Mermaid diagram is rendered to SVG before code highlighting (src/lib/mermaid.ts).
+    rehypePlugins: (plugins) => [rehypeMermaid, ...plugins],
     rehypeCodeOptions: {
       ...codeOptions,
       transformers: [...(rehypeCodeDefaultOptions.transformers ?? []), twoslash],

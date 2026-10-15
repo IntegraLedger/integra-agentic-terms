@@ -22,6 +22,13 @@ TypeDoc generates from the packages' TypeScript source at every build.
 Every TypeScript sample is type-checked by [Twoslash](https://twoslash.netlify.app) against the packages as they are
 built in this repository, and the build fails on a type error. Hovering an identifier shows its type.
 
+Each ```` ```mermaid ```` block is rendered to SVG at build time with the `mermaid` package, in a pinned Chrome Headless
+Shell, once in a light and once in a dark theme. Every text is measured and drawn in Inter, from the
+`@fontsource-variable/inter` package, and in no font of the machine's: the browser has a font configuration of its own
+with no font in it, and its clock reads UTC and formats in the en-US locale. A diagram with a character Inter does not
+draw fails the build. Both SVGs are in the page's HTML, and the page shows the one for the reader's theme; the site
+serves the same Inter files, and no diagram code runs in the browser.
+
 ## Building
 
 The site reads the built packages, so build them first, from the repository root:
@@ -35,8 +42,23 @@ Then, in this folder, which has its own lockfile and install policy:
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm run browser   # fetch the browser that draws the Mermaid diagrams into .browser/, checked by its SHA-256
 pnpm run build
 ```
+
+The diagrams are drawn in one browser build: Chrome Headless Shell 156.0.8078.4 for Linux x64, the build the locked
+`playwright-core` names, from Chrome for Testing's
+[download bucket](https://googlechromelabs.github.io/chrome-for-testing/). `scripts/browser.mjs` holds its version, its
+address and the SHA-256 of its archive; `pnpm run browser` fetches the archive, checks it and unpacks it. The build
+uses no other browser: on a machine without it, it stops and names that command.
+
+The site is built on Linux x64, in CI or on a maintainer's Linux x64 machine. The browser build is pinned for that one
+platform because a build for another platform measures text through that platform's own font engine, so its diagrams
+could differ; on another platform the build stops and names the platform it is pinned for.
+
+`node scripts/check-diagrams.mjs`, after the build, draws every diagram again under a font configuration that changes
+every font's rendering and checks that the SVGs are the same, that a diagram with a character Inter does not draw is
+refused, and that `out/` serves the Inter files the diagrams are drawn in.
 
 The static site is in `out/`. `public/_headers` sets its response headers, and `wrangler.toml` deploys `out/` as a
 Worker's static assets with the site's 404 page. `pnpm run dev` serves it locally while you edit `docs/`; it does not
