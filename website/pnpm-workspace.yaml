@@ -1,12 +1,9 @@
-packages:
-  - "."
-
 minimumReleaseAge: 1440
 trustPolicy: no-downgrade
 strictDepBuilds: true
 
-allowBuilds:
-  esbuild: false
+permissions:
+  esbuild: {build: false}
 
 overrides:
   lodash-es: 4.18.1
