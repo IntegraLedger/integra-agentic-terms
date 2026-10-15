@@ -92,6 +92,14 @@ html:not(.dark) .twoslash-popover {
   border-radius: 2px;
 }
 
+/* A table (in the wrapper the docs layout gives it) is laid out and painted only when it nears the viewport, so the
+   long reference tables, the decline codes and the pairings above all, cost no rendering work while they are off
+   screen. */
+.prose div:has(> table) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+
 /* Every character of a code sample is shown as it is typed: no ligatures. */
 code,
 pre,
