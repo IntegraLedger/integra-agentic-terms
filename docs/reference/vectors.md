@@ -45,6 +45,10 @@ document `D` advertising `hash(A)`, the published Anvil development key as the p
 | B16 | An account on another network or chain: `no-payable-option`, with no fetch. |
 | B17 | A binding the gate does not serve: `pairing-not-supported`. |
 | B18 | A `payment-identifier` that already holds an id, or is not an object: the identifier cannot be written, and no payment is returned. |
+| B19 | `finish` with a `chosen` from another pairing: `pairing-not-supported`, before anything is rebuilt. |
+| B20 | `confirm` with `inputs` given and not an object: `no-payable-option` (`x402/input-malformed`), before the link is fetched. |
+| B21 | An option on `eip155:0`, which is not an EIP-155 chain id: `read` serves no option (`offer-unreadable`, `x402/no-payable-option`), and the link is never fetched. |
+| B22 | A link of 2,049 UTF-16 code units and 2,048 code points: `offer-unreadable` (`x402/legal-context-malformed`), before any fetch. The bound counts UTF-16 code units. |
 | BA1 | A pairing whose payment is not a public proof: the gate returns the agreement payment for approval (its `amount`, `asset`, `payTo` and `network`); once approved, the agreement is paid first (one signature), then the payment (one signature). |
 | BA2 | An agreement URL that advertises another hash: `hash-mismatch`, nothing signed, before any approval is asked. |
 | BA3 | An approved agreement that stays `202`: the same payment is re-sent every 2 seconds until `maxTimeoutSeconds` plus 180 seconds, then `agreement-pending`; the main payment is never signed. |
@@ -56,10 +60,21 @@ document `D` advertising `hash(A)`, the published Anvil development key as the p
 | BA9 | A payment request listing a Solana option, then an EVM one, to an EVM signer: the EVM option is the one returned for approval and paid. |
 | BA10 | As BA9, pending: the exchange is bounded by the chosen EVM option's `maxTimeoutSeconds` plus 180 seconds, never the Solana option's. |
 | BA11 | `maxTimeoutSeconds` written `60.0` is the number 60: the agreement is paid as in BA1. |
+| BA12 | A pairing whose payment is not a public proof, in an offer that names no agreement URL: the link is fetched and compared, then `agreement-not-offered`, with no agreement URL fetched and nothing signed; a link serving `C` is `hash-mismatch`. |
+| BA13 | A `PAYMENT-REQUIRED` written without its pad characters (`requiredUnpadded`): the 402 carries no readable `PAYMENT-REQUIRED`, so `agreement-failed` after one fetch, with nothing signed or paid. |
+| BA14 | An agreement URL that answers the unpaid request `202`: `agreement-pending` after that one request, with nothing signed, paid or returned for approval. |
+| BA15 | BA3's exchange with `retry-after` in each other form: one to nine digits wait that many seconds, at least 1; absent or in any other form, an HTTP-date included, the wait is 2 seconds; no request goes past the exchange's bound. |
+| BA16 | `agree` with `inputs` given and not an object: `no-payable-option` (`x402/input-malformed`), before the agreement URL is fetched or the signer called. |
+| BA17 | A receipt led by a byte order mark: `agreement-failed` once the agreement payment is sent, the decline carrying it as `moved`; the main payment is never signed. |
+| BA18 | A `PAYMENT-REQUIRED` whose JSON follows a byte order mark, or with a space inside: `agreement-failed` after one fetch, with nothing signed or paid. |
+| BA19 | A `PAYMENT-REQUIRED` whose final character carries a non-zero pad bit (`requiredPadBit`): `agreement-failed` after one fetch, with nothing signed or paid. |
 | BE1 | The ATR served under a content coding (gzip, x-gzip, deflate, br, stacked, two gzip members, `identity, gzip`): `atr-unfetchable` before anything is hashed or signed; every request asks for `Accept-Encoding: identity`. |
 | BE2 | The agreement URL's `402` or `200` answered under a content coding: `agreement-failed`; after the agreement payment is signed, the main payment never is. |
 | BS1, BS2 | `x402/exact/stellar` and `mpp/charge/stellar`: a simulated transfer of another amount, on another token contract, or from another account than the payer is declined `offer-unreadable` (`stellar/amount-mismatch`, `stellar/asset-mismatch`, `stellar/payer-mismatch`) before the signer is called; the transfer the option asks for reaches the signer as `stellar-auth`. |
 | BX1 | `mpp/session/xrpl`: a challenge whose `amount` is not a u64 of drops written in decimal (an array, a boolean, a number, a decimal point, a sign, 2^64) is `mpp/request-malformed`, so the gate declines `no-payable-option` and signs nothing; the amount `"100"` reaches the signer as `xrpl-session-open`. |
+| BW1, BW2 | `within` on a held `mpp/session/tempo` channel, over a challenge whose opaque is not a flat string-to-string map: `offer-unreadable` (`mpp/opaque-malformed`), and nothing is signed. BW1's control, a well-formed opaque naming the held H, signs one voucher for the held channel. |
+| BW3 | `within` for a refund of a held `x402/batch-settlement/solana` channel, with a `computeUnitLimit`, `computeUnitPrice` or `recentBlockhash` given and malformed: `no-payable-option` (`x402/input-malformed`), before the build and the signer call. Its control, with each value well formed, signs once. |
+| BW4 | `within` with `inputs` given and not an object: `no-payable-option` (`x402/input-malformed`), before the build and the signer call. |
 
 ## Running them
 
