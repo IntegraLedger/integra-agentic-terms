@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 import integraledger_terms as terms
-from integraledger_terms import Refusal
+from integraledger_terms import ChannelRef, Refusal
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, canonical_json
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._mpp_checks import hedera_charge_network
@@ -372,5 +372,126 @@ def test_subscription_tempo_holds_the_filter_then_reads_only_the_chain() -> None
     pairing = "mpp/subscription/tempo"
     assert bound(pairing, presented(pairing, no_expires)) == expected_h(pairing)
     assert bound(pairing, presented(pairing, unread)) == Refusal("mpp/request-malformed")
-    assert channel_ref(pairing, presented(pairing, unread)) == channel_ref(pairing, presented(pairing))
+    assert channel_ref(pairing, presented(pairing, unread)) == Refusal("mpp/request-malformed")
     assert channel_ref(pairing, presented(pairing, without_detail("chainId"))) == Refusal("mpp/chain-id-required")
+
+
+# channel_ref names the channel of an opening from its echoed challenge, so it holds that challenge to the pairing's
+# filter as bound does: a challenge pairings_of refuses gives that refusal. The EVM and Tempo sessions need expires,
+# which build writes into the opening the payer signs; Tempo's key authorization takes subscriptionExpires as a uint64
+# expiry, from 1970; and the Lightning session's paymentHash is the "SHA-256 hash of the deposit invoice preimage"
+# (draft-lightning-session-00), so the deposit invoice carries it. A within payment's challenge, which the seller issues
+# naming the channel, is read without the filter. Each code is the protocol package's channel.ref for the same
+# credential (test/mpp-echoed-request.test.ts).
+LIGHTNING = "mpp/session/lightning"
+CHANNEL_FILES = {**FILES, LIGHTNING: "mpp-session-lightning.json"}
+
+
+def opening(pairing: str, edit: Edit = no_edit) -> dict[str, Any]:
+    """The B6 opening of a channel pairing, the Lightning session's among them, with edit applied as presented does."""
+    rows = [r for r in load(CHANNEL_FILES[pairing])["buyer"]["rows"] if r["name"] == "B6" and r["pairing"] == pairing]
+    assert len(rows) == 1, pairing
+    c: dict[str, Any] = copy.deepcopy(rows[0]["input"]["presented"])
+    request = request_of(c)
+    edit(request, c["challenge"])
+    c["challenge"]["request"] = b64u_encode(canonical_json(request).encode("utf-8"))
+    return c
+
+
+def keys_of(pairing: str, c: dict[str, Any]) -> ChannelRef:
+    """The channel an opening names: the EVM and Tempo sessions' chain and channelId, the subscription's key
+    authorization digest (the vector file's SUB2.expectRefChannel), the Lightning session's paymentHash."""
+    if pairing == LIGHTNING:
+        return ChannelRef("lightning", request_of(c)["paymentHash"])
+    network = f"eip155:{details(request_of(c))['chainId']}"
+    if pairing == "mpp/subscription/tempo":
+        return ChannelRef(network, load(FILES[pairing])["SUB2"]["expectRefChannel"])
+    return ChannelRef(network, c["payload"]["channelId"].lower())
+
+
+def expires_1969(r: dict[str, Any], c: dict[str, Any]) -> None:
+    r["subscriptionExpires"] = "1969-12-31T23:59:59Z"
+
+
+FILTERED = [
+    ("session/evm, no expires", "mpp/session/evm", no_expires, "mpp/expires-required"),
+    ("session/tempo, no expires", "mpp/session/tempo", no_expires, "mpp/expires-required"),
+    ("subscription/tempo, subscriptionExpires in 1969", "mpp/subscription/tempo", expires_1969, "mpp/request-malformed"),
+    ("session/lightning, a paymentHash the deposit invoice does not carry", LIGHTNING, member("paymentHash", "11" * 32), "ln/payment-hash-mismatch"),
+]
+
+
+@pytest.mark.parametrize(("name", "pairing", "edit", "code"), FILTERED, ids=[n for n, _, _, _ in FILTERED])
+def test_channel_ref_holds_an_opening_s_echoed_challenge_to_the_pairing_s_filter(name: str, pairing: str, edit: Edit, code: str) -> None:
+    own = opening(pairing)
+    assert channel_ref(pairing, own) == keys_of(pairing, own)
+    c = opening(pairing, edit)
+    assert pairings_of(offer_of(c)) == Refusal(code)
+    assert bound(pairing, c) == Refusal(code)
+    assert channel_ref(pairing, c) == Refusal(code)
+
+
+def test_channel_ref_reads_a_within_payment_s_challenge_without_the_filter() -> None:
+    for pairing in ("mpp/session/evm", "mpp/session/tempo"):
+        c = opening(pairing, no_expires)
+        voucher = {**c, "payload": {"action": "voucher", "channelId": c["payload"]["channelId"], "cumulativeAmount": "1", "signature": "0x11"}}
+        assert BINDINGS[pairing].channel_kind(voucher) == "within", pairing
+        assert channel_ref(pairing, voucher) == keys_of(pairing, c), pairing
+    bearer = opening(LIGHTNING, member("paymentHash", "11" * 32))
+    session_id = "22" * 32
+    within = {**bearer, "payload": {"action": "bearer", "sessionId": session_id, "preimage": "33" * 32}}
+    assert channel_ref(LIGHTNING, within) == ChannelRef("lightning", session_id)
+
+
+# channel_ref holds an opening as bound holds it, so the two give one code for a fault before the filter too. MPP's
+# credential carries the challenge it answers as a required object with id, realm, method, intent and request
+# (draft-httpauth-payment-01, tempoxyz/mpp-specs 08e7dd87, lines 610-624): one without it, or with an empty one, is mpp/credential-malformed. A
+# challenge of another intent or method is not the pairing's: mpp/not-this-pairing. A Tempo subscription challenge's id
+# is the bare base64url of H, and every other challenge's carries its position, so a session's challenge echoed with a
+# subscription's intent and method, or a subscription's with another intent or method, is mpp/id-not-ours.
+Change = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def echoed_as(intent: str, method: str) -> Change:
+    return lambda c: {**c, "challenge": {**c["challenge"], "intent": intent, "method": method}}
+
+
+def no_challenge(c: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in c.items() if k != "challenge"}
+
+
+def empty_challenge(c: dict[str, Any]) -> dict[str, Any]:
+    return {**c, "challenge": {}}
+
+
+OTHER_OPENINGS: list[tuple[str, str, Change, str]] = [
+    ("session/evm, a challenge whose method is lightning", "mpp/session/evm", echoed_as("session", "lightning"), "mpp/not-this-pairing"),
+    ("session/evm, a challenge whose method is solana", "mpp/session/evm", echoed_as("session", "solana"), "mpp/not-this-pairing"),
+    ("session/evm, a challenge with a Tempo subscription's intent and method", "mpp/session/evm", echoed_as("subscription", "tempo"), "mpp/id-not-ours"),
+    ("session/evm, no challenge", "mpp/session/evm", no_challenge, "mpp/credential-malformed"),
+    ("session/evm, an empty challenge", "mpp/session/evm", empty_challenge, "mpp/credential-malformed"),
+    ("session/tempo, a challenge whose method is lightning", "mpp/session/tempo", echoed_as("session", "lightning"), "mpp/not-this-pairing"),
+    ("session/tempo, a challenge whose method is solana", "mpp/session/tempo", echoed_as("session", "solana"), "mpp/not-this-pairing"),
+    ("session/tempo, a challenge with a Tempo subscription's intent and method", "mpp/session/tempo", echoed_as("subscription", "tempo"), "mpp/id-not-ours"),
+    ("session/tempo, no challenge", "mpp/session/tempo", no_challenge, "mpp/credential-malformed"),
+    ("session/tempo, an empty challenge", "mpp/session/tempo", empty_challenge, "mpp/credential-malformed"),
+    ("subscription/tempo, a challenge whose method is lightning", "mpp/subscription/tempo", echoed_as("subscription", "lightning"), "mpp/id-not-ours"),
+    ("subscription/tempo, a challenge whose intent is session", "mpp/subscription/tempo", echoed_as("session", "tempo"), "mpp/id-not-ours"),
+    ("subscription/tempo, no challenge", "mpp/subscription/tempo", no_challenge, "mpp/credential-malformed"),
+    ("subscription/tempo, an empty challenge", "mpp/subscription/tempo", empty_challenge, "mpp/credential-malformed"),
+    ("session/lightning, a challenge whose intent is charge", LIGHTNING, echoed_as("charge", "lightning"), "mpp/not-this-pairing"),
+    ("session/lightning, a challenge whose method is solana", LIGHTNING, echoed_as("session", "solana"), "mpp/not-this-pairing"),
+    ("session/lightning, no challenge", LIGHTNING, no_challenge, "mpp/credential-malformed"),
+    ("session/lightning, an empty challenge", LIGHTNING, empty_challenge, "mpp/credential-malformed"),
+]
+
+
+@pytest.mark.parametrize(("name", "pairing", "change", "code"), OTHER_OPENINGS, ids=[n for n, _, _, _ in OTHER_OPENINGS])
+def test_channel_ref_gives_bound_s_code_for_an_opening_of_another_pairing_or_with_no_challenge(
+    name: str, pairing: str, change: Change, code: str
+) -> None:
+    own = opening(pairing)
+    assert BINDINGS[pairing].channel_kind(own) == "open"
+    c = change(own)
+    assert bound(pairing, c) == Refusal(code)
+    assert channel_ref(pairing, c) == Refusal(code)

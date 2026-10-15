@@ -203,16 +203,27 @@ def _signer_of(choice: Mapping[str, Any]) -> str | None:
     return signer if is_address(signer) else None
 
 
-def _ref_from(presented: Any) -> dict[str, str] | Refusal:
-    """The network and the payload's channelId, lower-case."""
-    payload = _payload_of(presented)
-    if isinstance(payload, Refusal):
-        return payload
-    p = params_of(presented.get("challenge"))
-    if isinstance(p, Refusal):
-        return p
-    channel = normal_hash(payload.get("channelId"))
-    return Refusal("mpp/credential-malformed") if channel is None else {"network": p.network, "channel": channel}
+def _ref_from(pairing: str, kind: Callable[[Any], str | Refusal]) -> Callable[[Any], dict[str, str] | Refusal]:
+    """The network and the payload's channelId, lower-case. An opening is held as bound holds it (echoed_for), whose
+    refusal it gives: the credential's shape, H from the echoed challenge's id, the challenge's intent and method,
+    which must be pairing's, and pairing's filter. A within or close payment's challenge, which the seller issues
+    naming the channel, is read without them."""
+
+    def ref(presented: Any) -> dict[str, str] | Refusal:
+        payload = _payload_of(presented)
+        if isinstance(payload, Refusal):
+            return payload
+        if kind(presented) == "open":
+            held = echoed_for(presented, pairing)
+            if isinstance(held, Refusal):
+                return held
+        p = params_of(presented.get("challenge"))
+        if isinstance(p, Refusal):
+            return p
+        channel = normal_hash(payload.get("channelId"))
+        return Refusal("mpp/credential-malformed") if channel is None else {"network": p.network, "channel": channel}
+
+    return ref
 
 
 def _not_bound_within(presented: Any) -> AtrHash | Refusal:
@@ -809,10 +820,15 @@ def _subscription_bound(presented: Any) -> AtrHash | Refusal:
 
 def _subscription_ref(presented: Any) -> dict[str, str] | Refusal:
     """The network and the key authorization's digest, for a key authorization that authorizes the challenge's issued
-    key (_authorized_key)."""
+    key (_authorized_key). The key authorization is the opening, and it is held as bound holds it (echoed_for), whose
+    refusal it gives: the credential's shape, H from the echoed challenge's id, the challenge's intent and method, which
+    must be the pairing's, and the pairing's filter."""
     payload = _payload_of(presented)
     if isinstance(payload, Refusal):
         return payload
+    held = echoed_for(presented, SUBSCRIPTION)
+    if isinstance(held, Refusal):
+        return held
     p = params_of(presented.get("challenge"))
     if isinstance(p, Refusal):
         return p
@@ -900,7 +916,7 @@ class MppSessionEvm(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_evm_kind, ref=_ref_from, bound_within=_not_bound_within)
+        return Channel(kind=_evm_kind, ref=_ref_from(SESSION_EVM, _evm_kind), bound_within=_not_bound_within)
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
@@ -922,7 +938,7 @@ class MppSessionTempo(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_tempo_kind, ref=_ref_from, bound_within=_tempo_bound_within)
+        return Channel(kind=_tempo_kind, ref=_ref_from(SESSION_TEMPO, _tempo_kind), bound_within=_tempo_bound_within)
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)

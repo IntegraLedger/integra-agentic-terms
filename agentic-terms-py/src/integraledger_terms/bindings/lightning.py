@@ -387,10 +387,17 @@ class MppLightningSession(MppLightning):
         return Refusal("mpp/session-action")
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
-        """The session's id: the open's challenge paymentHash, else the payload's sessionId, as lowercase hex."""
+        """The session's id: the open's challenge paymentHash, else the payload's sessionId, as lowercase hex. The open
+        is held as bound holds it (echoed_for), whose refusal it gives: H from the echoed challenge's id, the challenge's
+        intent and method, which must be the session's, and the pairing's filter. A bearer, top-up or close payment is
+        read from its payload alone."""
         kind = self.channel_kind(presented)
         if isinstance(kind, Refusal):
             return kind
+        if kind == "open":
+            held = echoed_for(presented, self.id)
+            if isinstance(held, Refusal):
+                return held
         request = presented["challenge"].get("request")
         decoded = decode_object(request) if isinstance(request, str) else None
         if kind == "open":
