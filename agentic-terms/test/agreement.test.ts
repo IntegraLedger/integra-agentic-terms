@@ -928,6 +928,20 @@ describe("the agreement payment the agent approves", () => {
     if (!("approve" in out)) throw new Error("the agreement payment is returned for approval");
     expect(out.approve.option).toEqual(next);
   });
+
+  // An accepts that is not a list is refused with the code the protocol package's read gives the same document.
+  it.each([["absent", undefined], ["a string", "x"], ["an object", {}]])(
+    "accepts %s: offer-unreadable with the read's x402/option-malformed, nothing signed",
+    async (_, accepts) => {
+      const required = { ...AG.required, accepts };
+      const read = exactEip3009.read(required as unknown as PaymentRequired);
+      expect(read).toMatchObject({ refused: true, code: "x402/option-malformed" });
+      const signer = counting();
+      const out = await agree(A, AGREEMENT_URL, signer, challenging(base64Json(required), RECORDED));
+      expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "x402/option-malformed" });
+      expect(signer.requests.length).toBe(0);
+    },
+  );
 });
 
 // The caller's signal ends the agreement exchange at its next step. Before the agreement payment is sent, nothing is

@@ -296,7 +296,9 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
     pairing, in the protocol package's order, whose read accepts the challenge holding only that option. An option
     whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it."""
     accepts = required.get("accepts")
-    if not isinstance(accepts, Sequence) or isinstance(accepts, (str, bytes)) or not accepts:
+    if not isinstance(accepts, Sequence) or isinstance(accepts, (str, bytes)):
+        return Declined("offer-unreadable", "x402/option-malformed")
+    if not accepts:
         return Declined("offer-unreadable", "x402/no-payable-option")
     if len(accepts) > MAX_OPTIONS:
         return Declined("offer-unreadable", "x402/option-malformed")

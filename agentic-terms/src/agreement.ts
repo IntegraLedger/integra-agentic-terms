@@ -285,7 +285,8 @@ interface Selected {
  */
 async function select(required: Record<string, unknown>, account: string, inputs: Inputs): Promise<Selected | Declined> {
   const accepts = required["accepts"];
-  if (!Array.isArray(accepts) || accepts.length === 0) return declined("offer-unreadable", "x402/no-payable-option");
+  if (!Array.isArray(accepts)) return declined("offer-unreadable", "x402/option-malformed");
+  if (accepts.length === 0) return declined("offer-unreadable", "x402/no-payable-option");
   if (accepts.length > MAX_OPTIONS) return declined("offer-unreadable", "x402/option-malformed");
   const now = Math.floor(Date.now() / 1000);
   let unreadable: string | undefined;
