@@ -788,6 +788,7 @@ _ONE_CURRENCY = Builder().uint(0b10, 2).uint(32, 6).uint(1, 32).uint(1, 5).uint(
 def test_x402_exact_tvm_a_message_is_read_as_ton_s_action_phase_sends_it() -> None:
     wallet, jetton, other = F["wallet"], F["jettonWallet"], f"0:{'12' * 32}"
     tail: Write = lambda b: b.bit(1)
+    tail_ref: Write = lambda b: b.ref(Builder().end())
     library: Write = lambda b: b.bit(1).ref(_LIBRARY)
     extra = _extra(_ONE_CURRENCY)
     flags_4: Write = lambda b: b.coins(4)
@@ -817,6 +818,7 @@ def test_x402_exact_tvm_a_message_is_read_as_ton_s_action_phase_sends_it() -> No
         "the settlement's extra currencies, one entry (44)": (_settlement(extra=extra), malformed),
         "the settlement's extra_flags of 4 (45)": (_settlement(extra_flags=flags_4), malformed),
         "the settlement's body reference, then one bit": (_settlement(tail=tail), malformed),
+        "the settlement's body reference, then a reference": (_settlement(tail=tail_ref), malformed),
         "the settlement's body reference, a library cell (34)": (_settlement(body=library), malformed),
         "the outgoing src, another account's addr_std (35)": (_settlement(_outgoing(src=_std(other))), not_transfer),
         "the outgoing src, the W5 wallet's address as an addr_var (35)": (_settlement(_outgoing(src=_var(wallet))), not_transfer),
@@ -826,6 +828,7 @@ def test_x402_exact_tvm_a_message_is_read_as_ton_s_action_phase_sends_it() -> No
         "the outgoing extra currencies, one entry (44)": (_settlement(_outgoing(extra=extra)), not_transfer),
         "the outgoing extra_flags of 4 (45)": (_settlement(_outgoing(extra_flags=flags_4)), not_transfer),
         "the outgoing body reference, then one bit": (_settlement(_outgoing(tail=tail)), not_transfer),
+        "the outgoing body reference, then a reference": (_settlement(_outgoing(tail=tail_ref)), not_transfer),
         "the outgoing body reference, a library cell (34)": (_settlement(_outgoing(body=library)), not_transfer),
     }
     for name, (boc, expect) in refused.items():
