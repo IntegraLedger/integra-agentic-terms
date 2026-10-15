@@ -67,8 +67,10 @@ class _Reader:
         raise _Short("too long")
 
     def ident(self) -> str:
+        """A name of ASCII letters, digits and underscores, decoded strictly: a leading U+FEFF is kept, so the name fails
+        the identifier rule."""
         try:
-            s = self.bytes(self.uleb()).decode("utf-8-sig")
+            s = self.bytes(self.uleb()).decode("utf-8")
         except UnicodeDecodeError as e:
             raise _Short("identifier") from e
         if _IDENT.fullmatch(s) is None:
@@ -98,7 +100,9 @@ def _reference_form(data: bytes) -> bytes | None:
 def decode_aptos_tx(transaction: str) -> dict[str, Any] | Refusal:
     """The transfer the payer signed, read from the RawTransaction prefix of a base64 transaction in either wire form:
     the scheme's BCS bytes, or x402's reference form. Only an entry function call to a framework fungible-asset
-    transfer is accepted."""
+    transfer is accepted. Module, function and struct names are read as their exact bytes, a leading U+FEFF included,
+    and each must be an ASCII letter or underscore followed by up to 254 ASCII letters, digits and underscores, else
+    aptos/tx-malformed."""
     decoded = base64_bytes(transaction, MAX_TX_BYTES)
     if decoded == "too-large":
         return Refusal("aptos/tx-too-large")

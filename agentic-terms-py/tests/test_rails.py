@@ -554,6 +554,17 @@ def test_aptos_build_returns_the_schemes_own_request_and_complete_echoes_the_ext
     assert X402_EXACT_APTOS.bound(signed) == AP_F["H"]
 
 
+def test_aptos_a_module_name_led_by_a_bom_is_no_move_identifier() -> None:
+    """Move identifiers are ASCII (aptos-core, move-core-types identifier.rs, is_valid), so the bytes EF BB BF before a
+    name make it no identifier, in either wire form, and complete refuses the transaction."""
+    raw = aptos_raw()
+    bom = raw.replace(bcs_str("primary_fungible_store"), bcs_str("\ufeffprimary_fungible_store"))
+    assert len(bom) == len(raw) + 3
+    for wire in (aptos_reference_wire(bom), aptos_signed(bom)):
+        assert decode_aptos_tx(wire) == Refusal("aptos/tx-malformed")
+        assert ap_unsigned().complete({"transaction": wire}) == Refusal("x402/signed-not-bound")
+
+
 def test_aptos_agreed_refusals() -> None:
     """The buyer-side rows of the vector file's agreedRefusals; the status row is the seller's."""
     rows = {row["case"]: row["expect"] for row in AP["agreedRefusals"]["rows"]}
