@@ -16,6 +16,7 @@ from integraledger_terms import (
     Refusal,
 )
 from integraledger_terms.bindings._codec import b64u_decode
+from integraledger_terms.bindings.mpp_session import session_resume
 from integraledger_terms.bindings._mpp import (
     attribution_memo,
     challenge_h,
@@ -299,6 +300,63 @@ def test_a_charge_build_refuses_an_h_its_challenge_id_does_not_derive_from() -> 
         _built(name)
         for h in (other, H[:-1], H[2:]):
             assert (name, h, binding.build(_choice(name), h)) == (name, h, expect)
+
+
+def test_a_charge_complete_refuses_an_answer_past_its_bound() -> None:
+    """mpp-challenge.json's agreedRefusals row for complete with a signature outside 1 to 8192 bytes, a transaction hash
+    not 32 bytes, or a signed transaction over 64 KiB: an answer at each bound completes, and one past it is the row's
+    refusal."""
+    expect = refused(_agreed("complete with a signature outside 1 to 8192 bytes"))
+    wire, over = "0x" + "11" * 65_536, "0x" + "11" * 65_537
+    at_bound = [("authorization", "0x11"), ("authorization", "0x" + "11" * 8192), ("hash", H), ("push", H),
+                ("transaction", wire), ("memo", wire)]  # fmt: skip
+    past = [("authorization", "0x"), ("authorization", "0x" + "11" * 8193), ("hash", "0x" + "11" * 31),
+            ("push", "0x" + "11" * 33), ("transaction", over), ("memo", over)]  # fmt: skip
+    for name, answer in at_bound:
+        assert not isinstance(_built(name).complete(answer), Refusal), (name, len(answer))
+    for name, answer in past:
+        assert (name, len(answer), _built(name).complete(answer)) == (name, len(answer), expect)
+
+
+def test_read_holds_a_legal_context_url_to_the_link_rule() -> None:
+    """mpp-challenge.json's agreedRefusals rows for read with no challenge read and a legalContextUrl in a challenge
+    whose id derives from its legalContext: one of at most 2048 characters that parses as an absolute URL whose scheme
+    is not https gives the first row's code; one that is absent, does not parse, is an https URL the link rule refuses,
+    or is over 2048 characters gives the second's."""
+    not_https = refused(_agreed("place with a link or agreement URL that is not an https link"))
+    malformed = refused(_agreed("place with a link or agreement URL that is an https link over 2048 characters"))
+    placed = placed_doc(C_E, H, LINK)[0]
+
+    def with_opaque(members: dict[str, str]) -> list[dict[str, Any]]:
+        return [{**placed, "opaque": b64u(json.dumps({"legalContext": f"lcp:sha256:{H}", **members}))}]
+
+    for u in ("http://atr.seller.example/x", "HTTP://atr.seller.example/x", "ftp://atr.seller.example/x"):
+        assert (u, read(with_opaque({"legalContextUrl": u}))) == (u, not_https)
+    assert read(with_opaque({})) == malformed
+    long, long_http = "https://pay.seller.example/" + "a" * 2030, "http://pay.seller.example/" + "a" * 2030
+    for u in ("", "https://", "not a url", "https://u@atr.seller.example/", long, long_http):
+        assert (u[:40], read(with_opaque({"legalContextUrl": u}))) == (u[:40], malformed)
+
+
+def test_session_resume_of_a_charge_challenge() -> None:
+    expect = refused(_agreed("sessionResume of a challenge of no session pairing"))
+    assert (session_resume(C_E), session_resume(C_T)) == (expect, expect)
+
+
+def test_nearintents_pairings_of_refuses_an_origin_network_or_external_id_it_cannot_read() -> None:
+    """mpp-charge-nearintents.json's agreedRefusals row for pairingsOf with originNetwork not CAIP-2, or externalId not
+    a string, over the file's request."""
+    n = load("mpp-charge-nearintents.json")
+    expect = refused(next(r["expect"] for r in n["agreedRefusals"]["rows"] if r["case"].startswith("pairingsOf with")))
+    request = n["fixed"]["request"]
+    details = {**request["methodDetails"], "originNetwork": "near"}
+
+    def of(r: dict[str, Any]) -> Any:
+        return pairings_of(issued("nearintents", "charge", json.dumps(r)))
+
+    assert of(request) == ("mpp/charge/nearintents",)
+    assert of({**request, "methodDetails": details}) == expect
+    assert of({**request, "externalId": 7}) == expect
 
 
 def test_mv7_attribution_memo_and_its_check() -> None:
