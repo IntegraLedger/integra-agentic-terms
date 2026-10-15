@@ -1468,26 +1468,30 @@ def operator_doc() -> list[dict[str, Any]]:
     return mpp_session_doc(challenge)
 
 
-def test_mpp_session_solana_sv5_the_payer_signs_sv3s_session_proof_after_the_open() -> None:
-    proof_text = SV["SV3"]["expectProofText"].encode()
-    digest_hex = hashlib.sha256(proof_text).hexdigest()
-    assert digest_hex.startswith(SV["SV3"]["expectProofSha256Prefix"])
-    assert digest_hex.endswith(SV["SV3"]["expectProofSha256Suffix"])
+def operator_answer(request: Any) -> Any:
+    """SV5.opening's open, whose account 4 is the challenge's operator, and the payer's base58 signature over a session
+    proof."""
+    if request["kind"] == "solana-session-open":
+        return dict(SV5_OPEN)
+    return session_answer(request)
+
+
+def test_mpp_session_solana_sv5_the_payer_signs_sv5_opening_s_session_proof_after_the_open() -> None:
+    proof_text = SV["SV5"]["opening"]["expectProofText"].encode()
     proof_signature = sign(PAYER_SEED, proof_text)
-    assert proof_signature.hex().startswith(SV["SV3"]["expectProofSignaturePrefix"])
-    assert proof_signature.hex().endswith(SV["SV3"]["expectProofSignatureSuffix"])
+    assert proof_signature.hex() == SV["SV5"]["opening"]["expectProofSignature"]
 
     doc: Any = operator_doc()
-    signer = Recording(f"{DEVNET}:{SV['SV3']['payer']}", session_answer)
+    signer = Recording(f"{DEVNET}:{SV['SV3']['payer']}", operator_answer)
     out = run(lambda c: transact(doc, MPP_SESSION_SOLANA, signer, c), serving(ABC))
     assert isinstance(out, Transacted) and out.signed is not None, out
     assert [r["kind"] for r in signer.requests] == SV["SV5"]["expectRequestKinds"]
-    assert hexb(signer.requests[1]["message"]).decode("utf-8") == SV["SV3"]["expectProofText"]
+    assert hexb(signer.requests[1]["message"]).decode("utf-8") == SV["SV5"]["opening"]["expectProofText"]
     assert signer.requests[1]["signer"] == SV["SV3"]["payer"]
     payload = out.signed["payload"]
     assert list(payload["authentication"]) == SV["SV5"]["expectAuthenticationKeys"]
     assert payload["authentication"] == {**SV["SV5"]["expectAuthentication"], "signature": b58_encode(proof_signature)}
-    assert {k: payload[k] for k in SV2_OPEN} == SV2_OPEN
+    assert {k: payload[k] for k in SV5_OPEN} == SV5_OPEN
     assert MPP_SESSION_SOLANA.bound(out.signed) == H
     use = {**out.signed, "payload": {**payload, "action": "use"}}
     assert MPP_SESSION_SOLANA.bound_within(use) == H
@@ -1577,6 +1581,27 @@ def test_mpp_session_solana_a_close_carries_its_voucher_signer_s_member() -> Non
                 expected = (refused, refused, refused)
             got = (MPP_SESSION_SOLANA.channel_kind(close), MPP_SESSION_SOLANA.channel_ref(close), MPP_SESSION_SOLANA.bound_within(close))
             assert got == expected, (mode, name)
+
+
+def test_mpp_session_solana_an_operator_mode_open_is_signed_for_the_challenge_s_operator() -> None:
+    # draft-solana-session-00 L1252-1254 and L1982-1985 at tempoxyz/mpp-specs 08e7dd87, as the session file's row
+    # cites them: in operator mode the open instruction's authorizedSigner (account 4) is the challenged operator. SV2's
+    # account 4 is the payer, SV5.opening's the operator.
+    code = session_agreed("a solana opening whose open instruction's authorizedSigner (account 4) is not the challenge's operator")
+    operator = operator_doc()[0]
+    authentication = {**SV["SV5"]["expectAuthentication"], "challengeId": operator["id"], "signature": "x"}
+    assert MPP_SESSION_SOLANA.bound(credential(operator, {**SV5_OPEN, "authentication": authentication})) == H
+    assert MPP_SESSION_SOLANA.bound(credential(operator, {**SV2_OPEN, "authentication": authentication})) == Refusal(code)
+    unsigned = MPP_SESSION_SOLANA.build({"challenge": operator}, H)
+    assert not isinstance(unsigned, Refusal), unsigned
+    assert unsigned.complete({**SV2_OPEN, "authentication": authentication}) == Refusal(code)
+    # The challenge names its operator: under one naming the payer, SV2's open is signed for it, and SV5.opening's is not.
+    request = decode_object(operator["request"])
+    assert request is not None
+    request["methodDetails"]["operator"] = SV["SV3"]["payer"]
+    payer_operator = {**operator, "request": b64u(json.dumps(request, separators=(",", ":")))}
+    assert MPP_SESSION_SOLANA.bound(credential(payer_operator, {**SV2_OPEN, "authentication": authentication})) == H
+    assert MPP_SESSION_SOLANA.bound(credential(payer_operator, {**SV5_OPEN, "authentication": authentication})) == Refusal(code)
 
 
 def test_mpp_session_solana_without_operator_mode_the_open_alone_completes_the_credential() -> None:

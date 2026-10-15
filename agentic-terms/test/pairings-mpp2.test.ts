@@ -542,24 +542,21 @@ describe("mpp/session/solana", () => {
     const issued = JSON.parse(Buffer.from(V.SS1.solana.challenge.request, "base64url").toString("utf8"));
     const operatorRequest = { ...issued, methodDetails: { ...issued.methodDetails, ...V.SV5.methodDetails } };
     const doc = docOf(sessionSolana, { ...V.SS1.solana.challenge, request: b64u(JSON.stringify(operatorRequest)) });
-    const proofText = new TextEncoder().encode(V.SV3.expectProofText);
+    const proofText = new TextEncoder().encode(V.SV5.opening.expectProofText);
     const operatorSigner = (kinds: string[]) => ({
       account: p.account,
       async sign(r: SigningRequest) {
         const q = request(r);
         kinds.push(q["kind"]);
-        if (q["kind"] === "solana-session-open") return { action: "open", channelId: V.SV2.channel, transaction: V.SV2.wireBase64 };
+        if (q["kind"] === "solana-session-open") return { action: "open", channelId: V.SV5.opening.channel, transaction: V.SV5.opening.wireBase64 };
         if (q["kind"] === "ed25519-raw") return base58(payer.sign(q["message"] as Uint8Array));
         throw new Error(String(q["kind"]));
       },
     });
 
-    it("the payer signs SV3's session proof after the open, and the open carries it as authentication", async () => {
-      expect(sha256(proofText).startsWith(V.SV3.expectProofSha256Prefix)).toBe(true);
-      expect(sha256(proofText).endsWith(V.SV3.expectProofSha256Suffix)).toBe(true);
+    it("the payer signs SV5.opening's session proof after the open, and the open carries it as authentication", async () => {
       const proofSignature = payer.sign(proofText);
-      expect(toHex(proofSignature).slice(2).startsWith(V.SV3.expectProofSignaturePrefix)).toBe(true);
-      expect(toHex(proofSignature).endsWith(V.SV3.expectProofSignatureSuffix)).toBe(true);
+      expect(toHex(proofSignature).slice(2)).toBe(V.SV5.opening.expectProofSignature);
 
       const kinds: string[] = [];
       const seen: Record<string, Loose>[] = [];
@@ -568,12 +565,12 @@ describe("mpp/session/solana", () => {
       if (isDeclined(out)) throw new Error(out.decline.detail);
       if ("approve" in out) throw new Error("an agreement payment to approve");
       expect(kinds).toEqual(V.SV5.expectRequestKinds);
-      expect(Buffer.from(seen[1]!["message"] as Uint8Array).toString("utf8")).toBe(V.SV3.expectProofText);
+      expect(Buffer.from(seen[1]!["message"] as Uint8Array).toString("utf8")).toBe(V.SV5.opening.expectProofText);
       expect(seen[1]!["signer"]).toBe(V.SV3.payer);
       const payload = (out.signed as MppCredential).payload as Record<string, Loose>;
       expect(Object.keys(payload["authentication"])).toEqual(V.SV5.expectAuthenticationKeys);
       expect(payload["authentication"]).toEqual({ ...V.SV5.expectAuthentication, signature: base58(proofSignature) });
-      expect(payload).toMatchObject({ action: "open", channelId: V.SV2.channel, transaction: V.SV2.wireBase64 });
+      expect(payload).toMatchObject({ action: "open", channelId: V.SV5.opening.channel, transaction: V.SV5.opening.wireBase64 });
       expect(await sessionSolana.bound(out.signed)).toBe(H);
       const use = { ...(out.signed as MppCredential), payload: { ...payload, action: "use" } };
       expect(await sessionSolana.channel.boundWithin(use as never)).toBe(H);
