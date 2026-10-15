@@ -246,3 +246,45 @@ def test_a_claim_within_the_held_channel_is_answered_as_hex_digits_without_0x() 
     assert payload["signature"] == ed25519.sign(SEED, bytes.fromhex(V["XS3"]["expect"])).hex()
     prefixed = asyncio.run(within(own, hold, MPP_SESSION_XRPL, Recording(SESSION.account, claim("0x"))))
     assert prefixed == Declined("signed-not-bound", "mpp/credential-malformed")
+
+
+def test_mpp_session_xrpl_an_opening_carrying_network_id_on_testnet_is_refused() -> None:
+    # The agreedRefusals rows that carry blobs hold XS2's opening with each of their networkIds, signed again by XS2's
+    # payer: each blob decodes to XS2's fields and that NetworkID. The challenge's network is testnet, whose id, 1, is
+    # at most 1024, where rippled 3.4.1's preflight0 refuses a NetworkID (src/libxrpl/tx/Transactor.cpp L73-93). bound,
+    # the build's complete and build_within read the opening alike, so each refuses it with the row's code; XS2's blob,
+    # which carries none, is taken by each.
+    rows = [r for r in V["agreedRefusals"]["rows"] if "blobs" in r]
+    assert rows, "mpp-session-hedera-solana-xrpl.json holds no agreedRefusals row with blobs"
+    base = _xrpl.decode_blob(S["blob"])
+    assert isinstance(base, _xrpl.Blob) and "NetworkID" not in base.tx
+    terms = {
+        "publicKey": PUBLIC_KEY,
+        "settleDelay": S["settleDelay"],
+        "fee": S["fee"],
+        "sequence": S["sequence"],
+        "lastLedgerSequence": S["lastLedgerSequence"],
+    }
+    choice = {"challenge": SESSION.doc[0], "from": S["account"], "now": 0, "deposit": int(S["deposit"]), "xrpl": terms}
+    u = MPP_SESSION_XRPL.build(choice, H)
+    assert not isinstance(u, Refusal), u
+    session = MPP_SESSION_XRPL
+    assert isinstance(session, MppSessionXrpl)
+    within_challenge = {**V["SS1"]["xrpl"]["challenge"], "id": "seller-own-id"}
+
+    def voucher(blob: str) -> dict[str, Any]:
+        return {"challenge": within_challenge, "opening": opening(blob), "cumulativeAmount": 100, "action": "voucher"}
+
+    assert not isinstance(u.complete({"signedBlob": S["blob"], "claimSignature": "00"}), Refusal)
+    assert not isinstance(session.build_within(voucher(S["blob"]), H), Refusal)
+    for row in rows:
+        assert set(row) == {"case", "networkIds", "blobs", "expect"}, row["case"]
+        for network_id, blob in zip(row["networkIds"], row["blobs"], strict=True):
+            decoded = _xrpl.decode_blob(blob)
+            assert isinstance(decoded, _xrpl.Blob)
+            fields = {k: v for k, v in decoded.tx.items() if k != "TxnSignature"}
+            assert fields == {**{k: v for k, v in base.tx.items() if k != "TxnSignature"}, "NetworkID": network_id}
+            want = (network_id, Refusal(row["expect"]))
+            assert (network_id, MPP_SESSION_XRPL.bound(opening(blob))) == want
+            assert (network_id, u.complete({"signedBlob": blob, "claimSignature": "00"})) == want
+            assert (network_id, session.build_within(voucher(blob), H)) == want

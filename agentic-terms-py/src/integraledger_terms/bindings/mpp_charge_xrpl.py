@@ -10,8 +10,8 @@ from .._core import AtrHash, hash_equals
 from .._types import Advertised, Refusal
 from ._lcp import is_object
 from ._mpp import chosen_for, credential_of, echoed_for, read
-from ._mpp_checks import is_xrpl_invoice_id
-from ._xrpl import decode_presented, is_blob_hex, mpp_invoice_id, same_invoice
+from ._mpp_checks import is_xrpl_invoice_id, xrpl_network_of
+from ._xrpl import decode_presented, is_blob_hex, mpp_invoice_id, network_id_held, same_invoice
 
 ID = "mpp/charge/xrpl"
 
@@ -44,10 +44,19 @@ class XrplChargeUnsigned:
 
     request: dict[str, Any]
     _challenge: Mapping[str, Any]
+    _network: str
 
     def complete(self, signed_blob: object) -> dict[str, Any] | Refusal:
+        """The credential of the wallet's signed blob, hex, read as bound reads it: a blob that does not decode, or is
+        multi-signed, gets the refusal bound gives it, and one whose NetworkID the challenge's network does not take
+        (network_id_held) is xrpl/network-mismatch."""
         if not is_blob_hex(signed_blob):
             return Refusal("xrpl/blob-malformed")
+        decoded = decode_presented(signed_blob)
+        if isinstance(decoded, Refusal):
+            return decoded
+        if not network_id_held(decoded.tx, self._network):
+            return Refusal("xrpl/network-mismatch")
         return {"challenge": self._challenge, "payload": {"type": "transaction", "blob": signed_blob}}
 
 
@@ -62,7 +71,8 @@ class MppChargeXrpl:
     def build(self, choice: Any, h: AtrHash) -> XrplChargeUnsigned | Refusal:
         """The Payment: Destination the request's recipient, Amount from its currency (drops, an issued amount with
         SendMax equal to it, or an MPT amount), InvoiceID the request's invoiceId, which must be this H, and the
-        request's tags. The pairing's filter refuses a request with memos (xrpl/memos-not-carried)."""
+        request's tags, with no NetworkID: each network the challenge can name has an id of at most 1024. The pairing's
+        filter refuses a request with memos (xrpl/memos-not-carried)."""
         if not is_object(choice):
             return Refusal("mpp/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, ID)
@@ -71,6 +81,9 @@ class MppChargeXrpl:
         r, d = checked.request, checked.details
         if not same_invoice(d.get("invoiceId"), mpp_invoice_id(h)):
             return Refusal("xrpl/carrier-mismatch")
+        network = xrpl_network_of(d)
+        if isinstance(network, Refusal):
+            return network
         account, fee = choice.get("account"), choice.get("fee")
         sequence, last = choice.get("sequence"), choice.get("lastLedgerSequence")
         if not isinstance(account, str) or not isinstance(fee, str) or _DROPS.fullmatch(fee) is None:
@@ -105,13 +118,15 @@ class MppChargeXrpl:
         tx["Fee"] = fee
         tx["Sequence"] = sequence
         tx["LastLedgerSequence"] = last
-        return XrplChargeUnsigned(request={"kind": "xrpl-tx", "txJson": tx}, _challenge=choice["challenge"])
+        return XrplChargeUnsigned(
+            request={"kind": "xrpl-tx", "txJson": tx}, _challenge=choice["challenge"], _network=network
+        )
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """H from the echoed challenge, once the signed Payment's InvoiceID is the request's invoiceId and equals
         that H. The invoiceId is read as pairings_of reads it: absent, or 64 hex digits, else mpp/request-malformed.
-        A multi-signed blob is xrpl/multisigned: the payer signs with a single key. The signature is not verified
-        here."""
+        A multi-signed blob is xrpl/multisigned: the payer signs with a single key. The blob's NetworkID is read first,
+        as rippled reads it (network_id_held), else xrpl/network-mismatch. The signature is not verified here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
@@ -127,6 +142,11 @@ class MppChargeXrpl:
         if isinstance(decoded, Refusal):
             return decoded
         tx = decoded.tx
+        network = xrpl_network_of(e.checked.details)
+        if isinstance(network, Refusal):
+            return network
+        if not network_id_held(tx, network):
+            return Refusal("xrpl/network-mismatch")
         if tx.get("TransactionType") != "Payment":
             return Refusal("xrpl/not-payment")
         invoice = tx.get("InvoiceID")

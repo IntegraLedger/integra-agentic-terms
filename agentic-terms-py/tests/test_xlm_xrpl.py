@@ -135,3 +135,64 @@ def test_x402_exact_xrpl_a_blob_answered_in_0x_hex_is_declined_signed_not_bound(
     assert isinstance(out, Confirmed), out
     done = finish(out.atr_bytes, out.chosen, "0x" + V2["blob"], X402_EXACT_XRPL)
     assert isinstance(done, Declined) and (done.code, done.detail) == ("signed-not-bound", "xrpl/blob-malformed"), done
+
+
+def built_on(doc: dict[str, Any]) -> Any:
+    """The build's unsigned Payment for V2's payer and inputs, on the document's one option."""
+    u = X402_EXACT_XRPL.build({"required": doc, "accepted": doc["accepts"][0], "account": F["payer"], **V2["build"]}, H)
+    assert not isinstance(u, Refusal), u
+    return u
+
+
+def test_x402_exact_xrpl_a_blob_whose_network_id_the_option_network_does_not_take_is_refused() -> None:
+    # rippled 3.4.1's preflight0 (src/libxrpl/tx/Transactor.cpp L73-93): a network whose id is at most 1024 takes a
+    # transaction without NetworkID only, and one above 1024 one whose NetworkID is its own id only. The agreedRefusals
+    # rows that carry blobs hold V2's Payment, with each of their networkIds where they name them, for V2's option on
+    # the row's network: each blob decodes to V2's fields and that NetworkID. bound and the build's complete refuse
+    # each with the row's code.
+    rows = [r for r in X["agreedRefusals"]["rows"] if "blobs" in r]
+    assert rows, "x402-exact-xrpl.json holds no agreedRefusals row with blobs"
+    base = _xrpl.decode_blob(V2["blob"])
+    assert isinstance(base, _xrpl.Blob) and "NetworkID" not in base.tx
+    unsigned = {k: v for k, v in base.tx.items() if k != "TxnSignature"}
+    for row in rows:
+        assert set(row) - {"networkIds"} == {"case", "network", "blobs", "expect"}, row["case"]
+        doc = x402_doc({**OPTION, "network": row["network"]}, F["resource"])
+        u = built_on(doc)
+        ids = row.get("networkIds", [None] * len(row["blobs"]))
+        for network_id, blob in zip(ids, row["blobs"], strict=True):
+            decoded = _xrpl.decode_blob(blob)
+            assert isinstance(decoded, _xrpl.Blob)
+            carried = {} if network_id is None else {"NetworkID": network_id}
+            assert {k: v for k, v in decoded.tx.items() if k != "TxnSignature"} == unsigned | carried
+            want = (row["network"], network_id, Refusal(row["expect"]))
+            assert (row["network"], network_id, X402_EXACT_XRPL.bound(presented(blob, doc["accepts"][0]))) == want
+            assert (row["network"], network_id, u.complete(blob)) == want
+
+
+def test_x402_exact_xrpl_a_network_above_1024_takes_its_own_network_id() -> None:
+    # The control: on xrpl:21337 the build writes NetworkID 21337, and V2's Payment carrying it is taken by bound and
+    # the build's complete. The blob is the agreedRefusals row's Payment with NetworkID 21338, its NetworkID field
+    # (UInt32 field 1: 0x21) set to 21337; bound and complete verify no signature.
+    row = next(r for r in X["agreedRefusals"]["rows"] if r.get("networkIds") == [21338])
+    assert row["network"] == "xrpl:21337" and row["blobs"][0].count("210000535A") == 1
+    blob = row["blobs"][0].replace("210000535A", "2100005359")
+    decoded = _xrpl.decode_blob(blob)
+    assert isinstance(decoded, _xrpl.Blob) and decoded.tx["NetworkID"] == 21337
+    doc = x402_doc({**OPTION, "network": "xrpl:21337"}, F["resource"])
+    u = built_on(doc)
+    assert u.request["txJson"]["NetworkID"] == 21337
+    assert X402_EXACT_XRPL.bound(presented(blob, doc["accepts"][0])) == H
+    done = u.complete(blob)
+    assert not isinstance(done, Refusal) and done["payload"] == {"signedTxBlob": blob}
+
+
+def test_x402_exact_xrpl_complete_gives_a_multisigned_blob_the_refusal_bound_gives() -> None:
+    # The build's complete decodes the signed blob as bound does before it reads NetworkID, so each multisigned row's
+    # blob, a Payment signed by several keys, gets the row's code from both.
+    u = built_on(XRPL.doc)
+    rows = X["multisigned"]["rows"]
+    assert rows
+    for row in rows:
+        want = (row["case"], Refusal(row["expect"]), Refusal(row["expect"]))
+        assert (row["case"], X402_EXACT_XRPL.bound(presented(row["blob"])), u.complete(row["blob"])) == want

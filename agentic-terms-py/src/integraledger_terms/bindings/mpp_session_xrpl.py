@@ -14,7 +14,7 @@ from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
 from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, read
 from ._mpp_checks import xrpl_network_of
 from ._session_within import action_kind, echoed_details, within_checks
-from ._xrpl import channel_id, claim_bytes, decode_presented, is_blob_hex
+from ._xrpl import channel_id, claim_bytes, decode_presented, is_blob_hex, network_id_held
 
 ID = "mpp/session/xrpl"
 WITHIN_ACTIONS = ("voucher",)
@@ -101,7 +101,9 @@ def _opening_channel(tx: Mapping[str, Any]) -> str | Refusal:
 
 
 def _opening(presented: object) -> Opening | Refusal:
-    """The echoed challenge of an opening whose signed PaymentChannelCreate's one LCP memo is the challenge's H."""
+    """The echoed challenge of an opening whose signed PaymentChannelCreate carries a NetworkID a node of the
+    challenge's network takes, as rippled reads it (network_id_held, else xrpl/network-mismatch), and whose one LCP
+    memo is the challenge's H."""
     e = echoed_for(presented, ID)
     if isinstance(e, Refusal):
         return e
@@ -113,6 +115,11 @@ def _opening(presented: object) -> Opening | Refusal:
     decoded = decode_presented(blob)
     if isinstance(decoded, Refusal):
         return decoded
+    network = xrpl_network_of(e.checked.details)
+    if isinstance(network, Refusal):
+        return network
+    if not network_id_held(decoded.tx, network):
+        return Refusal("xrpl/network-mismatch")
     if decoded.tx.get("TransactionType") != "PaymentChannelCreate":
         return Refusal("xrpl/not-channel-create")
     h = lcp_memo(decoded.tx)
@@ -134,7 +141,8 @@ class XrplSessionUnsigned:
     _amount: Any
 
     def complete(self, signed: object) -> dict[str, Any] | Refusal:
-        """The opening credential, once its signed blob carries H in its one LCP memo."""
+        """The opening credential, once its signed blob is an opening bound reads (_opening): its NetworkID one the
+        challenge's network takes, and H in its one LCP memo."""
         if not is_object(signed):
             return Refusal("mpp/credential-malformed")
         blob, signature = signed.get("signedBlob"), signed.get("claimSignature")
@@ -158,8 +166,8 @@ class MppSessionXrpl:
         return read(doc)
 
     def build(self, choice: Any, h: AtrHash) -> XrplSessionUnsigned | Refusal:
-        """The PaymentChannelCreate with one LCP memo carrying H, and the first claim's bytes on the channel it
-        creates."""
+        """The PaymentChannelCreate with one LCP memo carrying H and no NetworkID (each network the challenge can name
+        has an id of at most 1024), and the first claim's bytes on the channel it creates."""
         if not is_object(choice) or not is_object(choice.get("xrpl")):
             return Refusal("mpp/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, ID)
@@ -217,9 +225,10 @@ class MppSessionXrpl:
         )
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
-        """H from an opening's echoed challenge, once the signed PaymentChannelCreate's one LCP memo is that H. A
-        multi-signed blob is xrpl/multisigned: the payer signs with a single key. The signature is not verified
-        here."""
+        """H from an opening's echoed challenge, once the signed PaymentChannelCreate's one LCP memo is that H. Its
+        NetworkID is read as rippled reads it (network_id_held): none on each network the challenge can name, else
+        xrpl/network-mismatch. A multi-signed blob is xrpl/multisigned: the payer signs with a single key. The
+        signature is not verified here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped

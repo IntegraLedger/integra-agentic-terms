@@ -13,7 +13,16 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
 from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for
-from ._xrpl import Blob, decode_presented, is_blob_hex, is_xrpl_network, network_id, same_invoice, x402_invoice_id
+from ._xrpl import (
+    Blob,
+    decode_presented,
+    is_blob_hex,
+    is_xrpl_network,
+    network_id,
+    network_id_held,
+    same_invoice,
+    x402_invoice_id,
+)
 
 ID = "x402/exact/xrpl"
 
@@ -76,13 +85,22 @@ class XrplUnsigned:
     _accepted: Mapping[str, Any]
 
     def complete(self, signed_blob: object) -> dict[str, Any] | Refusal:
+        """The payment of the wallet's signed blob, hex, read as bound reads it: a blob that does not decode, or is
+        multi-signed, gets the refusal bound gives it, and one whose NetworkID a node of the option's network does not
+        take (network_id_held) is xrpl/network-mismatch."""
         if not is_blob_hex(signed_blob):
             return Refusal("xrpl/blob-malformed")
-        return payment_with(self._required, self._accepted, {"signedTxBlob": signed_blob})
+        payment = payment_with(self._required, self._accepted, {"signedTxBlob": signed_blob})
+        blob = decode_presented(signed_blob)
+        if isinstance(blob, Refusal):
+            return blob
+        return payment if network_id_held(blob.tx, self._accepted["network"]) else Refusal("xrpl/network-mismatch")
 
 
 def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | Refusal:
-    """The option, the decoded blob and the hash of a payment, or the refusal that names what is wrong."""
+    """The option, the decoded blob and the hash of a payment, or the refusal that names what is wrong. The blob's
+    NetworkID is read first, as rippled 3.4.1 reads it (network_id_held): none on a network whose id is at most 1024,
+    the network's own id above that, else xrpl/network-mismatch."""
     if not is_object(presented) or presented.get("x402Version") != 2 or isinstance(presented.get("x402Version"), bool):
         return Refusal("x402/not-v2")
     accepted = accepted_by(presented.get("accepted"), _THIS)
@@ -94,6 +112,8 @@ def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | R
     blob = decode_presented(payload.get("signedTxBlob"))
     if isinstance(blob, Refusal):
         return blob
+    if not network_id_held(blob.tx, accepted["network"]):
+        return Refusal("xrpl/network-mismatch")
     if blob.tx.get("TransactionType") != "Payment":
         return Refusal("xrpl/not-payment")
     invoice = blob.tx.get("InvoiceID")
@@ -117,7 +137,8 @@ class X402ExactXrpl:
         return read_for(_THIS)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> XrplUnsigned | Refusal:
-        """The Payment for the wallet to sign, with InvoiceID = SHA-256 of the option's extra.invoiceId."""
+        """The Payment for the wallet to sign, with InvoiceID = SHA-256 of the option's extra.invoiceId, and NetworkID
+        the network's id where it is above 1024. complete reads the signed blob's NetworkID as bound does."""
         c: Mapping[str, Any] = choice if is_object(choice) else {}
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _THIS)
@@ -163,7 +184,9 @@ class X402ExactXrpl:
         return XrplUnsigned(request={"kind": "xrpl-tx", "txJson": tx}, _required=required, _accepted=accepted)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash whose LCP string's SHA-256 is the signed InvoiceID. A multi-signed blob is xrpl/multisigned: the
-        payer signs with a single key. The signature is not verified here."""
+        """The hash whose LCP string's SHA-256 is the signed InvoiceID. The blob's NetworkID is read as rippled reads
+        it (network_id_held): none on a network whose id is at most 1024, the network's own id above that, else
+        xrpl/network-mismatch. A multi-signed blob is xrpl/multisigned: the payer signs with a single key. The
+        signature is not verified here."""
         p = _presented(presented)
         return p if isinstance(p, Refusal) else p[2]

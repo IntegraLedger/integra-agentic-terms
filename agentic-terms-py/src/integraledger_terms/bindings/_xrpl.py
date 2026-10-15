@@ -3,6 +3,7 @@ scheme's form, and XRPL networks."""
 
 import hashlib
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,6 +27,18 @@ def is_xrpl_network(value: object) -> bool:
 
 def network_id(network: str) -> int:
     return int(network[len("xrpl:") :])
+
+
+def network_id_held(tx: Mapping[str, Any], network: str) -> bool:
+    """True when a node of network takes the transaction for its NetworkID, as rippled 3.4.1 reads it in preflight0
+    (src/libxrpl/tx/Transactor.cpp L73-93): a network whose id is at most 1024 takes a transaction without NetworkID
+    only (telNETWORK_ID_MAKES_TX_NON_CANONICAL, whatever its value), and one above 1024 takes one whose NetworkID is
+    its own id only (telREQUIRES_NETWORK_ID, telWRONG_NETWORK)."""
+    chain = network_id(network)
+    if chain <= 1024:
+        return "NetworkID" not in tx
+    value = tx.get("NetworkID")
+    return isinstance(value, int) and not isinstance(value, bool) and value == chain
 
 
 def is_blob_hex(value: object) -> bool:
