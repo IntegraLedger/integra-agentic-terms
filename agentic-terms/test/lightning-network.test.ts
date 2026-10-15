@@ -99,10 +99,17 @@ describe("mpp/session/lightning: the invoice's BOLT11 currency is the account's 
 // mpp-session-lightning.json S1's refusals, each row's source given there: draft-lightning-charge-00's network "MUST
 // match the network implied by the invoice's human-readable prefix", and draft-lightning-session-00 names no network, so
 // the session reads methodDetails.network by the charge's rule. Each row's challenge is S1's as the seller's placement
-// wrote it, with the row's members set, so the id and opaque name H; the gate declines with the row's code before the
-// node is asked to pay.
+// wrote it, with the row's members set, so the id and opaque name H. The pairing's build refuses it with the row's
+// refusal, so it offers the pairing nothing, and the gate declines no-payable-option, mpp/no-payable-option, before
+// any fetch and before the node is asked to pay: buyer.json's BX1 answers so for a placed challenge the protocol
+// package's checks refuse.
 describe("mpp/session/lightning: S1's refusals decline before the node is asked to pay", () => {
-  type Row = { case: string; requestSet?: Record<string, unknown>; challengeSet?: Record<string, unknown>; expect: { code: string } };
+  type Row = {
+    case: string;
+    requestSet?: Record<string, unknown>;
+    challengeSet?: Record<string, unknown>;
+    expect: { refused: true; code: string };
+  };
   const C = vectors<{ fixed: { payee: string } }>("mpp-charge-lightning.json");
   const S = vectors<{ fixed: { preimage: string; returnInvoice: string }; S1: LnMpp & { refusals: Row[] } }>(
     "mpp-session-lightning.json",
@@ -129,11 +136,15 @@ describe("mpp/session/lightning: S1's refusals decline before the node is asked 
       const placed = challengeWith(sessionLightning as unknown as Binding, S.S1, S.S1.request.depositInvoice);
       const request = set(S.S1.request, row.requestSet ?? {});
       const doc = [{ ...set(placed, row.challengeSet ?? {}), request: b64u(JSON.stringify(request)) } as MppChallenge];
+      const built = await sessionLightning.build({ challenge: doc[0]!, returnInvoice: S.fixed.returnInvoice } as never, H);
+      expect(built).toEqual(row.expect);
       const node = counting(account, async () => S.fixed.preimage);
-      const out = await transact(doc, offered(sessionLightning as unknown as Binding), node, serving(ABC), {
+      const fetch = serving(ABC);
+      const out = await transact(doc, offered(sessionLightning as unknown as Binding), node, fetch, {
         inputs: { returnInvoice: S.fixed.returnInvoice },
       });
-      expect(isDeclined(out) && out.decline.detail).toBe(row.expect.code);
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
+      expect(fetch.calls).toBe(0);
       expect(node.requests).toEqual([]);
     }));
 });

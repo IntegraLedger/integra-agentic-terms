@@ -9,7 +9,7 @@ import json
 from typing import Any
 
 import pytest
-from breadth import ABD, H, LINK, Pairing, Recording, build_and_sign, code, offered, plant, run, x402_doc
+from breadth import ABC, ABD, H, LINK, Pairing, Recording, build_and_sign, code, offered, plant, run, x402_doc
 from support import load, serving
 
 from integraledger_terms import (
@@ -434,6 +434,27 @@ def test_mpp_session_lightning_s1_checks_refuse_in_build_and_bound(row: dict[str
     if row["expect"]["code"] == "ln/currency-network" and "challengeSet" not in row:
         payload = {"action": "open", "preimage": S["fixed"]["preimage"], "returnInvoice": S["fixed"]["returnInvoice"]}
         assert binding.bound({"challenge": bad, "payload": payload}) == refusal(row["expect"])
+
+
+@pytest.mark.parametrize("row", S["S1"]["refusals"], ids=lambda r: str(r["case"]))
+def test_mpp_session_lightning_s1_refusals_decline_before_the_node_is_asked_to_pay(row: dict[str, Any]) -> None:
+    """The refused challenge as the sole challenge at the gate: build refuses it with the row's refusal, so it offers
+    the pairing nothing, and the gate declines no-payable-option, mpp/no-payable-option, before any fetch and before the
+    node is asked to pay: buyer.json's BX1 answers so for a placed challenge the protocol package's checks refuse."""
+    bad = refused_challenge(S["S1"], S["fixed"]["link"], row)
+    binding: Any = MPP_SESSION_LIGHTNING
+    return_invoice = S["fixed"]["returnInvoice"]
+    assert binding.build({"challenge": bad, "returnInvoice": return_invoice}, H) == refusal(row["expect"])
+    link = serving(ABC)
+
+    def never(request: Any) -> Any:
+        raise AssertionError("the node was asked to pay")
+
+    node = Recording(LN_ACCOUNT, never)
+    out = run(lambda c: transact([bad], offered(binding), node, c, inputs={"returnInvoice": return_invoice}), link)
+    assert (code(out), getattr(out, "detail", None)) == ("no-payable-option", "mpp/no-payable-option")
+    assert link.calls == 0
+    assert node.requests == []
 
 
 @pytest.mark.parametrize("row", S["S1"]["returnInvoiceRows"], ids=lambda r: str(r["case"]))
