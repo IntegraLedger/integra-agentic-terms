@@ -592,6 +592,51 @@ jobs:
       - name: The site's own install, from its own lockfile
         working-directory: website
         run: pnpm install --frozen-lockfile
-      - name: The site, as the static export Cloudflare Pages serves (every TypeScript sample type-checked by Twoslash)
+      - name: Fetch the browser that draws the diagrams, and check its archive against the SHA-256 scripts/browser.mjs holds
+        working-directory: website
+        run: pnpm run browser
+      - name: The site, as the static export a Worker with static assets serves (every TypeScript sample type-checked by Twoslash)
         working-directory: website
         run: pnpm run build
+      - name: The site's own code type-checks
+        working-directory: website
+        run: pnpm run typecheck
+      - name: The Markdown copies hold no relative links
+        working-directory: website
+        run: |
+          set -eu
+          copies=$(find out/md -name '*.md' | wc -l)
+          test "$copies" -gt 0 || { echo "website/out/md holds no Markdown copies"; exit 1; }
+          # A link to ./x, ../x, x.md or <folder>/x.md resolves against /<page>.md, where nothing is served.
+          status=0
+          grep -rnoE --include='*.md' '\]\((\.\.?/|[^):/#?[:space:]][^):#?[:space:]]*\.md[#)])' out/md || status=$?
+          case "$status" in
+            0) echo "the Markdown copies above hold relative links"; exit 1 ;;
+            1) echo "none of the $copies Markdown copies in out/md holds a relative link" ;;
+            *) exit "$status" ;;
+          esac
+      - name: The code highlighting gives one result however long tokenizing takes, in the themes' colours, and no other source highlights code
+        working-directory: website
+        run: node scripts/check-highlighting.mjs
+      - name: The diagrams are drawn in the pinned browser and font alone, and the site serves that font
+        working-directory: website
+        run: node scripts/check-diagrams.mjs
+      - name: Two builds of one commit are byte-equal
+        working-directory: website
+        run: |
+          set -eu
+          sha=$(git rev-parse HEAD)
+          mv out "$RUNNER_TEMP/first-build"
+          # The second build starts from no build state and from a browser fetched and checked again.
+          rm -rf .next .browser
+          pnpm run browser
+          pnpm run build
+          status=0
+          diff -r --brief "$RUNNER_TEMP/first-build" out || status=$?
+          case "$status" in
+            0) ;;
+            1) echo "two builds of $sha differ in the files above"; exit 1 ;;
+            *) exit "$status" ;;
+          esac
+          test -d "out/_next/static/$sha" || { echo "the two builds are equal, but their build ID is not the commit's sha, $sha"; exit 1; }
+          echo "two builds of $sha are byte-equal: $(find out -type f | wc -l) files, under the build ID $sha"
