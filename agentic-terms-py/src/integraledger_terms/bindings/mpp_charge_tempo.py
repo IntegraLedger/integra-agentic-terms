@@ -26,6 +26,8 @@ from ._mpp import (
     same_bytes,
     text,
 )
+from ._mpp_checks import tempo_splits
+from ._mpp_evm import transfer_calldata
 from ._tempo import MAX_WIRE_BYTES, TRANSFER_WITH_MEMO_SELECTOR, TRANSFER_WITH_MEMO_TOPIC, decode_tempo_tx, memo_calldata
 from .mpp_charge_evm import chain_of, did
 
@@ -36,6 +38,9 @@ _HEX_EVEN = re.compile(r"0x[0-9a-fA-F]*")
 
 
 def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    """Without splits, a tempo-call: the one transferWithMemo of amount, carrying the attribution memo. With splits,
+    tempo-calls: that call for amount less the splits, then one call per split in array order, transferWithMemo where
+    the split names a memo and transfer otherwise, all on currency. The pairing's filter has read the splits."""
     o = offer_for(choice, h, pairing)
     if isinstance(o, Refusal):
         return o
@@ -46,12 +51,22 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     if "clientId" in choice and not is_well_formed(client_id):
         return Refusal("mpp/input-malformed")
     chain_id = chain_of(o)
+    splits = tempo_splits(o.details)
+    if isinstance(splits, Refusal):
+        return splits
     challenge = dict(choice["challenge"])
     memo = attribution_memo(challenge["realm"], challenge["id"], client_id)
-    recipient, amount = text(o.request.get("recipient")), int(text(o.request.get("amount")))
-    data = memo_calldata(recipient, amount, memo)
+    primary = int(text(o.request.get("amount"))) - sum(s.amount for s in splits or [])
+    data = memo_calldata(text(o.request.get("recipient")), primary, memo)
     if isinstance(data, Refusal):
         return data
+    currency = text(o.request.get("currency"))
+    calls = [{"to": currency, "data": data}]
+    for s in splits or []:
+        split = transfer_calldata(s.to, s.amount) if s.memo is None else memo_calldata(s.to, s.amount, s.memo)
+        if isinstance(split, Refusal):
+            return split
+        calls.append({"to": currency, "data": split})
     source = did(chain_id, choice["from"])
     broadcast = pairing == PUSH
 
@@ -64,14 +79,10 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
             return Refusal("mpp/credential-malformed")
         return {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
 
-    request = {
-        "kind": "tempo-call",
-        "chainId": chain_id,
-        "call": {"to": text(o.request.get("currency")), "data": data},
-        "validBefore": valid_before,
-        "broadcast": broadcast,
-    }
-    return MppUnsigned(request, complete)
+    shared = {"chainId": chain_id, "validBefore": valid_before, "broadcast": broadcast}
+    if splits is None:
+        return MppUnsigned({"kind": "tempo-call", "call": calls[0], **shared}, complete)
+    return MppUnsigned({"kind": "tempo-calls", "calls": calls, **shared}, complete)
 
 
 def _signed_memo_call(presented: Any) -> Echoed | Refusal:

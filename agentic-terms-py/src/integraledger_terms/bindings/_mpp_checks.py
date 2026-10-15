@@ -4,13 +4,14 @@ Solana keys, XRPL and Stellar forms, and each method's network names."""
 
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from .._types import Refusal
 from ._codec import b58_decode, b64u_decode, canonical_or_none, utf16_key
 from ._hedera_proto import amount_of, is_entity
 from ._jose import js_length, parse_json, within_depth
-from ._lcp import is_address, is_list, is_object
+from ._lcp import is_address, is_list, is_object, uint256_of
 
 Obj = Mapping[str, Any]
 PairingCheck = Callable[[Obj, Obj, Obj], "list[str] | Refusal"]
@@ -290,6 +291,10 @@ def evm_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 
 
 def tempo_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    """charge on tempo: currency and recipient addresses and amount a decimal, else mpp/request-malformed; a zero amount
+    names none. Then the modes supportedModes and feePayer leave, and splits as tempo_splits reads them, which the
+    build writes after the primary transfer of amount less their sum (draft-tempo-charge-00 L233): a sum of amount or
+    more leaves the primary transfer nothing, mpp/input-malformed, the code the Permit2 charge gives."""
     if not is_address(r.get("currency")) or not is_address(r.get("recipient")) or not is_decimal(r.get("amount")):
         return Refusal("mpp/request-malformed")
     if _has(d, "chainId") and positive_int(d["chainId"]) is None:
@@ -314,7 +319,49 @@ def tempo_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         out.append("mpp/charge/tempo/memo")
     if push:
         out.append("mpp/charge/tempo/push")
-    return out if out else Refusal("mpp/modes-pull-only")
+    if not out:
+        return Refusal("mpp/modes-pull-only")
+    splits = tempo_splits(d)
+    if isinstance(splits, Refusal):
+        return splits
+    split = sum(s.amount for s in splits or [])
+    return out if int(r["amount"]) - split > 0 else Refusal("mpp/input-malformed")
+
+
+_MAX_TEMPO_SPLITS = 10
+_BYTES32_HEX = re.compile(r"0x[0-9a-fA-F]{64}")
+
+
+@dataclass(frozen=True, slots=True)
+class TempoSplit:
+    """A Tempo charge split as its build writes it: the recipient, the amount and, when present, the memo."""
+
+    to: str
+    amount: int
+    memo: str | None
+
+
+def tempo_splits(d: Obj) -> list[TempoSplit] | None | Refusal:
+    """A Tempo charge's methodDetails.splits, as draft-tempo-charge-00's Split Payments section gives them: absent, or 1
+    to 10 entries, each an address recipient, a decimal amount above zero and below 2^256 and, when present, a bytes32
+    hex memo; otherwise mpp/splits-malformed."""
+    if not _has(d, "splits"):
+        return None
+    splits = d["splits"]
+    if not is_list(splits) or not 1 <= len(splits) <= _MAX_TEMPO_SPLITS:
+        return Refusal("mpp/splits-malformed")
+    out: list[TempoSplit] = []
+    for s in splits:
+        if not is_object(s) or not is_address(s.get("recipient")):
+            return Refusal("mpp/splits-malformed")
+        amount = uint256_of(s.get("amount"))
+        if amount is None or amount == 0:
+            return Refusal("mpp/splits-malformed")
+        memo = s.get("memo")
+        if _has(s, "memo") and (not isinstance(memo, str) or _BYTES32_HEX.fullmatch(memo) is None):
+            return Refusal("mpp/splits-malformed")
+        out.append(TempoSplit(s["recipient"], amount, memo if isinstance(memo, str) else None))
+    return out
 
 
 def evm_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:

@@ -139,26 +139,61 @@ def test_mpp_charge_tempo_splits_primary_then_each_split(binding: Binding, broad
         assert check(ABC, done.signed, binding) == Checked(h=H)
 
 
-@pytest.mark.parametrize("row", SPLITS["agreedRefusals"]["rows"], ids=[r["case"] for r in SPLITS["agreedRefusals"]["rows"]])
-def test_mpp_charge_tempo_splits_refusals_before_any_fetch(row: dict[str, Any]) -> None:
+@pytest.mark.parametrize(("binding", "broadcast"), [(MPP_CHARGE_TEMPO_MEMO, False), (MPP_CHARGE_TEMPO_PUSH, True)], ids=["memo", "push"])
+def test_mpp_charge_tempo_build_writes_the_primary_then_each_split(binding: Binding, broadcast: bool) -> None:
+    """The binding's own build, as the protocol package's: with splits, a tempo-calls request of the splits rows'
+    calls."""
     request = json.loads(SPLITS["request"])
-    request["methodDetails"] = {**request["methodDetails"], "splits": row["splits"]}
-    doc: Any = doc_of(json.dumps(request))
+    if broadcast:
+        del request["methodDetails"]["supportedModes"]
+    out = binding.build({"challenge": doc_of(json.dumps(request))[0], "from": MEMO["fixed"]["payer"], "now": NOW}, H)
+    assert not isinstance(out, Refusal), out
+    assert out.request["kind"] == "tempo-calls"
+    assert out.request["calls"] == SPLITS["expectCalls"]
+    assert (out.request["chainId"], out.request["broadcast"]) == (42431, broadcast)
+
+
+def with_splits(splits: Any, broadcast: bool = False) -> list[dict[str, Any]]:
+    """The splits request placed as the seller places it, then its request swapped for one with other splits: the
+    challenge a seller sends when it places a request the pairing's filter refuses."""
+    request = json.loads(SPLITS["request"])
+    if broadcast:
+        del request["methodDetails"]["supportedModes"]
+    placed = doc_of(json.dumps(request))[0]
+    request["methodDetails"] = {**request["methodDetails"], "splits": splits}
+    return [{**placed, "request": issued("tempo", "charge", json.dumps(request))["request"]}]
+
+
+def test_mpp_charge_tempo_the_splits_rows_are_read() -> None:
+    assert len(SPLITS["agreedRefusals"]["rows"]) > 0
+
+
+def test_mpp_charge_tempo_a_split_amount_is_a_uint256() -> None:
+    """A split's amount is the uint256 its transfer call writes (draft-tempo-charge-00, Split Payments): 2^256 - 1
+    reads, 2^256 is mpp/splits-malformed."""
+    request = json.loads(SPLITS["request"])
+    recipient = request["recipient"]
+    for amount, expect in ((str(2**256 - 1), Refusal("mpp/input-malformed")), (str(2**256), Refusal("mpp/splits-malformed"))):
+        request["methodDetails"] = {**request["methodDetails"], "splits": [{"recipient": recipient, "amount": amount}]}
+        assert (amount, pairings_of(issued("tempo", "charge", json.dumps(request)))) == (amount, expect)
+
+
+@pytest.mark.parametrize("row", SPLITS["agreedRefusals"]["rows"], ids=[r["case"] for r in SPLITS["agreedRefusals"]["rows"]])
+def test_mpp_charge_tempo_splits_rows_offer_no_pairing_and_decline_before_any_fetch(row: dict[str, Any]) -> None:
+    doc: Any = with_splits(row["splits"])
+    as_issued = {k: v for k, v in doc[0].items() if k not in ("id", "opaque")}
+    assert pairings_of(as_issued) == Refusal(row["expect"])
     link = serving(ABC)
     out = run(lambda c: confirm(doc, MPP_CHARGE_TEMPO_MEMO, account(MEMO["fixed"]), c), link)
-    assert (code(out), getattr(out, "detail", None)) == ("no-payable-option", row["expect"])
+    assert (code(out), getattr(out, "detail", None)) == ("no-payable-option", "mpp/no-payable-option")
     assert link.calls == 0
 
 
 @pytest.mark.parametrize(("binding", "broadcast"), [(MPP_CHARGE_TEMPO_MEMO, False), (MPP_CHARGE_TEMPO_PUSH, True)], ids=["memo", "push"])
-def test_mpp_charge_tempo_a_splits_member_present_as_null_is_refused_before_any_fetch(binding: Binding, broadcast: bool) -> None:
+def test_mpp_charge_tempo_a_splits_member_present_as_null_offers_nothing(binding: Binding, broadcast: bool) -> None:
     """The Tempo charge draft (draft-tempo-charge-00, L223-318): splits, where present, holds at least one entry. A
-    splits member present as null is no list of entries."""
-    request = json.loads(SPLITS["request"])
-    if broadcast:
-        del request["methodDetails"]["supportedModes"]
-    request["methodDetails"] = {**request["methodDetails"], "splits": None}
-    doc: Any = doc_of(json.dumps(request))
+    splits member present as null is no list of entries, so the challenge offers neither Tempo pairing."""
+    doc: Any = with_splits(None, broadcast)
     link = serving(ABC)
 
     def never(request: Any) -> Any:
@@ -166,7 +201,7 @@ def test_mpp_charge_tempo_a_splits_member_present_as_null_is_refused_before_any_
 
     signer = Recording(account(MEMO["fixed"]), never)
     out = run(lambda c: transact(doc, binding, signer, c), link)
-    assert (code(out), getattr(out, "detail", None)) == ("no-payable-option", "mpp/splits-malformed")
+    assert (code(out), getattr(out, "detail", None)) == ("no-payable-option", "mpp/no-payable-option")
     assert link.calls == 0
     assert signer.requests == []
 

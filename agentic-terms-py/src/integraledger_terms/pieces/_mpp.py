@@ -17,9 +17,6 @@ from ._common import InputKind, account_of, bigint_of, broadcasts, bytes_of, inp
 
 EVM_ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 
-Accept = Callable[[Mapping[str, Any]], Refusal | None]
-
-
 def request_of(c: object) -> dict[str, Any] | None:
     """The request a challenge carries, read by decode_object, or None."""
     return decode_object(c.get("request")) if isinstance(c, Mapping) else None
@@ -40,7 +37,7 @@ def challenges_of(read: Advertised) -> Sequence[Any]:
     return challenges if isinstance(challenges, list) else []
 
 
-def mpp_choose(pairing: str, spec: Mapping[str, InputKind], accept: Accept | None = None) -> Callable[..., Chosen | Refusal]:
+def mpp_choose(pairing: str, spec: Mapping[str, InputKind]) -> Callable[..., Chosen | Refusal]:
     """The first challenge offering pairing on the account's EVM network, with the choice MPP's build takes: the
     challenge, from, now, and the buyer's own inputs named in spec."""
 
@@ -53,9 +50,6 @@ def mpp_choose(pairing: str, spec: Mapping[str, InputKind], accept: Accept | Non
         )
         if challenge is None:
             return Refusal("mpp/no-payable-option")
-        refused = accept(challenge) if accept is not None else None
-        if refused is not None:
-            return refused
         given = inputs_of(inputs, pairing, spec)
         if isinstance(given, Refusal):
             return given
@@ -94,9 +88,9 @@ def mpp_complete(unsigned: Any, signature: Signature) -> dict[str, Any] | Refusa
 class MppChargePiece(BasePiece):
     """The buyer piece for an MPP charge pairing whose answer is one value."""
 
-    def __init__(self, pairing: str, spec: Mapping[str, InputKind], accept: Accept | None = None) -> None:
+    def __init__(self, pairing: str, spec: Mapping[str, InputKind]) -> None:
         self.pairing = pairing
-        self._choose = mpp_choose(pairing, spec, accept)
+        self._choose = mpp_choose(pairing, spec)
 
     def choose(self, read: Advertised, account: str, inputs: Inputs, now: int, ref: str, doc: Json) -> Chosen | Refusal:
         return self._choose(read, account, inputs, now, ref, doc)

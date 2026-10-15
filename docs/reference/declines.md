@@ -77,7 +77,6 @@ the gate itself writes:
 | `<protocol>/link-not-https`, `<protocol>/legal-context-malformed` | The link or agreement URL is not an `https` URL. |
 | `x402/payment-identifier-unwritable` | The seller advertises x402's `payment-identifier` extension, and its `info` is not an object or already holds an `id`. |
 | `x402/payload-malformed` | A rail's completed payment is not of the form the pairing's payload takes. |
-| `mpp/splits-malformed` | A Tempo charge's splits are not one to the maximum of recipients, each with an address and a non-zero amount. |
 | `mpp/request-malformed` | An MPP challenge's `request` is not base64url JSON with a decimal amount. |
 | `mpp/opaque-malformed` | A session's within challenge carries an `opaque` that is not MPP's flat string-to-string map: base64url without padding, at most 8 KiB decoded, one JSON object whose members are all strings. |
 | `mpp/within-action-not-built` | The in-session action (a top-up, for example) is not one the binding builds. |
