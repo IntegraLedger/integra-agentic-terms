@@ -5,11 +5,12 @@ vector files'; the key is the published Anvil key #0."""
 import asyncio
 import hashlib
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from eth_abi.abi import encode as abi_encode
 from eth_account import Account
 from eth_utils.crypto import keccak
 
@@ -209,28 +210,39 @@ TEMPO_DOC = placed_doc(issued("tempo", "session", TF["requestV2"]), H, LINK)
 TEMPO_ACCOUNT = f"eip155:42431:{TF['payer']}"
 
 
+def tempo_signed(
+    calls: list[tuple[str, str]], chain_id: int, valid_before: int, signature: Any = None, authorizations: list[bytes] | None = None
+) -> tuple[str, bytes]:
+    """A 0x76 transaction of TS2's other fields around calls, each (to, data) with no value, for chain_id, whose
+    aa_authorization_list holds the RLP-encoded authorizations (none by default), signed by the payer over
+    keccak256(0x76 ‖ rlp(fields)), or with the signature bytes signature(that hash) gives; and 0x76 ‖ rlp(fields), the
+    bytes the sender signs."""
+    fields = [
+        rlp_uint_bytes(chain_id),
+        rlp_uint_bytes(1),
+        rlp_uint_bytes(2),
+        rlp_uint_bytes(200000),
+        rlp_list([rlp_list([rlp_bytes(bytes.fromhex(to[2:])), rlp_bytes(b""), rlp_bytes(bytes.fromhex(data[2:]))]) for to, data in calls]),
+        rlp_list([]),
+        rlp_uint_bytes(2**256 - 1),
+        rlp_bytes(b""),
+        rlp_uint_bytes(valid_before),
+        rlp_bytes(b""),
+        rlp_bytes(bytes.fromhex(TF["pathUSD"][2:])),
+        rlp_bytes(b""),
+        rlp_list(authorizations or []),
+    ]
+    signing = b"\x76" + rlp_list(fields)
+    digest = keccak256(signing)
+    signed = bytes.fromhex(sig65(digest, TF["payerKey"])[2:]) if signature is None else signature(digest)
+    return "0x76" + rlp_list([*fields, rlp_bytes(signed)]).hex(), signing
+
+
 def open_wire(request: Any, signature: Any = None) -> str:
     """TS2's wire: the open call in a 0x76 transaction, signed by the payer over keccak256(0x76 ‖ rlp(fields)); or
     with the signature bytes signature(that hash) gives."""
     assert request["kind"] == "tempo-call", request
-    fields = [
-        rlp_uint_bytes(request["chainId"]),
-        rlp_uint_bytes(1),
-        rlp_uint_bytes(2),
-        rlp_uint_bytes(200000),
-        rlp_list([rlp_list([rlp_bytes(bytes.fromhex(request["call"]["to"][2:])), rlp_bytes(b""), rlp_bytes(bytes.fromhex(request["call"]["data"][2:]))])]),
-        rlp_list([]),
-        rlp_uint_bytes(2**256 - 1),
-        rlp_bytes(b""),
-        rlp_uint_bytes(request["validBefore"]),
-        rlp_bytes(b""),
-        rlp_bytes(bytes.fromhex(TF["pathUSD"][2:])),
-        rlp_bytes(b""),
-        rlp_list([]),
-    ]
-    digest = keccak256(b"\x76" + rlp_list(fields))
-    signed = bytes.fromhex(sig65(digest, TF["payerKey"])[2:]) if signature is None else signature(digest)
-    return "0x76" + rlp_list([*fields, rlp_bytes(signed)]).hex()
+    return tempo_signed([(request["call"]["to"], request["call"]["data"])], request["chainId"], request["validBefore"], signature)[0]
 
 
 class TempoAnswer:
@@ -292,9 +304,9 @@ def test_mpp_session_tempo_rows_whose_transaction_is_for_another_chain() -> None
     # and L1227-1228, as the rows' about cites them): the transaction is signed for the challenge's chain. build's
     # voucher and complete refuse a transaction signed for the row's chain with the row's code, and bound and
     # build_within refuse it in the credential complete gives for the transaction signed for the challenge's chain.
-    rows = [r for r in TEMPO["agreedRefusals"]["rows"] if "transactionChainId" in r]
-    assert rows
+    rows = agreed_rows("the transactionChainId rows", lambda r: "transactionChainId" in r, exact=2, left=36)
     for row in rows:
+        assert set(row) <= {"case", "sessionProtocol", "transactionChainId", "expect"}, row["case"]
         request_text = TF["requestV1"] if row.get("sessionProtocol") == "v1" else TF["requestV2"]
         unsigned = tempo_built(request_text)
         own = unsigned.complete(open_wire({**unsigned.funding, "chainId": TF["chainId"]}), VOUCHER_SIGNATURE)
@@ -459,6 +471,103 @@ def test_mpp_session_tempo_a_v2_descriptor_names_the_challenge_s_operator() -> N
         opening = tempo_opening(json.dumps(named), TF["chainId"])
         assert opening["payload"]["descriptor"]["operator"] == written
         assert (MPP_SESSION_TEMPO.bound(opening), channel.bound_within(opening)) == (H, H)
+
+
+def agreed_rows(name: str, keep: Callable[[dict[str, Any]], bool], exact: int, left: int) -> list[dict[str, Any]]:
+    """The rows of mpp-session-tempo.json's agreedRefusals that keep selects by their members, never by their index.
+    It prints how many rows it runs and how many it leaves to the other tests, and asserts both counts."""
+    rows: list[dict[str, Any]] = TEMPO["agreedRefusals"]["rows"]
+    kept = [r for r in rows if keep(r)]
+    print(f"mpp-session-tempo.json agreedRefusals.rows, {name}: {len(kept)} run, {len(rows) - len(kept)} left to the other tests")
+    assert (len(kept), len(rows) - len(kept)) == (exact, left), name
+    return kept
+
+
+def nine_word_id(descriptor: dict[str, Any]) -> str:
+    """The v2 channel id draft-tempo-session-00 computes (L339-352): keccak256 of the descriptor's payer, payee,
+    operator, token, salt, authorizedSigner and expiringNonceHash, the escrow and the chain, encoded with eth-abi."""
+    types = ["address", "address", "address", "address", "bytes32", "address", "bytes32", "address", "uint256"]
+    d = descriptor
+    words = [d["payer"], d["payee"], d["operator"], d["token"], d["salt"], d["authorizedSigner"], d["expiringNonceHash"], TF["escrowV2"]]
+    values = [bytes.fromhex(w[2:]) if len(w) == 66 else w.lower() for w in words]
+    return "0x" + keccak(abi_encode(types, [*values, TF["chainId"]])).hex()
+
+
+# The fault codes the draft's open verification gives each fault alone (draft-tempo-session-00 L1179-1188).
+ALONE: dict[str, Callable[[bool], str]] = {
+    "chain": lambda v1: "tempo/tx-malformed",
+    "noOpen": lambda v1: "tempo/open-not-found",
+    "twoOpens": lambda v1: "tempo/open-ambiguous",
+    "length": lambda v1: "tempo/tx-malformed",
+    "salt": lambda v1: "tempo/salt-not-bound",
+    "word": lambda v1: "tempo/tx-malformed",
+    "sender": lambda v1: "tempo/tx-malformed",
+    "channelId": lambda v1: "mpp/channel-not-bound" if v1 else "tempo/descriptor-mismatch",
+    "channelIdNotHash": lambda v1: "mpp/credential-malformed",
+}
+
+
+def faulted(v1: bool, faults: list[str]) -> dict[str, Any]:
+    """build's opening from fixed.payer for the challenge of its protocol, fixed.requestV1 or fixed.requestV2, its open
+    call in a transaction of TS2's other fields signed with fixed.payerKey, with each fault applied as the rows' about
+    defines it: chain signs for 4217; noOpen sends the call to fixed.recipient; twoOpens puts it in twice; length
+    appends one zero byte to its input; salt writes fixed.H2 as its salt word; word writes 0x01 as the first byte of its
+    payee word; sender writes the signature's v as 29; channelId writes 0x followed by 32 bytes of 0x22 as the payload's
+    channelId; channelIdNotHash writes 0x12. On v2 the descriptor is build's with expiringNonceHash that transaction's
+    under fixed.payer (keccak256 of the bytes the sender signed and fixed.payer), and the payload's channelId, but for
+    the two channelId faults, its channel id (nine_word_id)."""
+    unsigned = tempo_built(TF["requestV1"] if v1 else TF["requestV2"])
+    escrow = TF["escrowV1"] if v1 else TF["escrowV2"]
+    own = unsigned.complete(open_wire(unsigned.funding), VOUCHER_SIGNATURE)
+    data: str = unsigned.funding["call"]["data"]
+    salt_at = 10 + 64 * (3 if v1 else 4)
+    if "salt" in faults:
+        data = data[:salt_at] + TF["H2"][2:] + data[salt_at + 64 :]
+    if "word" in faults:
+        data = data[:10] + "01" + data[12:]
+    if "length" in faults:
+        data = data + "00"
+    call = (TF["recipient"] if "noOpen" in faults else escrow, data)
+    signature = (lambda d: k1(d, lambda p: 29)) if "sender" in faults else None
+    chain = 4217 if "chain" in faults else TF["chainId"]
+    wire, signing = tempo_signed([call, call] if "twoOpens" in faults else [call], chain, unsigned.funding["validBefore"], signature)
+    payload = {**own["payload"], "transaction": wire}
+    if not v1:
+        descriptor = {**own["payload"]["descriptor"], "expiringNonceHash": "0x" + keccak(signing + bytes.fromhex(TF["payer"][2:])).hex()}
+        payload["descriptor"] = descriptor
+        payload["channelId"] = nine_word_id(descriptor)
+    if "channelId" in faults:
+        payload["channelId"] = "0x" + "22" * 32
+    if "channelIdNotHash" in faults:
+        payload["channelId"] = "0x12"
+    return {**own, "payload": payload}
+
+
+def test_mpp_session_tempo_rows_with_two_faults_are_refused_for_the_one_the_draft_checks_first() -> None:
+    # mpp-session-tempo.json's agreedRefusals rows with faults. draft-tempo-session-00 (L1179-1188) orders the open
+    # verification: "Decode the signed transaction from `transaction`, verify it calls `open()` on the expected escrow
+    # contract with correct parameters. Recover the `payer` address from the transaction, infer `authorizedSigner` from
+    # the calldata, and compute `channelId` deterministically", then "For v2, servers MUST also verify the payload
+    # `descriptor`, the computed `channelId`, the descriptor `expiringNonceHash`". Each fault alone is refused with its
+    # own code, and the two together with the code of the one the draft checks first, the row's: by bound, and by
+    # build_within, which reads the opening as bound does.
+    rows = agreed_rows("the faults rows", lambda r: "faults" in r, exact=26, left=12)
+    for v1 in (False, True):
+        assert MPP_SESSION_TEMPO.bound(faulted(v1, [])) == H
+    ts1 = tempo_built(TF["requestV2"]).funding
+    assert ts1["call"]["data"] == TEMPO["TS1"]["expectCalldata"]
+    signing = tempo_signed([(TF["escrowV2"], ts1["call"]["data"])], TF["chainId"], ts1["validBefore"])[1]
+    assert "0x" + keccak(signing + bytes.fromhex(TF["payer"][2:])).hex() == TEMPO["TS2"]["expectNonceHash"]
+    for row in rows:
+        assert set(row) <= {"case", "sessionProtocol", "faults", "expect"}, row["case"]
+        v1 = row.get("sessionProtocol") == "v1"
+        faults = row["faults"]
+        assert len(faults) == 2 and ALONE[faults[0]](v1) == row["expect"] != ALONE[faults[1]](v1), row["case"]
+        for fault in faults:
+            assert MPP_SESSION_TEMPO.bound(faulted(v1, [fault])) == Refusal(ALONE[fault](v1)), (row["case"], fault)
+        both = faulted(v1, faults)
+        assert MPP_SESSION_TEMPO.bound(both) == Refusal(row["expect"]), row["case"]
+        assert voucher_within(both) == Refusal(row["expect"]), row["case"]
 
 
 def tempo_pairing(answer: Any, doc: Any = None) -> Pairing:

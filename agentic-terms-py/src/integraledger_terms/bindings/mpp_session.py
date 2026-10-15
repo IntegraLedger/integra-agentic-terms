@@ -539,20 +539,29 @@ def _tempo_bound_within(presented: Any) -> AtrHash | Refusal:
 
 
 def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
-    """The echoed challenge, when the signed transaction holds exactly one open call to the escrow whose salt word
-    is H. The transaction is signed for the challenge's chain, methodDetails.chainId (4217 where a v1 challenge names
-    none): draft-tempo-session-00 binds the channel to the escrow and the chain, and the server broadcasts this
-    transaction there. A transaction whose chain id is another is tempo/tx-malformed. On v2, the payload's descriptor
-    matches that transaction, as draft-tempo-session-00 requires: it carries H as its salt (_descriptor_salt), the
-    call's payee, operator, token and authorizedSigner (words 0, 1, 2 and 5 of open(payee, operator, token, deposit,
-    salt, authorizedSigner)), the transaction's sender as its payer (tempo_sender, the payer the draft recovers from the
-    transaction) and the expiring nonce hash of this transaction under that sender (expiring_nonce_hash); a descriptor
-    naming another party or another hash gives a channel id this transaction does not open: tempo/descriptor-mismatch.
-    On v1, the payload's channelId is the channel this transaction opens: evm_channel_id over the sender, the call's
-    payee, token and authorizedSigner (words 0, 1 and 4 of open(payee, token, deposit, salt, authorizedSigner)), H, the
-    escrow and the chain, as the draft computes it from the payer it recovers from the transaction; else
-    mpp/channel-not-bound. On either, a sender that cannot be read, or an argument word that is not an address, is
-    tempo/tx-malformed."""
+    """The echoed challenge, when the opening's signed transaction passes the checks of draft-tempo-session-00's open
+    verification, in its order: the transaction first ("Decode the signed transaction from `transaction`, verify it
+    calls `open()` on the expected escrow contract with correct parameters. Recover the `payer` address from the
+    transaction"), then the channel id, and on v2 the descriptor ("For v2, servers MUST also verify the payload
+    `descriptor`"). So of a fault in the transaction and another in the payload's channel id or descriptor, the
+    transaction's is named.
+
+    The transaction is signed for the challenge's chain, methodDetails.chainId (4217 where a v1 challenge names none):
+    the draft binds the channel to the escrow and the chain, and the server broadcasts this transaction there. A
+    transaction whose chain id is another is tempo/tx-malformed. It holds one open call to the escrow, whose input has
+    the version's length and whose salt word is H. The call's payee, token and authorizedSigner words, and on v2 its
+    operator word, are addresses (words 0, 1 and 4 of open(payee, token, deposit, salt, authorizedSigner); on v2, words
+    0, 1, 2 and 5 of open(payee, operator, token, deposit, salt, authorizedSigner)), and the signature gives the sender
+    (tempo_sender), the payer the draft recovers from the transaction; else tempo/tx-malformed.
+
+    Then the payload's channelId is read, where the draft compares the channel id: one that is not a 32-byte hash is
+    mpp/credential-malformed. On v1, it is the channel this transaction opens: evm_channel_id over the sender, the
+    call's payee, token and authorizedSigner, H, the escrow and the chain, as the draft computes it from the payer it
+    recovers from the transaction; else mpp/channel-not-bound. On v2, the payload's descriptor matches that
+    transaction, as the draft requires: it carries H as its salt and gives the payload's channel id (_descriptor_salt),
+    and it names the call's payee, operator, token and authorizedSigner, the sender as its payer, and the expiring
+    nonce hash of this transaction under that sender (expiring_nonce_hash). A descriptor naming another party or
+    another hash gives a channel id this transaction does not open: tempo/descriptor-mismatch."""
     e = echoed_for(presented, SESSION_TEMPO)
     if isinstance(e, Refusal):
         return e
@@ -586,39 +595,30 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
     salt_at = 4 + 32 * (4 if p.version == "v2" else 3)
     if not same_bytes(to_hex(data[salt_at : salt_at + 32]), e.h):
         return Refusal("tempo/salt-not-bound")
+    args = data[4:]
+    called = [address_of_word(args[32 * i : 32 * i + 32]) for i in ((0, 1, 2, 5) if p.version == "v2" else (0, 1, 4))]
+    if None in called:
+        return Refusal("tempo/tx-malformed")
+    sender = tempo_sender(raw)
+    if isinstance(sender, Refusal):
+        return sender
     channel = normal_hash(e.payload.get("channelId"))
     if channel is None:
         return Refusal("mpp/credential-malformed")
-    args = data[4:]
-
-    def address_at(i: int) -> str | None:
-        return address_of_word(args[32 * i : 32 * i + 32])
-
     if p.version == "v2":
         salt = _descriptor_salt(e.payload, p)
         if isinstance(salt, Refusal) or not hash_equals(salt, e.h):
             return Refusal("tempo/descriptor-mismatch")
         d = e.payload["descriptor"]
-        called = [address_at(i) for i in (0, 1, 2, 5)]
-        if None in called:
-            return Refusal("tempo/tx-malformed")
         if not all(same_bytes(d[k], a) for k, a in zip(("payee", "operator", "token", "authorizedSigner"), called)):
             return Refusal("tempo/descriptor-mismatch")
-        sender = tempo_sender(raw)
-        if isinstance(sender, Refusal):
-            return sender
         if not same_bytes(d["payer"], sender):
             return Refusal("tempo/descriptor-mismatch")
         nonce_hash = expiring_nonce_hash(raw, sender)
         if isinstance(nonce_hash, Refusal) or not same_bytes(nonce_hash, d["expiringNonceHash"]):
             return Refusal("tempo/descriptor-mismatch")
     else:
-        sender = tempo_sender(raw)
-        if isinstance(sender, Refusal):
-            return sender
-        payee, token, signer = address_at(0), address_at(1), address_at(4)
-        if payee is None or token is None or signer is None:
-            return Refusal("tempo/tx-malformed")
+        payee, token, signer = called
         opened = evm_channel_id(sender, payee, token, e.h, signer, p.escrow, p.chain_id)
         if isinstance(opened, Refusal) or not same_bytes(opened, channel):
             return Refusal("mpp/channel-not-bound")
