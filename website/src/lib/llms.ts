@@ -49,18 +49,16 @@ export function markdownPath(url: string): string {
   return url === "/" ? "/md/index.md" : `/md${url}.md`;
 }
 
-/** A `<Mermaid chart="…" />` element of the processed Markdown, back as the `mermaid` block it was written as. */
-const MERMAID = /<Mermaid\s+chart="((?:[^"\\]|\\.)*)"\s*\/>/g;
-
 /**
- * A page as Markdown a reader outside the site can use: the processed Markdown the page is rendered from, with
- * diagrams back as `mermaid` blocks, numeric entities decoded and root-relative links made absolute.
+ * A page as Markdown a reader outside the site can use: the page's authored Markdown with the edits the remark plugins
+ * make through `replaceSource()` (links to other pages rewritten to their site URLs), numeric character references
+ * decoded and root-relative links made absolute. A diagram stays the `mermaid` block it is written as.
  */
 export async function pageMarkdown(page: Page): Promise<string> {
   const processed = await page.data.getText("processed");
   return `${processed
-    .replace(MERMAID, (_: string, chart: string) => `\`\`\`mermaid\n${chart.replace(/\\(.)/g, "$1")}\n\`\`\``)
     .replace(/&#x([0-9A-Fa-f]+);/g, (_: string, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
     .replace(/\]\(\/(?=[^)]*\))/g, `](${siteConfig.url}/`)
+    .replace(/^(\[[^\]]+\]:\s*)\/(?=\S)/gm, `$1${siteConfig.url}/`)
     .trim()}\n`;
 }
