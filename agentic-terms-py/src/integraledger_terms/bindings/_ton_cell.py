@@ -59,6 +59,8 @@ def padded(value: int, length: int) -> bytes:
 
 
 _PRUNED_BRANCH, _LIBRARY, _MERKLE_PROOF, _MERKLE_UPDATE = 1, 2, 3, 4
+# The deepest a cell may be at any level (ton-blockchain/ton crypto/vm/cells/CellTraits.h, max_depth).
+CELL_MAX_DEPTH = 1024
 
 
 def _below(mask: int, level: int) -> int:
@@ -72,11 +74,15 @@ def _hash_index(mask: int) -> int:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Cell:
-    """A cell: up to 1023 bits (value, most significant first, and length) and up to four references. An exotic cell
-    is TVM's pruned branch, library, Merkle proof or Merkle update, its type in its first 8 bits, read as @ton/core
-    reads one; one that is not in its type's form is Malformed. The level mask, and the hashes and depths at levels 0
-    to 3, follow TVM's cell rules (ton-blockchain/ton crypto/vm/cells/DataCell.cpp); hash and depth are the
-    representation's, at level 3."""
+    """A cell as TON creates one (ton-blockchain/ton crypto/vm/cells/DataCell.cpp, CellChecker): up to 1023 bits
+    (value, most significant first, and length) and up to four references. An exotic cell's first 8 bits are its type:
+    a pruned branch (1: no references, a level mask from 1 to 7 in its next 8 bits, then a stored hash and a stored
+    depth for each bit the mask sets, and nothing else), a library cell (2: 264 bits, no references), a Merkle proof
+    (3: 280 bits, one reference) or a Merkle update (4: 552 bits, two references), each Merkle cell storing its
+    children's level-0 hashes and depths. Any other type or form is Malformed, and so is a depth above 1,024 at any
+    level. The level mask, and the hashes and depths at levels 0 to 3, are TON's: a pruned branch's at level i are the
+    stored ones of the lowest bit of its mask at or above i, and above every bit its own representation hash and
+    depth 0. hash and depth are the representation's, at level 3."""
 
     value: int
     length: int
@@ -91,11 +97,11 @@ class Cell:
     def __post_init__(self) -> None:
         if not 0 <= self.length or not 0 <= self.value < (1 << self.length):
             raise Malformed
+        if self.length > MAX_BITS or len(self.refs) > MAX_REFS:
+            raise Malformed
         kind = 0
         pruned: list[tuple[bytes, int]] = []
         if not self.exotic:
-            if self.length > MAX_BITS or len(self.refs) > MAX_REFS:
-                raise Malformed
             mask = 0
             for r in self.refs:
                 mask |= r.level_mask
@@ -132,6 +138,8 @@ class Cell:
             by_level = [pruned[i] if i != own else (hashes[0], depths[0]) for i in at]
         else:
             by_level = [(hashes[i], depths[i]) for i in at]
+        if max(d for _, d in by_level) > CELL_MAX_DEPTH:
+            raise Malformed
         object.__setattr__(self, "level_mask", mask)
         object.__setattr__(self, "hashes", tuple(h for h, _ in by_level))
         object.__setattr__(self, "depths", tuple(d for _, d in by_level))
@@ -143,28 +151,19 @@ class Cell:
         depths are appended to pruned. Malformed for any other form or type."""
         bits, refs = self.length, self.refs
         if kind == _PRUNED_BRANCH:
-            if refs:
+            if refs or bits < 16:
                 raise Malformed
-            if bits == 8 + 256 + 16:
-                mask, at = 1, 8
-            else:
-                if bits < 16:
-                    raise Malformed
-                mask, at = (self.value >> (bits - 16)) & 0xFF, 16
-                level = mask.bit_length()
-                if not 1 <= level <= 3 or bits != 16 + (_hash_index(_below(mask, level - 1)) + 1) * (256 + 16):
-                    raise Malformed
-            level = mask.bit_length()
-            if at + level * (256 + 16) > bits:
+            mask = (self.value >> (bits - 16)) & 0xFF
+            count = _hash_index(mask)
+            if not 1 <= mask <= 7 or bits != (2 + count * (32 + 2)) * 8:
                 raise Malformed
-            rest = self.value & ((1 << (bits - at)) - 1)
-            body = (rest >> (bits - at - level * (256 + 16))).to_bytes(level * (32 + 2), "big")
-            for i in range(level):
-                at_depth = 32 * level + 2 * i
-                pruned.append((body[32 * i : 32 * i + 32], int.from_bytes(body[at_depth : at_depth + 2], "big")))
+            body = padded(self.value, bits)
+            for k in range(count):
+                at_depth = 2 + 32 * count + 2 * k
+                pruned.append((body[2 + 32 * k : 34 + 32 * k], int.from_bytes(body[at_depth : at_depth + 2], "big")))
             return mask
         if kind == _LIBRARY:
-            if bits != 8 + 256:
+            if bits != 8 + 256 or refs:
                 raise Malformed
             return 0
         if kind == _MERKLE_PROOF:

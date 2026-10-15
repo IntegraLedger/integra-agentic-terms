@@ -540,3 +540,58 @@ def test_x402_exact_tvm_a_pruned_branch_cell_without_its_level_byte_is_malformed
     signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
     assert not isinstance(signed, Refusal)
     assert BINDING.bound({**signed, "accepted": option}) == Refusal("tvm/carrier-mismatch")
+
+
+# A pruned branch holds a level mask from 1 to 7 and a stored hash and depth for each bit the mask sets, and the
+# hashes of the cells over it at each level are TON's (ton-blockchain/ton crypto/vm/cells/DataCell.cpp, CellChecker).
+# The settlement carries a pruned branch of level mask 2 under two Merkle proofs; the expected hashes are TON's HASHCU
+# (tvm_pruned_branch.json).
+def test_x402_exact_tvm_a_pruned_branch_of_level_mask_2_is_hashed_as_ton_hashes_it() -> None:
+    f = json.loads((Path(__file__).parent / "tvm_pruned_branch.json").read_text())
+    assert BINDING.bound(presented(f["settlementBoc"])) == F["H"]
+    request = settlement_root({"payload": {"settlementBoc": f["settlementBoc"]}}).refs[1]
+    transfer = request.refs[0].refs[1].refs[0]
+    assert "0x" + request.hash.hex() == f["expectRequestBodyHash"]
+    assert "0x" + transfer.hash.hex() == f["expectTransferBodyHash"]
+
+
+def _pruned(mask: int, count: int, depth: int = 1, refs: tuple[Cell, ...] = ()) -> Cell:
+    """An exotic cell of type 1 and the mask, then count stored hashes (the k-th 32 bytes of k + 1) and count stored
+    depths."""
+    data = bytes([1, mask]) + b"".join(bytes([k + 1]) * 32 for k in range(count)) + depth.to_bytes(2, "big") * count
+    return Cell(int.from_bytes(data, "big"), 8 * len(data), refs, True)
+
+
+# TON creates a cell as ton-blockchain/ton crypto/vm/cells/DataCell.cpp's CellChecker does: a pruned branch has no
+# reference, a level mask from 1 to 7 and (2 + 34 for each bit the mask sets) bytes; its hash and depth at level i are
+# the stored ones of the lowest bit of the mask at or above i, and above every bit its own; a library cell is 264 bits
+# with no reference; no cell is deeper than 1,024 at any level (CellTraits.h, max_depth).
+def test_x402_exact_tvm_a_cell_is_created_as_ton_creates_it() -> None:
+    for mask in range(1, 8):
+        count = bin(mask).count("1")
+        c = _pruned(mask, count)
+        assert c.level_mask == mask and c.depth == 0
+        for level in range(4):
+            above = [bit for bit in range(level, 3) if mask >> bit & 1]
+            k = bin(mask & ((1 << above[0]) - 1)).count("1") if above else count
+            assert c.hashes[level] == (bytes([k + 1]) * 32 if above else c.hash), (mask, level)
+    library = Cell((2 << 256) | int.from_bytes(b"\x01" * 32, "big"), 8 + 256, (), True)
+    assert library.level_mask == 0
+    assert _pruned(1, 1, 1024).depths[0] == 1024
+    refused: dict[str, Callable[[], Cell]] = {
+        "a pruned branch of level mask 0": lambda: _pruned(0, 0),
+        "a pruned branch of level mask 8": lambda: _pruned(8, 1),
+        "a pruned branch of level mask 2 with a hash for each level up to its own": lambda: _pruned(2, 2),
+        "a pruned branch of level mask 5 with one hash": lambda: _pruned(5, 1),
+        "a pruned branch of 280 bits: its type, one hash and no depth": lambda: Cell((1 << 272) | 1, 280, (), True),
+        "a pruned branch with a reference": lambda: _pruned(1, 1, refs=(Builder().end(),)),
+        "a pruned branch storing depth 1,025": lambda: _pruned(1, 1, 1025),
+        "a library cell with a reference": lambda: Cell(library.value, 264, (Builder().end(),), True),
+        "an exotic cell of type 5": lambda: Cell(5 << 256, 264, (), True),
+    }
+    for name, make in refused.items():
+        try:
+            make()
+        except Malformed:
+            continue
+        raise AssertionError(name)
