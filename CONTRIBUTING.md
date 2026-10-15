@@ -159,8 +159,11 @@ the deployed site, passes against a server of the export and fails when one head
 Two builds of one commit are byte-equal. The build ID, which every page carries and which names the folder of the
 build's manifests under `/_next/static/`, is the commit's sha (`website/next.config.ts`); with uncommitted changes it
 is the sha and a digest of those changes. The Mermaid diagrams are drawn in the browser build and the font the
-repository pins, with no font of the machine's; text and code are set in the theme's font stacks, so the build fetches
-no font. To check it, in `website/`:
+repository pins, with no font of the machine's; text and code are set in the theme's font stacks; and each social card
+is drawn in Geist, the font next/og bundles, alone, so a page whose title or description holds a character Geist does
+not draw stops the build, naming it. `next build` runs with its upgrade check off (`next.config.ts`, and the `build`
+script in `package.json` empties `__NEXT_AGENT_UPGRADE`, which turns it on) and its telemetry off (`package.json`), so
+the build reads nothing from the network. To check it, in `website/`:
 
 ```sh
 first=$(mktemp -d) && pnpm run build && mv out "$first/out" && rm -rf .next && pnpm run build && diff -r --brief "$first/out" out

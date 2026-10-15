@@ -15,7 +15,7 @@ TypeDoc generates from the packages' TypeScript source at every build.
 | `/llms.txt` | The index of every page, for AI agents ([llmstxt.org](https://llmstxt.org)). |
 | `/llms-full.txt` | Every page as Markdown, in one file. |
 | `/<page>.md`, `/index.md` | One page as Markdown, at its address with `.md` appended. The build writes each page's copy at `/md/<page>.md`. |
-| `/og/<page>/image.png`, `/og/image.png` | Each page's social card, 1200×630, written at build time. |
+| `/og/<page>/image.png`, `/og/image.png` | Each page's social card, 1200×630, written at build time in Geist. |
 | `/twoslash/<page>.json` | A page's Twoslash popups, fetched when a reader first opens one. |
 | `/api/search` | The static search index. |
 | `/sitemap.xml`, `/robots.txt` | For crawlers. |
@@ -67,6 +67,13 @@ long tokenizing takes, in the themes' colours, and that no other source highligh
 `node scripts/check-diagrams.mjs`, after the build, draws every diagram again under a font configuration that changes
 every font's rendering and checks that the SVGs are the same, that a diagram with a character Inter does not draw is
 refused, and that `out/` serves the Inter files the diagrams are drawn in.
+
+Once the browser is in `.browser/`, the build reads nothing from the network. The social cards are drawn in Geist, the
+font next/og bundles, alone: a page whose title or description holds a character Geist does not draw stops the build,
+naming the character, where next/og would fetch a font from Google Fonts or an emoji from Twemoji. `next.config.ts`
+turns off the upgrade check `next build` makes of the npm registry, and the `build` script empties
+`__NEXT_AGENT_UPGRADE`, the environment variable that turns the check on whatever the configuration says. The script
+sets `NEXT_TELEMETRY_DISABLED=1`, since Next.js has no configuration for its telemetry.
 
 The static site is in `out/`. `public/_headers` sets its response headers, and `wrangler.toml` deploys `out/` as a
 Worker's static assets with the site's 404 page. `pnpm run dev` serves it locally while you edit `docs/`; it does not

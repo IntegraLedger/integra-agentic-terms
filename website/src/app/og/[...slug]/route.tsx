@@ -1,4 +1,5 @@
 import { generateOGImage } from "fumadocs-ui/og";
+import { cardFont, notInCardFont } from "@/lib/card-font";
 import { ogImagePath } from "@/lib/llms";
 import { siteConfig } from "@/lib/site";
 import { source } from "@/lib/source";
@@ -25,10 +26,18 @@ export async function GET(_request: Request, context: { params: Promise<{ slug: 
   const { slug } = await context.params;
   const page = source.getPage(slug.slice(0, -1));
   if (!page) return new Response("not found", { status: 404 });
+  const description = cardDescription(page.data.description);
+  // The card is drawn in its one font, and only when the font draws every character of its text (src/lib/card-font.ts).
+  const missing = notInCardFont([page.data.title, description ?? "", siteConfig.name].join("\n"));
+  if (missing.length > 0) {
+    const named = missing.join(", ");
+    throw new Error(`the social card of ${page.url} has characters its font, Geist, does not draw: ${named}`);
+  }
   return generateOGImage({
     title: page.data.title,
-    description: cardDescription(page.data.description),
+    description,
     site: siteConfig.name,
+    fonts: [cardFont()],
     // The site's icon (src/app/icon.svg), drawn inline: the card is rendered at build time with no network.
     icon: (
       <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">

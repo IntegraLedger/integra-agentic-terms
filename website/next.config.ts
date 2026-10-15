@@ -20,8 +20,8 @@ function git(args: string[]): Buffer {
  * - from a commit with no uncommitted change, it is the commit's sha. The commit fixes the pages, the packages the
  *   samples are checked against, the locked dependencies, each page's last-updated date (its file's last commit) and
  *   the browser build and the font the Mermaid diagrams are drawn in (src/lib/mermaid.ts); text and code are set in
- *   the theme's font stacks (src/app/global.css), so the build fetches no font, and one commit gives one ID and one
- *   site, byte for byte;
+ *   the theme's font stacks (src/app/global.css) and the social cards in the font next/og bundles
+ *   (src/lib/card-font.ts), so the build fetches no font, and one commit gives one ID and one site, byte for byte;
  * - with uncommitted changes, it is the sha, a hyphen and 16 hex digits of a SHA-256 over the changes: the diff of
  *   the tracked files against the commit and each untracked file that is not ignored, by path and content;
  * - outside a git checkout, Next.js draws a random ID, and no page has a last-updated date.
@@ -56,6 +56,10 @@ const config: NextConfig = {
   generateBuildId: buildId,
   outputFileTracingRoot: root,
   turbopack: { root },
+  // Under a coding agent, `next build` asks the npm registry for a newer Next.js (its upgrade nudge). The site builds
+  // from its lockfile and reads nothing from the network, so the nudge is off; the build script empties
+  // __NEXT_AGENT_UPGRADE, which turns it on whatever this says.
+  experimental: { agentUpgrade: false },
 };
 
 export default withMDX(config);
