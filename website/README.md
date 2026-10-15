@@ -15,12 +15,15 @@ TypeDoc generates from the packages' TypeScript source at every build.
 | `/llms.txt` | The index of every page, for AI agents ([llmstxt.org](https://llmstxt.org)). |
 | `/llms-full.txt` | Every page as Markdown, in one file. |
 | `/<page>.md`, `/index.md` | One page as Markdown, at its address with `.md` appended. The build writes each page's copy at `/md/<page>.md`. |
+| `/twoslash/<page>.json` | A page's Twoslash popups, fetched when a reader first opens one. |
 | `/api/search` | The static search index. |
 | `/sitemap.xml`, `/robots.txt` | For crawlers. |
 | `/.well-known/security.txt` | Where to report a vulnerability ([RFC 9116](https://www.rfc-editor.org/rfc/rfc9116)), under [`SECURITY.md`](../SECURITY.md). It expires 180 days after the commit the site is built from. |
 
 Every TypeScript sample is type-checked by [Twoslash](https://twoslash.netlify.app) against the packages as they are
-built in this repository, and the build fails on a type error. Hovering an identifier shows its type.
+built in this repository, and the build fails on a type error. Hovering, focusing or clicking an identifier shows its
+type and documentation: the build writes each page's distinct popups to `/twoslash/<page>.json`, which the page fetches
+when a reader first opens one.
 
 Each ```` ```mermaid ```` block is rendered to SVG at build time with the `mermaid` package, in a pinned Chrome Headless
 Shell, once in a light and once in a dark theme. Every text is measured and drawn in Inter, from the
