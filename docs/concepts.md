@@ -7,9 +7,9 @@ This page defines the terms the rest of the documentation uses. Each term has on
 
 ## The record and its hash
 
-**Agentic Transaction Record (ATR).** The agreement's record: a JSON document the seller serves. It holds the terms the
-buyer pays under, in whatever form the parties chose. The seller publishes it at an `https` link before it asks for
-payment.
+**Agentic Transaction Record (ATR).** The agreement's record: the exact bytes the seller serves; `assemble` in
+`@integraledger/lcp` writes them as one JSON object. It holds the terms the buyer pays under, in whatever form the
+parties chose. The seller publishes it at an `https` link before it asks for payment.
 
 **ATR hash (H).** SHA-256 over the ATR's exact bytes, written `0x` followed by 64 hexadecimal digits.
 
@@ -92,7 +92,8 @@ proves:
 Three properties follow, and each pairing states them:
 
 - **Buyer signs H.** Whether what the buyer's wallet signs contains H.
-- **On chain.** Whether H is written to a public ledger when the payment settles.
+- **Binding on chain.** Whether the binding is visible on a public ledger after settlement (LCP §8.3): the settlement
+  carries H, part of it, or a value derived from it.
 - **Public proof.** Whether the payment is itself a public proof of H.
 
 ## Public proof and the agreement payment

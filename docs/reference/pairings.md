@@ -11,7 +11,8 @@ Columns:
 
 - **Pattern**: how H rides in the pairing's payment (see [Concepts](../concepts.md#how-h-rides-in-a-payment)).
 - **Buyer signs H**: whether what the buyer's wallet signs contains H.
-- **On chain**: whether H is written on a public ledger when the payment settles.
+- **Binding on chain**: whether the binding is visible on a public ledger after settlement (LCP §8.3): the
+  settlement carries H, part of it, or a value derived from it.
 - **Public proof**: whether the payment is itself a public proof of H. When it is not, the gate pays the seller's
   agreement payment first (see [Agreement payments](../guides/agreement-payments.md)).
 
@@ -21,7 +22,7 @@ transaction.
 
 ## EVM
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/evm/authorization` | id-reuse | yes | yes | yes | `evmAuthorization` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_AUTHORIZATION` |
 | `mpp/charge/evm/hash` | opaque-challenge | no | no | no | `evmHash` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_HASH` |
@@ -71,7 +72,7 @@ transaction.
 
 ## Tempo
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/tempo/memo` | id-reuse | no | yes | yes | `tempoMemo` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_MEMO` |
 | `mpp/charge/tempo/push` | id-reuse | no | yes | yes | `tempoPush` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_PUSH` |
@@ -88,7 +89,7 @@ transaction.
 
 ## Solana
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/solana` | native-field | yes | yes | yes | `chargeSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA` |
 | `mpp/charge/usdc/solana` | native-field | yes | yes | yes | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_SOLANA` |
@@ -111,7 +112,7 @@ transaction.
 
 ## Stellar
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/stellar` | truncated-field | no | yes | yes | `chargeStellar` from `@integraledger/lcp/mpp` | `MPP_CHARGE_STELLAR` |
 | `x402/exact/stellar` | truncated-field | no | yes | yes | `exactStellar` from `@integraledger/lcp/x402-exact-stellar` | `X402_EXACT_STELLAR` |
@@ -122,7 +123,7 @@ transaction.
 
 ## XRP Ledger
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/xrpl` | native-field | yes | yes | yes | `chargeXrpl` from `@integraledger/lcp/mpp` | `MPP_CHARGE_XRPL` |
 | `mpp/session/xrpl` | native-field | yes | yes | yes | `sessionXrpl` from `@integraledger/lcp/mpp` | `MPP_SESSION_XRPL` |
@@ -136,7 +137,7 @@ transaction.
 
 ## Hedera
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/hedera` | id-reuse | no | yes | yes | `chargeHedera` from `@integraledger/lcp/hedera` | `MPP_CHARGE_HEDERA` |
 | `mpp/session/hedera` | native-field | yes | yes | yes | `sessionHedera` from `@integraledger/lcp/mpp` | `MPP_SESSION_HEDERA` |
@@ -153,7 +154,7 @@ transaction.
 
 ## Algorand
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/algorand` | native-field | yes | yes | yes | `exactAvm` from `@integraledger/lcp/avm` | `X402_EXACT_ALGORAND` |
 
@@ -161,7 +162,7 @@ transaction.
 
 ## Aptos
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/aptos` | http-advisory | no | no | no | `exactAptos` from `@integraledger/lcp/aptos` | `X402_EXACT_APTOS` |
 
@@ -169,7 +170,7 @@ transaction.
 
 ## Sui
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/sui` | native-field | yes | yes | yes | `exactSui` from `@integraledger/lcp/sui` | `X402_EXACT_SUI` |
 
@@ -177,7 +178,7 @@ transaction.
 
 ## NEAR
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/nearintents` | opaque-challenge | no | no | no | `chargeNearIntents` from `@integraledger/lcp/mpp` | `MPP_CHARGE_NEARINTENTS` |
 | `x402/exact/near` | native-field | yes | yes | yes | `exactNear` from `@integraledger/lcp/near` | `X402_EXACT_NEAR` |
@@ -188,7 +189,7 @@ transaction.
 
 ## Starknet
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/starknet` | truncated-field | yes | yes | yes | `exactStarknet` from `@integraledger/lcp/starknet` | `X402_EXACT_STARKNET` |
 
@@ -196,7 +197,7 @@ transaction.
 
 ## Polkadot
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/polkadot/lcp-assets-remark` | native-field | yes | yes | yes | `exactPolkadotRemark` from `@integraledger/lcp/polkadot` | `X402_EXACT_POLKADOT_LCP_ASSETS_REMARK` |
 
@@ -204,7 +205,7 @@ transaction.
 
 ## TRON
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/tron/lcp-trc20-memo` | native-field | yes | yes | yes | `exactTronMemo` from `@integraledger/lcp/tron` | `X402_EXACT_TRON_LCP_TRC20_MEMO` |
 
@@ -212,7 +213,7 @@ transaction.
 
 ## TON
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/tvm` | native-field | yes | yes | yes | `exactTvm` from `@integraledger/lcp/tvm` | `X402_EXACT_TVM` |
 
@@ -220,7 +221,7 @@ transaction.
 
 ## Cardano
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/cardano` | native-field | yes | yes | yes | `exactCardano` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO` |
 
@@ -228,7 +229,7 @@ transaction.
 
 ## Casper
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/casper` | native-field | yes | yes | yes | `exactCasper` from `@integraledger/lcp/casper` | `X402_EXACT_CASPER` |
 
@@ -236,7 +237,7 @@ transaction.
 
 ## Concordium
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/ccd` | native-field | yes | yes | yes | `exactCcd` from `@integraledger/lcp/ccd` | `X402_EXACT_CCD` |
 
@@ -244,7 +245,7 @@ transaction.
 
 ## Stacks
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/usdc/stacks` | native-field | yes | yes | yes | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_STACKS` |
 
@@ -252,7 +253,7 @@ transaction.
 
 ## Lightning
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/lightning` | native-field | no | no | no | `chargeLightning` from `@integraledger/lcp/lightning` | `MPP_CHARGE_LIGHTNING` |
 | `mpp/session/lightning` | native-field | no | no | no | `sessionLightning` from `@integraledger/lcp/lightning` | `MPP_SESSION_LIGHTNING` |
@@ -269,7 +270,7 @@ transaction.
 
 ## Cloudflare
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/batch-settlement/cloudflare` | protocol-extension | yes | no | no | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_CLOUDFLARE` |
 
@@ -277,7 +278,7 @@ transaction.
 
 ## Card
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `card/mastercard-vi/autonomous` | id-reuse | yes | no | no | `viAutonomous` from `@integraledger/lcp/card` | `CARD_MASTERCARD_VI_AUTONOMOUS` |
 | `card/mastercard-vi/immediate` | id-reuse | yes | no | no | `viImmediate` from `@integraledger/lcp/card` | `CARD_MASTERCARD_VI_IMMEDIATE` |
@@ -297,7 +298,7 @@ transaction.
 
 ## Stripe
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/stripe` | opaque-challenge | no | no | no | `chargeStripe` from `@integraledger/lcp/mpp` | `MPP_CHARGE_STRIPE` |
 | `mpp/subscription/stripe` | opaque-challenge | no | no | no | `subscriptionStripe` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_STRIPE` |
@@ -308,7 +309,7 @@ transaction.
 
 ## Mandate
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ap2/checkout-mandate` | opaque-challenge | yes | no | no | `checkoutMandate` from `@integraledger/lcp/ap2` | `AP2_CHECKOUT_MANDATE` |
 | `ucp/booking/ap2-mandate` | opaque-challenge | yes | no | no | `bookingAp2Mandate` from `@integraledger/lcp/ucp` | `UCP_BOOKING_AP2_MANDATE` |
@@ -322,7 +323,7 @@ transaction.
 
 ## Checkout
 
-| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |
+| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ack/payment-request` | native-field | no | no | no | `paymentRequest` from `@integraledger/lcp/ack` | `ACK_PAYMENT_REQUEST` |
 | `acp/checkout/delegated` | native-field | no | no | no | `delegated` from `@integraledger/lcp/acp` | `ACP_CHECKOUT_DELEGATED` |

@@ -213,7 +213,8 @@ function referencePage(rows) {
     "",
     "- **Pattern**: how H rides in the pairing's payment (see [Concepts](../concepts.md#how-h-rides-in-a-payment)).",
     "- **Buyer signs H**: whether what the buyer's wallet signs contains H.",
-    "- **On chain**: whether H is written on a public ledger when the payment settles.",
+    "- **Binding on chain**: whether the binding is visible on a public ledger after settlement (LCP §8.3): the",
+    "  settlement carries H, part of it, or a value derived from it.",
     "- **Public proof**: whether the payment is itself a public proof of H. When it is not, the gate pays the seller's",
     "  agreement payment first (see [Agreement payments](../guides/agreement-payments.md)).",
     "",
@@ -226,7 +227,7 @@ function referencePage(rows) {
     const group = rows.filter((r) => r.rail === rail);
     if (group.length === 0) continue;
     out.push(`## ${rail}`, "");
-    out.push("| Pairing | Pattern | Buyer signs H | On chain | Public proof | TypeScript | Python |");
+    out.push("| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |");
     out.push("| --- | --- | --- | --- | --- | --- | --- |");
     for (const r of group) {
       const p = r.pattern;
