@@ -22,6 +22,20 @@ allowed. Peer dependencies are ranges: `@integraledger/lcp` is a peer of both Ty
 devDependency for their own tests, so an application and the gate share one copy of lcp. A change that adds a
 dependency pins an exact version.
 
+CI's Node.js step reads every workflow in `.github/workflows`, `.yml` and `.yaml`. Every job that runs a step fetches
+the Node.js `.node-version` names, checked against one SHA-256, in one step, byte for byte the same in every job, before
+its first other step that runs, and no workflow names another Node.js download; the step runs under that Node.js and
+fails under another. Every download in a workflow is
+`curl -fsSL --retry 5 --retry-all-errors -o "$RUNNER_TEMP/<file>" https://<address>`, which retries a failed transfer
+five times whatever the error, and writes one file. No workflow uses `setup-node`, `continue-on-error`, `if:`,
+`container:`, `shell:` or a `PATH:` key, or writes `$GITHUB_ENV`, and only the Node.js and pnpm fetches write
+`$GITHUB_PATH`. Every workflow is written in YAML's plain block style: outside a block scalar (`run: |`), each line is
+blank, a comment, or one plain key and its value, with no flow mapping but `{}`, no flow sequence of anything but plain
+words, and no anchor, alias, tag or quoted value that does not close on its own line, and a block scalar's header holds
+only its indicators and a comment. Each workflow has one `jobs:` line, and every line under it is blank, a comment, a
+job's own line (`<name>:`, indented two spaces) or a line inside a job. The step reads the jobs' steps only outside a
+block scalar, so the text a block scalar holds is never read as a step.
+
 ## The layout
 
 | Folder | What it holds |
