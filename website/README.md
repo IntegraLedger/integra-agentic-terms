@@ -89,3 +89,15 @@ run `worker.js`.
 
 Each page names `/llms.txt` with `<link rel="describedby">` and its Markdown with `<link rel="alternate"
 type="text/markdown">`.
+
+## Deploying
+
+No workflow deploys the site. The site documents the packages npm and PyPI serve, so a maintainer deploys it by hand
+from the commit each release is built from: check that commit out, build the packages and the site on Linux x64 (see
+"Building"), and run, at the repository root:
+
+```sh
+npx wrangler deploy -c website/wrangler.toml
+```
+
+`/.well-known/security.txt` expires 180 days after that commit, so each release's deploy renews it.
