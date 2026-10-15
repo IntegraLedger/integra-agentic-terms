@@ -2,12 +2,12 @@
 standard base64 (RFC 4648 section 4; x402's HTTP transport carries it base64-encoded, and RFC 4648 section 3.2 keeps
 the pad characters), whose final character's unused bits are zero (RFC 4648 section 3.5). Every body and header decodes
 as UTF-8 whose leading byte order mark is kept as a character, and no JSON text begins with one (RFC 8259 section 8.1).
-So buyer.json's BA13 header (requiredUnpadded), a header whose final character carries a non-zero unused bit, and a
-header whose JSON follows a byte order mark leave the 402 unread: agreement-failed after one fetch, with nothing signed.
-A paid 200 whose receipt follows a byte order mark is agreement-failed, with the sent agreement payment kept as moved.
-buyer.json's BA17 and BA18 rows give the byte order mark cases and a padded header with a space inside, built here as
-those rows build receiptBomLed, requiredBomLed and requiredInnerSpace from required and receipt (JSON text with no
-spaces), and each row's expected decline. The same cases run through the TypeScript gate in
+So buyer.json's BA13 header (requiredUnpadded), a header whose final character carries a non-zero unused bit (BA19's
+requiredPadBit, and the canonical header written so here), and a header whose JSON follows a byte order mark leave the
+402 unread: agreement-failed after one fetch, with nothing signed. A paid 200 whose receipt follows a byte order mark is
+agreement-failed, with the sent agreement payment kept as moved. buyer.json's BA17 and BA18 rows give the byte order
+mark cases and a padded header with a space inside, built here as those rows build receiptBomLed, requiredBomLed and
+requiredInnerSpace from required and receipt (JSON text with no spaces), and each row's expected decline. The same cases run through the TypeScript gate in
 agreement-decoding.test.ts."""
 
 import asyncio
@@ -64,6 +64,8 @@ def exchange(header: str, paid: bytes) -> tuple[Any, int, int]:
 def test_the_canonical_header_and_a_receipt_with_no_byte_order_mark_give_the_receipt() -> None:
     assert non_canonical(CANONICAL) != CANONICAL
     assert base64.b64decode(non_canonical(CANONICAL)) == base64.b64decode(CANONICAL)
+    assert AG["requiredPadBit"] != CANONICAL
+    assert base64.b64decode(AG["requiredPadBit"]) == base64.b64decode(CANONICAL)
     out, _, calls = exchange(CANONICAL, RECEIPT)
     assert isinstance(out, Agreed), out
     assert out.receipt.atr_hash == AG["receipt"]["atrHash"]
@@ -75,12 +77,14 @@ def test_the_canonical_header_and_a_receipt_with_no_byte_order_mark_give_the_rec
     [
         AG["requiredUnpadded"],
         non_canonical(CANONICAL),
+        AG["requiredPadBit"],
         base64.b64encode(BOM + REQUIRED).decode("ascii"),
         CANONICAL[:4] + " " + CANONICAL[4:],
     ],
     ids=[
         "BA13's unpadded header",
         "a header whose final character carries a non-zero unused bit",
+        "BA19's header, a pad bit set",
         "BA18: a header whose JSON follows a byte order mark",
         "BA18: the padded header with a space after its fourth character",
     ],

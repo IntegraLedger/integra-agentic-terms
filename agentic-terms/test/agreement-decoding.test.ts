@@ -3,8 +3,8 @@
 // the pad characters), whose final character's unused bits are zero (RFC 4648 section 3.5). Every body and header
 // decodes as UTF-8 whose leading byte order mark is kept as a character, and no JSON text begins with one (RFC 8259
 // section 8.1), as the protocol package's readers and the Python gate read it. So buyer.json's BA13 header
-// (`requiredUnpadded`), a header whose final character carries a non-zero unused bit, and a header whose JSON follows a
-// byte order mark leave the 402 unread: agreement-failed after one fetch, with nothing signed. A paid 200 whose receipt
+// (`requiredUnpadded`), a header whose final character carries a non-zero unused bit (BA19's `requiredPadBit`, and the
+// canonical header written so here), and a header whose JSON follows a byte order mark leave the 402 unread: agreement-failed after one fetch, with nothing signed. A paid 200 whose receipt
 // follows a byte order mark is agreement-failed, with the sent agreement payment kept as `moved`. buyer.json's BA17 and
 // BA18 rows give the byte order mark cases and a padded header with a space inside, built here as those rows build
 // `receiptBomLed`, `requiredBomLed` and `requiredInnerSpace` from `required` and `receipt`, and each row's expected
@@ -71,6 +71,8 @@ describe("the agreement exchange's decoding", () => {
   it("the canonical header and a receipt with no byte order mark: the receipt", async () => {
     expect(nonCanonical(canonical)).not.toBe(canonical);
     expect(Buffer.from(nonCanonical(canonical), "base64")).toEqual(Buffer.from(canonical, "base64"));
+    expect(AG.requiredPadBit).not.toBe(canonical);
+    expect(Buffer.from(AG.requiredPadBit, "base64")).toEqual(Buffer.from(canonical, "base64"));
     const { out, calls } = await exchange(canonical, receipt);
     expect(out).toEqual({ receipt: AG.receipt });
     expect(calls).toBe(1);
@@ -79,6 +81,7 @@ describe("the agreement exchange's decoding", () => {
   it.each([
     ["BA13's unpadded header", AG.requiredUnpadded as string],
     ["a header whose final character carries a non-zero unused bit", nonCanonical(canonical)],
+    ["BA19's header, a pad bit set", AG.requiredPadBit as string],
     ["BA18: a header whose JSON follows a byte order mark", Buffer.concat([BOM, Buffer.from(JSON.stringify(AG.required), "utf8")]).toString("base64")],
     ["BA18: the padded header with a space after its fourth character", `${canonical.slice(0, 4)} ${canonical.slice(4)}`],
   ])("%s: agreement-failed after one fetch, nothing signed", async (_, header) => {
