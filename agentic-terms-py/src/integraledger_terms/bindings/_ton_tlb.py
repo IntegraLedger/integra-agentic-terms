@@ -19,24 +19,32 @@ MAX_MERKLE_DEPTH = 2
 class TonConfiguration:
     """The network configuration TON's message rules rest on, for one network.
     - global_version: ConfigParam 8, capabilities#c4 version:uint32. From 4, TON's action phase takes a send mode's
-      +16 as bounce-on-fail (bounce_on_fail_enabled); from 10, it refuses an anycast
-      address (disable_anycast) and holds a message's extra currencies to max_msg_extra_currencies
-      (extra_currency_v2); from 12, a message's extra_flags may set its two low bits only.
+      +16 as bounce-on-fail (bounce_on_fail_enabled); from 10, it refuses an anycast address (disable_anycast),
+      TON deploys no account whose fixed prefix length is above max_acc_fixed_prefix_length, and a message's extra
+      currencies are held to max_msg_extra_currencies (extra_currency_v2); from 12, a message's extra_flags may set
+      its two low bits only; from 15, no account is deployed from a state init that holds libraries
+      (unpack_msg_state).
     - workchains: the workchains a message may name: the masterchain (-1), and ConfigParam 12's workchains that are
       basic and accept messages. Each takes 256-bit addresses only.
-    - max_msg_extra_currencies: ConfigParam 43, how many extra currencies a sent message may hold."""
+    - max_msg_extra_currencies: ConfigParam 43, how many extra currencies a sent message may hold.
+    - max_acc_fixed_prefix_length: ConfigParam 43, the longest fixed prefix of an account TON deploys."""
 
     global_version: int
     workchains: frozenset[int]
     max_msg_extra_currencies: int
+    max_acc_fixed_prefix_length: int
 
 
 # Mainnet's configuration: the one @ton/sandbox 0.45.0 ships (defaultConfig, configuration seqno 92871331, ConfigParam
 # 19 global id -239), read offline. ConfigParam 12 holds one workchain, 0.
-MAINNET = TonConfiguration(global_version=15, workchains=frozenset({-1, 0}), max_msg_extra_currencies=0)
+MAINNET = TonConfiguration(
+    global_version=15, workchains=frozenset({-1, 0}), max_msg_extra_currencies=0, max_acc_fixed_prefix_length=8
+)
 # Testnet's configuration. Testnet's own values are not read: these are mainnet's, from MAINNET's source, since no
 # offline source pinned by seqno holds testnet's ConfigParams 8, 12 and 43.
-TESTNET = TonConfiguration(global_version=15, workchains=frozenset({-1, 0}), max_msg_extra_currencies=0)
+TESTNET = TonConfiguration(
+    global_version=15, workchains=frozenset({-1, 0}), max_msg_extra_currencies=0, max_acc_fixed_prefix_length=8
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +137,24 @@ def is_state_init(root: Cell) -> bool:
         return v.exact(root, fields)
     except Malformed:
         return False
+
+
+def deploys_from(root: Cell, config: TonConfiguration) -> bool:
+    """True when TON deploys an account from a state init is_state_init holds, at the configuration
+    (ton-blockchain/ton crypto/block/transaction.cpp, unpack_msg_state and prepare_compute_phase): from global version
+    15 its library:(HashmapE 256 SimpleLib) is hme_empty ("libraries are not null"), and from global version 10 its
+    fixed_prefix_length is absent or at most the configuration's max_acc_fixed_prefix_length ("too big fixed prefix
+    length")."""
+    s = root.slice()
+    prefix = s.uint(5) if s.bit() else 0
+    if s.bit():
+        s.uint(2)
+    s.maybe_ref()
+    s.maybe_ref()
+    libraries = s.bit()
+    if config.global_version >= 15 and libraries:
+        return False
+    return not (config.global_version >= 10 and prefix > config.max_acc_fixed_prefix_length)
 
 
 def _inline_state_init(s: Slice) -> Cell:

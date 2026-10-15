@@ -12,12 +12,14 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._codec import b64_decode
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._ton_cell import Builder, Cell, Malformed, parse_boc, serialize_boc
+from ._ton_cell import Builder, Cell, Malformed, merkle_depth, parse_boc, serialize_boc
 from ._ton_tlb import (
     MAINNET,
+    MAX_MERKLE_DEPTH,
     TESTNET,
     Address,
     TonConfiguration,
+    deploys_from,
     is_state_init,
     load_address,
     load_maybe_address,
@@ -303,9 +305,12 @@ class X402ExactTvm:
 
     def build(self, c: Json, h: AtrHash) -> TvmUnsigned | Refusal:
         """The W5 request for the chosen option: one Jetton transfer whose forward payload is the hash's comment,
-        which must be the option's extra.forwardPayload. A stateInit must be exactly one StateInitWithLibs, as TON
-        validates a message's state init (x402/option-malformed); the settlement message carries that cell as given,
-        so its hash stays the address the wallet derives from it."""
+        which must be the option's extra.forwardPayload. wallet and jettonWallet are on a workchain the option's
+        network's configuration holds, -1 or 0. A stateInit must be exactly one StateInitWithLibs, as TON validates a
+        message's state init, with at most two Merkle proofs or updates nested in it, and one TON deploys a wallet
+        from at that configuration (deploys_from): no libraries dictionary, and a fixed prefix length of at most
+        ConfigParam 43's max_acc_fixed_prefix_length, 8. Else x402/option-malformed. The settlement message carries
+        that cell as given, so its hash stays the address the wallet derives from it."""
         if not is_object(c):
             return Refusal("x402/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
@@ -324,6 +329,9 @@ class X402ExactTvm:
         wallet = raw_address(c.get("wallet"))
         jetton_wallet = raw_address(c.get("jettonWallet"))
         if wallet is None or jetton_wallet is None:
+            return Refusal("x402/option-malformed")
+        config = _CONFIGURATIONS[accepted["network"]]
+        if wallet.workchain not in config.workchains or jetton_wallet.workchain not in config.workchains:
             return Refusal("x402/option-malformed")
         wallet_id, seqno, now = _uint32(c.get("walletId")), _uint32(c.get("seqno")), safe_int(c.get("now"))
         if wallet_id is None or seqno is None or now is None or now < 0:
@@ -368,7 +376,12 @@ class X402ExactTvm:
             .bit(0)
             .end()
         )
-        if init_cell is not None and not is_state_init(init_cell):
+        # The checks read the state init's form only: complete carries the cell itself.
+        if init_cell is not None and (
+            not is_state_init(init_cell)
+            or merkle_depth([init_cell]) > MAX_MERKLE_DEPTH
+            or not deploys_from(init_cell, config)
+        ):
             return Refusal("x402/option-malformed")
         return TvmUnsigned(
             request={"kind": "ton-w5", "hash": request.hash},
@@ -381,7 +394,9 @@ class X402ExactTvm:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The hash in the forward payload of the transfer the payer's W5 wallet signed, which must be the option's.
-        The echoed option's amount and timeout are not read. The signature is not verified here."""
+        The echoed option's amount and timeout are not read. The signature is not verified here. A state init that
+        holds a libraries dictionary, or a fixed prefix longer than 8 bits, is read, since whether TON deploys the
+        wallet from it is chain state."""
         p = presented_with(presented, _presentable)
         if isinstance(p, Refusal):
             return p
