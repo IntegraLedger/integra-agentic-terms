@@ -9,7 +9,7 @@ from typing import Any
 from .._types import Refusal
 from ._codec import b58_decode, b64u_decode, canonical_or_none, utf16_key
 from ._hedera_proto import amount_of, is_entity
-from ._jose import parse_json, within_depth
+from ._jose import js_length, parse_json, within_depth
 from ._lcp import is_address, is_list, is_object
 
 Obj = Mapping[str, Any]
@@ -84,11 +84,6 @@ STRIPE_METADATA_VALUE_LENGTH = 500
 
 
 # ── Values.
-
-
-def utf16_length(text: str) -> int:
-    """The length of text in UTF-16 code units."""
-    return len(text) + sum(1 for c in text if ord(c) > 0xFFFF)
 
 
 def is_number(value: object) -> bool:
@@ -641,9 +636,9 @@ def stripe_metadata_valid(m: object, present: bool, extra: int = 0) -> Refusal |
     if len(m) + extra > STRIPE_METADATA_KEYS:
         return Refusal("mpp/metadata-malformed")
     for k, v in m.items():
-        if not 0 < utf16_length(k) <= STRIPE_METADATA_KEY_LENGTH or "[" in k or "]" in k:
+        if not 0 < js_length(k) <= STRIPE_METADATA_KEY_LENGTH or "[" in k or "]" in k:
             return Refusal("mpp/metadata-malformed")
-        if not isinstance(v, str) or utf16_length(v) > STRIPE_METADATA_VALUE_LENGTH:
+        if not isinstance(v, str) or js_length(v) > STRIPE_METADATA_VALUE_LENGTH:
             return Refusal("mpp/metadata-malformed")
     return None
 
@@ -711,7 +706,7 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         if not isinstance(address, str) or _C32_PRINCIPAL.fullmatch(address) is None:
             return Refusal("mpp/request-malformed")
         name = p.get("contractName")
-        if not isinstance(name, str) or utf16_length(name) > 128 or _STACKS_NAME.fullmatch(name) is None:
+        if not isinstance(name, str) or js_length(name) > 128 or _STACKS_NAME.fullmatch(name) is None:
             return Refusal("mpp/request-malformed")
         return ["mpp/charge/usdc/stacks"]
     return ["mpp/charge/usdc/gateway"]

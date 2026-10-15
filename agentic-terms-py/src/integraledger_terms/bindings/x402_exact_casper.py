@@ -10,6 +10,7 @@ from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
+from ._jose import js_length
 from ._lcp import is_object, normal_hash, safe_int, uint256_of
 from ._x402 import chosen, filter_of, payment_with, read_for
 
@@ -26,16 +27,12 @@ MAX_PUBLIC_KEY_HEX = 68
 MAX_SIGNATURE_HEX = 132
 
 
-def _utf16_length(text: str) -> int:
-    return len(text.encode("utf-16-le", "surrogatepass")) // 2
-
-
 def _is_address(value: object) -> bool:
     return isinstance(value, str) and _ADDRESS.fullmatch(value) is not None
 
 
 def _is_name(value: object) -> bool:
-    return isinstance(value, str) and 0 < _utf16_length(value) <= MAX_NAME
+    return isinstance(value, str) and 0 < js_length(value) <= MAX_NAME
 
 
 def _is_tagged(value: object, max_hex: int) -> bool:

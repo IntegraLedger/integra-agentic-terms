@@ -37,7 +37,6 @@ from ._mpp_checks import (
     stacks_network_of,
     unix_of,
     usdc_profile,
-    utf16_length,
     xrpl_network_of,
 )
 
@@ -414,7 +413,7 @@ def _json_within(value: object, limit: int) -> bool:
     def walk(x: object) -> bool:
         nonlocal budget
         if isinstance(x, str):
-            budget -= utf16_length(x) + 2
+            budget -= js_length(x) + 2
         elif x is None or isinstance(x, (bool, int, float)):
             budget -= 8
         elif is_list(x):
@@ -425,7 +424,7 @@ def _json_within(value: object, limit: int) -> bool:
         elif is_object(x):
             budget -= 2
             for k, y in x.items():
-                budget -= (utf16_length(k) if isinstance(k, str) else 0) + 3
+                budget -= (js_length(k) if isinstance(k, str) else 0) + 3
                 if not walk(y):
                     return False
         else:

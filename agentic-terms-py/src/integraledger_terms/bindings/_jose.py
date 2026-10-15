@@ -27,7 +27,8 @@ _ARRAY_INDEX_LIMIT = 2**32 - 1
 
 
 def js_length(text: str) -> int:
-    """The string's length in UTF-16 code units, as String.prototype.length counts it."""
+    """The string's length in UTF-16 code units, as String.prototype.length counts it: a code point past U+FFFF is
+    two, and a surrogate, paired or lone, is one. Every bound the bindings count in UTF-16 code units reads it."""
     return len(text) + sum(1 for c in text if ord(c) > 0xFFFF)
 
 
