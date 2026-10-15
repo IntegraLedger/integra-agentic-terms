@@ -990,6 +990,57 @@ describe("the agreement payment the agent approves", () => {
     expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "x402/legal-context-malformed" });
     expect(signer.requests.length).toBe(0);
   });
+
+  /** The agreement challenge with `patch` applied, each member patched to null removed, and `accepts`, absent when undefined. */
+  function challenge(patch: Record<string, unknown>, accepts: unknown): Record<string, unknown> {
+    const doc: Record<string, unknown> = { ...AG.required, ...patch, accepts };
+    for (const [k, v] of Object.entries({ ...patch, accepts })) if (v === null || v === undefined) delete doc[k];
+    return doc;
+  }
+  const approving = (required: object, option: object = OPTION): AgreeOptions => ({
+    approved: { url: AGREEMENT_URL, option: option as PaymentRequirements, required: required as PaymentRequired },
+  });
+  const LC = AG.required.extensions.legalContext;
+  const withInfo = (info: object) => ({ ...AG.required.extensions, legalContext: { ...LC, info: { ...LC.info, ...info } } });
+  const OPTION_33 = Array.from({ length: 33 }, () => OPTION);
+
+  // An approved payment's challenge is read whole, as the unpaid request reads the agreement URL's challenge: one the
+  // protocol package's read refuses as a whole is declined as the unpaid request declines it, before anything is signed
+  // or sent. Each fault of the challenge is beside an accepts holding the approved option 33 times, more than the read
+  // takes; the accepts forms are beside a sound challenge.
+  it.each([
+    ["a sound challenge, 33 options", {}, OPTION_33],
+    ["x402Version 1, 33 options", { x402Version: 1 }, OPTION_33],
+    ["no x402Version, 33 options", { x402Version: null }, OPTION_33],
+    ['x402Version "2", 33 options', { x402Version: "2" }, OPTION_33],
+    ["an http link, 33 options", { extensions: withInfo({ legalContextUrl: "http://atr.seller.example/x" }) }, OPTION_33],
+    ["a link that is not a URL, 33 options", { extensions: withInfo({ legalContextUrl: "not a url" }) }, OPTION_33],
+    ["a hash value of one byte, 33 options", { extensions: withInfo({ value: "0x12" }) }, OPTION_33],
+    ["no legal context, 33 options", { extensions: { other: 1 } }, OPTION_33],
+    ["no extensions, 33 options", { extensions: null }, OPTION_33],
+    ["extensions a string, 33 options", { extensions: "x" }, OPTION_33],
+    ["an http agreement URL, 33 options", { extensions: withInfo({ legalContextAgreementUrl: "http://agree.seller.example/x" }) }, OPTION_33],
+    ["an agreement URL that is not a URL, 33 options", { extensions: withInfo({ legalContextAgreementUrl: "nope" }) }, OPTION_33],
+    ["no accepts", {}, undefined],
+    ["accepts a string", {}, "x"],
+    ["accepts an object holding the option", {}, { 0: OPTION }],
+    ["accepts an empty list", {}, []],
+    ["accepts [1]", {}, [1]],
+    ["accepts [null]", {}, [null]],
+    ["accepts 33 entries of 1", {}, Array.from({ length: 33 }, () => 1)],
+  ])("an approved payment whose challenge has %s: the unpaid request's decline, nothing signed or sent", async (_, patch, accepts) => {
+    const required = challenge(patch, accepts);
+    const read = exactEip3009.read(required as unknown as PaymentRequired);
+    if (!("refused" in read)) throw new Error("the protocol package's read refuses the challenge");
+    const unpaid = await agree(A, AGREEMENT_URL, counting(), challenging(base64Json(required), RECORDED));
+    expect(isDeclined(unpaid) && unpaid.decline).toEqual({ code: "offer-unreadable", detail: read.code });
+    const signer = counting();
+    const fetch = challenging(base64Json(required), RECORDED);
+    const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, approving(required)));
+    expect(isDeclined(value) && value.decline).toEqual({ code: "offer-unreadable", detail: read.code });
+    expect(signer.requests.length).toBe(0);
+    expect(fetch.calls.length).toBe(0);
+  });
 });
 
 // The caller's signal ends the agreement exchange at its next step. Before the agreement payment is sent, nothing is

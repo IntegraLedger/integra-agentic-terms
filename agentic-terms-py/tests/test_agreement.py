@@ -973,6 +973,70 @@ def test_a_malformed_legal_context_beside_an_option_that_gives_no_deadline_is_re
     assert signer.requests == []
 
 
+def _challenge(patch: dict[str, Any], accepts: object) -> dict[str, Any]:
+    """The agreement challenge with patch applied, each member patched to None removed, and accepts, absent when
+    None."""
+    doc = {**AG["required"], **patch, "accepts": accepts}
+    return {k: v for k, v in doc.items() if v is not None}
+
+
+def _info(**info: Any) -> dict[str, Any]:
+    return {**AG["required"]["extensions"], "legalContext": {**_LC, "info": {**_LC["info"], **info}}}
+
+
+_OPTION_33 = [OPTION] * 33
+
+
+@pytest.mark.parametrize(
+    ("patch", "accepts"),
+    [
+        pytest.param({}, _OPTION_33, id="a sound challenge, 33 options"),
+        pytest.param({"x402Version": 1}, _OPTION_33, id="x402Version 1, 33 options"),
+        pytest.param({"x402Version": None}, _OPTION_33, id="no x402Version, 33 options"),
+        pytest.param({"x402Version": "2"}, _OPTION_33, id="x402Version '2', 33 options"),
+        pytest.param({"extensions": _info(legalContextUrl="http://atr.seller.example/x")}, _OPTION_33, id="an http link, 33 options"),
+        pytest.param({"extensions": _info(legalContextUrl="not a url")}, _OPTION_33, id="a link that is not a URL, 33 options"),
+        pytest.param({"extensions": _info(value="0x12")}, _OPTION_33, id="a hash value of one byte, 33 options"),
+        pytest.param({"extensions": {"other": 1}}, _OPTION_33, id="no legal context, 33 options"),
+        pytest.param({"extensions": None}, _OPTION_33, id="no extensions, 33 options"),
+        pytest.param({"extensions": "x"}, _OPTION_33, id="extensions a string, 33 options"),
+        pytest.param(
+            {"extensions": _info(legalContextAgreementUrl="http://agree.seller.example/x")},
+            _OPTION_33,
+            id="an http agreement URL, 33 options",
+        ),
+        pytest.param(
+            {"extensions": _info(legalContextAgreementUrl="nope")}, _OPTION_33, id="an agreement URL that is not a URL, 33 options"
+        ),
+        pytest.param({}, None, id="no accepts"),
+        pytest.param({}, "x", id="accepts a string"),
+        pytest.param({}, {"0": OPTION}, id="accepts an object holding the option"),
+        pytest.param({}, [], id="accepts an empty list"),
+        pytest.param({}, [1], id="accepts [1]"),
+        pytest.param({}, [None], id="accepts [None]"),
+        pytest.param({}, [1] * 33, id="accepts 33 entries of 1"),
+    ],
+)
+def test_an_approved_payment_whose_challenge_the_read_refuses_whole_is_declined_as_the_unpaid_request_is(
+    patch: dict[str, Any], accepts: object
+) -> None:
+    """An approved payment's challenge is read whole, as the unpaid request reads the agreement URL's challenge: one the
+    protocol package's read refuses as a whole is declined as the unpaid request declines it, before anything is signed
+    or sent. Each fault of the challenge is beside an accepts holding the approved option 33 times, more than the read
+    takes; the accepts forms are beside a sound challenge."""
+    required = _challenge(patch, accepts)
+    read = BINDING.read(required)
+    assert isinstance(read, Refusal)
+    unpaid = run(Challenging(RECORDED, header=b64(required)).link(), lambda c: agree(A, URL, RecordingSigner(), c))
+    assert unpaid == Declined("offer-unreadable", read.code)
+    signer = RecordingSigner()
+    seller = Challenging(RECORDED, header=b64(required))
+    approved = AgreementPayment(url=URL, option=OPTION, required=required)
+    out = run(seller.link(), lambda c: agree(A, URL, signer, c, approved=approved))
+    assert out == Declined("offer-unreadable", read.code)
+    assert signer.requests == [] and seller.requests == []
+
+
 # The caller's signal, an asyncio.Event, ends the agreement exchange at its next step. Before the agreement payment is
 # sent, nothing is signed or sent and the result is agreement-failed; after, the result is agreement-pending with the
 # payment as moved.

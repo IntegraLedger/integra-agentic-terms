@@ -283,9 +283,15 @@ interface Selected {
  * in the protocol package's order, whose read accepts the challenge holding only that option. An option whose
  * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it. An `accepts` that is
  * not a list, holds more than 32 entries or holds no object serves no option, and is declined `offer-unreadable` with
- * the code the read gives the whole challenge (`unservedCode`).
+ * the code the read gives the whole challenge (`unservedCode`). With `approved`, the challenge is checked whole in the
+ * same way, and `approved` is the one option read and chosen.
  */
-async function select(required: Record<string, unknown>, account: string, inputs: Inputs): Promise<Selected | Declined> {
+async function select(
+  required: Record<string, unknown>,
+  account: string,
+  inputs: Inputs,
+  approved?: PaymentRequirements,
+): Promise<Selected | Declined> {
   const accepts = required["accepts"];
   if (!Array.isArray(accepts) || accepts.length > MAX_OPTIONS || !accepts.some((option) => isObject(option))) {
     return declined("offer-unreadable", unservedCode(required));
@@ -293,7 +299,7 @@ async function select(required: Record<string, unknown>, account: string, inputs
   const now = Math.floor(Date.now() / 1000);
   let unreadable: string | undefined;
   let unpayable: string | undefined;
-  for (const option of accepts) {
+  for (const option of approved === undefined ? accepts : [approved]) {
     if (!isObject(option)) continue;
     const only = { ...required, accepts: [option] };
     let found: { binding: Binding; read: Read } | undefined;
@@ -343,14 +349,18 @@ function bounds(option: PaymentRequirements): { request: number; exchange: numbe
   return { request: Math.min(t, EXCHANGE_CAP_S) + SETTLE_S + VERIFY_S, exchange: t + WINDOW_EXTRA_S };
 }
 
-/** The option chosen from `required` for `h`, with its bounds, once the challenge is found to advertise `h`. */
+/**
+ * The option chosen from `required` for `h`, `approved` when given, with its bounds, once the challenge is found to
+ * advertise `h`.
+ */
 async function paying(
   required: Record<string, unknown>,
   h: AtrHash,
   account: string,
   inputs: Inputs,
+  approved?: PaymentRequirements,
 ): Promise<{ selected: Selected; limits: { request: number; exchange: number } } | Declined> {
-  const selected = await select(required, account, inputs);
+  const selected = await select(required, account, inputs, approved);
   if ("decline" in selected) return selected;
   if (!hashEquals(selected.read.h, h)) {
     return declined("hash-mismatch", "The agreement challenge advertises another ATR hash.");
@@ -366,13 +376,14 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
 /**
  * Without `approved`: asks the agreement URL for its challenge and returns the agreement payment to approve, signing
  * nothing, or the receipt where the agreement is already recorded. With `approved`: signs exactly that payment with
- * `signer`, sends it to `url`, and returns the receipt once recorded. `bytes` are the ATR the gate compared, whose hash
- * the agreement payment carries; `inputs` are the buyer's own chain values; `signal` ends the exchange. Options holding
- * anything but `approved`, `inputs` and `signal`, a `signal` that is not an `AbortSignal`, an `approved` that is not
- * of the agreement payment's form, `inputs` that is not an object, or a signer whose `account` is not a string, is
- * declined `no-payable-option` with `x402/input-malformed` before any fetch or signer call. A `url` that is
- * not an https URL is declined `link-not-https` with `x402/link-not-https` for an absolute URL of another scheme and
- * `x402/legal-context-malformed` for any other value, before any fetch.
+ * `signer`, sends it to `url`, and returns the receipt once recorded; a payment whose challenge the protocol package's
+ * read refuses as a whole is declined as the unpaid request declines that challenge, before any fetch or signer call.
+ * `bytes` are the ATR the gate compared, whose hash the agreement payment carries; `inputs` are the buyer's own chain
+ * values; `signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, a `signal` that
+ * is not an `AbortSignal`, an `approved` that is not of the agreement payment's form, `inputs` that is not an object,
+ * or a signer whose `account` is not a string, is declined `no-payable-option` with `x402/input-malformed` before any
+ * fetch or signer call. A `url` that is not an https URL is declined `link-not-https` with `x402/link-not-https` for an
+ * absolute URL of another scheme and `x402/legal-context-malformed` for any other value, before any fetch.
  */
 export function agree(
   bytes: Uint8Array,
@@ -420,7 +431,7 @@ export async function exchange(
   if (approved === undefined) return offer(bytes, h, url, signer, fetch, inputs, signal);
   if (approved.url !== url) return failed("The approved agreement payment names another agreement URL.");
 
-  const found = await paying({ ...approved.required, accepts: [approved.option] }, h, signer.account, inputs);
+  const found = await paying(approved.required, h, signer.account, inputs, approved.option);
   if ("decline" in found) return found;
   const { selected, limits } = found;
   const paid = await pay(selected.binding, selected.chosen, signer, bytes);
