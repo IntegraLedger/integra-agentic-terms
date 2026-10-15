@@ -35,6 +35,7 @@ from ._mpp_checks import (
     hedera_session_network_of,
     positive_int,
     solana_network_of,
+    subscription_period,
     unix_of,
     xrpl_network_of,
 )
@@ -64,8 +65,6 @@ MAX_WIRE = 65_536
 U96 = 1 << 96
 U128 = 1 << 128
 KEY_TYPES: Mapping[str, int] = {"secp256k1": 0, "p256": 1, "webAuthn": 2}
-DAY = 86_400
-WEEK = 604_800
 
 
 @dataclass(frozen=True, slots=True)
@@ -845,7 +844,7 @@ def _subscription_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
             {
                 "token": currency,
                 "limit": int(text(r.get("amount"))),
-                "period": int(text(r.get("periodCount"))) * (WEEK if r.get("periodUnit") == "week" else DAY),
+                "period": subscription_period(r),
             }
         ],
         "allowedCalls": [
