@@ -58,9 +58,7 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def settlement_root(signed: Any) -> Cell:
-    roots = parse_boc(base64.b64decode(signed["payload"]["settlementBoc"]))
-    assert len(roots) == 1
-    return roots[0]
+    return parse_boc(base64.b64decode(signed["payload"]["settlementBoc"]))
 
 
 def test_x402_exact_tvm_the_document_places_v1_as_forward_payload() -> None:
@@ -264,7 +262,7 @@ def _width(n: int) -> int:
 
 
 def _v2b_code_and_data() -> tuple[Cell, Cell]:
-    s = parse_boc(base64.b64decode(W["stateInit"]))[0].slice()
+    s = parse_boc(base64.b64decode(W["stateInit"])).slice()
     s.bit()
     s.bit()
     code, data = s.maybe_ref(), s.maybe_ref()
@@ -497,8 +495,8 @@ def test_x402_exact_tvm_an_exotic_cell_is_refused_by_the_check_that_parses_it() 
     for row in read:
         out = BINDING.bound(presented(row["settlementBoc"]))
         assert (out if isinstance(out, str) else out.code) == row["expect"], row["case"]
-    carried = [r for r in read if "stateInit" in r]
-    assert len(carried) >= 3
+    carried = [r for r in read if "stateInit" in r and not r["expect"].startswith("tvm/")]
+    assert len(carried) >= 2
     for row in carried:
         init = root_of(row["stateInit"])
         assert isinstance(init, Cell) and init.hash.hex() == row["stateInitHash"], row["case"]
@@ -507,7 +505,7 @@ def test_x402_exact_tvm_an_exotic_cell_is_refused_by_the_check_that_parses_it() 
         signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
         assert not isinstance(signed, Refusal)
         assert signed["payload"]["settlementBoc"] == row["settlementBoc"], row["case"]
-    refused = [r for r in rows if "settlementBoc" not in r]
+    refused = [r for r in rows if "stateInit" in r and r not in carried]
     assert len(refused) >= 1
     for row in refused:
         assert BINDING.build(tvm_choice(stateInit=row["stateInit"]), F["H"]) == Refusal(row["expect"]), row["case"]
@@ -595,3 +593,20 @@ def test_x402_exact_tvm_a_cell_is_created_as_ton_creates_it() -> None:
         except Malformed:
             continue
         raise AssertionError(name)
+
+
+# tvm_boc.json holds bags of cells with TON's own verdict on each, from TON's deserializer run as its transaction
+# emulator: parse_boc reads exactly the bags TON reads, and root_of refuses the others as tvm/boc-malformed.
+def test_x402_exact_tvm_a_bag_of_cells_is_read_as_ton_deserializes_it() -> None:
+    rows = json.loads((Path(__file__).parent / "tvm_boc.json").read_text())["rows"]
+    assert {r["ton"] for r in rows} == {True, False}
+    for row in rows:
+        try:
+            root: Cell | None = parse_boc(base64.b64decode(row["boc"]))
+        except Malformed:
+            root = None
+        assert (root is not None) == row["ton"], row["case"]
+        within = root is not None and root.depth <= 32
+        assert isinstance(root_of(row["boc"]), Cell) if within else root_of(row["boc"]) in (
+            Refusal("tvm/boc-malformed") if root is None else Refusal("tvm/boc-too-large"),
+        ), row["case"]

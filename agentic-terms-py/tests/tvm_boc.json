@@ -1,0 +1,1310 @@
+{
+ "about": "Bags of cells in standard base64, each with TON's own verdict on its bytes: ton is true where ton-blockchain/ton's std_boc_deserialize (crypto/vm/boc.cpp, creating each cell as crypto/vm/cells/DataCell.cpp's CellChecker does) reads one root of level 0, and false where it refuses them. The verdicts were taken by running TON's C++ as @ton/sandbox 0.45.0's transaction emulator (ton-blockchain/ton 8e6f0917), whose boc_b64_to_cell deserializes each bag, offline. The bags cover each field of the header, the CRC-32C, the index and cache bits, a cell's references, padding and level mask, stored hashes and depths, pruned branches, library cells and Merkle proofs and updates at each length and reference count, exotic cells of other types, pruned branches of every level mask under too few and enough Merkle proofs, and depths 1,024 and 1,025. The depth 1,024 bag is past this pairing's own bound of depth 32, which TON's deserialization does not hold.",
+ "rows": [
+  {
+   "case": "exotic type 0, 8 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAIA1ogVUw==",
+   "ton": false
+  },
+  {
+   "case": "exotic type 0, 264 bits",
+   "boc": "te6cckEBAgEAJwABAkIBCEIAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwPCjT6c",
+   "ton": false
+  },
+  {
+   "case": "exotic type 5, 8 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAIFypzkZg==",
+   "ton": false
+  },
+  {
+   "case": "exotic type 5, 264 bits",
+   "boc": "te6cckEBAgEAJwABAkIBCEIFAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwOgfA+r",
+   "ton": false
+  },
+  {
+   "case": "exotic type 127, 8 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAJ//+CefA==",
+   "ton": false
+  },
+  {
+   "case": "exotic type 127, 264 bits",
+   "boc": "te6cckEBAgEAJwABAkIBCEJ/AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMsWjXe",
+   "ton": false
+  },
+  {
+   "case": "exotic type 128, 8 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAKArrPj0Q==",
+   "ton": false
+  },
+  {
+   "case": "exotic type 128, 264 bits",
+   "boc": "te6cckEBAgEAJwABAkIBCEKAAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwPf3hsA",
+   "ton": false
+  },
+  {
+   "case": "exotic type 255, 8 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAL/h9to/g==",
+   "ton": false
+  },
+  {
+   "case": "exotic type 255, 264 bits",
+   "boc": "te6cckEBAgEAJwABAkIBCEL/AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMxCRBC",
+   "ton": false
+  },
+  {
+   "case": "exotic, 0 bits",
+   "boc": "te6cckEBAgEABgABAkIBCAAh/DDF",
+   "ton": false
+  },
+  {
+   "case": "exotic, 7 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAEDu9OidA==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 0, 16 bits",
+   "boc": "te6cckEBAgEACAABAkIBCAQBAG1K7lg=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 0, 8 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAIB1Qt+oQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 0, 24 bits",
+   "boc": "te6cckEBAgEACQABAkIBCAYBACE3uwt2",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 0, 288 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEgBACEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEgv5m3",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 0, 17 bits",
+   "boc": "te6cckEBAgEACQABAkIBCAUBAEBvIoSH",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 0, 15 bits",
+   "boc": "te6cckEBAgEACAABAkIBCAMBAQetdd4=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, 288 bits",
+   "boc": "te6cckEBBAEAVAABAkIBCUYDZn0M4WAd+/DSr9rOSOdxr+XT1RQqEtzuHM+1BYDfScUABgIhAncDKEgBASEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUq0EHM",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 1, 280 bits",
+   "boc": "te6cckEBAgEAKQABAkIBCEYBASEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhADDjLOQ=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, 296 bits",
+   "boc": "te6cckEBAgEAKwABAkIBCEoBASEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUhFH3mDw==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, 16 bits",
+   "boc": "te6cckEBAgEACAABAkIBCAQBAW7Jhao=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, 560 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIwBASEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhHGblmQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, 289 bits",
+   "boc": "te6cckEBAgEAKwABAkIBCEkBASEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAVAFY3bWA==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, 287 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEcBASEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAX8Px0I",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1 with one reference",
+   "boc": "te6cckEBAwEALgABAkIBCUgBAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAECAAIB+ikfqg==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1 under 0 Merkle proofs",
+   "boc": "te6cckEBAgEAKgAhAkIBKEgBAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAGrVyVr",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1 under 2 Merkle proofs",
+   "boc": "te6cckEBBgEAfgABAkIBCUYDkZqwMAejUrK5WB4vnXB6/We0SsxNsSF4GNgs/1weMMgAAwIBAncDCUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgQhAncFKEgBAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAGK1HU5",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 1, stored depths 1023, under its Merkle proofs",
+   "boc": "te6cckEBBAEAVAABAkIBCUYDJOS3eXtHZgOMu6wFHMw4QSScXuq66zLj1NXKlpGauEkEAAIhAncDKEgBAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJA//d9CP1",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 1, stored depths 1024, under its Merkle proofs",
+   "boc": "te6cckEBBAEAVAABAkIBCUYDDMO6LmRD2tWbmHjnrzNYHgLK9ZSQjd36JnSekXHfqAUEAQIhAncDKEgBAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJBADOeA0y",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, stored depths 1025, under its Merkle proofs",
+   "boc": "te6cckEBBAEAVAABAkIBCUYDv7HSY89qW3D3f4KZ0a0mmMPX/Fg0frHUo27A6KVhnIkEAgIhAncDKEgBAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJBAHJGtdA",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 1, stored depths 65535, under its Merkle proofs",
+   "boc": "te6cckEBBAEAVAABAkIBCUYDTnVEaj+iNQ2xNROnkSoFFfgn1yYtawuKF12clRfqA3cAAAIhAncDKEgBAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJ//+2fDFR",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, 288 bits",
+   "boc": "te6cckEBBgEAfgABAkIBCUYD9g9dMFAMNEauVOrSRJzZ8gqyRf6YJ3XJj/Mf+r/VNFIACAIhAncDKUYDZn0M4WAd+/DSr9rOSOdxr+XT1RQqEtzuHM+1BYDfScUABgRBAncFSEgBAiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAVaYM3d",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 2, 280 bits",
+   "boc": "te6cckEBAgEAKQABAkIBCEYBAiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAEN/MWc=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, 296 bits",
+   "boc": "te6cckEBAgEAKwABAkIBCEoBAiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUh0LGzWw==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, 16 bits",
+   "boc": "te6cckEBAgEACAABAkIBCAQBApo61bk=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, 560 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIwBAiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhHxySZw==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, 289 bits",
+   "boc": "te6cckEBAgEAKwABAkIBCEkBAiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAVA0UGODA==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, 287 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEcBAiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAWZhVZq",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2 with one reference",
+   "boc": "te6cckEBAwEALgABAkIBCUgBAgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAECAAIBeCodyw==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2 under 1 Merkle proofs",
+   "boc": "te6cckEBBAEAVAAhAkIBKUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgJBAncDSEgBAgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAHrMnYL",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2 under 3 Merkle proofs",
+   "boc": "te6cckEBCAEAqAABAkIBCUYDaqR7AcuqDaajRzdIWT4+wmKTWwNQRPMiCwwh9tFTCUMABQIBAncDCUYD/yAUaoqS11nfKQaVVJ0bmZl0RMorAo6WanBogmULC0EABAQhAncFKUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgZBAncHSEgBAgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAG+iwJ5",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 2, stored depths 1023, under its Merkle proofs",
+   "boc": "te6cckEBBgEAfgABAkIBCUYD2WgIx4zQh2d5mUhVdmMUF1sU1BxMnkzLfQtZp+xXMVMEAgIhAncDKUYDJOS3eXtHZgOMu6wFHMw4QSScXuq66zLj1NXKlpGauEkEAARBAncFSEgBAgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJA//3oRRT",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, stored depths 1024, under its Merkle proofs",
+   "boc": "te6cckEBBgEAfgABAkIBCUYDHOBysJnYyv8I6/uo7FOM8sXeQK3b3QugIexB2/iE84oEAwIhAncDKUYDDMO6LmRD2tWbmHjnrzNYHgLK9ZSQjd36JnSekXHfqAUEAQRBAncFSEgBAgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJBABovnu3",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, stored depths 1025, under its Merkle proofs",
+   "boc": "te6cckEBBgEAfgABAkIBCUYDyayveAVgsP/24Rs1G64opzbrp3YCffA1D0GvZzS2DjsEBAIhAncDKUYDv7HSY89qW3D3f4KZ0a0mmMPX/Fg0frHUo27A6KVhnIkEAgRBAncFSEgBAgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJBAHuc9uC",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 2, stored depths 65535, under its Merkle proofs",
+   "boc": "te6cckEBAgEAKgBBAkIBSEgBAgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJ//9FiGQv",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, 560 bits",
+   "boc": "te6cckEBBgEAoAABAkIBCUYDPOCemlSBwJubBtS1NFegjqbO4dXj0CmnTlO9wIP0jDwACQIhAncDKUYDZn0M4WAd+/DSr9rOSOdxr+XT1RQqEtzuHM+1BYDfScUABgRhAncFaIwBAyEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGdDeJcw==",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 3, 552 bits",
+   "boc": "te6cckEBAgEASwABAkIBCIoBAyEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQD0kbOz",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, 568 bits",
+   "boc": "te6cckEBAgEATQABAkIBCI4BAyEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGIVC7yrk=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, 288 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEgBAyEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISFFBdLV",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, 832 bits",
+   "boc": "te6cckEBAgEAbgABAkIBCNABAyEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIauJLCQ=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, 561 bits",
+   "boc": "te6cckEBAgEATQABAkIBCI0BAyEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGQIt8E2A=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, 559 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIsBAyEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAHAhouaA==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3 with one reference",
+   "boc": "te6cckEBAwEAUAABAkIBCYwBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQACAgACAYMne9s=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3 under 1 Merkle proofs",
+   "boc": "te6cckEBBAEAdgAhAkIBKUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgJhAncDaIwBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQACYZmIeg==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3 under 3 Merkle proofs",
+   "boc": "te6cckEBCAEAygABAkIBCUYD9r13fuWj3YuEnumEdLYJ37cHai/RHU+iCC18ynH1dAQABQIBAncDCUYDCKx1vzgOW9HvydqHHmeu5qmT7ThUCkXe1P28sLq29IwABQQhAncFKUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgZhAncHaIwBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQAConW9Tg==",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 3, stored depths 1023, under its Merkle proofs",
+   "boc": "te6cckEBBgEAoAABAkIBCUYD6l2/zFTQRdtMu5WFArnvAs9faqUQqbEOgTKWRe+bv78EAgIhAncDKUYDJOS3eXtHZgOMu6wFHMw4QSScXuq66zLj1NXKlpGauEkEAARhAncFaIwBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoD/wP/JpiFLA==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, stored depths 1024, under its Merkle proofs",
+   "boc": "te6cckEBBgEAoAABAkIBCUYDIPi8nSYk6YAWjdbnbtGtPX/A2nFVXHrRNNJgzhEyiD0EAwIhAncDKUYDDMO6LmRD2tWbmHjnrzNYHgLK9ZSQjd36JnSekXHfqAUEAQRhAncFaIwBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoEAAQA5Q4b0Q==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, stored depths 1025, under its Merkle proofs",
+   "boc": "te6cckEBBgEAoAABAkIBCUYDC1OXeUR9e3D3Ena1U209uVrOmeSHEcKdCSVxratfM+cEBAIhAncDKUYDv7HSY89qW3D3f4KZ0a0mmMPX/Fg0frHUo27A6KVhnIkEAgRhAncFaIwBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoEAQQBDbinfg==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 3, stored depths 65535, under its Merkle proofs",
+   "boc": "te6cckEBAgEATABhAkIBaIwBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/////nqe3YQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, 288 bits",
+   "boc": "te6cckEBCAEAqAABAkIBCUYDHvfIfLzrqx5uzzWHI3wpoVlM7oeqTf88e7SrNin9AAcACgIhAncDKUYD9g9dMFAMNEauVOrSRJzZ8gqyRf6YJ3XJj/Mf+r/VNFIACARBAncFSUYDZn0M4WAd+/DSr9rOSOdxr+XT1RQqEtzuHM+1BYDfScUABgaBAncHiEgBBCEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUbJq78",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 4, 280 bits",
+   "boc": "te6cckEBAgEAKQABAkIBCEYBBCEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAFQx5mQ=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, 296 bits",
+   "boc": "te6cckEBAgEAKwABAkIBCEoBBCEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUhWCgY8w==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, 16 bits",
+   "boc": "te6cckEBAgEACAABAkIBCAQBBHLddJ8=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, 560 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIwBBCEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAUhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEh6J6Qng==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, 289 bits",
+   "boc": "te6cckEBAgEAKwABAkIBCEkBBCEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAVAWdglpA==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, 287 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEcBBCEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhAAVT8cGu",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4 with one reference",
+   "boc": "te6cckEBAwEALgABAkIBCUgBBAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAECAAIBfC0ZCQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4 under 2 Merkle proofs",
+   "boc": "te6cckEBBgEAfgAhAkIBKUYD/yAUaoqS11nfKQaVVJ0bmZl0RMorAo6WanBogmULC0EABAJBAncDSUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgSBAncFiEgBBAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAFGqd0c",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4 under 4 Merkle proofs",
+   "boc": "te6cckEBCgEA0gABAkIBCUYD1Y7MmumZvqVvHRJUe4Ou2bexa2gQOn8lhZSrOhD6EToABwIBAncDCUYDZ+NnlGC+TAdlxrmnlOIWskXMElYVzkW+C7jUNaC/xbsABgQhAncFKUYD/yAUaoqS11nfKQaVVJ0bmZl0RMorAo6WanBogmULC0EABAZBAncHSUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgiBAncJiEgBBAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJAAGOzF7Q",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 4, stored depths 1023, under its Merkle proofs",
+   "boc": "te6cckEBCAEAqAABAkIBCUYD0LHXAAMUIyeeHppX9PBcR/M1drcoUEtboSaTY3b4gLsEBAIhAncDKUYD2WgIx4zQh2d5mUhVdmMUF1sU1BxMnkzLfQtZp+xXMVMEAgRBAncFSUYDJOS3eXtHZgOMu6wFHMw4QSScXuq66zLj1NXKlpGauEkEAAaBAncHiEgBBAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJA/+1gSzh",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, stored depths 1024, under its Merkle proofs",
+   "boc": "te6cckEBCAEAqAABAkIBCUYD7H4w+kAzOulbAodPfTv3q2JFQvntzoKRQ5tryN7VcQEEBQIhAncDKUYDHOBysJnYyv8I6/uo7FOM8sXeQK3b3QugIexB2/iE84oEAwRBAncFSUYDDMO6LmRD2tWbmHjnrzNYHgLK9ZSQjd36JnSekXHfqAUEAQaBAncHiEgBBAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJBACiuR1/",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, stored depths 1025, under its Merkle proofs",
+   "boc": "te6cckEBCAEAqAABAkIBCUYD4i0o986xGX8zRsm3Wcrmb/7SkMn6yd8/XFkaLj0vn24EBgIhAncDKUYDyayveAVgsP/24Rs1G64opzbrp3YCffA1D0GvZzS2DjsEBARBAncFSUYDv7HSY89qW3D3f4KZ0a0mmMPX/Fg0frHUo27A6KVhnIkEAgaBAncHiEgBBAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJBAHIdpdY",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 4, stored depths 65535, under its Merkle proofs",
+   "boc": "te6cckEBAgEAKgCBAkIBiEgBBAkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJ///KqOBb",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, 560 bits",
+   "boc": "te6cckEBCAEAygABAkIBCUYDF3mOEAZLBPZCUkn7W+httQv6oOdypSPioqEgGfB8iGgACwIhAncDKUYDPOCemlSBwJubBtS1NFegjqbO4dXj0CmnTlO9wIP0jDwACQRBAncFSUYDZn0M4WAd+/DSr9rOSOdxr+XT1RQqEtzuHM+1BYDfScUABgahAncHqIwBBSEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGIEX2jQ==",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 5, 552 bits",
+   "boc": "te6cckEBAgEASwABAkIBCIoBBSEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQBuSeX7",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, 568 bits",
+   "boc": "te6cckEBAgEATQABAkIBCI4BBSEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGIUyyl54=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, 288 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEgBBSEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISGPcUUR",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, 832 bits",
+   "boc": "te6cckEBAgEAbgABAkIBCNABBSEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIexdKaA=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, 561 bits",
+   "boc": "te6cckEBAgEATQABAkIBCI0BBSEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGQJd1Tkc=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, 559 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIsBBSEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAH9ZgskQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5 with one reference",
+   "boc": "te6cckEBAwEAUAABAkIBCYwBBQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQACAgACAT4N7W0=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5 under 2 Merkle proofs",
+   "boc": "te6cckEBBgEAoAAhAkIBKUYDCKx1vzgOW9HvydqHHmeu5qmT7ThUCkXe1P28sLq29IwABQJBAncDSUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgShAncFqIwBBQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQACNcYFuQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5 under 4 Merkle proofs",
+   "boc": "te6cckEBCgEA9AABAkIBCUYDu2BBFBmgGiQrzK/xgA04lhk0sAYz82J60cKqNX6ktNkABwIBAncDCUYDuxB09cOxdT13trpUCrdQ1Jkos5EMiaJcKsmVaszjDCQABwQhAncFKUYDCKx1vzgOW9HvydqHHmeu5qmT7ThUCkXe1P28sLq29IwABQZBAncHSUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgihAncJqIwBBQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQAChbWd7w==",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 5, stored depths 1023, under its Merkle proofs",
+   "boc": "te6cckEBCAEAygABAkIBCUYDiELL5gNysC8c7W5LKmt3Y0G6Lq90FkDUACBIZ9DYxeUEBAIhAncDKUYD6l2/zFTQRdtMu5WFArnvAs9faqUQqbEOgTKWRe+bv78EAgRBAncFSUYDJOS3eXtHZgOMu6wFHMw4QSScXuq66zLj1NXKlpGauEkEAAahAncHqIwBBQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoD/wP/0It5BQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, stored depths 1024, under its Merkle proofs",
+   "boc": "te6cckEBCAEAygABAkIBCUYDMUKf9U08YBi452C3XUu1UwpoR9keMxj+VDCvLELWDKoEBQIhAncDKUYDIPi8nSYk6YAWjdbnbtGtPX/A2nFVXHrRNNJgzhEyiD0EAwRBAncFSUYDDMO6LmRD2tWbmHjnrzNYHgLK9ZSQjd36JnSekXHfqAUEAQahAncHqIwBBQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoEAAQAtO+7Zg==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, stored depths 1025, under its Merkle proofs",
+   "boc": "te6cckEBCAEAygABAkIBCUYDI/YyAAra+sFpp63dlvIpqsbjMgVcGFp9y5fVzdGsBggEBgIhAncDKUYDC1OXeUR9e3D3Ena1U209uVrOmeSHEcKdCSVxratfM+cEBARBAncFSUYDv7HSY89qW3D3f4KZ0a0mmMPX/Fg0frHUo27A6KVhnIkEAgahAncHqIwBBQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoEAQQB+lfNRQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 5, stored depths 65535, under its Merkle proofs",
+   "boc": "te6cckEBAgEATAChAkIBqIwBBQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/////hh8/dg==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, 560 bits",
+   "boc": "te6cckEBCAEAygABAkIBCUYDGW8lQjb3JqdSyQDeP4G9HpiB5KwIWzOym4iGQ3Ki+8YACwIhAncDKUYD9g9dMFAMNEauVOrSRJzZ8gqyRf6YJ3XJj/Mf+r/VNFIACARhAncFaUYDZn0M4WAd+/DSr9rOSOdxr+XT1RQqEtzuHM+1BYDfScUABgbBAncHyIwBBiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGBbLOFA==",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 6, 552 bits",
+   "boc": "te6cckEBAgEASwABAkIBCIoBBiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAjJc7f",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, 568 bits",
+   "boc": "te6cckEBAgEATQABAkIBCI4BBiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGIcI2OY0=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, 288 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEgBBiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISHqyw5z",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, 832 bits",
+   "boc": "te6cckEBAgEAbgABAkIBCNABBiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIbeM3WA=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, 561 bits",
+   "boc": "te6cckEBAgEATQABAkIBCI0BBiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAGQBnx4FQ=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, 559 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIsBBiEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEABQAH9uJbbw==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6 with one reference",
+   "boc": "te6cckEBAwEAUAABAkIBCYwBBgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQACAgACARgjULQ=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6 under 2 Merkle proofs",
+   "boc": "te6cckEBBgEAoAAhAkIBKUYD/yAUaoqS11nfKQaVVJ0bmZl0RMorAo6WanBogmULC0EABAJhAncDaUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgTBAncFyIwBBgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQACgexH0Q==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6 under 4 Merkle proofs",
+   "boc": "te6cckEBCgEA9AABAkIBCUYDTERzoYE3BR2bOAU+4XbZYJudAcoRrcC/vCIYnt6ZvrEABwIBAncDCUYDj1A3MANdjfRWwMKgHOycfF6kgCOIF9CaECZk/hQR8eIABwQhAncFKUYD/yAUaoqS11nfKQaVVJ0bmZl0RMorAo6WanBogmULC0EABAZhAncHaUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgjBAncJyIwBBgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoAAQACd30B6Q==",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 6, stored depths 1023, under its Merkle proofs",
+   "boc": "te6cckEBCAEAygABAkIBCUYDFXayaf/pdQaJ3guGaCRdOXboQ38NI1RjbuwWBCKN2wUEBAIhAncDKUYD2WgIx4zQh2d5mUhVdmMUF1sU1BxMnkzLfQtZp+xXMVMEAgRhAncFaUYDJOS3eXtHZgOMu6wFHMw4QSScXuq66zLj1NXKlpGauEkEAAbBAncHyIwBBgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoD/wP/J0YcgQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, stored depths 1024, under its Merkle proofs",
+   "boc": "te6cckEBCAEAygABAkIBCUYDvUAHLF/CFw+u5mKobPRXk+XLsjYRGxrfudPj21FkB8EEBQIhAncDKUYDHOBysJnYyv8I6/uo7FOM8sXeQK3b3QugIexB2/iE84oEAwRhAncFaUYDDMO6LmRD2tWbmHjnrzNYHgLK9ZSQjd36JnSekXHfqAUEAQbBAncHyIwBBgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoEAAQA9ZwnCw==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, stored depths 1025, under its Merkle proofs",
+   "boc": "te6cckEBCAEAygABAkIBCUYDUQoKV9qbLkZT7YYHkrtNOEEQHTfQm7ES5HzyPcgYN+EEBgIhAncDKUYDyayveAVgsP/24Rs1G64opzbrp3YCffA1D0GvZzS2DjsEBARhAncFaUYDv7HSY89qW3D3f4KZ0a0mmMPX/Fg0frHUo27A6KVhnIkEAgbBAncHyIwBBgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoEAQQBNjzLEg==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 6, stored depths 65535, under its Merkle proofs",
+   "boc": "te6cckEBAgEATADBAkIByIwBBgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/////ikP7fQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, 832 bits",
+   "boc": "te6cckEBCAEA7AABAkIBCUYDWxE91oJj0Cf4SiTpRpyz8Ouruo8x20JntZgG3oIrb/QADAIhAncDKUYDPOCemlSBwJubBtS1NFegjqbO4dXj0CmnTlO9wIP0jDwACQRhAncFaUYDZn0M4WAd+/DSr9rOSOdxr+XT1RQqEtzuHM+1BYDfScUABgbhAncH6NABByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAB6W7Q5c=",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 7, 824 bits",
+   "boc": "te6cckEBAgEAbQABAkIBCM4BByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYA6Cm1xQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, 840 bits",
+   "boc": "te6cckEBAgEAbwABAkIBCNIBByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAByGcssoZ",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, 560 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIwBByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEh2Vmsng==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, 1104 bits",
+   "boc": "te6cckEBAgEAkAABAkIBCBQBByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISG5NF6p",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, 833 bits",
+   "boc": "te6cckEBAgEAbwABAkIBCNEBByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAB0C5DJjz",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, 831 bits",
+   "boc": "te6cckEBAgEAbgABAkIBCM8BByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYABxEuI1Q=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7 with one reference",
+   "boc": "te6cckEBAwEAcgABAkIBCdABBwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwABAAIAAwIAAgH6O8nq",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7 under 2 Merkle proofs",
+   "boc": "te6cckEBBgEAwgAhAkIBKUYDCKx1vzgOW9HvydqHHmeu5qmT7ThUCkXe1P28sLq29IwABQJhAncDaUYD1655FwHn3bUa7v4PIO8Bjv2ROTp6kOl7wOJtkNPfmloAAgThAncF6NABBwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwABAAIAA1clAF4=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7 under 4 Merkle proofs",
+   "boc": "te6cckECCgEAARYAAQJCAQlGA/NLuyvh5LyTtD/leQrqThafAHN9dU4915lpaWFcgKD9AAcCAQJ3AwlGAxnpcZELgVc28aSGGLXECxzZX3HmnkElIaK9Dhjti+lmAAgEIQJ3BSlGAwisdb84DlvR78nahx5nruapk+04VApF3tT9vLC6tvSMAAUGYQJ3B2lGA9eueRcB5921Gu7+DyDvAY79kTk6epDpe8DibZDT35paAAII4QJ3CejQAQcJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsAAQACAAMZasm2",
+   "ton": true
+  },
+  {
+   "case": "pruned mask 7, stored depths 1023, under its Merkle proofs",
+   "boc": "te6cckEBCAEA7AABAkIBCUYD8tnEmJCzPsYtH29o3PVqEOQSQBNeZgBs7SUnZil3//UEBAIhAncDKUYD6l2/zFTQRdtMu5WFArnvAs9faqUQqbEOgTKWRe+bv78EAgRhAncFaUYDJOS3eXtHZgOMu6wFHMw4QSScXuq66zLj1NXKlpGauEkEAAbhAncH6NABBwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwP/A/8D/6l+quQ=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, stored depths 1024, under its Merkle proofs",
+   "boc": "te6cckEBCAEA7AABAkIBCUYDUizxkgbYDccpi4nOf/UVqSmCvx+08nxAFZOV7KnKMmAEBQIhAncDKUYDIPi8nSYk6YAWjdbnbtGtPX/A2nFVXHrRNNJgzhEyiD0EAwRhAncFaUYDDMO6LmRD2tWbmHjnrzNYHgLK9ZSQjd36JnSekXHfqAUEAQbhAncH6NABBwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwQABAAEAPRNqwI=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, stored depths 1025, under its Merkle proofs",
+   "boc": "te6cckEBCAEA7AABAkIBCUYDaIIzga/vb6sf/vQvJy/KZhJ1ASy8q6BhkDDznPBYbo4EBgIhAncDKUYDC1OXeUR9e3D3Ena1U209uVrOmeSHEcKdCSVxratfM+cEBARhAncFaUYDv7HSY89qW3D3f4KZ0a0mmMPX/Fg0frHUo27A6KVhnIkEAgbhAncH6NABBwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwQBBAEEAXQ9xCc=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 7, stored depths 65535, under its Merkle proofs",
+   "boc": "te6cckEBAgEAbgDhAkIB6NABBwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLC////////6napcs=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 8, 16 bits",
+   "boc": "te6cckEBAgEACAABAkIBCAQBCKISN9I=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 8, 8 bits",
+   "boc": "te6cckEBAgEABwABAkIBCAIB1Qt+oQ==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 8, 24 bits",
+   "boc": "te6cckEBAgEACQABAkIBCAYBCCGPeB/r",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 8, 288 bits",
+   "boc": "te6cckEBAgEAKgABAkIBCEgBCCEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISHJeEG8",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 8, 17 bits",
+   "boc": "te6cckEBAgEACQABAkIBCAUBCEDX4ZAa",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 8, 15 bits",
+   "boc": "te6cckEBAgEACAABAkIBCAMBCcj1rFQ=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 255, 832 bits",
+   "boc": "te6cckEBAgEAbgABAkIBCNAB/yEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAB81p11I=",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 255, 824 bits",
+   "boc": "te6cckEBAgEAbQABAkIBCM4B/yEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAtCN4oA==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 255, 840 bits",
+   "boc": "te6cckEBAgEAbwABAkIBCNIB/yEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAByGIamRh",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 255, 560 bits",
+   "boc": "te6cckEBAgEATAABAkIBCIwB/yEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhXLimXg==",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 255, 1104 bits",
+   "boc": "te6cckEBAgEAkAABAkIBCBQB/yEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAByEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISGjQkPs",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 255, 833 bits",
+   "boc": "te6cckEBAgEAbwABAkIBCNEB/yEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYAB0Ct1DaL",
+   "ton": false
+  },
+  {
+   "case": "pruned mask 255, 831 bits",
+   "boc": "te6cckEBAgEAbgABAkIBCM8B/yEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhIQAFAAYABxj2IEg=",
+   "ton": false
+  },
+  {
+   "case": "pruned, the 280-bit form (mask 1, one hash, no depth)",
+   "boc": "te6cckEBAgEAKQABAkIBCEYBAQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFAGB0N5I=",
+   "ton": false
+  },
+  {
+   "case": "pruned, the 280-bit form with byte 1 = 0",
+   "boc": "te6cckEBAgEAKQABAkIBCEYBBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUAAH7UITE=",
+   "ton": false
+  },
+  {
+   "case": "library, 264 bits, 0 references",
+   "boc": "te6cckEBAgEAJwABAkIBCEICBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBweI7WdV",
+   "ton": true
+  },
+  {
+   "case": "library, 264 bits, 1 references",
+   "boc": "te6cckEBAwEAKwABAkIBCUICBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcCAAIABpKCvQ==",
+   "ton": false
+  },
+  {
+   "case": "library, 264 bits, 2 references",
+   "boc": "te6cckEBBAEALwABAkIBCkICBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcDAgACAQACABoJ9PE=",
+   "ton": false
+  },
+  {
+   "case": "library, 256 bits, 0 references",
+   "boc": "te6cckEBAgEAJgABAkIBCEACBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHB6XaiWo=",
+   "ton": false
+  },
+  {
+   "case": "library, 272 bits, 0 references",
+   "boc": "te6cckEBAgEAKAABAkIBCEQCBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBweA/BChSw==",
+   "ton": false
+  },
+  {
+   "case": "library, 263 bits, 0 references",
+   "boc": "te6cckEBAgEAJwABAkIBCEECBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwf7cXrW",
+   "ton": false
+  },
+  {
+   "case": "library, 265 bits, 0 references",
+   "boc": "te6cckEBAgEAKAABAkIBCEMCBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwfAqe+L7w==",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof",
+   "boc": "te6cckEBBAEAMwABAkIBCUYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAQIBBgECAwMAAgSqatEc",
+   "ton": true
+  },
+  {
+   "case": "Merkle proof, wrong hash",
+   "boc": "te6cckEBBAEAMwABAkIBCUYDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAAQIBBgECAwMAAgR5hmv5",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof, wrong depth",
+   "boc": "te6cckEBBAEAMwABAkIBCUYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAgIBBgECAwMAAgQYBK+g",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof, no reference",
+   "boc": "te6cckEBAgEAKQABAkIBCEYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAASYN9v4=",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof, two references",
+   "boc": "te6cckEBBQEANwABAkIBCkYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAQMCAAIBAQYBAgMEAAIEWRT/5w==",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof, 272 bits",
+   "boc": "te6cckEBBAEAMgABAkIBCUQDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAgEGAQIDAwACBGr97tk=",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof, 279 bits",
+   "boc": "te6cckEBBAEAMwABAkIBCUUDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAQIBBgECAwMAAgSYyOHc",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof, 281 bits",
+   "boc": "te6cckEBBAEANAABAkIBCUcDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAcACAQYBAgMDAAIEcje+7g==",
+   "ton": false
+  },
+  {
+   "case": "Merkle proof, 288 bits",
+   "boc": "te6cckEBBAEANAABAkIBCUgDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAYACAQYBAgMDAAIEQAFcBg==",
+   "ton": false
+  },
+  {
+   "case": "Merkle update",
+   "boc": "te6cckEBBQEAWQABAkIBCooEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAADAgACCQEGAQIDBAACBILIHjs=",
+   "ton": true
+  },
+  {
+   "case": "Merkle update, wrong first hash",
+   "boc": "te6cckEBBQEAWQABAkIBCooEwoWzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAADAgACCQEGAQIDBAACBGaRYV4=",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, wrong second hash",
+   "boc": "te6cckEBBQEAWQABAkIBCooEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy9o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAADAgACCQEGAQIDBAACBMs+4to=",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, wrong first depth",
+   "boc": "te6cckEBBQEAWQABAkIBCooEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwAAAAADAgACCQEGAQIDBAACBN0U+mQ=",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, wrong second depth",
+   "boc": "te6cckEBBQEAWQABAkIBCooEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAEDAgACCQEGAQIDBAACBIM1kFw=",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, one reference",
+   "boc": "te6cckEBBAEAVQABAkIBCYoEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAACAQYBAgMDAAIE3qB5cg==",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, three references",
+   "boc": "te6cckEBBgEAXQABAkIBC4oEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAAEAwIAAgEAAgkBBgECAwUAAgStcAoD",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, 544 bits",
+   "boc": "te6cckEBBQEAWAABAkIBCogEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAMCAAIJAQYBAgMEAAIEqEiWFg==",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, 551 bits",
+   "boc": "te6cckEBBQEAWQABAkIBCokEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAAEDAgACCQEGAQIDBAACBEZbV3g=",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, 553 bits",
+   "boc": "te6cckEBBQEAWgABAkIBCosEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAADAAwIAAgkBBgECAwQAAgTnpsx6",
+   "ton": false
+  },
+  {
+   "case": "Merkle update, 560 bits",
+   "boc": "te6cckEBBQEAWgABAkIBCowEw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwy8o2Rc7Jd8cYX7ruiNsnveqD4gVonZ19rg1JKLXC3UZwABAACAAwIAAgkBBgECAwQAAgTBeVFW",
+   "ton": false
+  },
+  {
+   "case": "ordinary, 1023 bits",
+   "boc": "te6cckEBAgEAhgABAkIBAP9VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVb+j1Ok=",
+   "ton": true
+  },
+  {
+   "case": "ordinary cell with 5 references",
+   "boc": "te6cckEBBwEAOwABAkIBBUICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEGBQQDAgACDgACDQACDAACCwACCnJlXqo=",
+   "ton": false
+  },
+  {
+   "case": "exotic cell with 5 references",
+   "boc": "te6cckEBBwEAOwABAkIBDUICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEGBQQDAgACDgACDQACDAACCwACCrRNq2E=",
+   "ton": false
+  },
+  {
+   "case": "ordinary cell with 6 references",
+   "boc": "te6cckEBCAEAPwABAkIBBkICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEHBgUEAwIAAg8AAg4AAg0AAgwAAgsAAgpQcfUM",
+   "ton": false
+  },
+  {
+   "case": "exotic cell with 6 references",
+   "boc": "te6cckEBCAEAPwABAkIBDkICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEHBgUEAwIAAg8AAg4AAg0AAgwAAgsAAgoBahWr",
+   "ton": false
+  },
+  {
+   "case": "ordinary cell with 7 references",
+   "boc": "te6cckEBCQEAQwABAkIBB0ICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEIBwYFBAMCAAIQAAIPAAIOAAINAAIMAAILAAIKPJLueQ==",
+   "ton": false
+  },
+  {
+   "case": "exotic cell with 7 references",
+   "boc": "te6cckEBCQEAQwABAkIBD0ICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEIBwYFBAMCAAIQAAIPAAIOAAINAAIMAAILAAIK0FtqSQ==",
+   "ton": false
+  },
+  {
+   "case": "d1 with 7 references and the hashes bit (absent cell)",
+   "boc": "te6cckEBAgEAKQABAgEBFwIBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFz+sCw=",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 1 on an ordinary root",
+   "boc": "te6cckEBAQEAAwAgAgHEH/NS",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 2 on an ordinary root",
+   "boc": "te6cckEBAQEAAwBAAgEJZNJ0",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 4 on an ordinary root",
+   "boc": "te6cckEBAQEAAwCAAgGTk5A4",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 7 on an ordinary root",
+   "boc": "te6cckEBAQEAAwDgAgFe6LEe",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 1 on a library cell",
+   "boc": "te6cckEBAgEAJwABAkIBKEICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEyX7o5",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 2 on a library cell",
+   "boc": "te6cckEBAgEAJwABAkIBSEICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQHefx9I",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 4 on a library cell",
+   "boc": "te6cckEBAgEAJwABAkIBiEICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEGPlWr",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 7 on a library cell",
+   "boc": "te6cckEBAgEAJwABAkIB6EICAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQHqHvDa",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 1 on a Merkle proof",
+   "boc": "te6cckEBBAEAMwABAkIBKUYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAQIBBgECAwMAAgRTQF7X",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 2 on a Merkle proof",
+   "boc": "te6cckEBBAEAMwABAkIBSUYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAQIBBgECAwMAAgSpSSOO",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 4 on a Merkle proof",
+   "boc": "te6cckEBBAEAMwABAkIBiUYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAQIBBgECAwMAAgRdWtk8",
+   "ton": false
+  },
+  {
+   "case": "d1 level mask 7 on a Merkle proof",
+   "boc": "te6cckEBBAEAMwABAkIB6UYDw4WzVUErY7nmGMXbT4q4Nr38a4tp2kbiEmj6rWnCnwwAAQIBBgECAwMAAgSnU6Rl",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, all right",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFonu/Hg==",
+   "ton": true
+  },
+  {
+   "case": "stored hashes, cell 0 wrong representation hash",
+   "boc": "te6cckECBgEAAhYAEQLu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7gAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFqHinfw==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 0 wrong representation depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAFQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFFgqmVg==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 0 wrong level-0 hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFonu/Hg==",
+   "ton": true
+  },
+  {
+   "case": "stored hashes, cell 0 wrong level-0 depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFonu/Hg==",
+   "ton": true
+  },
+  {
+   "case": "stored hashes, cell 1 wrong representation hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7uAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFVY4tiw==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 1 wrong representation depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAQDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFSdjG6A==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 1 wrong level-0 hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFonu/Hg==",
+   "ton": true
+  },
+  {
+   "case": "stored hashes, cell 1 wrong level-0 depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFonu/Hg==",
+   "ton": true
+  },
+  {
+   "case": "stored hashes, cell 2 wrong representation hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf57u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u4ABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAF9cy+tQ==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 2 wrong representation depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwADA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFsAfOyg==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 2 wrong level-0 hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5Ru7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u1BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFZG2wgA==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 2 wrong level-0 depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIACAACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFAtMNxA==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 3 wrong representation hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9Gu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u4ABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFD9Aa+A==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 3 wrong representation depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAIBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFwEmyUg==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 3 wrong level-0 hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7iZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFaR81sQ==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 3 wrong level-0 depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABgAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFoy/Wzw==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 4 wrong representation hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7uAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFjjbYuA==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 4 wrong representation depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAEBeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAF/I5v7w==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 4 wrong level-0 hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFonu/Hg==",
+   "ton": true
+  },
+  {
+   "case": "stored hashes, cell 4 wrong level-0 depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFonu/Hg==",
+   "ton": true
+  },
+  {
+   "case": "stored hashes, cell 5 wrong representation hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoK7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u4ABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFxg7A1A==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 5 wrong representation depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAEBAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAF653LBA==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 5 wrong level-0 hash",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIzu7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7goKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABAAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFO+R6Fw==",
+   "ton": false
+  },
+  {
+   "case": "stored hashes, cell 5 wrong level-0 depth",
+   "boc": "te6cckECBgEAAhYAEQLEl8qRDLClRECuBCMqTZ9jIx7x7h+Ph2bSZYKbLAZ5aAAEQgEZRp0XXbO1VVE/oZDwcqCZ50emATWOy/srhR6S96N8AKmzAAMDUWtUADmDt6cKlJqhzXpt+JX2fjUBuoWwPxjzDpyUZ/kABwI5RlFrVAA5g7enCpSaoc16bfiV9n41AbqFsD8Y8w6clGf51BTUd7tO6IKjOh75x+L+iYQpBLxS8US4JQdCUiCLkoIABwACA83YaAJ1UmPx8B+BB+5xZgPek7s6S89NM+w0KTHfXtnoAAUDcgLN2GgCdVJj8fAfgQfucWYD3pO7OkvPTTPsNCkx317Z6CZqOyNhBnDSHwdq7W3GQamTMi3q232/vz+ITC5QG9GuYcTLqkxtDSRu1ACNQtmfsj5Fu/u6wwCVJfLFSmJX+osABQAGAAEBBQQQAo2f5zF/Bm3qyk/bbDExlOW7XSJp7PZy8a+fx5CiIFmRAAABeIwJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKRnTp95stbJ7nfZPceBv/SJEMPIIFyVVLevlt3CsoPlMABQAFAAABAwkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoABAAFjk3AaA==",
+   "ton": false
+  },
+  {
+   "case": "padding, right",
+   "boc": "te6cckEBAQEAAwAAAbCDvS7H",
+   "ton": true
+  },
+  {
+   "case": "padding, last byte 0x80 (no data bit)",
+   "boc": "te6cckEBAQEABAAAA6CAOdEJtw==",
+   "ton": false
+  },
+  {
+   "case": "padding, last byte 0x00",
+   "boc": "te6cckEBAQEAAwAAAQBKzzt1",
+   "ton": false
+  },
+  {
+   "case": "byte-aligned data written as padded with the tag in a new byte",
+   "boc": "te6cckEBAQEABAAAA6WAkigh6g==",
+   "ton": false
+  },
+  {
+   "case": "tree, generic, CRC",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMCAAIzaGO/yg==",
+   "ton": true
+  },
+  {
+   "case": "tree, generic, no CRC",
+   "boc": "te6ccgEBAwEADQACBAECAQIBAgMCAAIz",
+   "ton": true
+  },
+  {
+   "case": "tree, index",
+   "boc": "te6ccsEBAwEADQAGCg0CBAECAQIBAgMCAAIzbE/aqg==",
+   "ton": true
+  },
+  {
+   "case": "tree, index and cache bits",
+   "boc": "te6ccuEBAwEADQAMFBsCBAECAQIBAgMCAAIzAhZn5g==",
+   "ton": true
+  },
+  {
+   "case": "tree, cache bits without index",
+   "boc": "te6ccmEBAwEADQACBAECAQIBAgMCAAIz7qKoPg==",
+   "ton": false
+  },
+  {
+   "case": "tree, magic 68ff65f3 (index)",
+   "boc": "aP9l8wEBAwEADQYKDQIEAQIBAgECAwIAAjM=",
+   "ton": true
+  },
+  {
+   "case": "tree, magic acc3a728 (index, CRC)",
+   "boc": "rMOnKAEBAwEADQYKDQIEAQIBAgECAwIAAjM00psd",
+   "ton": true
+  },
+  {
+   "case": "tree, bad magic",
+   "boc": "te6ccwEBAwEADQYKDQIEAQIBAgECAwIAAjM=",
+   "ton": false
+  },
+  {
+   "case": "tree, reference size 0",
+   "boc": "te6cckABDQIEAQIBAgECAwIAAjNG98te",
+   "ton": false
+  },
+  {
+   "case": "tree, reference size 1",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMCAAIzaGO/yg==",
+   "ton": true
+  },
+  {
+   "case": "tree, reference size 2",
+   "boc": "te6cckIBAAMAAQAAEAAAAgQBAgABAAIBAgMAAgACM6HFBDo=",
+   "ton": true
+  },
+  {
+   "case": "tree, reference size 4",
+   "boc": "te6cckQBAAAAAwAAAAEAAAAAFgAAAAACBAECAAAAAQAAAAIBAgMAAAACAAIzW7sB2A==",
+   "ton": true
+  },
+  {
+   "case": "tree, reference size 5",
+   "boc": "te6cckUBAAAAAAMAAAAAAQAAAAAAGQAAAAAAAgQBAgAAAAABAAAAAAIBAgMAAAAAAgACM2tdwYg=",
+   "ton": false
+  },
+  {
+   "case": "tree, reference size 7",
+   "boc": "te6cckcBAAAAAAAAAwAAAAAAAAEAAAAAAAAAHwAAAAAAAAACBAECAAAAAAAAAQAAAAAAAAIBAgMAAAAAAAACAAIzcmLcmQ==",
+   "ton": false
+  },
+  {
+   "case": "tree, offset size 0",
+   "boc": "te6cckEAAwEAAAIEAQIBAgECAwIAAjNLqFa1",
+   "ton": false
+  },
+  {
+   "case": "tree, offset size 1",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMCAAIzaGO/yg==",
+   "ton": true
+  },
+  {
+   "case": "tree, offset size 2",
+   "boc": "te6cckECAwEAAA0AAgQBAgECAQIDAgACM5stP6Q=",
+   "ton": true
+  },
+  {
+   "case": "tree, offset size 8",
+   "boc": "te6cckEIAwEAAAAAAAAAAA0AAgQBAgECAQIDAgACMw1B/Rs=",
+   "ton": true
+  },
+  {
+   "case": "tree, offset size 9",
+   "boc": "te6cckEJAwEAAAAAAAAAAAANAAIEAQIBAgECAwIAAjOgYiP3",
+   "ton": false
+  },
+  {
+   "case": "tree, cells 0",
+   "boc": "te6cckEBAAEADQACBAECAQIBAgMCAAIzFWUE2w==",
+   "ton": false
+  },
+  {
+   "case": "tree, cells one more",
+   "boc": "te6cckEBBAEADQACBAECAQIBAgMCAAIzuW2g5g==",
+   "ton": false
+  },
+  {
+   "case": "tree, cells one fewer",
+   "boc": "te6cckEBAgEADQACBAECAQIBAgMCAAIzQ2HWxQ==",
+   "ton": false
+  },
+  {
+   "case": "tree, roots 0",
+   "boc": "te6cckEBAwAADQIEAQIBAgECAwIAAjPjlifi",
+   "ton": false
+  },
+  {
+   "case": "tree, roots 2",
+   "boc": "te6cckEBAwIADQABAgQBAgECAQIDAgACM7rksMs=",
+   "ton": false
+  },
+  {
+   "case": "tree, absent 1",
+   "boc": "te6cckEBAwEBDQACBAECAQIBAgMCAAIzlm6zOA==",
+   "ton": true
+  },
+  {
+   "case": "tree, absent = cells",
+   "boc": "te6cckEBAwEDDQACBAECAQIBAgMCAAIzmwNH2Q==",
+   "ton": true
+  },
+  {
+   "case": "tree, absent > cells",
+   "boc": "te6cckEBAwEEDQACBAECAQIBAgMCAAIzg8+7DA==",
+   "ton": false
+  },
+  {
+   "case": "tree, data size one more",
+   "boc": "te6cckEBAwEADgACBAECAQIBAgMCAAIza2QsYg==",
+   "ton": false
+  },
+  {
+   "case": "tree, data size one less",
+   "boc": "te6cckEBAwEADAACBAECAQIBAgMCAAIzaZ4xrQ==",
+   "ton": false
+  },
+  {
+   "case": "tree, data size one more, a byte after the cells",
+   "boc": "te6cckEBAwEADgACBAECAQIBAgMCAAIzAGxHUKo=",
+   "ton": false
+  },
+  {
+   "case": "tree, trailing byte after the BoC, CRC over all",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMCAAIzAJ8nqLk=",
+   "ton": true
+  },
+  {
+   "case": "tree, trailing byte after the BoC, no CRC",
+   "boc": "te6ccgEBAwEADQACBAECAQIBAgMCAAIzAA==",
+   "ton": true
+  },
+  {
+   "case": "tree, bad CRC",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMCAAIzaWO/yg==",
+   "ton": false
+  },
+  {
+   "case": "tree, root index 1",
+   "boc": "te6cckEBAwEADQECBAECAQIBAgMCAAIzLja4ng==",
+   "ton": true
+  },
+  {
+   "case": "tree, root index = cells",
+   "boc": "te6cckEBAwEADQMCBAECAQIBAgMCAAIzopy2Ng==",
+   "ton": false
+  },
+  {
+   "case": "tree, a reference to its own index",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMBAAIzUeqdqA==",
+   "ton": false
+  },
+  {
+   "case": "tree, a reference to a lower index",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMAAAIz6UDYdQ==",
+   "ton": false
+  },
+  {
+   "case": "tree, a reference past the last cell",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMDAAIz0Mn6Fw==",
+   "ton": false
+  },
+  {
+   "case": "tree, index entry past the data",
+   "boc": "te6ccsEBAwEADQAGChICBAECAQIBAgMCAAIzyC3o+g==",
+   "ton": false
+  },
+  {
+   "case": "tree, index entries out of order",
+   "boc": "te6ccsEBAwEADQAJCg0CBAECAQIBAgMCAAIzU6zD9g==",
+   "ton": false
+  },
+  {
+   "case": "tree, index leaving one unused byte in a cell",
+   "boc": "te6ccsEBAwEADgAHCw4CBAECAQIAAQIDAgACMyHtxxM=",
+   "ton": false
+  },
+  {
+   "case": "tree, index with unused bytes after the last cell",
+   "boc": "te6ccsEBAwEADwAGCg0CBAECAQIBAgMCAAIzAACIlIzT",
+   "ton": true
+  },
+  {
+   "case": "tree, cache bit set on a cell named once",
+   "boc": "te6ccuEBAwEADQAMFRsCBAECAQIBAgMCAAIzA+vpgQ==",
+   "ton": false
+  },
+  {
+   "case": "tree, cache bit clear on the cell named twice",
+   "boc": "te6ccuEBAwEADQAMFBoCBAECAQIBAgMCAAIzRENgsg==",
+   "ton": false
+  },
+  {
+   "case": "tree, header flags bits 3-4 set",
+   "boc": "te6cclkBAwEADQACBAECAQIBAgMCAAIzskhHDw==",
+   "ton": true
+  },
+  {
+   "case": "tree, cut after the header",
+   "boc": "te6cckEBAwEADQAC",
+   "ton": false
+  },
+  {
+   "case": "tree, cut by one byte",
+   "boc": "te6cckEBAwEADQACBAECAQIBAgMCAAIzaGO/",
+   "ton": false
+  },
+  {
+   "case": "tree, an unreachable cell",
+   "boc": "te6cckEBBAEAEAACBAECAQIBAgMCAAIzAAJVB5Pa+Q==",
+   "ton": true
+  },
+  {
+   "case": "tree, a cell written twice",
+   "boc": "te6cckEBBAEAEAACBAECAQMBAgMDAAIzAAIzhDzPQQ==",
+   "ton": true
+  },
+  {
+   "case": "5 bytes",
+   "boc": "te6cckE=",
+   "ton": false
+  },
+  {
+   "case": "root, a pruned branch of mask 1",
+   "boc": "te6cckEBAQEAJgAoSAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAAaVHf9M=",
+   "ton": false
+  },
+  {
+   "case": "root, an ordinary cell over a pruned branch of mask 2",
+   "boc": "te6cckEBAgEAKgBBAgEBSEgBAgEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAAFhCO70",
+   "ton": false
+  },
+  {
+   "case": "depth 1024",
+   "boc": "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",
+   "ton": true
+  },
+  {
+   "case": "depth 1025",
+   "boc": "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",
+   "ton": false
+  }
+ ]
+}

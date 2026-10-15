@@ -70,20 +70,18 @@ def _cell_count(root: Cell) -> int:
 
 def root_of(boc: object) -> Cell | Refusal:
     """The one root of a bag of cells written in padded standard base64, or the refusal. A text that is not that base64
-    in its canonical form (RFC 4648 §3.5) is tvm/boc-malformed before its size is read; the bag holds at most 8 KiB, 512
-    cells and depth 32."""
+    in its canonical form (RFC 4648 §3.5) is tvm/boc-malformed before its size is read; bytes TON's deserialization
+    refuses (parse_boc) are tvm/boc-malformed; the bag holds at most 8 KiB, 512 cells and depth 32. An exotic cell TON
+    accepts is refused only where a read parses it."""
     data = None if boc == "" else b64_decode(boc)
     if data is None:
         return Refusal("tvm/boc-malformed")
     if len(data) > MAX_BOC_BYTES:
         return Refusal("tvm/boc-too-large")
     try:
-        roots = parse_boc(data)
+        root = parse_boc(data)
     except Malformed:
         return Refusal("tvm/boc-malformed")
-    if len(roots) != 1:
-        return Refusal("tvm/boc-malformed")
-    root = roots[0]
     if root.depth > MAX_DEPTH or _cell_count(root) > MAX_CELLS:
         return Refusal("tvm/boc-too-large")
     return root

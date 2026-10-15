@@ -357,91 +357,135 @@ def load_dict(s: Slice, key_bits: int, value: Callable[[Slice], object]) -> Cell
 # ── bags of cells ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-class _Bytes:
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-        self.at = 0
-
-    def take(self, n: int) -> bytes:
-        if n < 0 or self.at + n > len(self.data):
-            raise Malformed
-        self.at += n
-        return self.data[self.at - n : self.at]
-
-    def uint(self, n: int) -> int:
-        return int.from_bytes(self.take(n), "big")
-
-
 def _hashes_count(level_mask: int) -> int:
     return bin(level_mask & 7).count("1") + 1
 
 
-def parse_boc(src: bytes) -> list[Cell]:
-    """The root cells of a bag of cells in any of its three magics, an exotic cell among them as an exotic Cell. Raises
-    Malformed for anything else, for a failed CRC-32C, and for a cell that is not in its type's form."""
-    r = _Bytes(src)
-    magic = r.uint(4)
-    if magic in (_BOC_MAGIC_IDX, _BOC_MAGIC_IDX_CRC):
-        size, off_bytes = r.uint(1), r.uint(1)
-        cells, _roots, _absent = r.uint(size), r.uint(size), r.uint(size)
-        total = r.uint(off_bytes)
-        r.take(cells * off_bytes)
-        data = r.take(total)
-        roots = [0]
-        if magic == _BOC_MAGIC_IDX_CRC and crc32c(src[:-4]) != r.take(4):
-            raise Malformed
-    elif magic == _BOC_MAGIC:
-        flags = r.uint(1)
-        has_idx, has_crc = flags >> 7, (flags >> 6) & 1
-        size = flags & 7
-        off_bytes = r.uint(1)
-        cells, root_count, _absent = r.uint(size), r.uint(size), r.uint(size)
-        total = r.uint(off_bytes)
-        roots = []
-        for _ in range(root_count):
-            roots.append(r.uint(size))
-        if has_idx:
-            r.take(cells * off_bytes)
-        data = r.take(total)
-        if has_crc and crc32c(src[:-4]) != r.take(4):
-            raise Malformed
-    else:
+def _cell_size(d1: int, d2: int, ref_size: int) -> int:
+    """A serialized cell's byte length from its two descriptor bytes (CellSerializationInfo::init)."""
+    stored = _hashes_count(d1 >> 5) if d1 & 16 else 0
+    return 2 + stored * 34 + (d2 >> 1) + (d2 & 1) + (d1 & 7) * ref_size
+
+
+def parse_boc(src: bytes) -> Cell:
+    """The one root of a bag of cells as TON deserializes it (ton-blockchain/ton crypto/vm/boc.cpp,
+    std_boc_deserialize); Malformed where TON refuses the bytes:
+    - the header (parse_serialized_header): one of the three magics, cache bits only with an index, a reference size
+      of 1 to 4 bytes and an offset size of 1 to 8, at least one cell, exactly one root, no more absent cells than
+      cells, a data size within the cell count's bounds, and the bytes holding all of it;
+    - with a CRC-32C, the input's last four bytes are the CRC-32C of every byte before them;
+    - each cell's bytes: at most four references, each to a later cell, the bytes read exactly (the cells fill the
+      data, or each index entry bounds one cell with no unused space), a partial last data byte holding a data bit
+      before its completion tag, and with cache bits, each cell's flag set exactly when two or more references (the
+      root's counted) name it;
+    - each cell as Cell creates it, TON's CellChecker; the level mask its first byte gives equal to the one computed;
+      and where it stores hashes and depths, each one equal to the computed one;
+    - the root's level 0."""
+
+    def at(offset: int, n: int) -> int:
+        return int.from_bytes(src[offset : offset + n], "big")
+
+    if len(src) < 6:
         raise Malformed
-
-    d = _Bytes(data)
-    raw: list[tuple[int, int, list[int], bool]] = []
-    for _ in range(cells):
-        d1, d2 = d.uint(1), d.uint(1)
-        if d1 & 16:
-            d.take(_hashes_count(d1 >> 5) * 34)
-        size_bytes = math.ceil(d2 / 2)
-        chunk = d.take(size_bytes)
-        value, length = int.from_bytes(chunk, "big"), 8 * size_bytes
-        if d2 % 2:
-            if value == 0:
+    magic = at(0, 4)
+    if magic not in (_BOC_MAGIC, _BOC_MAGIC_IDX, _BOC_MAGIC_IDX_CRC):
+        raise Malformed
+    generic = magic == _BOC_MAGIC
+    flags = src[4]
+    indexed = not generic or flags & 0x80 != 0
+    crc = flags & 0x40 != 0 if generic else magic == _BOC_MAGIC_IDX_CRC
+    cache_bits = generic and flags & 0x20 != 0
+    ref_size = flags & 7
+    off_size = src[5]
+    if (cache_bits and not indexed) or not 1 <= ref_size <= 4 or not 1 <= off_size <= 8:
+        raise Malformed
+    roots_at = 6 + 3 * ref_size + off_size
+    if len(src) < roots_at:
+        raise Malformed
+    # TON reads the three counts into an int, so a count of 2^31 or more is negative there.
+    cells, roots, absent = at(6, ref_size), at(6 + ref_size, ref_size), at(6 + 2 * ref_size, ref_size)
+    data_size = at(6 + 3 * ref_size, off_size)
+    if cells < 1 or cells >= 2**31 or roots != 1 or absent > cells:
+        raise Malformed
+    if data_size > cells * 1024 or data_size < cells * (2 + ref_size) - ref_size:
+        raise Malformed
+    index_at = roots_at + (ref_size if generic else 0)
+    data_at = index_at + (cells * off_size if indexed else 0)
+    if data_at + data_size + (4 if crc else 0) > len(src):
+        raise Malformed
+    if crc and crc32c(src[:-4]) != src[-4:]:
+        raise Malformed
+    root_index = at(roots_at, ref_size) if generic else 0
+    if root_index >= cells:
+        raise Malformed
+    data = src[data_at : data_at + data_size]
+    spans: list[tuple[int, int]] = []
+    start = 0
+    if indexed:
+        for i in range(cells):
+            raw = at(index_at + i * off_size, off_size)
+            end = raw // 2 if cache_bits else raw
+            if start > end or end > data_size:
                 raise Malformed
-            trailing = (value & -value).bit_length()
-            value >>= trailing
-            length -= trailing
-        raw.append((value, length, [d.uint(size) for _ in range(d1 % 8)], d1 & 8 != 0))
-
-    built: list[Cell | None] = [None] * len(raw)
-    for i in range(len(raw) - 1, -1, -1):
-        value, length, refs, exotic = raw[i]
-        children = []
-        for ref in refs:
-            child = built[ref] if 0 <= ref < len(built) else None
-            if child is None:
+            spans.append((start, end))
+            start = end
+    else:
+        for _ in range(cells):
+            if len(data) - start < 2 or data[start] & 7 > 4:
                 raise Malformed
-            children.append(child)
-        built[i] = Cell(value, length, tuple(children), exotic)
-    out = []
-    for root in roots:
-        cell = built[root] if 0 <= root < len(built) else None
-        if cell is None:
+            size = _cell_size(data[start], data[start + 1], ref_size)
+            if len(data) - start < size:
+                raise Malformed
+            spans.append((start, start + size))
+            start += size
+        if start != data_size:
             raise Malformed
-        out.append(cell)
-    return out
+
+    built: list[Cell] = [Cell(0, 0)] * cells
+    named = [0] * cells
+    named[root_index] = 1
+    for i in range(cells - 1, -1, -1):
+        s = data[spans[i][0] : spans[i][1]]
+        if len(s) < 2:
+            raise Malformed
+        d1, d2 = s[0], s[1]
+        if d1 & 7 > 4 or _cell_size(d1, d2, ref_size) != len(s):
+            raise Malformed
+        mask = d1 >> 5
+        stored = _hashes_count(mask) if d1 & 16 else 0
+        bits_at = 2 + stored * 34
+        refs_at = bits_at + (d2 >> 1) + (d2 & 1)
+        refs: list[Cell] = []
+        for k in range(d1 & 7):
+            r = int.from_bytes(s[refs_at + k * ref_size : refs_at + (k + 1) * ref_size], "big")
+            if r <= i or r >= cells:
+                raise Malformed
+            refs.append(built[r])
+            named[r] = min(named[r] + 1, 2)
+        value, length = int.from_bytes(s[bits_at:refs_at], "big"), 8 * (refs_at - bits_at)
+        if d2 & 1:
+            last = s[refs_at - 1]
+            if last & 0x7F == 0:
+                raise Malformed
+            tag = (last & -last).bit_length()
+            value >>= tag
+            length -= tag
+        cell = Cell(value, length, tuple(refs), d1 & 8 != 0)
+        if cell.level_mask != mask:
+            raise Malformed
+        if stored:
+            hashes = [s[2 + 32 * k : 34 + 32 * k] for k in range(stored)]
+            depths = [int.from_bytes(s[2 + 32 * stored + 2 * k : 4 + 32 * stored + 2 * k], "big") for k in range(stored)]
+            levels = [level for level in range(4) if level == 0 or mask >> (level - 1) & 1]
+            if [(cell.hashes[level], cell.depths[level]) for level in levels] != list(zip(hashes, depths)):
+                raise Malformed
+        built[i] = cell
+    if cache_bits and any((named[i] > 1) != (at(index_at + i * off_size, off_size) % 2 == 1) for i in range(cells)):
+        raise Malformed
+    root = built[root_index]
+    if root.level_mask != 0:
+        raise Malformed
+    return root
 
 
 def _topological(root: Cell) -> list[tuple[Cell, list[int]]]:
