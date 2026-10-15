@@ -26,6 +26,7 @@ from integraledger_terms import (
     transact,
 )
 from integraledger_terms import _gate
+from integraledger_terms.bindings._codec import b64u_decode, b64u_encode
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
 
@@ -227,6 +228,28 @@ def test_mpp_charge_tempo_memo_a_transaction_for_another_chain_is_refused(row: d
     wire = tempo_wire([call], row["transactionChainId"], valid_before)
     other = {**copy.deepcopy(presented), "payload": {"type": "transaction", "signature": wire}}
     assert MPP_CHARGE_TEMPO_MEMO.bound(other) == Refusal(row["expect"])
+
+
+@pytest.mark.parametrize("row", MEMO_REFUSALS, ids=[f"signed for {r['transactionChainId']}" for r in MEMO_REFUSALS])
+def test_mpp_charge_tempo_memo_a_challenge_naming_no_chain_is_paid_on_42431(row: dict[str, Any]) -> None:
+    """The vector file's chain rows, under C_T without methodDetails.chainId: draft-tempo-charge-00 has the payer sign
+    for 42431 where the challenge names no chain. MV7's wire T, signed for 42431, binds H, and the same T signed for
+    the row's transactionChainId is the row's refusal."""
+    presented = next(r for r in MEMO["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
+    raw = b64u_decode(presented["challenge"]["request"])
+    assert raw is not None
+    request = json.loads(raw)
+    del request["methodDetails"]["chainId"]
+    challenge = {**presented["challenge"], "request": b64u_encode(json.dumps(request, separators=(",", ":")).encode())}
+    call = {"to": MEMO["fixed"]["pathUSD"], "data": MEMO["MV7"]["expectCalldata"]}
+    valid_before = int(datetime.fromisoformat(presented["challenge"]["expires"]).timestamp())
+
+    def signed_for(chain_id: int) -> dict[str, Any]:
+        wire = tempo_wire([call], chain_id, valid_before)
+        return {**copy.deepcopy(presented), "challenge": challenge, "payload": {"type": "transaction", "signature": wire}}
+
+    assert MPP_CHARGE_TEMPO_MEMO.bound(signed_for(42431)) == H
+    assert MPP_CHARGE_TEMPO_MEMO.bound(signed_for(row["transactionChainId"])) == Refusal(row["expect"])
 
 
 MV13 = PUSH["MV13"]
