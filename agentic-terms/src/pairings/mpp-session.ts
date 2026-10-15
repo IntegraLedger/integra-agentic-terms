@@ -3,7 +3,7 @@
  * open call the signer broadcasts, or a signed Tempo transaction), then the first voucher, whose channel id depends on
  * the funding. A subscription is one step: the root key signs the key authorization's digest.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { Hex } from "@integraledger/lcp/evm";
 import type { SessionUnsigned } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Choose, Chosen, Inputs, Next, Presented, Read, Signature, SigningRequest } from "../types.js";

@@ -7,7 +7,7 @@
  * legal context is signed under the held hash. Both are served through the binding's `buildWithin`. `recordCharge`
  * records the server's cumulative charge, bounded by what was signed.
  */
-import { fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
+import { fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp/core";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
 import { fromBase64, fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";

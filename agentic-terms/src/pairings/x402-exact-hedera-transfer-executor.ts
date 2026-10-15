@@ -3,7 +3,7 @@
  * `validBefore`, handed to the buyer's wallet or executor tooling as `hedera-executor`, which answers
  * `{payer, executor, authorization}`.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { Signature } from "../types.js";
 import { isObject, refuse } from "./common.js";
 import { HEDERA_ENTITY } from "./x402-exact-hedera.js";

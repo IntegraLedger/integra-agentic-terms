@@ -3,7 +3,7 @@
  * built, and the payment the list of answers completes, with the payment
  * identifier appended where the challenge advertises it.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { BatchUnsigned } from "@integraledger/lcp/x402-batch-settlement";
 import type { Chosen, Inputs, Presented, Signature, SigningRequest } from "../types.js";

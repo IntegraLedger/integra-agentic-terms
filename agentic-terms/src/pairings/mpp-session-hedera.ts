@@ -5,7 +5,7 @@
  * blockNumber, logs}`, the opening's landed receipt, whose escrow log carries the channel's salt that `bound` reads. The
  * payment sent is the credential without the landed receipt. The signer moves the deposit, so a decline keeps it.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { MppCredential } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Chosen, Inputs, Presented, Signature } from "../types.js";
 import { bigintOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";

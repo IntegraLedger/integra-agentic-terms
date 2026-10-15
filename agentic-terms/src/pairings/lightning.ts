@@ -2,7 +2,7 @@
  * The buyer pieces for Lightning: the buyer's node pays exactly the invoice the build names, and its answer is the
  * payment preimage, as the build's `complete` takes it. The node moves the payment, so a decline keeps it.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import { decodeBolt11, type LnMppUnsigned, type LnUnsigned } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature } from "../types.js";

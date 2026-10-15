@@ -3,7 +3,7 @@
  * buyer's Stacks wallet as `stacks-contract-call`; the wallet answers the signed transaction's consensus bytes as `0x`
  * hex.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { Signature } from "../types.js";
 import { bytesOf, refuse } from "./common.js";
 import { completeWith, mppRailPiece } from "./mpp-rails.js";

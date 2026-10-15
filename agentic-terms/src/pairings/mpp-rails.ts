@@ -4,7 +4,7 @@
  * the buyer's own inputs beside it as JSON; the build's request exactly as built; and the credential the signer's
  * answer completes.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import { network, type MppChallenge } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Choose, Chosen, Inputs, Next, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { accountOf, bytesOf, isObject, isRefusal, refuse } from "./common.js";

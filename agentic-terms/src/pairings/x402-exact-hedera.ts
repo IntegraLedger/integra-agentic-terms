@@ -3,7 +3,7 @@
  * as `hedera-body`, and the payment whose `payload.transaction` is the signed transaction in base64. The node, the
  * valid start and the maximum fee are the buyer's; the signer answers `{publicKey, signature, type}`.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Inputs, Signature } from "../types.js";
 import { bigintOf, bytesOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";

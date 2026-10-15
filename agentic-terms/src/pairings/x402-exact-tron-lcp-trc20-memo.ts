@@ -4,7 +4,7 @@
  * FullNode; the transaction's `timestamp` is the gate's clock in milliseconds. The payer's key answers its 65-byte
  * secp256k1 signature `r ‖ s ‖ v` over the id as `0x` hex.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { TronUnsigned } from "@integraledger/lcp/tron";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature } from "../types.js";
 import { bigintOf, bytesOf, choiceOf, inputsOf, isObject, isRefusal, refuse, x402Chosen } from "./common.js";

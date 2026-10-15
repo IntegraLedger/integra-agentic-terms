@@ -9,7 +9,7 @@
  * - `mcp:1`: `{server, name, arguments?, meta?}`, `server` the MCP server's URI as the buyer's own configuration spells
  *   it, `name` and `arguments` the `tools/call` params, `meta` its `params._meta`.
  */
-import { canonicalJson, hash, type Json, type Refusal } from "@integraledger/lcp";
+import { canonicalJson, hash, type Json, type Refusal } from "@integraledger/lcp/core";
 import { decodeBolt11, invoiceH } from "@integraledger/lcp/lightning";
 import { bytesOf, isObject, isRefusal, refuse } from "./common.js";
 

@@ -2,7 +2,7 @@
  * The buyer piece for `ack/payment-request`: ACK defines no payer signature, so the gate confirms only. The option to
  * pay is the first of the signed request's payment options, in order, whose `network` is the account's CAIP-2.
  */
-import type { Json } from "@integraledger/lcp";
+import type { Json } from "@integraledger/lcp/core";
 import type { Inputs, Read } from "../types.js";
 import { accountOf, isObject, refuse } from "./common.js";
 import { confirmOnlyPiece } from "./protocol-groups.js";

@@ -2,7 +2,7 @@
  * What the protocol-group pieces (card, AP2, UCP, ACP, ACK) share: the buyer's CAIP-10 account, which names the buyer,
  * the object choice revived from `Chosen`, and the piece of a pairing whose build has nothing for the buyer to sign.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, SigningRequest } from "../types.js";
 import { accountOf, choiceOf, isRefusal, refuse } from "./common.js";
 

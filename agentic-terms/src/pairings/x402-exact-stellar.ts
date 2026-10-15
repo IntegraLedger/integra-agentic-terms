@@ -2,7 +2,7 @@
  * The buyer piece for `x402/exact/stellar`: the Soroban authorization preimage for the buyer's simulated `transfer`,
  * signed by the payer as `stellar-auth`, and the payment whose `payload.transaction` is the signed transaction's XDR.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Inputs } from "../types.js";
 import { inputsOf } from "./common.js";

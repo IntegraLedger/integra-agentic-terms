@@ -7,7 +7,7 @@
  * `chosen` passed to `atr_agree`, or to `atr_finish` for a pairing with a channel: one with any member changed, added or
  * removed, or one another process sealed, is not used.
  */
-import type { Json } from "@integraledger/lcp";
+import type { Json } from "@integraledger/lcp/core";
 
 /** A JSON object: its members by name. */
 export type HoldJson = { [member: string]: Json };

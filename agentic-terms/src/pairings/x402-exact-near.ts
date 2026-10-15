@@ -3,7 +3,7 @@
  * `ft_transfer` carries the ATR hash in its memo. The buyer supplies its key and the key's nonce and the final block
  * height from its RPC; the key answers `{keyType, bytes}`, with the 64- or 65-byte signature as `0x` hex.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { NearUnsigned } from "@integraledger/lcp/near";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature } from "../types.js";
 import { bigintOf, bytesOf, choiceOf, inputsOf, isObject, isRefusal, refuse, x402Chosen } from "./common.js";

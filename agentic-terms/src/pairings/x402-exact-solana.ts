@@ -3,7 +3,7 @@
  * payer as `solana-message`. The recent blockhash is the option's `extra.recentBlockhash` when it is a base58 key of 32
  * bytes, else the buyer's; the mint's decimals and token program are the buyer's reads.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import { isKey } from "@integraledger/lcp/svm";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Inputs } from "../types.js";

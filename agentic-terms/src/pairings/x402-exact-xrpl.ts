@@ -4,7 +4,7 @@
  * the payment.
  * `Fee`, `Sequence` (or `TicketSequence`) and `LastLedgerSequence` are the buyer's reads.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Inputs, Signature } from "../types.js";
 import { inputsOf, refuse } from "./common.js";

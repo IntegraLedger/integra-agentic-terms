@@ -2,8 +2,8 @@
  * The buyer pieces shared by MPP's pairings: the first challenge, in document order, that offers the pairing on the
  * signer's chain; the build's request exactly as built; and the credential the signer's answer completes.
  */
-import type { AtrHash, Json, Refusal } from "@integraledger/lcp";
-import { canonicalJson, parseJson } from "@integraledger/lcp";
+import type { AtrHash, Json, Refusal } from "@integraledger/lcp/core";
+import { canonicalJson, parseJson } from "@integraledger/lcp/core";
 import type { Hex } from "@integraledger/lcp/evm";
 import { network, pairingsOfPlaced, type MppChallenge, type MppCredential, type MppUnsigned } from "@integraledger/lcp/mpp";
 import { memoCalldata } from "@integraledger/lcp/tempo";

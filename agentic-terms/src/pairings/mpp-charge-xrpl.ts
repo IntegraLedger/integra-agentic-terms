@@ -4,7 +4,7 @@
  * credential.
  * `Fee`, `Sequence` and `LastLedgerSequence` are the buyer's reads.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { Inputs, Signature } from "../types.js";
 import { inputsOf, refuse } from "./common.js";
 import { completeWith, mppRailPiece, XRPL_ADDRESS } from "./mpp-rails.js";

@@ -2,7 +2,7 @@
  * The buyer piece for `x402/exact/algorand`: the asset transfer whose note is the hash's LCP string, signed by the payer
  * as `algorand-txn`. `params` is the buyer's read of algod's transaction parameters.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Inputs } from "../types.js";
 import { bigintOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";

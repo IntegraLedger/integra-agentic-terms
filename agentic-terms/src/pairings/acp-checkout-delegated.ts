@@ -3,7 +3,7 @@
  * allowance values, as inputs: `max_amount` (minor units), `currency`, `merchant_id` and `expires_at`. The allowance
  * goes to the agent, which answers the `delegate_payment` request it signed, as an object.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { Presented as AcpPresented, Unsigned } from "@integraledger/lcp/acp";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { inputsOf, isObject, isRefusal, refuse } from "./common.js";

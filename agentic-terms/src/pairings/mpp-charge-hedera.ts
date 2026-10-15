@@ -10,7 +10,7 @@
  * - `credentialType` `transaction` (pull): the signer answers `{publicKey, signature, type}`, and the credential is
  *   `{challenge, payload: {type: "transaction", transaction}}`, the signed body in base64.
  */
-import type { AtrHash, Json, Refusal } from "@integraledger/lcp";
+import type { AtrHash, Json, Refusal } from "@integraledger/lcp/core";
 import { attributionMemo, chargeHedera, type MppChallenge, type MppCredential } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Choose, Chosen, Inputs, Presented, Signature } from "../types.js";
 import { accountOf, bigintOf, broadcasts, bytesOf, choiceOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";

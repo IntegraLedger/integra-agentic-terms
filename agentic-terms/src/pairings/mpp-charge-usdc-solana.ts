@@ -2,7 +2,7 @@
  * The buyer piece for `mpp/charge/usdc/solana`: the Solana charge's v0 message, whose one LCP memo is the request's
  * `externalId`, with the details read from `methodDetails.solana`; signed by the payer as `solana-message`.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { Inputs } from "../types.js";
 import { inputsOf, isObject } from "./common.js";
 import { completeWith, mppRailPiece, signature64 } from "./mpp-rails.js";

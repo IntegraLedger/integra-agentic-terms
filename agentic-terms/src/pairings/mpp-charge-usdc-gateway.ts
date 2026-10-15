@@ -5,7 +5,7 @@
  * before signing, then answers `{source, sourceNetwork, destinationNetwork, maxFee, burnIntent, signature}`, which the
  * build's `complete` wraps.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Chosen, Inputs, Read, Signature } from "../types.js";
 import { accountOf, isObject, refuse } from "./common.js";

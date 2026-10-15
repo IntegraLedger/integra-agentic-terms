@@ -3,7 +3,7 @@
  * delegation request exactly as built, and the payment the answer completes, with the payment identifier appended
  * where the challenge advertises it.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { Hex } from "@integraledger/lcp/evm";
 import type { PaymentPayload, Unsigned, X402Unsigned } from "@integraledger/lcp/x402";
 import type { BuyerPiece, Chosen, Presented, Read, Signature, SigningRequest } from "../types.js";

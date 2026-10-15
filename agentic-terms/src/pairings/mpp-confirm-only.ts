@@ -3,7 +3,7 @@
  * pairing. Nothing in the card or Stripe payment carries the hash, and the binding builds nothing for the buyer to sign:
  * the proof of the hash is the agreement payment the offer's agreement URL asks for, whose signed payload carries it.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Chosen, Inputs, Read } from "../types.js";
 import { isObject, refuse } from "./common.js";

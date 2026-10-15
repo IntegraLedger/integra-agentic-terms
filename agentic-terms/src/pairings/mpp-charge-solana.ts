@@ -3,7 +3,7 @@
  * the payer as `solana-message`; the credential is the build's own. The request's `decimals`, `tokenProgram` and
  * `recentBlockhash` are taken first, and the buyer's reads fill what the request leaves out.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { Inputs } from "../types.js";
 import { inputsOf, isObject } from "./common.js";
 import { completeWith, mppRailPiece, signature64 } from "./mpp-rails.js";

@@ -3,7 +3,7 @@
  * then `finish`. The agreement payment is signed only once the buyer's agent has approved it: the first call returns it
  * in `approve`, and a second call with that payment as `approved` pays it and then the resource.
  */
-import type { AtrHash } from "@integraledger/lcp";
+import type { AtrHash } from "@integraledger/lcp/core";
 import { exchange } from "./agreement.js";
 import { confirm, declined, hasAccount, isObject, namespaceOf, pieceOf, signSteps, unsupported } from "./gate.js";
 import type { AgreementReceipt, Binding, Declined, Fetch, Presented, Signer, ToApprove, TransactOptions } from "./types.js";

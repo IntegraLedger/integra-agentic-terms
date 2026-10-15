@@ -2,7 +2,7 @@
  * The buyer piece for `x402/exact/casper`: the CEP-3009 typed data with the hash as its nonce, signed by the account's
  * key; the answer is `{publicKey, signature}`, each hex with its one-byte algorithm tag.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { CasperUnsigned } from "@integraledger/lcp/casper";
 import type { BuyerPiece, Chosen, Presented, Read, Signature } from "../types.js";
 import { choiceOf, firstOption, isObject, isRefusal, refuse, withPaymentIdentifier, x402Chosen } from "./common.js";

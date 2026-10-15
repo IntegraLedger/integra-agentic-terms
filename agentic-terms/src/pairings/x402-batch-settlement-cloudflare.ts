@@ -3,7 +3,7 @@
  * The build is itself the payment, echoing the challenge's extensions; the agent's HTTP message signature stack signs
  * the request that carries it, so the gate calls no signer.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature } from "../types.js";
 import { choiceOf, isObject, refuse, withPaymentIdentifier, x402Chosen, x402OfferOf } from "./common.js";
 

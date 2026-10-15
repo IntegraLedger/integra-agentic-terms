@@ -4,7 +4,7 @@
  * as issued, an SD-JWT string, or AP2's chained presentation of the open and closed mandates joined by `~~`. Without
  * it the gate confirms only.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { Unsigned } from "@integraledger/lcp/ucp";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { isObject, isRefusal, refuse } from "./common.js";

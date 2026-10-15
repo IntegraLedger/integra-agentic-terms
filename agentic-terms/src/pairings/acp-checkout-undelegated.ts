@@ -1,5 +1,5 @@
 /** The buyer piece for `acp/checkout/undelegated`: the handler does not delegate, so the gate confirms only. */
-import type { Json } from "@integraledger/lcp";
+import type { Json } from "@integraledger/lcp/core";
 import type { Inputs, Read } from "../types.js";
 import { isObject, refuse } from "./common.js";
 import { confirmOnlyPiece, unnamedBuyer } from "./protocol-groups.js";

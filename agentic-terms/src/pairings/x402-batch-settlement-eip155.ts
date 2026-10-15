@@ -3,7 +3,7 @@
  * authorization and first voucher, signed in order; the deposit from `extra.minDeposit` or the buyer's input; and the
  * authorization salt, drawn once and kept in `chosen`.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { BuyerPiece, Chosen, Inputs, Read } from "../types.js";
 import { batchComplete, batchRequest, depositOf, optionalInputs, randomSalt32, reviveDecimals } from "./batch.js";
 import { firstOption, isRefusal, refuse, x402Chosen } from "./common.js";

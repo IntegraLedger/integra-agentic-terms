@@ -4,7 +4,7 @@
  * or the buyer's input; the recent blockhash from `extra.recentBlockhash` when the offer carries one; and the channel
  * salt, drawn once and kept in `chosen`.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { BuyerPiece, Chosen, Inputs, Read } from "../types.js";
 import { batchComplete, batchRequest, depositOf, optionalInputs, randomU64, reviveDecimals } from "./batch.js";
 import { firstOption, inputsOf, isObject, isRefusal, refuse, uintOf, x402Chosen } from "./common.js";

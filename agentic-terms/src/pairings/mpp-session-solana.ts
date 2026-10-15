@@ -5,7 +5,7 @@
  * `"operator"`, the payer then signs the session proof over the channel, the payer and the challenge id as
  * `ed25519-raw`, answered in base58, and the open payload carries it as `authentication`.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import { sessionProof } from "@integraledger/lcp/svm";
 import type { Chosen, Inputs, Next, Presented, Signature } from "../types.js";

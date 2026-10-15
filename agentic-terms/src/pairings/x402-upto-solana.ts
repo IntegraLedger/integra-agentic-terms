@@ -3,7 +3,7 @@
  * option's `extra.memo`, signed by the payer as `solana-message`. The channel's `nonce` is the buyer's when given, else
  * a random u64; the open slot, recent blockhash and the mint's token program are the buyer's reads.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Inputs } from "../types.js";
 import { bigintOf, inputsOf, isRefusal, refuse } from "./common.js";

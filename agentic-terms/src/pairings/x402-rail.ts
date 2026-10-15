@@ -3,7 +3,7 @@
  * on the account's network, the buyer's own inputs beside it as JSON, the build's request exactly as built, and the
  * payment the signer's answer completes, with the payment identifier appended where the challenge advertises it.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { bytesOf, choiceOf, firstOption, isObject, isRefusal, refuse, withPaymentIdentifier } from "./common.js";

@@ -4,7 +4,7 @@
  * `@concordium/web-sdk`, `JSON.parse(Transaction.toJSONString(tx))`. An answer that is not an object is
  * `x402/signature-malformed`; an object that is not JSON data is `ccd/transaction-malformed`.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { CcdUnsigned } from "@integraledger/lcp/ccd";
 import type { BuyerPiece, Chosen, Presented, Read, Signature } from "../types.js";
 import { choiceOf, firstOption, isObject, isRefusal, refuse, withPaymentIdentifier, x402Chosen } from "./common.js";

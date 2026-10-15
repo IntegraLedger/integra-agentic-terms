@@ -2,7 +2,7 @@
  * What the buyer pieces share: the CAIP-10 account, the first x402 option on the account's network, the payment
  * identifier the x402 client writes, and the JSON forms of byte strings and integers.
  */
-import { isRefusal as isLcpRefusal, type Json, type Refusal } from "@integraledger/lcp";
+import { isRefusal as isLcpRefusal, type Json, type Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequired, PaymentRequirements, X402Offer } from "@integraledger/lcp/x402";
 import type { Chosen, Inputs, Read } from "../types.js";
 

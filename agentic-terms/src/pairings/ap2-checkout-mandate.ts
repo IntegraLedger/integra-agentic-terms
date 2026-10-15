@@ -3,7 +3,7 @@
  * and its payload); the closed Checkout Mandate's claims go to the buyer's mandate signer, which answers the mandate
  * as issued, an SD-JWT string, or AP2's chained presentation of the open and closed mandates joined by `~~`.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { Unsigned } from "@integraledger/lcp/ap2";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { isObject, refuse } from "./common.js";

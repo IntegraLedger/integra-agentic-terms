@@ -5,7 +5,7 @@
  * completed payment, or, for a pairing whose proof is the agreement payment, completes it without that reading. `check`
  * confirms a payment held later against kept bytes.
  */
-import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash, type Json, type Refusal } from "@integraledger/lcp";
+import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash, type Json, type Refusal } from "@integraledger/lcp/core";
 import { fromBinding, isRefusal, refuse } from "./pairings/common.js";
 import { PIECES } from "./pairings/index.js";
 import {

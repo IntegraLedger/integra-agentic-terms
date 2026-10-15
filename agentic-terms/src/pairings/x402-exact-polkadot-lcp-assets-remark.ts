@@ -2,7 +2,7 @@
  * The buyer piece for `x402/exact/polkadot/lcp-assets-remark`: the request is the profile's call, which the wallet
  * signs as a v4 extrinsic with its own extensions and answers as the extrinsic's bytes in `0x` hex.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import { ss58Decode, type PolkadotUnsigned } from "@integraledger/lcp/polkadot";
 import type { BuyerPiece, Chosen, Presented, Read, Signature } from "../types.js";
 import { bytesOf, choiceOf, isRefusal, refuse, x402Chosen } from "./common.js";

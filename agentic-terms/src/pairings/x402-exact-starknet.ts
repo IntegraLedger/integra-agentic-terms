@@ -2,7 +2,7 @@
  * The buyer piece for `x402/exact/starknet`: the request is SNIP-9's outside execution as SNIP-12 typed data for the
  * payer's account, whose nonce the build takes from the ATR hash; the account answers its signature as a list of felts.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { Felt, StarknetUnsigned } from "@integraledger/lcp/starknet";
 import type { BuyerPiece, Chosen, Presented, Read, Signature } from "../types.js";
 import { choiceOf, isRefusal, refuse, x402Chosen } from "./common.js";

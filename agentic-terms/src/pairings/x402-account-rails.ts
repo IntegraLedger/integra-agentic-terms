@@ -3,7 +3,7 @@
  * percent-decoded as CAIP-10 writes it, and the piece for pairings where the payer's wallet builds and signs the
  * rail's own payment around what the build hands it.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import type { BuyerPiece, Chosen, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { accountOf, choiceOf, firstOption, isObject, isRefusal, refuse, withPaymentIdentifier, x402Chosen } from "./common.js";

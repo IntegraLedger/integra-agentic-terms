@@ -4,7 +4,7 @@
  * address. The buyer supplies `walletId`, `seqno`, `jettonWallet` and `attachNanotons` from its RPC, and, for a wallet
  * not yet deployed, its `stateInit` as a base64 BoC; the wallet key answers its 64-byte Ed25519 signature as `0x` hex.
  */
-import type { Refusal } from "@integraledger/lcp";
+import type { Refusal } from "@integraledger/lcp/core";
 import type { TvmUnsigned } from "@integraledger/lcp/tvm";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature } from "../types.js";
 import { bigintOf, bytesOf, choiceOf, inputsOf, isRefusal, refuse, x402Chosen } from "./common.js";

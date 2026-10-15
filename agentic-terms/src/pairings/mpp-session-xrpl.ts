@@ -4,7 +4,7 @@
  * digits without `0x`, as the XRP Ledger writes them and as a later `xrpl-claim` is answered, which completes the
  * build's own credential. The deposit and the channel's terms are the buyer's.
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { Inputs, Signature } from "../types.js";
 import { inputsOf, isObject, isRefusal, refuse } from "./common.js";
 import { completeWith, hexDigits, mppRailPiece, sessionRevive, XRPL_ADDRESS } from "./mpp-rails.js";

@@ -5,7 +5,7 @@
  * line it sent, in order, which `bound` reads. The checkout mandate goes to the wallet (L2, answering `{l2}`) or the
  * agent (L3b, answering `{l1, l2, l3b}`).
  */
-import type { Json, Refusal } from "@integraledger/lcp";
+import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { TapPresented, TapUnsigned, ViAutonomous, ViImmediate, ViUnsigned } from "@integraledger/lcp/card";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { isObject, isRefusal, refuse } from "./common.js";
