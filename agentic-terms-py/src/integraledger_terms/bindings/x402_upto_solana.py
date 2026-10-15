@@ -33,7 +33,7 @@ from ._svm import (
     to_base64,
     wire_of,
 )
-from ._x402 import chosen, filter_of, is_v2, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, is_v2, payment_with, read_for
 
 ID = "x402/upto/solana"
 MAX_MEMO = 256
@@ -78,7 +78,9 @@ def payable(option: Mapping[str, Any]) -> bool:
     )
 
 
-_THIS = filter_of(pairs)
+# The pairing's one option filter, which read, build and bound apply: an option of this pairing whose amount build can
+# pay (payable), else x402/option-malformed.
+_THIS = filter_of(pairs, payable)
 _read = read_for(_THIS)
 
 
@@ -101,8 +103,6 @@ class X402UptoSolana:
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if not payable(accepted):
-            return Refusal("x402/option-malformed")
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
@@ -182,9 +182,9 @@ class X402UptoSolana:
         extra.memo. No signature is verified here."""
         if not is_v2(presented):
             return Refusal("x402/not-v2")
-        accepted = presented.get("accepted")
-        if not is_object(accepted) or not pairs(accepted):
-            return Refusal("x402/option-not-this-pairing")
+        accepted = accepted_by(presented.get("accepted"), _THIS)
+        if isinstance(accepted, Refusal):
+            return accepted
         payload = presented.get("payload")
         if not is_object(payload):
             return Refusal("x402/payload-malformed")

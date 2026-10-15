@@ -13,12 +13,13 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from . import _stellar
 from ._lcp import is_object, normal_hash, safe_int
-from ._x402 import chosen, filter_of, legal_context_of, read_for
+from ._x402 import accepted_by, chosen, filter_of, legal_context_of, read_for
 
 ID = "x402/exact/stellar"
 
 _AMOUNT = re.compile(r"0|[1-9][0-9]{0,38}")
 _I128_LIMIT = 1 << 127
+_UINT32_MAX = (1 << 32) - 1
 
 
 def pairing_of(option: object) -> str | None:
@@ -39,11 +40,10 @@ def _is_this(option: Mapping[str, Any]) -> bool:
     return pairing_of(option) is not None
 
 
-_THIS = filter_of(_is_this)
-
-
 def _payable(option: Mapping[str, Any]) -> bool:
-    """True when the amount is an i128 of 0 or more in decimal and the timeout a positive safe integer."""
+    """True when the amount is an i128 of 0 or more in decimal and the timeout a positive safe integer of at most
+    5 * (2^32 - 1) seconds: build sets the authorization entry's expiration ledger, a uint32, to the current ledger
+    plus ceil(maxTimeoutSeconds / 5)."""
     amount = option.get("amount")
     timeout = safe_int(option.get("maxTimeoutSeconds"))
     return (
@@ -52,7 +52,13 @@ def _payable(option: Mapping[str, Any]) -> bool:
         and int(amount) < _I128_LIMIT
         and timeout is not None
         and timeout > 0
+        and -(-timeout // 5) <= _UINT32_MAX
     )
+
+
+# The pairing's one option filter, which read, build and bound apply: an option of this pairing that build can pay
+# (_payable), else x402/option-malformed.
+_THIS = filter_of(_is_this, _payable)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +80,6 @@ class X402ExactStellar:
         if ok is not True:
             return ok
         accepted = c["accepted"]
-        if not _payable(accepted):
-            return Refusal("x402/option-malformed")
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         ledger = safe_int(c.get("currentLedger"))
@@ -108,9 +112,9 @@ class X402ExactStellar:
         signature is not verified here."""
         if not is_object(presented) or presented.get("x402Version") != 2 or isinstance(presented.get("x402Version"), bool):
             return Refusal("x402/not-v2")
-        accepted = presented.get("accepted")
-        if not is_object(accepted) or not _is_this(accepted):
-            return Refusal("x402/option-not-this-pairing")
+        accepted = accepted_by(presented.get("accepted"), _THIS)
+        if isinstance(accepted, Refusal):
+            return accepted
         lc = legal_context_of(presented.get("extensions"))
         if isinstance(lc, Refusal):
             return lc

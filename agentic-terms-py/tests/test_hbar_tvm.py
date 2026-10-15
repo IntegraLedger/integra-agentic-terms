@@ -204,9 +204,10 @@ def test_x402_exact_tvm_v3_a_comment_that_begins_with_a_byte_order_mark_holds_no
         assert BINDING.bound(presented(row["settlementBoc"], row["accepted"])) == Refusal(row["expect"]), row["case"]
 
 
-def test_x402_exact_tvm_bound_reads_no_amount_or_timeout_from_the_echoed_option() -> None:
-    # As lcp's exactTvm does: bound reads the echoed option's scheme, network, asset, payTo and extra, and neither its
-    # amount nor its maxTimeoutSeconds, which read and build require. Expected values are V3's and lcp's codes.
+def test_x402_exact_tvm_bound_holds_the_echoed_option_to_the_read_filter() -> None:
+    # As lcp's exactTvm does: bound holds the echoed option to the filter read and build apply, so an option whose
+    # amount or maxTimeoutSeconds no build could use is refused with the code build gives, tvm/option-malformed, as
+    # x402-exact-tvm.json's boundAccepted rows expect. Under the placed option itself, bound gives V3's expectBound.
     unsigned = BINDING.build(tvm_choice(), F["H"])
     assert not isinstance(unsigned, Refusal)
     signed = unsigned.complete(ed25519.sign(SEED, unsigned.request["hash"]))
@@ -215,8 +216,9 @@ def test_x402_exact_tvm_bound_reads_no_amount_or_timeout_from_the_echoed_option(
     untimed = {k: v for k, v in placed.items() if k != "maxTimeoutSeconds"}
     unpriced = {k: v for k, v in placed.items() if k != "amount"}
     echoed = [{**placed, "amount": "abc"}, {**placed, "amount": "1e3"}, unpriced, {**placed, "maxTimeoutSeconds": 0}, untimed]
+    assert BINDING.bound({**signed, "accepted": placed}) == V["V3"]["expectBound"]
     for accepted in echoed:
-        assert BINDING.bound({**signed, "accepted": accepted}) == V["V3"]["expectBound"], accepted
+        assert BINDING.bound({**signed, "accepted": accepted}) == Refusal("tvm/option-malformed"), accepted
         assert BINDING.read({**TVM.doc, "accepts": [accepted]}) == Refusal("x402/no-payable-option"), accepted
         choice = tvm_choice(accepted, required={"x402Version": 2, "resource": F["resource"], "accepts": [accepted]})
         assert BINDING.build(choice, F["H"]) == Refusal("tvm/option-malformed"), accepted

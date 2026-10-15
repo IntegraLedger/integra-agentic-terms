@@ -859,11 +859,16 @@ def test_max_timeout_seconds_written_60_0_is_the_value_60(clock: Clock) -> None:
 
 
 @pytest.mark.parametrize("value", ["60.5", "0", '"60"', "9007199254740992"])
-def test_max_timeout_seconds_that_is_not_an_integral_number_of_seconds_is_option_malformed(value: str) -> None:
+def test_max_timeout_seconds_that_is_not_an_integral_number_of_seconds_is_an_option_the_pairing_does_not_offer(
+    value: str,
+) -> None:
+    """The pairing's read applies the filter build applies, which takes a maxTimeoutSeconds only as an integral number
+    of seconds from 1 to 2^53 - 1, so the agreement challenge offers no option it can pay: x402/no-payable-option, as
+    the protocol package's read answers."""
     text = json.dumps(AG["required"], separators=(",", ":")).replace('"maxTimeoutSeconds":60', f'"maxTimeoutSeconds":{value}')
     signer = RecordingSigner()
     out = run(Challenging(RECORDED, header=written(text)).link(), lambda c: agree(A, URL, signer, c))
-    assert out == Declined("offer-unreadable", "x402/option-malformed")
+    assert out == Declined("no-payable-option", "x402/no-payable-option")
     assert signer.requests == []
 
 

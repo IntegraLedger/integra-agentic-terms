@@ -11,7 +11,7 @@ from typing import Any
 from .._core import AtrHash, is_hash
 from .._types import Advertised, Json, Refusal
 from ._lcp import chain_id_of, is_address, safe_int, uint256_of
-from ._x402 import chosen, filter_of, read_for
+from ._x402 import accepted_by, chosen, filter_of, read_for
 
 ID = "x402/exact/eip155/eip3009"
 
@@ -54,10 +54,6 @@ def passes(option: object) -> bool:
     return True
 
 
-_FILTER = filter_of(passes)
-_READ = read_for(_FILTER)
-
-
 def _payable(option: Mapping[str, Any]) -> bool:
     """True for an option build can turn into typed data: the token's EIP-712 name and version, the asset and payee
     addresses, an amount of 1 to 78 decimal digits below 2^256, and a time bound that is a safe integer above zero."""
@@ -77,6 +73,11 @@ def _payable(option: Mapping[str, Any]) -> bool:
         and timeout is not None
         and timeout > 0
     )
+
+
+# The pairing's one option filter, which read, build and bound apply: an option the pairing names and build can pay.
+_FILTER = filter_of(passes, _payable)
+_READ = read_for(_FILTER)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,8 +111,8 @@ class X402ExactEip155Eip3009:
     public_proof: bool = True
 
     def read(self, doc: Json) -> Advertised | Refusal:
-        """H, the link, the agreement URL when the legal context names one, and the options that name this pairing, in
-        document order."""
+        """H, the link, the agreement URL when the legal context names one, and the options the pairing's filter
+        serves, in document order."""
         return _READ(doc)
 
     def build(self, choice: Json, h: AtrHash) -> _Unsigned | Refusal:
@@ -124,8 +125,6 @@ class X402ExactEip155Eip3009:
         if isinstance(served, Refusal):
             return served
         assert isinstance(required, Mapping) and isinstance(accepted, Mapping)
-        if not _payable(accepted):
-            return Refusal("x402/option-malformed")
         payer = choice.get("from")
         now = safe_int(choice.get("now"))
         if not is_address(payer) or now is None or now < 0:
@@ -166,17 +165,16 @@ class X402ExactEip155Eip3009:
         return _Unsigned(typed_data=typed_data, _required=required, _accepted=accepted, _authorization=authorization)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The authorization's nonce, as a lower-case hash. A payment that carries a refused member, the member
-        refusals use, is x402/payload-malformed. The signature is not verified here."""
+        """The authorization's nonce, as a lower-case hash, from a payment whose accepted the pairing's filter serves
+        (accepted_by). A payment that carries a refused member, the member refusals use, is x402/payload-malformed. The
+        signature is not verified here."""
         if not isinstance(presented, Mapping) or safe_int(presented.get("x402Version")) != 2:
             return Refusal("x402/not-v2")
         if "refused" in presented:
             return Refusal("x402/payload-malformed")
-        accepted = presented.get("accepted")
-        if not isinstance(accepted, Mapping):
-            return Refusal("x402/payload-malformed")
-        if not passes(accepted):
-            return Refusal("x402/option-not-this-pairing")
+        accepted = accepted_by(presented.get("accepted"), _FILTER)
+        if isinstance(accepted, Refusal):
+            return accepted
         payload = presented.get("payload")
         if not isinstance(payload, Mapping):
             return Refusal("x402/payload-malformed")

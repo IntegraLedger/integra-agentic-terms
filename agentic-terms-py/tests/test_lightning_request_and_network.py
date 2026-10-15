@@ -184,12 +184,15 @@ def test_a_present_null_request_is_a_malformed_binding_before_any_fetch() -> Non
     assert link.calls == 0
 
 
-def test_an_option_whose_request_hash_is_article_bs_over_article_as_invoice_is_refused() -> None:
+def test_an_option_whose_request_hash_is_article_bs_over_article_as_invoice_is_not_offered() -> None:
+    """The pairing's read applies the filter build applies, whose invoice checks refuse a requestHash that is not the
+    invoice's description hash (ln/request-hash-mismatch), so the document offers no option: the read's
+    x402/no-payable-option, before any fetch, as the protocol package's read answers."""
     option = {**F["O"], "extra": {**F["O"]["extra"], "requestHash": HTTP_B}}
     doc = x402_doc(option, {"url": ARTICLE_B})
     link = serving(ABC)
     out = run(lambda c: confirm(doc, offered(X402_EXACT_LNBTC), ACCOUNT, c, {"request": {"method": "GET", "url": ARTICLE_B}}), link)
-    assert out == Declined("no-payable-option", "ln/request-hash-mismatch")
+    assert out == Declined("offer-unreadable", "x402/no-payable-option")
     assert link.calls == 0
 
 

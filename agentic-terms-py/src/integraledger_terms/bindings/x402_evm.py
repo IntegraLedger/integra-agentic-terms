@@ -37,8 +37,8 @@ from ._evm import (
     permit2_typed_data,
 )
 from ._jose import js_length
-from ._lcp import chain_id_of, is_address, is_list, is_object, legal_context_info, normal_hash, safe_int, uint256_of
-from ._x402 import LEGAL_CONTEXT, MAX_OPTIONS, MAX_SIGNATURE_BYTES, is_offered, is_v2, payment_with, read_for
+from ._lcp import chain_id_of, is_address, is_object, legal_context_info, normal_hash, safe_int, uint256_of
+from ._x402 import LEGAL_CONTEXT, MAX_SIGNATURE_BYTES, OptionFilter, accepted_by, chosen, is_v2, payment_with, read_for
 
 EXACT_EIP3009 = "x402/exact/eip155/eip3009"
 EXACT_PERMIT2 = "x402/exact/eip155/permit2"
@@ -50,6 +50,8 @@ AUTH_CAPTURE_PERMIT2 = "x402/auth-capture/eip155/permit2"
 
 MIN_SIGNED_BYTES = 65
 MAX_MEMBER = 256
+_UINT48_LIMIT = 1 << 48
+_UINT120_LIMIT = 1 << 120
 _NONCE_DECIMAL = re.compile(r"[0-9]{1,78}")
 _NONCE_HEX = re.compile(r"0x[0-9a-fA-F]{64}")
 _HEX_BODY = re.compile(r"0x[0-9a-fA-F]*")
@@ -180,26 +182,44 @@ def option_filter(option: object) -> str | Refusal | None:
     return None
 
 
-def pairing_of(option: object) -> str | None:
-    """The x402 EVM pairing an option names, or None."""
-    named = option_filter(option)
-    return named if isinstance(named, str) else None
-
-
 def _non_empty(value: object) -> bool:
     return isinstance(value, str) and value != ""
 
 
 def _payable(pairing: str, option: Mapping[str, Any]) -> bool:
-    """An option build can use: its amount and time bound, and for auth-capture the token's EIP-712 name and
-    version."""
+    """An option build can pay: its amount and time bound; for auth-capture also the token's EIP-712 name and
+    version, the escrow terms _auth_capture_terms reads, and a maxTimeoutSeconds below 2^48, since now plus it is the
+    payment's preApprovalExpiry, a uint48."""
     timeout = safe_int(option.get("maxTimeoutSeconds"))
     if uint256_of(option.get("amount")) is None or timeout is None or timeout <= 0:
         return False
     if _scheme_of(pairing) != "auth-capture":
         return True
     extra = option.get("extra")
-    return is_object(extra) and _non_empty(extra.get("name")) and _non_empty(extra.get("version"))
+    return (
+        is_object(extra)
+        and _non_empty(extra.get("name"))
+        and _non_empty(extra.get("version"))
+        and timeout < _UINT48_LIMIT
+        and not isinstance(_auth_capture_terms(option), Refusal)
+    )
+
+
+def _evm_filter(pairing: str) -> OptionFilter:
+    """The option filter of the pairing, the one its read, build and bound apply: the option names the pairing, and
+    build can pay it. An option of the pairing's scheme that option_filter refuses gives that refusal, one build cannot
+    pay is x402/option-malformed, and any other option is not this pairing's. So read offers no option that build or
+    bound refuses on what the option alone says."""
+
+    def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+        named = option_filter(option)
+        if isinstance(named, Refusal):
+            return named if option.get("scheme") == _scheme_of(pairing) else None
+        if named != _option_id_of(pairing):
+            return None
+        return True if _payable(pairing, option) else Refusal("x402/option-malformed")
+
+    return check
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,22 +237,10 @@ def _choice_of(pairing: str, choice: object, h: object) -> _Choice | Refusal:
     if not is_object(choice):
         return Refusal("x402/not-v2")
     required, accepted = choice.get("required"), choice.get("accepted")
-    if not is_v2(required):
-        return Refusal("x402/not-v2")
-    assert is_object(required)
-    accepts = required.get("accepts")
-    if not is_list(accepts) or len(accepts) > MAX_OPTIONS:
-        return Refusal("x402/option-malformed")
-    if not is_offered(accepts, accepted):
-        return Refusal("x402/option-not-in-document")
-    named = option_filter(accepted)
-    if isinstance(named, Refusal):
-        return named
-    if named != _option_id_of(pairing):
-        return Refusal("x402/option-not-this-pairing")
-    assert is_object(accepted)
-    if not _payable(pairing, accepted):
-        return Refusal("x402/option-malformed")
+    wrong = chosen(required, accepted, _evm_filter(pairing))
+    if wrong is not True:
+        return wrong
+    assert is_object(required) and is_object(accepted)
     payer, now = choice.get("from"), safe_int(choice.get("now"))
     if not is_address(payer) or now is None or now < 0:
         return Refusal("x402/option-malformed")
@@ -275,18 +283,13 @@ def _nonce_as_hash(nonce: str) -> AtrHash | None:
 
 
 def _presented_as(pairing: str, presented: object) -> tuple[Mapping[str, Any], Mapping[str, Any]] | Refusal:
-    """A presented payment whose accepted names the pairing, with its payload as an object."""
+    """A presented payment whose accepted the pairing's read offers (_evm_filter), with its payload as an object."""
     if not is_v2(presented):
         return Refusal("x402/not-v2")
     assert is_object(presented)
-    accepted = presented.get("accepted")
-    if not is_object(accepted):
-        return Refusal("x402/payload-malformed")
-    named = option_filter(accepted)
-    if isinstance(named, Refusal):
-        return named if accepted.get("scheme") == _scheme_of(pairing) else Refusal("x402/option-not-this-pairing")
-    if named != _option_id_of(pairing):
-        return Refusal("x402/option-not-this-pairing")
+    accepted = accepted_by(presented.get("accepted"), _evm_filter(pairing))
+    if isinstance(accepted, Refusal):
+        return accepted
     payload = presented.get("payload")
     if not is_object(payload):
         return Refusal("x402/payload-malformed")
@@ -511,7 +514,12 @@ class _Terms:
 
 
 def _auth_capture_terms(option: Mapping[str, Any]) -> _Terms | Refusal:
-    """The escrow terms an auth-capture option fixes, or x402/option-malformed."""
+    """The escrow terms an auth-capture option fixes, or x402/option-malformed: captureAuthorizer and feeRecipient
+    addresses, receiverAuthorizer and policy addresses when present (absent reads as the zero address), the amount
+    below 2^120 (PaymentInfo.maxAmount, a uint120), captureDeadline and refundDeadline below 2^48 (uint48), and
+    minFeeBps and maxFeeBps at most 65,535 (uint16). An option whose paymentFlow is authorization settles as the
+    escrow's charge, which the auth-capture EVM scheme allows only with a non-zero receiverAuthorizer. The option
+    filter (_payable) applies this, so build and bound read the terms of an option it serves."""
     extra = option["extra"]
     deployment = _deployment_of(extra)
     assert deployment is not None
@@ -534,7 +542,11 @@ def _auth_capture_terms(option: Mapping[str, Any]) -> _Terms | Refusal:
         return Refusal("x402/option-malformed")
     if authorization_expiry is None or refund_expiry is None or max_amount is None:
         return Refusal("x402/option-malformed")
+    if max_amount >= _UINT120_LIMIT or authorization_expiry >= _UINT48_LIMIT or refund_expiry >= _UINT48_LIMIT:
+        return Refusal("x402/option-malformed")
     if min_fee_bps is None or max_fee_bps is None or min_fee_bps > 65535 or max_fee_bps > 65535:
+        return Refusal("x402/option-malformed")
+    if extra.get("paymentFlow") == "authorization" and not non_zero_address(receiver_authorizer):
         return Refusal("x402/option-malformed")
     chain_id = chain_id_of(option.get("network"))
     assert chain_id is not None
@@ -562,11 +574,9 @@ def _auth_capture_build(pairing: str, choice: Json, h: AtrHash) -> Unsigned | Re
         return c
     accepted = c.accepted
     t = _auth_capture_terms(accepted)
-    if isinstance(t, Refusal):
-        return t
+    assert not isinstance(t, Refusal)
     salt = bind_salt(t.receiver_authorizer, t.policy, c.h) if t.bound else c.h
-    if isinstance(salt, Refusal):
-        return Refusal("x402/option-malformed")
+    assert not isinstance(salt, Refusal)
     signature_nonce = payment_hash(t.chain_id, t.deployment.escrow, t.info(ZERO_ADDRESS, salt, c.deadline))
     if isinstance(signature_nonce, Refusal):
         return Refusal("x402/option-malformed")
@@ -626,7 +636,9 @@ def _salt_of(value: object) -> AtrHash | None:
 
 def _auth_capture_bound(pairing: str, presented: object) -> AtrHash | Refusal:
     """H (the salt when unbound, the saltNonce when bound, whose commitment must be the salt), once the signed nonce
-    is the signatureNonce rebuilt with payer zero."""
+    is the signatureNonce rebuilt with payer zero. Under an option that binds neither a receiver authorizer nor a
+    policy, the scheme's payload carries no saltNonce; a payload that carries one is a binding option's payment, whose
+    H is that saltNonce and not the salt, so it is x402/salt-not-bound."""
     got = _presented_as(pairing, presented)
     if isinstance(got, Refusal):
         return got
@@ -634,8 +646,7 @@ def _auth_capture_bound(pairing: str, presented: object) -> AtrHash | Refusal:
     if not _is_signature(payload.get("signature"), 1):
         return Refusal("x402/signature-malformed")
     t = _auth_capture_terms(p["accepted"])
-    if isinstance(t, Refusal):
-        return t
+    assert not isinstance(t, Refusal)
     salt = _salt_of(payload.get("salt"))
     if salt is None:
         return Refusal("x402/salt-malformed")
@@ -648,6 +659,8 @@ def _auth_capture_bound(pairing: str, presented: object) -> AtrHash | Refusal:
         if isinstance(commitment, Refusal) or commitment != salt:
             return Refusal("x402/salt-not-bound")
         h = salt_nonce
+    elif "saltNonce" in payload:
+        return Refusal("x402/salt-not-bound")
     if pairing == AUTH_CAPTURE_EIP3009:
         a = _strings(payload.get("authorization"), ("from", "to", "value", "validAfter", "validBefore", "nonce"))
         if a is None:
@@ -671,15 +684,6 @@ def _auth_capture_bound(pairing: str, presented: object) -> AtrHash | Refusal:
 # The bindings.
 
 
-def _reads(pairing: str) -> Callable[[Mapping[str, Any]], Literal[True] | Refusal | None]:
-    """The filter at read: the option names the pairing's option-level id."""
-
-    def check(option: Mapping[str, Any]) -> Literal[True] | None:
-        return True if pairing_of(option) == _option_id_of(pairing) else None
-
-    return check
-
-
 @dataclass(frozen=True, slots=True)
 class X402EvmBinding:
     """One x402 EVM pairing's buyer half. public_proof is the pairing's pattern.publicProof."""
@@ -688,9 +692,9 @@ class X402EvmBinding:
     public_proof: bool
 
     def read(self, doc: Json) -> Advertised | Refusal:
-        """H, the link, the agreement URL when the legal context names one, and the options that name this pairing, in
-        document order."""
-        return read_for(_reads(self.id))(doc)
+        """H, the link, the agreement URL when the legal context names one, and the options the pairing's filter
+        serves, in document order."""
+        return read_for(_evm_filter(self.id))(doc)
 
     def build(self, choice: Json, h: AtrHash) -> Unsigned | Refusal:
         """What the buyer's signer is handed for the chosen option with H in its place, and how its answer completes

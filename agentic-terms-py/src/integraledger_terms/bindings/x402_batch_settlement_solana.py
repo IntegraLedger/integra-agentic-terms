@@ -62,7 +62,8 @@ def pairs(option: Mapping[str, Any]) -> bool:
     extra.feePayer and extra.receiverAuthorizer, extra.voucherSigner absent or client, a known extra.tokenProgram,
     extra.withdrawDelay in 900-2 592 000 and not below a maxTimeoutSeconds that is a number, extra.paymentFlow absent
     or authorization, and extra.memo of at most 256 UTF-8 bytes when present. A maxTimeoutSeconds of another type is
-    never converted to compare: the option is taken, and build refuses it x402/option-malformed."""
+    never converted to compare: the option is named, and the pairing's filter refuses it x402/option-malformed, so read
+    does not offer it."""
     if not is_object(option) or option.get("scheme") != SCHEME or not is_object(option.get("extra")):
         return False
     extra = option["extra"]
@@ -88,7 +89,13 @@ def pairs(option: Mapping[str, Any]) -> bool:
     return True
 
 
-_THIS = filter_of(pairs)
+def _payable(option: Mapping[str, Any]) -> bool:
+    """What build can pay: payable, with the amount below 2^64, the voucher's u64."""
+    return payable(option) and int(option["amount"]) < U64_LIMIT
+
+
+# The pairing's one option filter, which read, build, build_within, bound and the channel reads apply.
+_THIS = filter_of(pairs, _payable)
 _read = read_for(_THIS)
 
 
@@ -186,8 +193,6 @@ class X402BatchSettlementSolana:
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if not payable(accepted) or int(accepted["amount"]) >= U64_LIMIT:
-            return Refusal("x402/option-malformed")
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
@@ -390,7 +395,7 @@ class X402BatchSettlementSolana:
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open for a deposit whose channel instruction is open; within for a top_up deposit or a voucher; close
         for a refund."""
-        x = payload_of(presented, pairs)
+        x = payload_of(presented, _THIS)
         if isinstance(x, Refusal):
             return x
         kind = x[1].get("type")
@@ -415,7 +420,7 @@ class X402BatchSettlementSolana:
         """The channel PDA from the payment's config, which must equal its voucher's id and its channel
         instruction's account. A config that is not one, such as one whose payerAuthorizer is not a point on the
         Ed25519 curve or whose withdrawDelay is not a positive integer below 2^32, is x402/payload-malformed."""
-        x = payload_of(presented, pairs)
+        x = payload_of(presented, _THIS)
         if isinstance(x, Refusal):
             return x
         accepted, payload = x
@@ -447,7 +452,7 @@ class X402BatchSettlementSolana:
         """The hash in the seller memo of the opening the payer signed, which must equal the option's extra.memo, for a
         deposit whose channel instruction is open and whose channel the config names. The opening carries exactly one
         binding memo, whose key is not read, beside that one memo. No signature is verified here."""
-        x = payload_of(presented, pairs)
+        x = payload_of(presented, _THIS)
         if isinstance(x, Refusal):
             return x
         accepted, payload = x

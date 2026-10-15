@@ -890,13 +890,15 @@ describe("the agreement payment the agent approves", () => {
     expect(signer.requests.length).toBe(1);
   });
 
+  // The pairing's read applies the filter its build applies, which takes a maxTimeoutSeconds only as an integral number
+  // of seconds from 1 to 2^53 - 1, so the agreement challenge offers no option the pairing can pay.
   it.each([["60.5"], ["0"], ['"60"'], ["9007199254740992"]])(
-    "maxTimeoutSeconds written %s is not an integral number of seconds from 1 to 2^53 - 1: option-malformed",
+    "maxTimeoutSeconds written %s is not an integral number of seconds from 1 to 2^53 - 1: no option is offered",
     async (written) => {
       const text = JSON.stringify(AG.required).replace('"maxTimeoutSeconds":60', `"maxTimeoutSeconds":${written}`);
       const signer = counting();
       const out = await agree(A, AGREEMENT_URL, signer, challenging(Buffer.from(text, "utf8").toString("base64"), RECORDED));
-      expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "x402/option-malformed" });
+      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/no-payable-option" });
       expect(signer.requests.length).toBe(0);
     },
   );

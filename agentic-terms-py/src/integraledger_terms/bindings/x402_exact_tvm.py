@@ -226,10 +226,13 @@ def _decimal_below(value: object, limit: int) -> int | None:
     return n if n < limit else None
 
 
-def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """The option's scheme, network, asset, payTo and extra: what bound requires of the option a presented payment
-    echoes. The network is one of the two the pairing serves (_CONFIGURATIONS), whose configuration the messages are
-    read at; any other tvm: network is tvm/network-malformed. It reads no amount and no timeout."""
+def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The pairing's option filter: the option's scheme, network, asset, payTo and extra, the amount as a Jetton amount
+    below 2^120, a forward TON amount below 2^120 - 1 (build attaches more TON than it, and the attached value is a
+    Grams, below 2^120), and maxTimeoutSeconds a positive integer below 2^32, which build writes into the request (the
+    wallet message's valid_until, a uint32, is now plus maxTimeoutSeconds). The network is one of the two the pairing
+    serves (_CONFIGURATIONS), whose configuration the messages are read at; any other tvm: network is
+    tvm/network-malformed. read and build apply it, and bound holds the option a presented payment echoes to it."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = o.get("network")
@@ -248,23 +251,14 @@ def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("tvm/option-malformed")
     if not is_object(extra) or extra.get("areFeesSponsored") is not True:
         return Refusal("tvm/option-malformed")
-    if "forwardTonAmount" in extra and _decimal_below(extra["forwardTonAmount"], COINS_LIMIT) is None:
+    if "forwardTonAmount" in extra and _decimal_below(extra["forwardTonAmount"], COINS_LIMIT - 1) is None:
         return Refusal("tvm/option-malformed")
     if "responseDestination" in extra and raw_address(extra["responseDestination"]) is None:
         return Refusal("tvm/option-malformed")
-    return True
-
-
-def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """_presentable, then the amount as a Jetton amount below 2^120 and maxTimeoutSeconds a positive safe integer, which
-    build writes into the request: what read and build require of an exact option on the tvm:-239 or tvm:-3 network."""
-    p = _presentable(o)
-    if p is not True:
-        return p
     if _decimal_below(o.get("amount"), COINS_LIMIT) is None:
         return Refusal("tvm/option-malformed")
     timeout = safe_int(o.get("maxTimeoutSeconds"))
-    if timeout is None or timeout < 1:
+    if timeout is None or timeout < 1 or timeout >= UINT32_LIMIT:
         return Refusal("tvm/option-malformed")
     return True
 
@@ -407,11 +401,11 @@ class X402ExactTvm:
         )
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash in the forward payload of the transfer the payer's W5 wallet signed, which must be the option's.
-        The echoed option's amount and timeout are not read. The signature is not verified here. A state init that
-        holds a libraries dictionary, has a fixed prefix longer than 8 bits, or does not hash to the settlement
-        message's destination is read, since whether TON deploys the wallet from it is chain state."""
-        p = presented_with(presented, _presentable)
+        """The hash in the forward payload of the transfer the payer's W5 wallet signed, which must be the option's,
+        under an option the pairing's filter serves. The signature is not verified here. A state init that holds a
+        libraries dictionary, has a fixed prefix longer than 8 bits, or does not hash to the settlement message's
+        destination is read, since whether TON deploys the wallet from it is chain state."""
+        p = presented_with(presented, check)
         if isinstance(p, Refusal):
             return p
         boc = p[1].get("settlementBoc")

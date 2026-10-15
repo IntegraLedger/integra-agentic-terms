@@ -7,9 +7,9 @@ signature is verified here.
 """
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import MAX_ATR_BYTES, AtrHash
 from .._types import Advertised, Json, Refusal
@@ -20,7 +20,7 @@ from ._mpp import check_challenge, credential_of, echoed_for
 from ._mpp import read as mpp_read
 from ._mpp_checks import decode_object
 from ._lcp import is_object, legal_context_info, normal_hash, safe_int
-from ._x402 import chosen, filter_of, is_v2, payment_with, read_for
+from ._x402 import OptionFilter, accepted_by, chosen, filter_of, is_v2, payment_with, read_for
 
 LNBTC = "x402/exact/lnbtc"
 NAMED = "x402/exact/lnbtc/invoice-named"
@@ -47,21 +47,16 @@ def is_ln_option(o: object) -> bool:
     return is_object(extra) and isinstance(extra.get("invoice"), str)
 
 
-def _with_metadata(want: bool) -> Callable[[Mapping[str, Any]], bool]:
-    """An option whose invoice decodes with an m field, or without one."""
-
-    def pairs(o: Mapping[str, Any]) -> bool:
-        if not is_ln_option(o):
-            return False
-        b = decode(o["extra"]["invoice"])
-        return not isinstance(b, Refusal) and (FIELD["m"] in b.tags) == want
-
-    return pairs
-
-
-def check_option(o: Mapping[str, Any], h: AtrHash | None) -> Bolt11 | Refusal:
-    """The x402 option checks both Lightning pairings make on the invoice and the option. h is the ATR hash the
-    invoice's m must carry, or None where m must be absent."""
+def check_option(o: Mapping[str, Any], h: AtrHash | Literal["any"] | None) -> Bolt11 | Refusal:
+    """The x402 option checks both Lightning pairings make, on an exact option on a Lightning network with an
+    invoice, in this order: the invoice decodes (else the decoder's refusal); its m field, where h is a hash or "any",
+    is one 32-byte field (ln/no-metadata, ln/field-repeated, ln/field-length) carrying h when h is a hash
+    (ln/no-metadata), and where h is None the invoice has none (ln/not-this-pairing); its h field is one 32-byte field
+    (ln/no-description-hash, ln/field-repeated, ln/field-length) equal to extra.requestHash, 64 lower-case hex digits
+    (ln/request-hash-mismatch); its currency is the one x402 gives the option's network (ln/currency-network); and
+    x402's client checks on the option's own fields hold (x402/option-malformed). Each pairing's option filter makes
+    them with "any" or None, so its read offers only an option its build and bound take; build makes them with the
+    ATR hash on x402/exact/lnbtc."""
     extra = o["extra"]
     b = decode(extra["invoice"])
     if isinstance(b, Refusal):
@@ -70,7 +65,7 @@ def check_option(o: Mapping[str, Any], h: AtrHash | None) -> Bolt11 | Refusal:
         m = invoice_h(b, "m")
         if isinstance(m, Refusal):
             return m
-        if m != normal_hash(h):
+        if h != "any" and m != normal_hash(h):
             return Refusal("ln/no-metadata")
     elif FIELD["m"] in b.tags:
         return Refusal("ln/not-this-pairing")
@@ -151,6 +146,27 @@ class LnUnsigned:
 _IS_LN = filter_of(is_ln_option)
 
 
+def _filter_with(h: Literal["any"] | None) -> OptionFilter:
+    """The option filter over check_option with h: an option the checks pass is served, else their refusal."""
+
+    def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+        if not is_ln_option(o):
+            return None
+        b = check_option(o, h)
+        return b if isinstance(b, Refusal) else True
+
+    return check
+
+
+# x402/exact/lnbtc's option filter: check_option with the invoice's m field read but not compared, so an invoice
+# without one is ln/no-metadata. Its read offers the options it serves, and its bound holds a presented payment's
+# option to it.
+_LNBTC_FILTER = _filter_with("any")
+# x402/exact/lnbtc/invoice-named's option filter: check_option with no m field allowed, so an invoice with one is
+# ln/not-this-pairing. Its read offers the options it serves, and its bound holds a presented payment's option to it.
+_NAMED_FILTER = _filter_with(None)
+
+
 def _choice(c: object) -> tuple[Mapping[str, Any], Mapping[str, Any]] | Refusal:
     """The chosen option, after the checks every x402 build makes on it."""
     required = c.get("required") if is_object(c) else None
@@ -162,15 +178,12 @@ def _choice(c: object) -> tuple[Mapping[str, Any], Mapping[str, Any]] | Refusal:
     return required, accepted
 
 
-def _ln_accepted(presented: object) -> Mapping[str, Any] | Refusal:
+def _ln_accepted(presented: object, check: OptionFilter) -> Mapping[str, Any] | Refusal:
+    """A presented payment's accepted, held to the pairing's filter by accepted_by."""
     if not is_v2(presented):
         return Refusal("x402/not-v2")
     assert is_object(presented)
-    accepted = presented.get("accepted")
-    if not is_ln_option(accepted):
-        return Refusal("x402/option-not-this-pairing")
-    assert is_object(accepted)
-    return accepted
+    return accepted_by(presented.get("accepted"), check)
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +192,7 @@ class X402ExactLnbtc:
     public_proof: bool = False
 
     def read(self, doc: Json) -> Advertised | Refusal:
-        return read_for(filter_of(_with_metadata(True)))(doc)
+        return read_for(_LNBTC_FILTER)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> LnUnsigned | Refusal:
         """The invoice to pay, once its m is h and its h is the request hash."""
@@ -193,19 +206,15 @@ class X402ExactLnbtc:
         return LnUnsigned({"kind": "bolt11-pay", "invoice": accepted["extra"]["invoice"]}, required, accepted)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash in the invoice the payer paid: its m field, from an invoice whose currency is the one the option's
-        network names, as build checks it (ln/currency-network otherwise). No signature is verified."""
-        accepted = _ln_accepted(presented)
+        """The hash in the invoice the payer paid: its m field, from an option the pairing's filter serves, so the
+        invoice's fields, its currency and the option's own fields are the ones build checks. No signature is
+        verified."""
+        accepted = _ln_accepted(presented, _LNBTC_FILTER)
         if isinstance(accepted, Refusal):
             return accepted
         b = decode(accepted["extra"]["invoice"])
-        if isinstance(b, Refusal):
-            return b
-        m = invoice_h(b, "m")
-        if isinstance(m, Refusal):
-            return m
-        network = _option_network_refused(accepted, b)
-        return m if network is None else network
+        assert not isinstance(b, Refusal)
+        return invoice_h(b, "m")
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,7 +223,7 @@ class X402ExactLnbtcInvoiceNamed:
     public_proof: bool = False
 
     def read(self, doc: Json) -> Advertised | Refusal:
-        return read_for(filter_of(_with_metadata(False)))(doc)
+        return read_for(_NAMED_FILTER)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> LnUnsigned | Refusal:
         """Pays only an invoice that the ATR's own x402 slot names."""
@@ -231,13 +240,11 @@ class X402ExactLnbtcInvoiceNamed:
         return LnUnsigned({"kind": "bolt11-pay", "invoice": invoice}, required, accepted)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The candidate hash: the echoed legal context's value. The paid invoice carries none."""
-        accepted = _ln_accepted(presented)
+        """The candidate hash: the echoed legal context's value, under an option the pairing's filter serves. The paid
+        invoice carries none."""
+        accepted = _ln_accepted(presented, _NAMED_FILTER)
         if isinstance(accepted, Refusal):
             return accepted
-        b = check_option(accepted, None)
-        if isinstance(b, Refusal):
-            return b
         extensions = presented.get("extensions")
         lc = extensions.get("legalContext") if is_object(extensions) else None
         decoded = legal_context_info(lc.get("info")) if is_object(lc) else None

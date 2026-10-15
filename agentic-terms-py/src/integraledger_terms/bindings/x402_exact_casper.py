@@ -12,7 +12,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._jose import js_length
 from ._lcp import is_object, normal_hash, safe_int, uint256_of
-from ._x402 import chosen, filter_of, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for
 
 ID = "x402/exact/casper"
 
@@ -129,13 +129,15 @@ class CasperUnsigned:
 
 
 def _payment_of(presented: object) -> Mapping[str, Any] | Refusal:
-    """The payment's shape as this pairing requires it, or casper/payload-malformed. A payment that carries a refused
-    member, the member refusals use, is malformed."""
+    """The payment's shape as this pairing requires it, or the refusal that names what is wrong: accepted_by's answer
+    for an accepted the pairing's filter does not serve, and casper/payload-malformed for every other fault. A payment
+    that carries a refused member, the member refusals use, is malformed."""
     malformed = Refusal("casper/payload-malformed")
     if not is_object(presented) or safe_int(presented.get("x402Version")) != 2 or "refused" in presented:
         return malformed
-    if not casper_option(presented.get("accepted")):
-        return malformed
+    accepted = accepted_by(presented.get("accepted"), CHECK)
+    if isinstance(accepted, Refusal):
+        return accepted
     payload = presented.get("payload")
     if not is_object(payload):
         return malformed

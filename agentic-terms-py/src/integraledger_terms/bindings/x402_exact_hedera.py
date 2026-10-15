@@ -3,7 +3,7 @@ x402/exact/hedera/transfer-executor (the hash advertised in the challenge only):
 Nothing here fetches, hashes or signs."""
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -87,9 +87,10 @@ def _servable(o: Mapping[str, Any]) -> bool:
     return _named(o) and amount_of(o.get("amount")) is not None and timeout is not None and timeout > 0
 
 
-def _exact_option(o: Mapping[str, Any], has: Callable[[Mapping[str, Any]], bool]) -> Literal[True] | Refusal | None:
-    """The cryptoTransfer method (or none) with a feePayer, and what has asks of the rest of the option; None for
-    another pairing's option."""
+def check_exact(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The pairing's option filter: the cryptoTransfer method (or none) with a feePayer, and the network, asset, payee,
+    amount and timeout build writes the transfers from; None for another pairing's option. read and build apply it,
+    and bound holds the option a presented payment echoes to it."""
     if not _on_hedera(o):
         return None
     method = _method_of(o)
@@ -98,20 +99,9 @@ def _exact_option(o: Mapping[str, Any], has: Callable[[Mapping[str, Any]], bool]
     if method is not _ABSENT and method != "cryptoTransfer":
         return Refusal("hedera/option-malformed")
     extra = o.get("extra")
-    if not has(o) or not is_entity(extra.get("feePayer") if is_object(extra) else None):
+    if not _servable(o) or not is_entity(extra.get("feePayer") if is_object(extra) else None):
         return Refusal("hedera/option-malformed")
     return True
-
-
-def check_exact(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """The option read and build serve: build writes the transfers from its amount."""
-    return _exact_option(o, _servable)
-
-
-def _presentable(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """The presented option bound serves: method, network, asset, payee and fee payer. bound reads the signed body,
-    not the option's amount or timeout, so neither is checked here."""
-    return _exact_option(o, _named)
 
 
 def executors_of(o: Mapping[str, Any]) -> list[str] | None:
@@ -210,10 +200,10 @@ class X402ExactHedera:
         return HederaUnsigned(request={"kind": "hedera-body", "bodyBytes": body})
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash inside what the payer signed: the body memo, in LCP string form. Transfers, amounts, the fee payer
-        and the payer are not read, nor the presented option's amount and timeout, and no signature is verified
+        """The hash inside what the payer signed: the body memo, in LCP string form, under an option the pairing's
+        filter serves. Transfers, amounts, the fee payer and the payer are not read, and no signature is verified
         here."""
-        p = presented_with(presented, _presentable)
+        p = presented_with(presented, check_exact)
         if isinstance(p, Refusal):
             return p
         wire = b64_decode(p[1].get("transaction"))

@@ -2,11 +2,12 @@
 pay, the payload of a presented payment of one pairing, and the EVM hex signature."""
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any
 
 from .._types import Refusal
 from ._lcp import is_object, safe_int
+from ._x402 import OptionFilter, accepted_by
 
 SCHEME = "batch-settlement"
 MIN_DELAY = 900
@@ -37,17 +38,16 @@ def payable(option: Mapping[str, Any]) -> bool:
     return isinstance(amount, str) and is_decimal(amount) and int(amount) < U128_LIMIT and timeout is not None and timeout > 0
 
 
-def payload_of(
-    presented: object, is_pairing: Callable[[Mapping[str, Any]], bool]
-) -> tuple[Mapping[str, Any], Mapping[str, Any]] | Refusal:
-    """A presented x402 v2 payment of the pairing: its accepted option and its payload object."""
+def payload_of(presented: object, check: OptionFilter) -> tuple[Mapping[str, Any], Mapping[str, Any]] | Refusal:
+    """A presented x402 v2 payment of the pairing: its accepted option, held to the pairing's filter by accepted_by,
+    and its payload object."""
     if not is_object(presented) or safe_int(presented.get("x402Version")) != 2 or isinstance(
         presented.get("x402Version"), bool
     ):
         return Refusal("x402/not-v2")
-    accepted = presented.get("accepted")
-    if not is_object(accepted) or not is_pairing(accepted):
-        return Refusal("x402/option-not-this-pairing")
+    accepted = accepted_by(presented.get("accepted"), check)
+    if isinstance(accepted, Refusal):
+        return accepted
     payload = presented.get("payload")
     if not is_object(payload):
         return Refusal("x402/payload-malformed")

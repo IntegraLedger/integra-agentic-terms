@@ -14,7 +14,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._batch import SCHEME
 from ._lcp import is_object, normal_hash, safe_int
-from ._x402 import chosen, filter_of, legal_context_of, read_for
+from ._x402 import accepted_by, chosen, filter_of, legal_context_of, read_for
 
 ID = "x402/batch-settlement/cloudflare"
 NETWORK = "cloudflare:402"
@@ -71,8 +71,8 @@ class X402BatchSettlementCloudflare:
         version = presented.get("x402Version") if is_object(presented) else None
         if not is_object(presented) or isinstance(version, bool) or safe_int(version) != 2:
             return Refusal("x402/not-v2")
-        accepted = presented.get("accepted")
-        if not is_object(accepted) or not is_pairing(accepted):
-            return Refusal("x402/option-not-this-pairing")
+        accepted = accepted_by(presented.get("accepted"), _FILTER)
+        if isinstance(accepted, Refusal):
+            return accepted
         lc = legal_context_of(presented.get("extensions"))
         return lc if isinstance(lc, Refusal) else lc[0]

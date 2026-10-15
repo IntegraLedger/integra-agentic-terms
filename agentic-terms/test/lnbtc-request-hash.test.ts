@@ -171,13 +171,15 @@ describe("x402/exact/lnbtc: the gate compares the recomputed request hash before
       expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "ln/request-binding-malformed" });
       expect(fetch.calls).toBe(0);
     }));
-  it("an option whose extra.requestHash is article B's, over article A's invoice: refused though the request is B", () =>
+  // The pairing's read applies the filter its build applies, whose invoice checks refuse a requestHash that is not the
+  // invoice's description hash, so the document offers no option, though the request is B.
+  it("an option whose extra.requestHash is article B's, over article A's invoice: not offered though the request is B", () =>
     at(async () => {
       const O = { ...V.fixed.O, extra: { ...(V.fixed.O["extra"] as object), requestHash: HTTP_B } };
       const fetch = serving(ABC);
       const placed = { x402Version: 2, resource: { url: ARTICLE_B }, accepts: [O], extensions: (doc as { extensions: unknown }).extensions };
       const out = await confirm(placed, binding, account, fetch, { request: { method: "GET", url: ARTICLE_B } });
-      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "ln/request-hash-mismatch" });
+      expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "x402/no-payable-option" });
       expect(fetch.calls).toBe(0);
     }));
 });

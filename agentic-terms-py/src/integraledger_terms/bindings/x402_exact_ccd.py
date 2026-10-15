@@ -19,7 +19,7 @@ from .._types import Advertised, Json, Refusal
 from ._cbor import UNDEFINED, CborMap, decode_cbor, is_tag, map_get
 from ._codec import b58_decode, canonical_or_none
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, filter_of, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for
 
 ID = "x402/exact/ccd"
 
@@ -172,8 +172,9 @@ def _signed(presented: object) -> AtrHash | Refusal:
     sender and expiry, the payload's type and the one transfer's memo, and no sponsor, receiver, amount or token."""
     if not is_object(presented) or safe_int(presented.get("x402Version")) != 2:
         return Refusal("x402/not-v2")
-    if not ccd_option(presented.get("accepted")):
-        return Refusal("x402/option-not-this-pairing")
+    accepted = accepted_by(presented.get("accepted"), CHECK)
+    if isinstance(accepted, Refusal):
+        return accepted
     payload = presented.get("payload")
     tx = payload.get("signedTransaction") if is_object(payload) else None
     if not is_object(tx):

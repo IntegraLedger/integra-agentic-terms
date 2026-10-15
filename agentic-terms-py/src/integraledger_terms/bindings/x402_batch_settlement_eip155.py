@@ -58,7 +58,14 @@ def is_pairing(option: Mapping[str, Any]) -> bool:
     return True
 
 
-_FILTER = filter_of(is_pairing)
+def _payable(option: Mapping[str, Any]) -> bool:
+    """What build can pay: payable, and a payTo and asset that are not the zero address, since the channel contract's
+    deposit refuses a configuration whose receiver or token is."""
+    return payable(option) and non_zero_address(option.get("payTo")) and non_zero_address(option.get("asset"))
+
+
+# The pairing's one option filter, which read, build, build_within, bound and the channel reads apply.
+_FILTER = filter_of(is_pairing, _payable)
 
 
 def _same_bytes(a: object, b: object) -> bool:
@@ -69,7 +76,7 @@ def _same_bytes(a: object, b: object) -> bool:
 def channel_ref(presented: object) -> ChannelRef | Refusal:
     """The channel id of a payment's config, which must equal its voucher's channel id, lower-case. A config the
     channel contract's deposit refuses is x402/payload-malformed."""
-    got = payload_of(presented, is_pairing)
+    got = payload_of(presented, _FILTER)
     if isinstance(got, Refusal):
         return got
     accepted, payload = got
@@ -93,7 +100,7 @@ def channel_kind(presented: object) -> ChannelKind | Refusal:
     """deposit is the opening and voucher is within. A refund with no amount is the close; one with an amount is
     within, where that amount is a positive decimal below 2^128, as the channel contract's refund and
     refundWithSignature take a uint128 and refuse 0. Any other amount is x402/payload-malformed."""
-    got = payload_of(presented, is_pairing)
+    got = payload_of(presented, _FILTER)
     if isinstance(got, Refusal):
         return got
     payload = got[1]
@@ -149,7 +156,7 @@ def bound(presented: object) -> AtrHash | Refusal:
     """The opening's salt, once its config hashes to the voucher's channel id. No signature is verified here. A config
     the channel contract's deposit refuses, or a deposit amount that is not a positive decimal below 2^128, as that
     deposit takes a uint128 and refuses 0, is x402/payload-malformed."""
-    got = payload_of(presented, is_pairing)
+    got = payload_of(presented, _FILTER)
     if isinstance(got, Refusal):
         return got
     payload = got[1]
@@ -171,7 +178,7 @@ def bound_within(presented: object) -> AtrHash | Refusal:
     ref = channel_ref(presented)
     if isinstance(ref, Refusal):
         return ref
-    got = payload_of(presented, is_pairing)
+    got = payload_of(presented, _FILTER)
     assert not isinstance(got, Refusal)
     return _salt(got[1])
 
@@ -181,9 +188,9 @@ def _uint(value: object, low: int) -> bool:
 
 
 def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
-    """The opening's two requests, in order: the deposit's token authorization, then the first voucher. A from, or an
-    option's payTo or asset, that is the zero address is x402/option-malformed: the channel contract's deposit refuses
-    a configuration whose payer, receiver or token is."""
+    """The opening's two requests, in order: the deposit's token authorization, then the first voucher. A from that is
+    the zero address is x402/option-malformed: the channel contract's deposit refuses a configuration whose payer is.
+    The option filter refuses an option whose payTo or asset is."""
     if not is_object(c):
         return Refusal("x402/not-v2")
     required, accepted = c.get("required"), c.get("accepted")
@@ -191,8 +198,6 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     if ok is not True:
         return ok
     assert is_object(required) and is_object(accepted)
-    if not payable(accepted):
-        return Refusal("x402/option-malformed")
     salt = normal_hash(h)
     payer, payer_authorizer, auth_salt = c.get("from"), c.get("payerAuthorizer"), c.get("authSalt")
     if salt is None or not is_address(payer) or not is_address(payer_authorizer) or not is_hash32(auth_salt):

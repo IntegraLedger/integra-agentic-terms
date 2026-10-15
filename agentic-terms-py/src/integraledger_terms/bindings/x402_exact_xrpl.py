@@ -12,7 +12,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
-from ._x402 import chosen, filter_of, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for
 from ._xrpl import Blob, decode_presented, is_blob_hex, is_xrpl_network, network_id, same_invoice, x402_invoice_id
 
 ID = "x402/exact/xrpl"
@@ -43,9 +43,6 @@ def _is_this(option: Mapping[str, Any]) -> bool:
     return pairing_of(option) is not None
 
 
-_THIS = filter_of(_is_this)
-
-
 def _payable(option: Mapping[str, Any]) -> bool:
     """True when build can write the Payment's Amount: XRP drops, or an issued amount with extra.issuer."""
     amount, asset = option.get("amount"), option.get("asset")
@@ -55,6 +52,11 @@ def _payable(option: Mapping[str, Any]) -> bool:
         return _DROPS.fullmatch(amount) is not None
     extra = option.get("extra")
     return _AMOUNT.fullmatch(amount) is not None and is_object(extra) and isinstance(extra.get("issuer"), str)
+
+
+# The pairing's one option filter, which read, build and bound apply: an option of this pairing whose Amount build can
+# write (_payable), else x402/option-malformed.
+_THIS = filter_of(_is_this, _payable)
 
 
 def _u32(value: object) -> bool:
@@ -83,9 +85,9 @@ def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | R
     """The option, the decoded blob and the hash of a payment, or the refusal that names what is wrong."""
     if not is_object(presented) or presented.get("x402Version") != 2 or isinstance(presented.get("x402Version"), bool):
         return Refusal("x402/not-v2")
-    accepted = presented.get("accepted")
-    if not is_object(accepted) or not _is_this(accepted):
-        return Refusal("x402/option-not-this-pairing")
+    accepted = accepted_by(presented.get("accepted"), _THIS)
+    if isinstance(accepted, Refusal):
+        return accepted
     payload = presented.get("payload")
     if not is_object(payload):
         return Refusal("x402/payload-malformed")
@@ -122,8 +124,6 @@ class X402ExactXrpl:
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if not _payable(accepted):
-            return Refusal("x402/option-malformed")
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         extra = accepted["extra"]

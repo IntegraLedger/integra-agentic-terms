@@ -129,19 +129,28 @@ def payment_with(required: Mapping[str, Any], accepted: Mapping[str, Any], paylo
     return payment
 
 
-def presented_with(presented: object, check: OptionFilter) -> tuple[Mapping[str, Any], Mapping[str, Any], Any] | Refusal:
-    """A presented payment's accepted (served by the filter), its payload object and its extensions."""
-    if not is_v2(presented):
-        return Refusal("x402/not-v2")
-    assert is_object(presented)
-    accepted = presented.get("accepted")
+def accepted_by(accepted: object, check: OptionFilter) -> Mapping[str, Any] | Refusal:
+    """A presented payment's accepted, held to the option filter the pairing's read applies. Every x402 pairing's
+    bound takes the presented accepted through this one step, passing that filter, so it binds no payment whose option
+    its own read would not offer: an option the filter serves comes back, one it refuses gives the filter's refusal,
+    and one that is not the pairing's is x402/option-not-this-pairing, as build answers for the same option. An
+    accepted that is not an object is x402/payload-malformed."""
     if not is_object(accepted):
         return Refusal("x402/payload-malformed")
     served = check(accepted)
     if served is None:
         return Refusal("x402/option-not-this-pairing")
-    if served is not True:
-        return served
+    return accepted if served is True else served
+
+
+def presented_with(presented: object, check: OptionFilter) -> tuple[Mapping[str, Any], Mapping[str, Any], Any] | Refusal:
+    """A presented payment's accepted, held to the filter by accepted_by, its payload object and its extensions."""
+    if not is_v2(presented):
+        return Refusal("x402/not-v2")
+    assert is_object(presented)
+    accepted = accepted_by(presented.get("accepted"), check)
+    if isinstance(accepted, Refusal):
+        return accepted
     payload = presented.get("payload")
     if not is_object(payload):
         return Refusal("x402/payload-malformed")
