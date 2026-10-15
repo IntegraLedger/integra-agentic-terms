@@ -182,8 +182,9 @@ Every result carries its JSON both as `structuredContent` and as the text of its
 result with `isError: true` and `{ decline: { code, detail }, moved? }`: the payment would not carry a confirmed hash,
 and the agent must not send one.
 
-Byte values cross the tools as JSON: the ATR as `atr: { base64, utf8 }` (`utf8` is `null` when the bytes are not valid
-UTF-8), integers as decimal strings, byte strings as `0x` hex.
+Values cross the tools as JSON: the ATR as `atr: { base64, utf8 }` (`utf8` is `null` when the bytes are not valid
+UTF-8), every integer the gate holds as a `bigint` as a decimal string, every byte string it holds as a `Uint8Array` as
+`0x` hex, and numbers as JSON numbers.
 
 An `atr` argument is the ATR's bytes as padded standard base64 in its canonical form (RFC 4648 §3.5), the form
 `atr.base64` is returned in. Any other value fails the tool's input schema, as any malformed argument does, and the tool

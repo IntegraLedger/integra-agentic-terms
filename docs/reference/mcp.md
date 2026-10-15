@@ -45,7 +45,8 @@ is a result with `isError: true`:
 and, where the signer moved the payment, `moved: { signed, atr: { base64, utf8 }, atrHash }`.
 
 Values cross as JSON: the ATR as `atr: { base64, utf8 }` (`utf8` is `null` when the bytes are not valid UTF-8), every
-integer as a decimal string, every byte string as `0x` hex.
+integer the gate holds as a `bigint` as a decimal string, every byte string it holds as a `Uint8Array` as `0x` hex, and
+numbers as JSON numbers.
 
 An `atr` argument is the ATR's bytes as padded standard base64 in its canonical form (RFC 4648 §3.5), the form
 `atr.base64` is returned in. Any other value fails the tool's input schema, as any malformed argument does, and the tool
