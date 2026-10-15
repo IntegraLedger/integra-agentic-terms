@@ -10,6 +10,7 @@
     "api": "node scripts/api.mjs",
     "build": "node scripts/api.mjs && next build",
     "dev": "node scripts/api.mjs && next dev",
+    "typecheck": "fumadocs-mdx && tsc --noEmit",
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {

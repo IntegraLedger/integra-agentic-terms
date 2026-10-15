@@ -3,3 +3,4 @@ out/
 .source/
 content/api/
 next-env.d.ts
+*.tsbuildinfo
