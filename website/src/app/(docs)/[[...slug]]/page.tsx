@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { JsonLd } from "@/components/JsonLd";
 import { Mermaid } from "@/components/Mermaid";
-import { markdownPath } from "@/lib/llms";
+import { markdownPath, markdownUrl } from "@/lib/llms";
 import { absoluteUrl, breadcrumbJsonLd, docSourcePath, repoFile, siteConfig } from "@/lib/site";
 import { source } from "@/lib/source";
 
@@ -31,7 +31,7 @@ export default async function Page(props: PageProps) {
   if (!page) notFound();
   const MDX = page.data.body;
   const sourcePath = docSourcePath(page.data.type, page.data.info.path);
-  const markdownUrl = markdownPath(page.url);
+  const copyPath = markdownPath(page.url);
   const lastModified = "lastModified" in page.data ? page.data.lastModified : undefined;
 
   return (
@@ -64,9 +64,9 @@ export default async function Page(props: PageProps) {
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <div className="flex flex-row items-center gap-2 border-b pb-6">
-        <MarkdownCopyButton markdownUrl={markdownUrl} />
+        <MarkdownCopyButton markdownUrl={copyPath} />
         <ViewOptionsPopover
-          markdownUrl={absoluteUrl(markdownUrl)}
+          markdownUrl={absoluteUrl(copyPath)}
           {...(sourcePath === undefined ? {} : { githubUrl: repoFile(sourcePath) })}
         />
       </div>
@@ -89,7 +89,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   return {
     title: slug.length === 0 ? { absolute: siteConfig.title } : page.data.title,
     description,
-    alternates: { canonical: page.url },
+    alternates: { canonical: page.url, types: { "text/markdown": markdownUrl(page.url) } },
     openGraph: {
       type: "article",
       url: absoluteUrl(page.url),
