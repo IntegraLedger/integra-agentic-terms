@@ -80,11 +80,11 @@ def payment(transaction: str) -> dict[str, object]:
     [
         ("", ""),
         ("636f696e", "coin"),
-        ("efbbbf636f696e", "﻿coin"),
-        ("efbbbfefbbbf", "﻿﻿"),
-        ("c3a9", "é"),
+        ("efbbbf636f696e", "\ufeffcoin"),
+        ("efbbbfefbbbf", "\ufeff\ufeff"),
+        ("c3a9", "\u00e9"),
         ("f09f9880", "\U0001f600"),
-        ("efbfbd", "�"),
+        ("efbfbd", "\ufffd"),
     ],
 )
 def test_a_string_reads_its_utf8_with_a_leading_bom_kept(utf8: str, text: str) -> None:
