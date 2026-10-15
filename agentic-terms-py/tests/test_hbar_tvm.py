@@ -810,6 +810,34 @@ def test_x402_exact_tvm_a_message_is_read_as_ton_s_action_phase_sends_it() -> No
         assert BINDING.bound(presented(boc)) == expect, name
 
 
+def _wide(value: int, length: int) -> Write:
+    """A VarUInteger 16 whose value is written in length bytes, the leading ones zero."""
+    return lambda b: b.uint(length, 4).uint(value, 8 * length)
+
+
+# TON's action phase validates a sent message's value, and from global version 12 its extra_flags, each as a
+# VarUInteger 16 in its shortest form: a length whose first byte is zero is refused (ton-blockchain/ton
+# crypto/block/block-parse.cpp, VarUInteger::validate_skip; crypto/block/transaction.cpp, try_action_send_msg), while
+# fwd_fee is not read from global version 8. TON's transaction emulator and lcp's exactTvm.bound give each case the
+# same answer; the number after a case is the action phase's result code, and under the W5 action's mode 3 an outgoing
+# message TON refuses is skipped.
+def test_x402_exact_tvm_a_message_s_value_and_extra_flags_are_read_in_their_shortest_form() -> None:
+    attach = int(F["attachNanotons"])
+    assert BINDING.bound(presented(_settlement(fwd_fee=_wide(0, 1)))) == F["H"]
+    assert BINDING.bound(presented(_settlement(_outgoing(fwd_fee=_wide(0, 1))))) == F["H"]
+    assert BINDING.bound(presented(_settlement(_outgoing(value=_wide(attach, 4))))) == F["H"]
+    malformed, not_transfer = Refusal("tvm/boc-malformed"), Refusal("tvm/not-jetton-transfer")
+    refused = {
+        "the settlement's value of 0 in one byte (34)": (_settlement(value=_wide(0, 1)), malformed),
+        "the settlement's extra_flags of 0 in one byte (45)": (_settlement(extra_flags=_wide(0, 1)), malformed),
+        "the settlement's extra_flags of 3 in two bytes (45)": (_settlement(extra_flags=_wide(3, 2)), malformed),
+        "the outgoing value with a leading zero byte (34)": (_settlement(_outgoing(value=_wide(attach, 8))), not_transfer),
+        "the outgoing extra_flags of 0 in one byte (45)": (_settlement(_outgoing(extra_flags=_wide(0, 1))), not_transfer),
+    }
+    for name, (boc, expect) in refused.items():
+        assert BINDING.bound(presented(boc)) == expect, name
+
+
 def _proofs(c: Cell, levels: int) -> Cell:
     """The cell under levels Merkle proofs (exotic type 3: the child's level-0 hash and depth)."""
     for _ in range(levels):

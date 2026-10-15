@@ -141,12 +141,12 @@ def tvm_carrier(settlement_boc: object) -> tuple[AtrHash, Cell] | Refusal:
     body is a W5 internal_signed request with exactly one action_send_msg behind an empty list, carrying a Jetton
     transfer whose forward payload is a reference to a text comment holding an LCP string. Each message is read as
     TON's action phase sends it (message_of), at mainnet's configuration: a source of addr_none or an addr_std with no
-    anycast (the outgoing message's the W5 wallet's own), a destination TON sends to, an extra_flags of at most 3, no
-    extra currency, its state init validated as TON validates it, a referenced body that is an ordinary cell with
-    nothing after it, and at most two nested Merkle proofs or updates. The settlement message TON would not send is
-    tvm/boc-malformed, and the outgoing one tvm/not-jetton-transfer. The settlement message's source names the account
-    that relays it, which the bag cannot show: one naming another account is read, and TON sends it when that account
-    relays it."""
+    anycast (the outgoing message's the W5 wallet's own), a destination TON sends to, a value and an extra_flags of at
+    most 3 each in its shortest form, no extra currency, its state init validated as TON validates it, a referenced
+    body that is an ordinary cell with nothing after it, and at most two nested Merkle proofs or updates. The
+    settlement message TON would not send is tvm/boc-malformed, and the outgoing one tvm/not-jetton-transfer. The
+    settlement message's source names the account that relays it, which the bag cannot show: one naming another
+    account is read, and TON sends it when that account relays it."""
     root = root_of(settlement_boc)
     if isinstance(root, Refusal):
         return root

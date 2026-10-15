@@ -186,8 +186,9 @@ def message_of(c: Cell, sender: Address | None, config: TonConfiguration) -> Mes
     - dest is an address TON sends to (check_rewrite_dest_addr): an addr_std with no anycast, or an addr_var of 256
       bits with no anycast, which TON sends as that addr_std, on a workchain the configuration holds. The answer's dest
       is that addr_std;
-    - the extra currencies are a valid HashmapE 32 (VarUInteger 32) of at most the configuration's
-      max_msg_extra_currencies entries, and from global version 12 extra_flags sets no bit above its two low ones;
+    - the value's Grams is a VarUInteger 16 in its shortest form (Slice.var_uint), the extra currencies are a valid
+      HashmapE 32 (VarUIntegerPos 32) of at most the configuration's max_msg_extra_currencies entries, and from global
+      version 12 extra_flags is a VarUInteger 16 in its shortest form that sets no bit above its two low ones;
     - the init, when present, is a ^StateInit, or a StateInit inline, taken as the cell its fields make, either of
       them one is_state_init holds;
     - the body is the remainder, or a reference to an ordinary cell with nothing after it (TL-B validation reads the
@@ -208,10 +209,11 @@ def message_of(c: Cell, sender: Address | None, config: TonConfiguration) -> Mes
         tag, dest = msg_address(s, config)
         if tag < 2 or dest is None:
             return None
-        s.coins()
+        if s.var_uint(4) is None:
+            return None
         extra = s.maybe_ref()
-        flags = s.coins()
-        if config.global_version >= 12 and flags > 3:
+        flags = s.var_uint(4)
+        if config.global_version >= 12 and (flags is None or flags > 3):
             return None
         s.coins()
         s.uint(64 + 32)
@@ -231,9 +233,9 @@ def message_of(c: Cell, sender: Address | None, config: TonConfiguration) -> Mes
 
             def currency(v: Slice) -> bool:
                 nonlocal count
-                v.uint(8 * v.uint(5))
+                amount = v.var_uint(5)
                 count += 1
-                return True
+                return amount is not None and amount > 0
 
             reads = STATE_INIT_MAX_READS - 2 - init_ref - body_ref
             if not Validation(reads).hashmap(extra, 32, currency) or count > config.max_msg_extra_currencies:

@@ -312,7 +312,16 @@ class Slice:
         return self.uint(8 * n).to_bytes(n, "big")
 
     def coins(self) -> int:
+        """A VarUInteger 16 of any length, as @ton/core's loadCoins reads one: the fields TON does not validate."""
         return self.uint(8 * self.uint(4))
+
+    def var_uint(self, length_bits: int) -> int | None:
+        """A TL-B VarUInteger with a length of length_bits bits, as TON validates one (ton-blockchain/ton
+        crypto/block/block-parse.cpp, VarUInteger::validate_skip): None when its length is not zero and its first
+        byte is, which is not the value's shortest form."""
+        length = self.uint(length_bits)
+        value = self.uint(8 * length)
+        return None if length and value >> (8 * length - 8) == 0 else value
 
     def ref(self) -> Cell:
         if self.ref_at >= len(self.cell.refs):
