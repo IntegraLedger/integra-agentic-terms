@@ -3,7 +3,7 @@
  * signer's chain; the build's request exactly as built; and the credential the signer's answer completes.
  */
 import type { AtrHash, Json, Refusal } from "@integraledger/lcp/core";
-import { canonicalJson, parseJson } from "@integraledger/lcp/core";
+import { base64UrlBytes, canonicalJson, parseJson } from "@integraledger/lcp/core";
 import type { Hex } from "@integraledger/lcp/evm";
 import { network, pairingsOfPlaced, type MppChallenge, type MppCredential, type MppUnsigned } from "@integraledger/lcp/mpp";
 import { memoCalldata } from "@integraledger/lcp/tempo";
@@ -11,7 +11,6 @@ import type { BuyerPiece, Choose, Chosen, Inputs, Presented, Read, Signature, Si
 import { accountOf, bigintOf, broadcasts, choiceOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const MAX_DECODED = 8192;
 const MAX_JSON_DEPTH = 16;
 
@@ -30,7 +29,7 @@ export function requestOf(c: MppChallenge): Record<string, unknown> | undefined 
  */
 export function decodeObject(s: unknown): Record<string, Json> | undefined {
   const bytes = base64UrlBytes(s, MAX_DECODED);
-  if (bytes === undefined) return undefined;
+  if (typeof bytes === "string") return undefined;
   try {
     const v: unknown = parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
     if (!isObject(v) || depthOf(v, 0) > MAX_JSON_DEPTH) return undefined;
@@ -46,26 +45,6 @@ function depthOf(v: unknown, d: number): number {
   let max = d + 1;
   for (const x of Object.values(v)) max = Math.max(max, depthOf(x, d + 1));
   return max;
-}
-
-/** The bytes of base64url without padding whose final character's unused bits are zero, at most `max` of them. */
-function base64UrlBytes(s: unknown, max: number): Uint8Array | undefined {
-  if (typeof s !== "string" || s.length % 4 === 1 || s.length > Math.ceil((max * 4) / 3)) return undefined;
-  const out = new Uint8Array(Math.floor((s.length * 3) / 4));
-  let acc = 0;
-  let bits = 0;
-  let at = 0;
-  for (let i = 0; i < s.length; i++) {
-    const v = BASE64URL.indexOf(s[i]!);
-    if (v === -1) return undefined;
-    acc = ((acc << 6) | v) & 0xffffff;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out[at++] = (acc >> bits) & 0xff;
-    }
-  }
-  return (acc & ((1 << bits) - 1)) === 0 ? out : undefined;
 }
 
 /** Whether a placed challenge offers the pairing, by the protocol package's `pairingsOfPlaced`. */

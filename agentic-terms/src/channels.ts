@@ -14,6 +14,7 @@ import {
   hashEquals,
   parseJson,
   toBase64,
+  toBase64Url,
   type AtrHash,
   type Json,
   type Refusal,
@@ -215,7 +216,7 @@ function takenAgain(refund: { paymentResponse?: unknown }, required: unknown): b
 
 /** 24 random bytes as unpadded base64url: 32 characters from `[A-Za-z0-9_-]`. */
 function newRef(): string {
-  return toBase64(crypto.getRandomValues(new Uint8Array(REF_BYTES))).replace(/\+/g, "-").replace(/\//g, "_");
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(REF_BYTES)));
 }
 
 /** The opening voucher's `maxClaimableAmount`, where the payment carries one, else "0". */

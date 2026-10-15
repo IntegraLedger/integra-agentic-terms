@@ -5,7 +5,16 @@
  * completed payment, or, for a pairing whose proof is the agreement payment, completes it without that reading. `check`
  * confirms a payment held later against kept bytes.
  */
-import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash, type Json, type Refusal } from "@integraledger/lcp/core";
+import {
+  hash,
+  hashEquals,
+  isHttpsLink,
+  isOtherSchemeLink,
+  toBase64Url,
+  type AtrHash,
+  type Json,
+  type Refusal,
+} from "@integraledger/lcp/core";
 import { isRefusal, refuse } from "./pairings/common.js";
 import { PIECES } from "./pairings/index.js";
 import {
@@ -45,7 +54,6 @@ const MAX_STEPS = 2;
 
 const FETCH_DEADLINE_MS = 10_000;
 const REF_BYTES = 24;
-const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const DECIMAL = /^[0-9]+$/;
 
 export function declined(code: DeclineCode, detail: string): Declined {
@@ -91,13 +99,7 @@ const tooLarge = (): Declined => declined("atr-too-large", `The ATR is larger th
 
 /** 24 random bytes as unpadded base64url: 32 characters from `[A-Za-z0-9_-]`. */
 export function newRef(): string {
-  const b = crypto.getRandomValues(new Uint8Array(REF_BYTES));
-  let s = "";
-  for (let i = 0; i < b.length; i += 3) {
-    const n = (b[i]! << 16) | (b[i + 1]! << 8) | b[i + 2]!;
-    s += BASE64URL[(n >> 18) & 63]! + BASE64URL[(n >> 12) & 63]! + BASE64URL[(n >> 6) & 63]! + BASE64URL[n & 63]!;
-  }
-  return s;
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(REF_BYTES)));
 }
 
 /** Whether an answer to a `redirect: "manual"` request is a redirect: a 3xx status, or the opaque form a browser gives. */
