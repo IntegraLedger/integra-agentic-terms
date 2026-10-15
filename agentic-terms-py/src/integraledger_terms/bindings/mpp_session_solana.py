@@ -152,6 +152,25 @@ def open_signer(tx: SvmTx, program: object) -> str | Refusal:
     return key_string(tx.keys[ix.accounts[OPEN_SIGNER_ACCOUNT]])
 
 
+def _kind(presented: object) -> ChannelKind | Refusal:
+    """The kind of a Solana session payment by its action, read against the echoed challenge's voucherSigner (client
+    when absent), as draft-solana-session-00 says: a voucher authorizes service only for client, and in operator mode
+    does not authenticate the caller; a use is valid only for operator. A voucher whose challenge names operator, or a
+    use whose challenge names client or no voucherSigner, is mpp/session-action."""
+    k = action_kind(presented, WITHIN_ACTIONS)
+    if isinstance(k, Refusal):
+        return k
+    assert is_object(presented)
+    action = presented["payload"].get("action")
+    if action not in ("voucher", "use"):
+        return k
+    details = echoed_details(presented, "solana")
+    if isinstance(details, Refusal):
+        return details
+    operator = details.get("voucherSigner") == "operator"
+    return k if operator == (action == "use") else Refusal("mpp/session-action")
+
+
 def is_base58_signature(value: object) -> bool:
     """A base58 string of 64 to 88 characters that decodes to a 64-byte Ed25519 signature."""
     if not isinstance(value, str) or not 64 <= len(value) <= 88:
@@ -214,13 +233,15 @@ class MppSessionSolana:
         return o if isinstance(o, Refusal) else o.h
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
-        """open, close, or within for a voucher, topUp or use."""
-        return action_kind(presented, WITHIN_ACTIONS)
+        """open, close, or within for a topUp, a voucher under a client voucher signer, or a use under an operator
+        one."""
+        return _kind(presented)
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The network and the payload's channelId, re-encoded from its 32 bytes; on a within or close payment, read
-        from the payment itself."""
-        kind = action_kind(presented, WITHIN_ACTIONS)
+        from the payment itself. A voucher whose challenge's voucherSigner is operator, and a use whose challenge's is
+        not, are refused as channel_kind refuses them."""
+        kind = _kind(presented)
         if isinstance(kind, Refusal):
             return kind
         details: Mapping[str, Any]
@@ -245,11 +266,12 @@ class MppSessionSolana:
 
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
         """A use credential echoing the opening challenge, whose bearer proof names that challenge's id, gives its H.
-        A voucher or topUp signs no value holding H."""
+        A voucher or topUp signs no value holding H. A voucher whose challenge's voucherSigner is operator, and a use
+        whose challenge's is not, are refused as channel_kind refuses them."""
         credential = credential_of(presented)
         if isinstance(credential, Refusal):
             return credential
-        kind = action_kind(credential, WITHIN_ACTIONS)
+        kind = _kind(credential)
         if isinstance(kind, Refusal):
             return kind
         if credential["payload"].get("action") != "use":

@@ -1527,6 +1527,31 @@ def test_mpp_session_solana_an_opening_carries_authentication_in_operator_mode_o
         assert MPP_SESSION_SOLANA.bound(credential(placed, {**SV2_OPEN, "authentication": named})) == Refusal(with_authentication)
 
 
+def test_mpp_session_solana_a_voucher_is_within_under_client_and_a_use_under_operator() -> None:
+    # draft-solana-session-00 L1324-1326 and L1338 at tempoxyz/mpp-specs 08e7dd87, as the session file's rows cite
+    # them: a voucher authorizes service only for client and in operator mode does not authenticate the caller; a use
+    # is valid only for operator.
+    voucher = {"action": "voucher", "channelId": SV["SV2"]["channel"]}
+    under_operator = session_agreed("a solana voucher, its challenge's voucherSigner operator")
+    under_client = session_agreed("a solana use, its challenge's voucherSigner client or absent")
+    operator = operator_doc()[0]
+    for placed in (SV["SS1"]["solana"]["placed"], client_doc()[0], operator):
+        authentication = {**SV["SV5"]["expectAuthentication"], "challengeId": placed["id"], "signature": "x"}
+        use = {"action": "use", "channelId": SV["SV2"]["channel"], "authentication": authentication}
+        channel = ChannelRef(DEVNET, SV["SV2"]["channel"])
+        expected: dict[str, tuple[Any, ...]]
+        if placed is operator:
+            refused = Refusal(under_operator)
+            expected = {"voucher": (refused, refused, refused), "use": ("within", channel, H)}
+        else:
+            refused = Refusal(under_client)
+            expected = {"voucher": ("within", channel, Refusal("mpp/not-bound-within")), "use": (refused, refused, refused)}
+        for payload in (voucher, use):
+            presented = credential(placed, payload)
+            got = (MPP_SESSION_SOLANA.channel_kind(presented), MPP_SESSION_SOLANA.channel_ref(presented), MPP_SESSION_SOLANA.bound_within(presented))
+            assert got == expected[payload["action"]], (placed is operator, payload["action"])
+
+
 def test_mpp_session_solana_without_operator_mode_the_open_alone_completes_the_credential() -> None:
     p = session_pairing()
     signer = Recording(p.account, session_answer)
@@ -1554,7 +1579,7 @@ def test_mpp_session_solana_sv1_to_sv3_and_the_channel_members() -> None:
     assert MPP_SESSION_SOLANA.channel_kind(within_voucher) == "within"
     assert MPP_SESSION_SOLANA.bound_within(within_voucher) == Refusal("mpp/not-bound-within")
     wrong = {"type": "proof", "challengeId": SV["plants"]["solana"]["useWrongChallengeId"]}
-    use = credential(placed, {"action": "use", "channelId": SV["SV2"]["channel"], "authentication": wrong})
+    use = credential(operator_doc()[0], {"action": "use", "channelId": SV["SV2"]["channel"], "authentication": wrong})
     assert MPP_SESSION_SOLANA.bound_within(use) == Refusal(SV["plants"]["solana"]["expectUse"])
     plant_open = {"action": "open", "channelId": SESSION_PLANT["channel"], "transaction": SESSION_PLANT["wireBase64"]}
     assert MPP_SESSION_SOLANA.bound(credential(placed, plant_open)) == Refusal(SV["plants"]["solana"]["expect"])
