@@ -108,6 +108,16 @@ the same HTML, that `const` and `True` take github-light-default's colours, and 
 imports a module that highlights code. Each line is tokenized to its end however long that takes
 (`tokenizeTimeLimit: 0`), so a busy machine colours the code as an idle one does.
 
+Two builds of one commit are byte-equal. The build ID, which every page carries and which names the folder of the
+build's manifests under `/_next/static/`, is the commit's sha (`website/next.config.ts`); with uncommitted changes it
+is the sha and a digest of those changes. The Mermaid diagrams are drawn in the browser build and the font the
+repository pins, with no font of the machine's, and the text fonts are the files Google Fonts serves at build time. To
+check it, in `website/`:
+
+```sh
+first=$(mktemp -d) && pnpm run build && mv out "$first/out" && rm -rf .next && pnpm run build && diff -r --brief "$first/out" out
+```
+
 ## Submitting a change
 
 1. Fork the repository and create a branch.
