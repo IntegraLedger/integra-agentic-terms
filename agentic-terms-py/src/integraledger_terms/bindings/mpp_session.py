@@ -47,6 +47,7 @@ from ._tempo import (
     OPEN_V2_SELECTOR,
     TRANSFER_WITH_MEMO_SELECTOR,
     KeyAuthorization,
+    authorization_signatures,
     decode_key_authorization,
     decode_tempo_tx,
     encode_key_authorization,
@@ -551,8 +552,10 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
     transaction whose chain id is another is tempo/tx-malformed. It holds one open call to the escrow, whose input has
     the version's length and whose salt word is H. The call's payee, token and authorizedSigner words, and on v2 its
     operator word, are addresses (words 0, 1 and 4 of open(payee, token, deposit, salt, authorizedSigner); on v2, words
-    0, 1, 2 and 5 of open(payee, operator, token, deposit, salt, authorizedSigner)), and the signature gives the sender
-    (tempo_sender), the payer the draft recovers from the transaction; else tempo/tx-malformed.
+    0, 1, 2 and 5 of open(payee, operator, token, deposit, salt, authorizedSigner)), the signature gives the sender
+    (tempo_sender), the payer the draft recovers from the transaction, and each entry of its aa_authorization_list is a
+    list of four items ending in a signature that is not a keychain signature of type 0x03, which Tempo's node refuses
+    there as in the sender's signature (authorization_signatures); else tempo/tx-malformed.
 
     Then the payload's channelId is read, where the draft compares the channel id: one that is not a 32-byte hash is
     mpp/credential-malformed. On v1, it is the channel this transaction opens: evm_channel_id over the sender, the
@@ -602,6 +605,9 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
     sender = tempo_sender(raw)
     if isinstance(sender, Refusal):
         return sender
+    authorizations = authorization_signatures(raw)
+    if isinstance(authorizations, Refusal):
+        return authorizations
     channel = normal_hash(e.payload.get("channelId"))
     if channel is None:
         return Refusal("mpp/credential-malformed")
@@ -659,8 +665,11 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     """The open call for the buyer's signer, and the voucher and credential of the signed transaction. That
     transaction is read as bound reads it: one that is not hex bytes, or is over 64 KiB, is mpp/credential-malformed;
     one that does not decode, an empty one among them, gives decode_tempo_tx's refusal, tempo/tx-malformed; and one
-    signed for a chain other than the challenge's, methodDetails.chainId, is tempo/tx-malformed. The sender is not
-    compared with the buyer's from, nor the transaction's calls with the open call: bound reads those."""
+    signed for a chain other than the challenge's, methodDetails.chainId, one whose signature gives no sender
+    (tempo_sender: a keychain signature of type 0x03 among them), and one whose aa_authorization_list holds an entry that
+    is not a list of four items ending in a signature or one signed with a keychain signature of type 0x03
+    (authorization_signatures) are tempo/tx-malformed. The sender is not compared with the buyer's from, nor the
+    transaction's calls with the open call: bound reads those."""
     o = offer_for(choice, h, SESSION_TEMPO)
     if isinstance(o, Refusal):
         return o
@@ -704,6 +713,12 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
             return tx
         if tx.chain_id != p.chain_id:
             return Refusal("tempo/tx-malformed")
+        sender = tempo_sender(wire)
+        if isinstance(sender, Refusal):
+            return sender
+        authorizations = authorization_signatures(wire)
+        if isinstance(authorizations, Refusal):
+            return authorizations
         if p.version == "v1":
             channel_id = evm_channel_id(from_, recipient, currency, salt, signer, p.escrow, p.chain_id)
             return channel_id if isinstance(channel_id, Refusal) else {"channelId": channel_id}

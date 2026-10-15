@@ -405,9 +405,11 @@ def k1(digest: bytes, v_of: Any = lambda parity: 27 + parity) -> bytes:
 
 # The sender each signature form names, as Tempo reads its signatures (tempoxyz/tempo 9bb63953, tt_signature.rs):
 # secp256k1's 65 bytes by recovery, v 0, 1, 27, 28 or 35 and above; P256 (0x01, 129 bytes) and WebAuthn (0x02, 128 to
-# 2,048 bytes) by the key they carry, the address keccak256 of its coordinates names; a keychain signature (0x03, or
-# 0x04 whose inner signature signs keccak256(0x04 || the hash || the account)) by its account. The payer is the published
-# Anvil key #0's address, fixed.payer.
+# 2,048 bytes) by the key they carry, the address keccak256 of its coordinates names; a keychain signature, 0x04 whose
+# inner signature signs keccak256(0x04 || the hash || the account), by its account. Tempo refuses the keychain form 0x03,
+# whose inner signature signs the hash itself, once T1C is active (tempoxyz/tempo 7d4fd03, crates/revm/src/handler.rs,
+# validate_version), as it is on chains 4217 and 42431, so 0x03 is among the forms that name no sender. The payer is the
+# published Anvil key #0's address, fixed.payer.
 SENDERS: list[tuple[str, Any, str]] = [
     ("secp256k1, v 27 or 28", k1, TF["payer"]),
     ("secp256k1, v 0 or 1", lambda d: k1(d, lambda p: p), TF["payer"]),
@@ -416,9 +418,7 @@ SENDERS: list[tuple[str, Any, str]] = [
     ("P256", lambda d: b"\x01" + bytes(64) + CARRIED + b"\x00", "0x" + keccak(CARRIED)[12:].hex()),
     ("WebAuthn of 128 bytes", lambda d: b"\x02" + CARRIED + CARRIED, "0x" + keccak(CARRIED)[12:].hex()),
     ("WebAuthn of 2048 bytes", lambda d: b"\x02" + bytes(1984) + CARRIED, "0x" + keccak(CARRIED)[12:].hex()),
-    ("keychain", lambda d: b"\x03" + ACCOUNT + k1(d), OPERATOR),
     ("keychain v2", lambda d: b"\x04" + ACCOUNT + k1(keccak(b"\x04" + d + ACCOUNT)), OPERATOR),
-    ("keychain over P256", lambda d: b"\x03" + ACCOUNT + b"\x01" + bytes(64) + CARRIED + b"\x00", OPERATOR),
 ]
 NOT_SENDERS: list[tuple[str, Any]] = [
     ("secp256k1, v 29", lambda d: k1(d, lambda p: 29)),
@@ -427,8 +427,10 @@ NOT_SENDERS: list[tuple[str, Any]] = [
     ("P256 of 128 bytes", lambda d: b"\x01" + bytes(64) + CARRIED),
     ("WebAuthn of 127 bytes", lambda d: b"\x02" + bytes(63) + CARRIED),
     ("WebAuthn of 2049 bytes", lambda d: b"\x02" + bytes(1985) + CARRIED),
-    ("keychain of 10 account bytes", lambda d: b"\x03" + ACCOUNT[:10]),
-    ("keychain over type 9", lambda d: b"\x03" + ACCOUNT + b"\x09" + bytes(64)),
+    ("keychain", lambda d: b"\x03" + ACCOUNT + k1(d)),
+    ("keychain over P256", lambda d: b"\x03" + ACCOUNT + b"\x01" + bytes(64) + CARRIED + b"\x00"),
+    ("keychain v2 of 10 account bytes", lambda d: b"\x04" + ACCOUNT[:10]),
+    ("keychain v2 over type 9", lambda d: b"\x04" + ACCOUNT + b"\x09" + bytes(64)),
     ("type 5", lambda d: b"\x05" + bytes(100)),
     ("type 9", lambda d: b"\x09" + bytes(129)),
     ("no bytes", lambda d: b""),
@@ -446,8 +448,16 @@ def test_mpp_session_tempo_a_v2_descriptor_names_the_transaction_s_sender(form: 
 
 @pytest.mark.parametrize(("form", "signature"), NOT_SENDERS, ids=[s[0] for s in NOT_SENDERS])
 def test_mpp_session_tempo_a_signature_that_names_no_sender_is_tx_malformed(form: str, signature: Any) -> None:
-    opening = tempo_opening(TF["requestV2"], TF["chainId"], signature)
-    assert MPP_SESSION_TEMPO.bound(opening) == Refusal("tempo/tx-malformed")
+    # build's voucher and complete refuse the transaction, and bound refuses the credential complete gives for the
+    # transaction the payer signs, carrying this one in its place.
+    for request_text in (TF["requestV2"], TF["requestV1"]):
+        unsigned = tempo_built(request_text)
+        own = unsigned.complete(open_wire(unsigned.funding), VOUCHER_SIGNATURE)
+        assert MPP_SESSION_TEMPO.bound(own) == H
+        wire = open_wire(unsigned.funding, signature)
+        assert unsigned.voucher(wire) == Refusal("tempo/tx-malformed")
+        assert unsigned.complete(wire, VOUCHER_SIGNATURE) == Refusal("tempo/tx-malformed")
+        assert MPP_SESSION_TEMPO.bound(carrying(own, wire)) == Refusal("tempo/tx-malformed")
 
 
 def test_mpp_session_tempo_a_v2_descriptor_names_the_challenge_s_operator() -> None:
@@ -568,6 +578,115 @@ def test_mpp_session_tempo_rows_with_two_faults_are_refused_for_the_one_the_draf
         both = faulted(v1, faults)
         assert MPP_SESSION_TEMPO.bound(both) == Refusal(row["expect"]), row["case"]
         assert voucher_within(both) == Refusal(row["expect"]), row["case"]
+
+
+KEYCHAIN_VERSIONS = {"keychain-v1": 0x03, "keychain-v2": 0x04}
+
+
+def keychain(form: str, digest: bytes, access_key: str) -> bytes:
+    """A keychain signature for fixed.payer over digest, in the form the rows name, as ox's SignatureEnvelope.serialize
+    writes it: the type byte (keychain-v1 0x03, keychain-v2 0x04), fixed.payer's 20 bytes, then access_key's secp256k1
+    signature r ‖ s ‖ v (v 27 or 28) over the digest itself (0x03) or over keccak256(0x04 ‖ digest ‖ fixed.payer)
+    (0x04)."""
+    payer = bytes.fromhex(TF["payer"][2:])
+    version = KEYCHAIN_VERSIONS[form]
+    inner = digest if version == 0x03 else keccak(b"\x04" + digest + payer)
+    return bytes([version]) + payer + bytes.fromhex(sig65(inner, access_key)[2:])
+
+
+def entry_tuple(a: dict[str, Any]) -> list[bytes]:
+    """An aa_authorization_list entry's [chainId, address, nonce], RLP-encoded each."""
+    return [rlp_uint_bytes(a["chainId"]), rlp_bytes(bytes.fromhex(a["address"][2:])), rlp_uint_bytes(a["nonce"])]
+
+
+def entry_hash(a: dict[str, Any]) -> bytes:
+    """EIP-7702's signing hash of an entry: keccak256(0x05 ‖ rlp([chainId, address, nonce]))."""
+    return keccak(b"\x05" + rlp_list(entry_tuple(a)))
+
+
+def opened_carrying(own: dict[str, Any], wire: str, signing: bytes) -> dict[str, Any]:
+    """The credential complete would give for wire: own, the credential complete gives for the transaction fixed.payer
+    signs, carrying wire in its place, and on v2 the descriptor's expiringNonceHash keccak256 of the bytes wire's sender
+    signed and fixed.payer, and the channel id the draft's over that descriptor (nine_word_id)."""
+    payload = {**own["payload"], "transaction": wire}
+    if "descriptor" in own["payload"]:
+        descriptor = {**own["payload"]["descriptor"], "expiringNonceHash": "0x" + keccak(signing + bytes.fromhex(TF["payer"][2:])).hex()}
+        payload["descriptor"] = descriptor
+        payload["channelId"] = nine_word_id(descriptor)
+    return {**own, "payload": payload}
+
+
+def test_mpp_session_tempo_rows_whose_transaction_carries_a_0x03_keychain_signature() -> None:
+    # mpp-session-tempo.json's agreedRefusals rows with senderSignature. Tempo's transaction specification (docs.tempo.xyz,
+    # Tempo Transactions Specification, "Keychain" and "Transaction Validation", step 1): "The legacy `0x03` format is
+    # rejected from T1C onward." tempoxyz/tempo 7d4fd03 activates T1C on chain 4217 at 1773327600 and on chain 42431 at
+    # 1773068400 (crates/hardfork/src/constants.rs), and its handler refuses a 0x03 signature once T1C is active, the
+    # sender's and each aa_authorization_list entry's (crates/revm/src/handler.rs, validate_version). An entry is
+    # rlp([chain_id, address, nonce, signature]) (crates/primitives/src/transaction/tt_authorization.rs). Each row's
+    # transaction hashes to its expectSha256 (GNU coreutils sha256sum over the bytes ox wrote): build's voucher and
+    # complete refuse it, and bound and build_within refuse the credential complete would give for it. The same
+    # opening with every signature in the 0x04 form completes, gives H and a voucher built within it.
+    rows = agreed_rows("the senderSignature rows", lambda r: "senderSignature" in r, exact=4, left=34)
+    for row in rows:
+        assert set(row) <= {"case", "sessionProtocol", "senderSignature", "authorizationList", "accessKey", "expectSha256", "expect"}, row["case"]
+        entries: list[dict[str, Any]] = row.get("authorizationList", [])
+        for a in entries:
+            assert set(a) == {"chainId", "address", "nonce", "signature"}, row["case"]
+        forms = [row["senderSignature"], *(a["signature"] for a in entries)]
+        assert forms.count("keychain-v1") == 1 and set(forms) <= set(KEYCHAIN_VERSIONS), row["case"]
+        v1 = row.get("sessionProtocol") == "v1"
+        unsigned = tempo_built(TF["requestV1"] if v1 else TF["requestV2"])
+        own = unsigned.complete(open_wire(unsigned.funding), VOUCHER_SIGNATURE)
+        call = (unsigned.funding["call"]["to"], unsigned.funding["call"]["data"])
+
+        def transaction(as_form: Callable[[str], str]) -> tuple[str, bytes]:
+            """The row's opening transaction, each signature in the form as_form gives for the row's."""
+            listed = [rlp_list([*entry_tuple(a), rlp_bytes(keychain(as_form(a["signature"]), entry_hash(a), row["accessKey"]))]) for a in entries]
+
+            def sign(digest: bytes) -> bytes:
+                return keychain(as_form(row["senderSignature"]), digest, row["accessKey"])
+
+            return tempo_signed([call], TF["chainId"], unsigned.funding["validBefore"], sign, listed)
+
+        control, control_signing = transaction(lambda form: "keychain-v2")
+        completed = unsigned.complete(control, VOUCHER_SIGNATURE)
+        assert opened_carrying(own, control, control_signing) == completed, row["case"]
+        assert not isinstance(unsigned.voucher(control), Refusal), row["case"]
+        assert MPP_SESSION_TEMPO.bound(completed) == H, row["case"]
+        assert not isinstance(voucher_within(completed), Refusal), row["case"]
+        wire, signing = transaction(lambda form: form)
+        assert "0x" + hashlib.sha256(bytes.fromhex(wire[2:])).hexdigest() == row["expectSha256"], row["case"]
+        refused = Refusal(row["expect"])
+        assert unsigned.voucher(wire) == refused, row["case"]
+        assert unsigned.complete(wire, VOUCHER_SIGNATURE) == refused, row["case"]
+        assert MPP_SESSION_TEMPO.bound(opened_carrying(own, wire, signing)) == refused, row["case"]
+        assert voucher_within(opened_carrying(own, wire, signing)) == refused, row["case"]
+
+
+def test_mpp_session_tempo_an_authorization_list_entry_is_read_for_its_signature_s_form_alone() -> None:
+    # An entry that is not a list of four items whose fourth is a byte string holds no signature to read and is refused
+    # tempo/tx-malformed; a 65-byte signature is secp256k1's whatever its first byte, as TempoSignature::from_bytes reads
+    # it (tempoxyz/tempo 7d4fd03, crates/primitives/src/transaction/tt_signature.rs), and is not.
+    unsigned = tempo_built(TF["requestV2"])
+    own = unsigned.complete(open_wire(unsigned.funding), VOUCHER_SIGNATURE)
+    call = (unsigned.funding["call"]["to"], unsigned.funding["call"]["data"])
+    entry = {"chainId": TF["chainId"], "address": "0x" + "00" * 20, "nonce": 0}
+    entry_signature = bytes.fromhex(sig65(entry_hash(entry), TF["payerKey"])[2:])
+    starting_with_03 = b"\x03" + entry_signature[1:]
+    assert len(starting_with_03) == 65
+    wire, signing = tempo_signed([call], TF["chainId"], unsigned.funding["validBefore"], None, [rlp_list([*entry_tuple(entry), rlp_bytes(starting_with_03)])])
+    assert unsigned.complete(wire, VOUCHER_SIGNATURE) == opened_carrying(own, wire, signing)
+    assert MPP_SESSION_TEMPO.bound(opened_carrying(own, wire, signing)) == H
+    malformed = Refusal("tempo/tx-malformed")
+    for name, listed in (
+        ("three items", rlp_list(entry_tuple(entry))),
+        ("a list in place of the signature", rlp_list([*entry_tuple(entry), rlp_list([rlp_bytes(entry_signature)])])),
+        ("a byte string in place of the entry", rlp_bytes(entry_signature)),
+    ):
+        wire, signing = tempo_signed([call], TF["chainId"], unsigned.funding["validBefore"], None, [listed])
+        assert unsigned.voucher(wire) == malformed, name
+        assert unsigned.complete(wire, VOUCHER_SIGNATURE) == malformed, name
+        assert MPP_SESSION_TEMPO.bound(opened_carrying(own, wire, signing)) == malformed, name
 
 
 def tempo_pairing(answer: Any, doc: Any = None) -> Pairing:

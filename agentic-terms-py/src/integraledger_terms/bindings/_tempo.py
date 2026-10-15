@@ -1,6 +1,6 @@
-"""Tempo's pieces the MPP pairings read and build: the 0x76 transaction's calls and sender, the TIP-20
-transferWithMemo calldata, the TIP-20 channel reserve's descriptor and ids, and the account keychain's key
-authorizations."""
+"""Tempo's pieces the MPP pairings read and build: the 0x76 transaction's calls, its sender and the signatures of its
+authorization list, the TIP-20 transferWithMemo calldata, the TIP-20 channel reserve's descriptor and ids, and the
+account keychain's key authorizations."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +29,7 @@ _CALLS = 4
 _VALID_BEFORE = 8
 _FEE_TOKEN = 10
 _FEE_PAYER_SIGNATURE = 11
+_AUTHORIZATION_LIST = 12
 _UINT_FIELDS = (0, 1, 2, 3, 6, 7, 8, 9)
 # Tempo's signature lengths and type bytes (tempoxyz/tempo 9bb63953, tt_signature.rs).
 _SECP256K1_LENGTH = 65
@@ -37,7 +38,7 @@ _WEBAUTHN_MIN = 128
 _WEBAUTHN_MAX = 2048
 _P256 = 0x01
 _WEBAUTHN = 0x02
-_KEYCHAIN = 0x03
+_KEYCHAIN_V1 = 0x03
 _KEYCHAIN_V2 = 0x04
 
 
@@ -77,7 +78,7 @@ def _envelope(wire: object) -> list[RlpItem] | Refusal:
     for i in _UINT_FIELDS:
         if rlp_uint(items[i]) is None:
             return Refusal("tempo/tx-malformed")
-    for i in (_CALLS, 5, 12):
+    for i in (_CALLS, 5, _AUTHORIZATION_LIST):
         if not items[i].is_list:
             return Refusal("tempo/tx-malformed")
     if items[_FEE_TOKEN].is_list:
@@ -202,22 +203,57 @@ def _primitive_signer(signature: bytes, digest: bytes) -> str | Refusal:
 
 def tempo_sender(signed_tx: bytes) -> str | Refusal:
     """The sender of a signed 0x76 transaction, as Tempo recovers it from the sender's signature over what the sender
-    signed (_sender_signed): a primitive signature's signer, or for a keychain signature (0x03, or 0x04 whose inner
-    signature signs keccak256(0x04 ‖ that hash ‖ the account), each a 20-byte account and a primitive signature) that
-    account. Any other signature is tempo/tx-malformed."""
+    signed (_sender_signed): a primitive signature's signer, or for a keychain signature (0x04, a 20-byte account and a
+    primitive signature over keccak256(0x04 ‖ that hash ‖ the account)) that account. A keychain signature of type 0x03
+    is tempo/tx-malformed: Tempo's transaction specification rejects that format from T1C onward ("Keychain";
+    "Transaction Validation", step 1), and Tempo's node refuses it once T1C is active (tempoxyz/tempo 7d4fd03,
+    crates/revm/src/handler.rs: validate_version(cfg.spec().is_t1c()), which answers LegacyKeychainSignature), from
+    timestamp 1773327600 on chain 4217 and 1773068400 on chain 42431 (crates/hardfork/src/constants.rs,
+    MAINNET_T1C_TIMESTAMP and MODERATO_T1C_TIMESTAMP). Any other signature is tempo/tx-malformed, a 0x05 type byte
+    among them: Tempo's transaction specification lists the secp256k1, P256, WebAuthn and keychain signature types and
+    no other ("Signature Types"), and its signature validation takes any other format as invalid ("Transaction
+    Validation", step 1: "Otherwise invalid"). Tempo's node answers any other type byte "Unknown signature type
+    identifier" (tempoxyz/tempo 7d4fd03, crates/primitives/src/transaction/tt_signature.rs: TempoSignature::from_bytes
+    reads 0x03 and 0x04 and passes every other signature to PrimitiveSignature::from_bytes, which reads 65 bytes, 0x01
+    and 0x02)."""
     items = _envelope(signed_tx)
     if isinstance(items, Refusal):
         return items
     signature = items[-1].data
     digest = keccak256(_sender_signed(items))
-    if len(signature) != _SECP256K1_LENGTH and signature[:1] in (bytes([_KEYCHAIN]), bytes([_KEYCHAIN_V2])):
+    if len(signature) != _SECP256K1_LENGTH and signature[:1] == bytes([_KEYCHAIN_V2]):
         account = signature[1:21]
         if len(account) != 20:
             return Refusal("tempo/tx-malformed")
-        signed = keccak256(bytes([_KEYCHAIN_V2]) + digest + account) if signature[0] == _KEYCHAIN_V2 else digest
-        inner = _primitive_signer(signature[21:], signed)
+        inner = _primitive_signer(signature[21:], keccak256(bytes([_KEYCHAIN_V2]) + digest + account))
         return inner if isinstance(inner, Refusal) else to_hex(account)
     return _primitive_signer(signature, digest)
+
+
+def authorization_signatures(signed_tx: bytes) -> list[bytes] | Refusal:
+    """The signatures of the envelope's aa_authorization_list (item 12), one per entry. Tempo writes each entry as
+    rlp([chain_id, address, nonce, signature]), its signature a Tempo signature as the sender's is (tempoxyz/tempo
+    7d4fd03, crates/primitives/src/transaction/tt_authorization.rs: TempoSignedAuthorization, whose decode_fields reads
+    chain_id, address, nonce and signature in that order). An entry that is not a list of four items whose fourth is a
+    byte string is tempo/tx-malformed, since it holds no signature to read. So is an entry whose signature is a
+    keychain signature of type 0x03, a length other than 65 bytes and the first byte 0x03
+    (crates/primitives/src/transaction/tt_signature.rs, TempoSignature::from_bytes): Tempo's node validates the keychain
+    version of each entry's signature as it validates the sender's, and refuses 0x03 once T1C is active
+    (crates/revm/src/handler.rs: "Validate keychain signature version (outer + authorization list)", then
+    auth.signature().validate_version(cfg.spec().is_t1c()) for each entry, which answers LegacyKeychainSignature), as it
+    is on chains 4217 and 42431 (tempo_sender). No other part of an entry is read."""
+    items = _envelope(signed_tx)
+    if isinstance(items, Refusal):
+        return items
+    signatures: list[bytes] = []
+    for entry in items[_AUTHORIZATION_LIST].items or []:
+        signature = entry.items[3] if entry.items is not None and len(entry.items) == 4 else None
+        if signature is None or signature.is_list:
+            return Refusal("tempo/tx-malformed")
+        if len(signature.data) != _SECP256K1_LENGTH and signature.data[:1] == bytes([_KEYCHAIN_V1]):
+            return Refusal("tempo/tx-malformed")
+        signatures.append(signature.data)
+    return signatures
 
 
 def encode_key_authorization(a: Any, signature: str | None = None) -> bytes | Refusal:
