@@ -2,13 +2,14 @@
 // EVM and Tempo, and MPP's Tempo subscription. Expected digests, signatures, messages, wires and channel ids are the
 // vector files'; the keys and seeds are the published test keys the files name.
 import { createHash, createPrivateKey, sign as edSign } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { concat, hashTypedData, keccak256, toBytes, toHex, toRlp, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount, sign } from "viem/accounts";
 import { sessionEvm, sessionTempo, subscriptionTempo, type MppChallenge } from "@integraledger/lcp/mpp";
 import { batchCloudflare, batchEvm, batchSvm } from "@integraledger/lcp/x402-batch-settlement";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import { pairingOf } from "@integraledger/lcp";
+import { isRefusal, pairingOf } from "@integraledger/lcp";
 import { check, confirm, finish, transact, type Binding, type Signature, type SigningRequest } from "../src/index.js";
 import {
   ABC,
@@ -552,6 +553,7 @@ describe("mpp/subscription/tempo", () => {
     fixed: Fixed & { request: string };
     SUB1: { expectDigest: Hex; expectSignedLength: number };
     SUB2: { expectRefChannel: string };
+    buyer: { rows: { name: string; input: { presented: object } }[] };
   }>("mpp-subscription-tempo.json");
   const f = U.fixed;
   const doc = mppDoc(subscriptionTempo, issued("tempo", "subscription", f.request));
@@ -579,4 +581,27 @@ describe("mpp/subscription/tempo", () => {
     at(f.now, () => b10(mppHttpLink(doc), subscriptionTempo, account, "mpp")));
   it("B16: another namespace, and another chain, are no-payable-option before any fetch", () =>
     at(f.now, () => b16(doc, subscriptionTempo, ["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:x", `eip155:1:${f.payer}`])));
+  it("the Python gate's tempo_key_authorizations.json: each row's key authorization in B6's credential gives the row's answers", () =>
+    at(f.now, async () => {
+      // A limit reads as [token, limit, period] or [token, limit], an allowed call as [target, [[selector, [recipient,
+      // ...]], ...]], with a 20-byte token, target and recipients, 4-byte selectors and canonical unsigned integers; any
+      // other form is tempo/key-authorization-malformed, through bound and channel.ref alike.
+      const file = JSON.parse(
+        readFileSync(new URL("../../agentic-terms-py/tests/tempo_key_authorizations.json", import.meta.url), "utf8"),
+      ) as { rows: { case: string; signature: Hex; expect: { bound: unknown; ref: unknown } }[] };
+      expect(file.rows.length, "tempo_key_authorizations.json rows").toBeGreaterThan(0);
+      expect(new Set(file.rows.map((r) => r.expect.bound === H))).toEqual(new Set([true, false]));
+      const b6 = U.buyer.rows.find((r) => r.name === "B6");
+      if (b6 === undefined) throw new Error("mpp-subscription-tempo.json has no B6 row");
+      const answered = (r: unknown): unknown => (isRefusal(r) ? r.code : r);
+      const got: Record<string, unknown> = {};
+      for (const row of file.rows) {
+        const presented = { ...b6.input.presented, payload: { type: "keyAuthorization", signature: row.signature } };
+        got[row.case] = {
+          bound: answered(await subscriptionTempo.bound(presented as never)),
+          ref: answered(await subscriptionTempo.channel.ref(presented as never)),
+        };
+      }
+      expect(got).toEqual(Object.fromEntries(file.rows.map((r) => [r.case, r.expect])));
+    }));
 });
