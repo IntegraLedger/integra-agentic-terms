@@ -294,14 +294,16 @@ def _select(required: Mapping[str, Any], account: str, inputs: Inputs) -> _Selec
     """The option the agreement is paid with, by the main payment's rule: the options in document order, and the first
     one the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402
     pairing, in the protocol package's order, whose read accepts the challenge holding only that option. An option
-    whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it."""
+    whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it. An accepts that
+    holds no mapping serves no option, and is declined as the read answers it: offer-unreadable with
+    x402/no-payable-option."""
     accepts = required.get("accepts")
     if not isinstance(accepts, Sequence) or isinstance(accepts, (str, bytes)):
         return Declined("offer-unreadable", "x402/option-malformed")
-    if not accepts:
-        return Declined("offer-unreadable", "x402/no-payable-option")
     if len(accepts) > MAX_OPTIONS:
         return Declined("offer-unreadable", "x402/option-malformed")
+    if not any(isinstance(option, Mapping) for option in accepts):
+        return Declined("offer-unreadable", "x402/no-payable-option")
     now = _gate._now()
     unreadable: str | None = None
     unpayable: str | None = None

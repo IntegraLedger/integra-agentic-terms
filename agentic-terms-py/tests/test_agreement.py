@@ -878,7 +878,7 @@ SUI: dict[str, Any] = load("x402-exact-sui.json")["fixed"]
 SUI_ACCOUNT = f"{SUI['O']['network']}:{SUI['sender']}"
 
 
-@pytest.mark.parametrize("value", [60.5, "60", 0, 2**53])
+@pytest.mark.parametrize("value", [60.5, "60", 0, 2**53], ids=["60.5", "the string 60", "0", "2^53"])
 def test_a_sui_option_whose_max_timeout_seconds_gives_no_deadline_is_no_payable_option(value: object) -> None:
     signer = RecordingSigner(account=SUI_ACCOUNT)
     seller = Challenging(RECORDED, header=with_accepts([{**SUI["O"], "maxTimeoutSeconds": value}]))
@@ -905,6 +905,21 @@ def test_accepts_that_is_not_a_list_is_refused_with_the_reads_code(accepts: obje
     signer = RecordingSigner()
     out = run(Challenging(RECORDED, header=b64(required)).link(), lambda c: agree(A, URL, signer, c))
     assert out == Declined("offer-unreadable", "x402/option-malformed")
+    assert signer.requests == []
+
+
+@pytest.mark.parametrize(
+    "accepts", [[], [1], [None], ["x"], [[]]], ids=["an empty list", "[1]", "[None]", "['x']", "[[]]"]
+)
+def test_accepts_that_holds_no_option_is_refused_offer_unreadable_with_the_reads_code(accepts: list[object]) -> None:
+    """An accepts that holds no mapping serves no option: the read gives x402/no-payable-option, which buyer.json's B21
+    declines offer-unreadable."""
+    required = {**AG["required"], "accepts": accepts}
+    read = BINDING.read(required)
+    assert isinstance(read, Refusal) and read.code == "x402/no-payable-option"
+    signer = RecordingSigner()
+    out = run(Challenging(RECORDED, header=b64(required)).link(), lambda c: agree(A, URL, signer, c))
+    assert out == Declined("offer-unreadable", "x402/no-payable-option")
     assert signer.requests == []
 
 

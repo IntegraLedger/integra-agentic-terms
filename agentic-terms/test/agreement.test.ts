@@ -943,6 +943,21 @@ describe("the agreement payment the agent approves", () => {
     },
   );
 
+  // An accepts that holds no object serves no option: the read gives x402/no-payable-option, which buyer.json's B21
+  // declines offer-unreadable.
+  it.each([["an empty list", []], ["[1]", [1]], ["[null]", [null]], ['["x"]', ["x"]], ["[[]]", [[]]]])(
+    "accepts %s: offer-unreadable with the read's x402/no-payable-option, nothing signed",
+    async (_, accepts) => {
+      const required = { ...AG.required, accepts };
+      const read = exactEip3009.read(required as unknown as PaymentRequired);
+      expect(read).toMatchObject({ refused: true, code: "x402/no-payable-option" });
+      const signer = counting();
+      const out = await agree(A, AGREEMENT_URL, signer, challenging(base64Json(required), RECORDED));
+      expect(isDeclined(out) && out.decline).toEqual({ code: "offer-unreadable", detail: "x402/no-payable-option" });
+      expect(signer.requests.length).toBe(0);
+    },
+  );
+
   // A fault of the whole document is the read's, whatever its options' timeouts: the read gives that code first.
   it("a legal context that is malformed, beside an option that gives no deadline: offer-unreadable with the read's code", async () => {
     const lc = AG.required.extensions.legalContext;

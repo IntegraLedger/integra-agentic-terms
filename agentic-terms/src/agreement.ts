@@ -281,13 +281,14 @@ interface Selected {
  * The option the agreement is paid with, by the main payment's rule: the options in document order, and the first one
  * the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402 pairing,
  * in the protocol package's order, whose read accepts the challenge holding only that option. An option whose
- * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it.
+ * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it. An `accepts` that holds
+ * no object serves no option, and is declined as the read answers it: `offer-unreadable` with `x402/no-payable-option`.
  */
 async function select(required: Record<string, unknown>, account: string, inputs: Inputs): Promise<Selected | Declined> {
   const accepts = required["accepts"];
   if (!Array.isArray(accepts)) return declined("offer-unreadable", "x402/option-malformed");
-  if (accepts.length === 0) return declined("offer-unreadable", "x402/no-payable-option");
   if (accepts.length > MAX_OPTIONS) return declined("offer-unreadable", "x402/option-malformed");
+  if (!accepts.some((option) => isObject(option))) return declined("offer-unreadable", "x402/no-payable-option");
   const now = Math.floor(Date.now() / 1000);
   let unreadable: string | undefined;
   let unpayable: string | undefined;
