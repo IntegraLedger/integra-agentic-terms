@@ -63,8 +63,9 @@ sequenceDiagram
    `approve`, unchanged.
 5. **Pay.** With `approved`, the gate builds exactly that payment with H and hands it to your signer (or to
    `agreementSigner`, where you gave one). It sends it in the `PAYMENT-SIGNATURE` header, with no second unpaid request.
-6. **Wait for the receipt.** After a `202`, the gate waits the `Retry-After` seconds (2 when absent or in any other
-   form, at least 1) and sends **the same payment** again. After a `5xx` or a timeout it does the same after 2 seconds.
+6. **Wait for the receipt.** After a `202`, the gate waits the `Retry-After` seconds (one to nine digits, surrounding
+   spaces, tabs, CRs and LFs aside, at least 1; 2 when absent or in any other form, an HTTP-date included) and sends
+   **the same payment** again. After a `5xx` or a timeout it does the same after 2 seconds.
    Each paid request has a deadline of the option's `maxTimeoutSeconds` (at most 120) plus 70 seconds; the whole
    exchange ends at `maxTimeoutSeconds` plus 180 seconds, with `agreement-pending`. Any other answer, a redirect
    included, is `agreement-failed`. The gate never signs a second agreement payment. A `200` is the receipt:
