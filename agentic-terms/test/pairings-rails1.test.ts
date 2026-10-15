@@ -418,6 +418,7 @@ describe("x402/exact/xrpl", () => {
     fixed: { payer: string; option: Option; resource: { url: string } };
     V2: { blob: string; build: { fee: string; sequence: number; lastLedgerSequence: number };
       expectTxJson: Record<string, unknown> };
+    agreedRefusals: { rows: { case: string; expect: string; network?: string; blobs?: string[] }[] };
   }>("x402-exact-xrpl.json");
   const f = X.fixed;
   // The vector publishes the signed blob, not the payer's key: the wallet stub checks the request is V2's Payment and
@@ -445,6 +446,28 @@ describe("x402/exact/xrpl", () => {
     if (isDeclined(out)) throw new Error(out.decline.code);
     const done = await finish(ABC, out.chosen, `0x${X.V2.blob}`, exactXrpl);
     expect(isDeclined(done) && [done.decline.code, done.decline.detail]).toEqual(["signed-not-bound", "xrpl/blob-malformed"]);
+  });
+  // The build's complete reads the signed blob before it answers, and answers a Promise: the piece awaits it, so the
+  // gate pays, or declines, with the payment or the refusal it resolves to, and writes the payment identifier into
+  // that payment where the document advertises the extension.
+  it("the payment identifier is written into the payment complete resolves to", async () => {
+    const q = { ...p, doc: withIdentifier(p.doc as PaymentRequired) };
+    const { signed } = await buildAndSign(q, () => undefined);
+    expect((signed as { payload: unknown }).payload).toEqual({ signedTxBlob: X.V2.blob });
+    const ext = (signed as { extensions: Record<string, { info: { id?: string } }> }).extensions;
+    expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
+  });
+  it("a blob whose NetworkID the network does not take is declined with the refusal complete resolves to", async () => {
+    const rows = X.agreedRefusals.rows.filter((r) => r.network === f.option.network && r.blobs !== undefined);
+    expect(rows.length, "agreedRefusals rows with blobs on the fixed option's network").toBeGreaterThan(0);
+    const out = await confirm(withIdentifier(p.doc as PaymentRequired), exactXrpl, p.account, serving(ABC), p.inputs!);
+    if (isDeclined(out)) throw new Error(out.decline.code);
+    for (const row of rows) {
+      for (const blob of row.blobs!) {
+        const done = await finish(ABC, out.chosen, blob, exactXrpl);
+        expect(isDeclined(done) && [done.decline.code, done.decline.detail]).toEqual(["signed-not-bound", row.expect]);
+      }
+    }
   });
   it("a ticketSequence option takes ticketSequence, not sequence", async () => {
     const option = { ...f.option, extra: { ...f.option.extra, assetTransferMethod: "ticketSequence" } } as Option;

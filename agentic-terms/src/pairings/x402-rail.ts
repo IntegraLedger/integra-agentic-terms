@@ -1,7 +1,8 @@
 /**
  * The buyer pieces shared by the x402 pairings on the Solana, Stellar, XRPL, Hedera and Algorand rails: the first option
  * on the account's network, the buyer's own inputs beside it as JSON, the build's request exactly as built, and the
- * payment the signer's answer completes, with the payment identifier appended where the challenge advertises it.
+ * payment the build's `complete` gives for the signer's answer, awaited where it answers a Promise, with the payment
+ * identifier appended where the challenge advertises it.
  */
 import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
@@ -77,7 +78,7 @@ export function railPiece(rail: Rail): BuyerPiece {
       const answer = rail.answer(signature);
       if (isRefusal(answer)) return answer;
       const c = choiceOf(chosen)!;
-      const completed = (unsigned as { complete(a: unknown): unknown }).complete(answer);
+      const completed = await (unsigned as { complete(a: unknown): unknown | Promise<unknown> }).complete(answer);
       if (isRefusal(completed)) return completed;
       let signed: Presented;
       if (typeof completed === "string") {
