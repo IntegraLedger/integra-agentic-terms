@@ -258,7 +258,7 @@ describe("card: through the gate", () => {
   });
 });
 
-describe("card.json agreedRefusals: the rows the buyer's bound reads", () => {
+describe("card.json agreedRefusals: the rows the buyer half reads", () => {
   const presented = CARD.C7.bound.presented as { l1: string; l2: string; l3b: string };
   const USER = CARD.fixed.USER as { x: string; y: string };
   const AGENT = CARD.fixed.AGENT as { x: string; y: string };
@@ -332,8 +332,127 @@ describe("card.json agreedRefusals: the rows the buyer's bound reads", () => {
     expect(await bound({ agent: AGENT })).toBe(CARD.C7.bound.expect);
   });
 
-  /** Each case builds the inputs its row describes. */
+  const CARD_H: string = CARD.fixed.H;
+  const given: string = CARD.C2.request.signatureInput;
+  /** C2's presented TAP request with the given members replaced. */
+  const tap = (over: Record<string, unknown>) => ({
+    signatureInput: given,
+    signature: CARD.C2.request.signature,
+    lcpHash: CARD.C2.request.lcpHash,
+    ...over,
+  });
+  /** A compact JWS with the given header and payload and a 64-byte zero signature, for shape cases only. */
+  const jws = (header: unknown, payload: unknown) => `${encoded(header)}.${encoded(payload)}.${Buffer.alloc(64).toString("base64url")}`;
+  const KB_HEAD = { alg: "ES256", typ: "kb-sd-jwt" };
+  const L2a: string = CARD.vi.L2a;
+  const l2iDisclosure: string = CARD.vi.L2i.split("~")[1];
+
+  /** Each case builds the inputs its row describes, as @integraledger/lcp's card test builds them. */
   const cases: Record<string, () => Promise<unknown[]>> = {
+    "advertise or TAP build with a hash that is not 0x and 64 hex digits": async () => [
+      await visaTap.build({} as never, CARD_H.slice(2) as never),
+    ],
+    "read of shown JSON that is not an object, or has no legalContext member": async () => [
+      visaTap.read([] as never),
+      visaTap.read({ other: 1 } as never),
+    ],
+    "read with a legalContext whose link is not https": async () => [
+      visaTap.read({ legalContext: { type: "sha256", value: CARD_H, legalContextUrl: CARD.fixed.link.replace("https:", "http:") } } as never),
+    ],
+    "read with a legalContext whose link is over 2048 characters": async () => [
+      visaTap.read({ legalContext: { type: "sha256", value: CARD_H, legalContextUrl: `https://a.example/${"a".repeat(2048)}` } } as never),
+    ],
+    "VI read or build of a checkout_jwt that is not a string of three dot-separated visible-ASCII segments whose second decodes to a JSON object":
+      async () => [
+        viImmediate.read("a.b" as never),
+        viImmediate.read(42 as never),
+        await viAutonomous.build(`a.${encoded([1])}.b` as never, CARD_H as never),
+      ],
+    "VI read or build of a checkout_jwt over 16384 characters": async () => [
+      viImmediate.read("a".repeat(16385) as never),
+      await viImmediate.build("a".repeat(16385) as never, CARD_H as never),
+    ],
+    "TAP bound with presented not an object, or signatureInput not a string": async () => [
+      await visaTap.bound("sig2=()" as never),
+      await visaTap.bound(tap({ signatureInput: 7 }) as never),
+    ],
+    "TAP bound with signatureInput or signature over 8192 characters, a dictionary over 16 members, or an inner list over 32 items":
+      async () => [
+        await visaTap.bound(tap({ signatureInput: given + " ".repeat(8193 - given.length) }) as never),
+        await visaTap.bound(tap({ signature: "s".repeat(8193) }) as never),
+        await visaTap.bound(tap({ signatureInput: Array.from({ length: 17 }, (_, i) => `s${i}=()`).join(", ") }) as never),
+        await visaTap.bound(tap({ signatureInput: `sig2=(${Array.from({ length: 33 }, (_, i) => `"c${i}"`).join(" ")})` }) as never),
+      ],
+    "TAP bound with a Decimal, Date or Display String anywhere, or a Byte Sequence parameter, in signatureInput": () =>
+      Promise.all([";x=1.5", ";x=@1790000000", ';x=%"a"', ";x=:AAAA:"].map((p) => visaTap.bound(tap({ signatureInput: given + p }) as never))),
+    "TAP bound with tag=agent-payer-auth as a Token rather than a String": async () => [
+      await visaTap.bound(tap({ signatureInput: given.replace('tag="agent-payer-auth"', "tag=agent-payer-auth") }) as never),
+    ],
+    "TAP bound with lcpHash not an array, or a line that is not a string": async () => [
+      await visaTap.bound(tap({ lcpHash: CARD_H }) as never),
+      await visaTap.bound(tap({ lcpHash: [7] }) as never),
+    ],
+    "TAP bound with the one lcp-hash line over 256 characters": async () => [
+      await visaTap.bound(tap({ lcpHash: [CARD_H + " ".repeat(200)] }) as never),
+    ],
+    "VI bound with a layer over 65536 characters or over 32 disclosures": async () => {
+      const many = `${jws(KB_HEAD, { _sd_alg: "sha-256", delegate_payload: [] })}~${`${l2iDisclosure}~`.repeat(33)}`;
+      return [await viImmediate.bound({ l2: "x".repeat(65537) } as never), await viImmediate.bound({ l2: many } as never)];
+    },
+    "VI bound with an L2 or L3b layer that has no disclosure or a non-empty last part": async () => {
+      const ok = { _sd_alg: "sha-256", delegate_payload: [{ "...": sha256b64u(l2iDisclosure) }] };
+      const l3Jws = presented.l3b.split("~")[0];
+      return [
+        await viImmediate.bound({ l2: `${jws(KB_HEAD, ok)}~` } as never),
+        await viImmediate.bound({ l2: `${jws(KB_HEAD, ok)}~${l2iDisclosure}` } as never),
+        await viAutonomous.bound({ ...presented, l3b: `${l3Jws}~` } as never),
+        await viAutonomous.bound({ ...presented, l3b: `${presented.l3b}x` } as never),
+      ];
+    },
+    'VI bound with a layer payload lacking _sd_alg sha-256 or a delegate_payload array of {"...": string} entries': () => {
+      const listed = { "...": sha256b64u(l2iDisclosure) };
+      const payloads = [
+        { delegate_payload: [listed] },
+        { _sd_alg: "sha-512", delegate_payload: [listed] },
+        { _sd_alg: "sha-256", delegate_payload: [listed, 7] },
+      ];
+      return Promise.all(payloads.map((p) => viImmediate.bound({ l2: `${jws(KB_HEAD, p)}~${l2iDisclosure}~` } as never)));
+    },
+    "VI bound with two referenced mandate.checkout.1 values": async () => {
+      const d2 = encoded(["c2FsdDI", decoded(l2iDisclosure)[1]]);
+      const payload = { _sd_alg: "sha-256", delegate_payload: [{ "...": sha256b64u(l2iDisclosure) }, { "...": sha256b64u(d2) }] };
+      return [await viImmediate.bound({ l2: `${jws(KB_HEAD, payload)}~${l2iDisclosure}~${d2}~` } as never)];
+    },
+    "VI Autonomous bound with an L3b header lacking a string kid": async () => {
+      const [head, payload, signature] = segments(presented.l3b);
+      const { kid: _kid, ...without } = decoded(head);
+      return [await viAutonomous.bound({ ...presented, l3b: `${encoded(without)}.${payload}.${signature}${rest(presented.l3b)}` } as never)];
+    },
+    "VI Autonomous bound with no, or more than one, referenced mandate.checkout.open.1 in L2, or an L1 cnf.jwk that is not EC P-256":
+      async () => {
+        const opened = L2a.split("~")[1]!;
+        const openedTwice = encoded(["c2FsdDI", decoded(opened)[1]]);
+        const other = encoded(["c2FsdDM", { vct: "mandate.payment.open.1" }]);
+        // L2 lists these disclosures alone and L3b names that L2, each with its signature as given.
+        const listing = (discs: string[]) => {
+          const { _sd: _listed, ...l2Payload } = decoded(segments(L2a)[1]);
+          l2Payload.delegate_payload = discs.map((d) => ({ "...": sha256b64u(d) }));
+          const l2 = `${segments(L2a)[0]}.${encoded(l2Payload)}.${segments(L2a)[2]}~${discs.map((d) => `${d}~`).join("")}`;
+          const [h3, p3, s3] = segments(presented.l3b);
+          const l3b = `${h3}.${encoded({ ...decoded(p3), sd_hash: sha256b64u(l2) })}.${s3}${rest(presented.l3b)}`;
+          return viAutonomous.bound({ l1: presented.l1, l2, l3b } as never);
+        };
+        return [
+          await listing([other]),
+          await listing([opened, openedTwice]),
+          await bound({ user: { kty: "OKP", crv: "Ed25519", x: AGENT.x } }),
+        ];
+      },
+    "VI Autonomous bound with L2's sd_hash not the digest of l1": async () => [
+      await viAutonomous.bound({ ...presented, l1: `${presented.l1}x~` } as never),
+    ],
+    // L1 names AGENT's key and L2 is signed under USER's, so L2's signature is the chain's one fault.
+    "VI Autonomous bound with an L2 signature that does not verify under L1's cnf.jwk": async () => [await bound({ user: AGENT })],
     // RFC 7518 section 6.2.1.2-3: x and y are the full 32-byte P-256 coordinates, base64url-encoded, and RFC 7515
     // section 2 omits the padding.
     "VI Autonomous bound with an L1 or L2 cnf.jwk whose x or y is not unpadded base64url of 32 bytes": () => {
@@ -380,6 +499,12 @@ describe("card.json agreedRefusals: the rows the buyer's bound reads", () => {
       ];
     },
   };
+  // The one row the buyer half does not read: advertise is the seller's.
+  const SELLER_ROWS = ["advertise with a link over 2048 characters"];
+  it("names a case for every row the buyer half reads", () => {
+    const all = (CARD.agreedRefusals.rows as V[]).map((r) => r.case as string);
+    expect([...Object.keys(cases), ...SELLER_ROWS].sort()).toEqual(all.sort());
+  });
   it.each(Object.keys(cases))("%s", async (c) => {
     const rows = (CARD.agreedRefusals.rows as V[]).filter((r) => r.case === c);
     expect(rows.length).toBeGreaterThan(0);

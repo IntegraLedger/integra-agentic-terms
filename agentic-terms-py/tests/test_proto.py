@@ -542,9 +542,177 @@ def _segment_or_disclosure_with_a_pad_bit() -> list[object]:
     ]
 
 
-# card.json's agreedRefusals rows that the buyer's bound reads, by case: each builds the inputs its row describes, as
-# @integraledger/lcp's card test builds them.
+def _tap(**over: Any) -> dict[str, Any]:
+    """C2's presented TAP request with the given members replaced."""
+    request = CARD["C2"]["request"]
+    return {"signatureInput": request["signatureInput"], "signature": request["signature"], "lcpHash": request["lcpHash"], **over}
+
+
+def _jws(header: Any, payload: Any) -> str:
+    """A compact JWS with the given header and payload and a 64-byte zero signature, for shape cases only."""
+    return f"{_encoded(header)}.{_encoded(payload)}.{_b64u_bytes(bytes(64))}"
+
+
+KB_HEAD = {"alg": "ES256", "typ": "kb-sd-jwt"}
+
+
+def _tap_too_large() -> list[object]:
+    given: str = CARD["C2"]["request"]["signatureInput"]
+    return [
+        CARD_VISA_TAP.bound(_tap(signatureInput=given + " " * (8193 - len(given)))),
+        CARD_VISA_TAP.bound(_tap(signature="s" * 8193)),
+        CARD_VISA_TAP.bound(_tap(signatureInput=", ".join(f"s{i}=()" for i in range(17)))),
+        CARD_VISA_TAP.bound(_tap(signatureInput="sig2=(" + " ".join(f'"c{i}"' for i in range(33)) + ")")),
+    ]
+
+
+def _tap_parameter_not_read() -> list[object]:
+    given: str = CARD["C2"]["request"]["signatureInput"]
+    return [CARD_VISA_TAP.bound(_tap(signatureInput=given + p)) for p in (";x=1.5", ";x=@1790000000", ';x=%"a"', ";x=:AAAA:")]
+
+
+def _vi_layer_too_large() -> list[object]:
+    d = CARD["vi"]["L2i"].split("~")[1]
+    many = _jws(KB_HEAD, {"_sd_alg": "sha-256", "delegate_payload": []}) + "~" + f"{d}~" * 33
+    return [CARD_MASTERCARD_VI_IMMEDIATE.bound({"l2": "x" * 65537}), CARD_MASTERCARD_VI_IMMEDIATE.bound({"l2": many})]
+
+
+def _vi_layer_without_disclosure_or_with_a_last_part() -> list[object]:
+    presented = CARD["C7"]["bound"]["presented"]
+    d = CARD["vi"]["L2i"].split("~")[1]
+    ok = {"_sd_alg": "sha-256", "delegate_payload": [{"...": disclosure_digest(d)}]}
+    l3_jws = presented["l3b"].split("~")[0]
+    return [
+        CARD_MASTERCARD_VI_IMMEDIATE.bound({"l2": _jws(KB_HEAD, ok) + "~"}),
+        CARD_MASTERCARD_VI_IMMEDIATE.bound({"l2": _jws(KB_HEAD, ok) + "~" + d}),
+        CARD_MASTERCARD_VI_AUTONOMOUS.bound({**presented, "l3b": l3_jws + "~"}),
+        CARD_MASTERCARD_VI_AUTONOMOUS.bound({**presented, "l3b": presented["l3b"] + "x"}),
+    ]
+
+
+def _vi_payload_not_sd_sha256() -> list[object]:
+    d = CARD["vi"]["L2i"].split("~")[1]
+    listed = {"...": disclosure_digest(d)}
+    return [
+        CARD_MASTERCARD_VI_IMMEDIATE.bound({"l2": f"{_jws(KB_HEAD, payload)}~{d}~"})
+        for payload in (
+            {"delegate_payload": [listed]},
+            {"_sd_alg": "sha-512", "delegate_payload": [listed]},
+            {"_sd_alg": "sha-256", "delegate_payload": [listed, 7]},
+        )
+    ]
+
+
+def _vi_two_checkout_mandates() -> list[object]:
+    d = CARD["vi"]["L2i"].split("~")[1]
+    d2 = _encoded(["c2FsdDI", _decoded(d)[1]])
+    payload = {"_sd_alg": "sha-256", "delegate_payload": [{"...": disclosure_digest(d)}, {"...": disclosure_digest(d2)}]}
+    return [CARD_MASTERCARD_VI_IMMEDIATE.bound({"l2": f"{_jws(KB_HEAD, payload)}~{d}~{d2}~"})]
+
+
+def _vi_l3b_without_kid() -> list[object]:
+    presented = CARD["C7"]["bound"]["presented"]
+    head, payload, signature = _parts(presented["l3b"])
+    without = {k: v for k, v in _decoded(head).items() if k != "kid"}
+    l3b = f"{_encoded(without)}.{payload}.{signature}{_rest(presented['l3b'])}"
+    return [CARD_MASTERCARD_VI_AUTONOMOUS.bound({**presented, "l3b": l3b})]
+
+
+def _vi_open_mandates_not_one_or_user_key_not_p256() -> list[object]:
+    presented = CARD["C7"]["bound"]["presented"]
+    l2a: str = CARD["vi"]["L2a"]
+    opened = l2a.split("~")[1]
+    opened_twice = _encoded(["c2FsdDI", _decoded(opened)[1]])
+    other = _encoded(["c2FsdDM", {"vct": "mandate.payment.open.1"}])
+
+    def listing(discs: list[str]) -> object:
+        # L2 lists these disclosures alone and L3b names that L2, each with its signature as given.
+        l2_payload = {k: v for k, v in _decoded(_parts(l2a)[1]).items() if k != "_sd"}
+        l2_payload["delegate_payload"] = [{"...": disclosure_digest(d)} for d in discs]
+        l2 = f"{_parts(l2a)[0]}.{_encoded(l2_payload)}.{_parts(l2a)[2]}~" + "".join(f"{d}~" for d in discs)
+        h3, p3, s3 = _parts(presented["l3b"])
+        l3b = f"{h3}.{_encoded({**_decoded(p3), 'sd_hash': disclosure_digest(l2)})}.{s3}{_rest(presented['l3b'])}"
+        return CARD_MASTERCARD_VI_AUTONOMOUS.bound({"l1": presented["l1"], "l2": l2, "l3b": l3b})
+
+    ed25519_key = {"kty": "OKP", "crv": "Ed25519", "x": CARD["fixed"]["AGENT"]["x"]}
+    return [listing([other]), listing([opened, opened_twice]), CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(user=ed25519_key))]
+
+
+# A VI pairing's build takes the checkout_jwt string as its choice, where Binding types the choice as a mapping.
+VI_IMMEDIATE: Any = CARD_MASTERCARD_VI_IMMEDIATE
+VI_AUTONOMOUS: Any = CARD_MASTERCARD_VI_AUTONOMOUS
+
+
+# card.json's agreedRefusals rows that the buyer half reads (read, build and bound), by case: each builds the inputs
+# its row describes, as @integraledger/lcp's card test builds them.
 CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
+    "advertise or TAP build with a hash that is not 0x and 64 hex digits": lambda: [
+        CARD_VISA_TAP.build({}, CARD["fixed"]["H"][2:]),
+    ],
+    "read of shown JSON that is not an object, or has no legalContext member": lambda: [
+        CARD_VISA_TAP.read([]),
+        CARD_VISA_TAP.read({"other": 1}),
+    ],
+    "read with a legalContext whose link is not https": lambda: [
+        CARD_VISA_TAP.read(
+            {"legalContext": {"type": "sha256", "value": CARD["fixed"]["H"], "legalContextUrl": CARD["fixed"]["link"].replace("https:", "http:")}}
+        ),
+    ],
+    "read with a legalContext whose link is over 2048 characters": lambda: [
+        CARD_VISA_TAP.read(
+            {"legalContext": {"type": "sha256", "value": CARD["fixed"]["H"], "legalContextUrl": "https://a.example/" + "a" * 2048}}
+        ),
+    ],
+    "VI read or build of a checkout_jwt that is not a string of three dot-separated visible-ASCII segments whose second decodes to a JSON object": lambda: [
+        CARD_MASTERCARD_VI_IMMEDIATE.read("a.b"),
+        CARD_MASTERCARD_VI_IMMEDIATE.read(42),
+        VI_AUTONOMOUS.build(f"a.{_encoded([1])}.b", CARD["fixed"]["H"]),
+    ],
+    "VI read or build of a checkout_jwt over 16384 characters": lambda: [
+        CARD_MASTERCARD_VI_IMMEDIATE.read("a" * 16385),
+        VI_IMMEDIATE.build("a" * 16385, CARD["fixed"]["H"]),
+    ],
+    "TAP bound with presented not an object, or signatureInput not a string": lambda: [
+        CARD_VISA_TAP.bound("sig2=()"),
+        CARD_VISA_TAP.bound(_tap(signatureInput=7)),
+    ],
+    "TAP bound with signatureInput or signature over 8192 characters, a dictionary over 16 members, or an inner list over 32 items": (
+        _tap_too_large
+    ),
+    "TAP bound with a Decimal, Date or Display String anywhere, or a Byte Sequence parameter, in signatureInput": (
+        _tap_parameter_not_read
+    ),
+    "TAP bound with tag=agent-payer-auth as a Token rather than a String": lambda: [
+        CARD_VISA_TAP.bound(
+            _tap(signatureInput=CARD["C2"]["request"]["signatureInput"].replace('tag="agent-payer-auth"', "tag=agent-payer-auth"))
+        ),
+    ],
+    "TAP bound with lcpHash not an array, or a line that is not a string": lambda: [
+        CARD_VISA_TAP.bound(_tap(lcpHash=CARD["fixed"]["H"])),
+        CARD_VISA_TAP.bound(_tap(lcpHash=[7])),
+    ],
+    "TAP bound with the one lcp-hash line over 256 characters": lambda: [
+        CARD_VISA_TAP.bound(_tap(lcpHash=[CARD["fixed"]["H"] + " " * 200])),
+    ],
+    "VI bound with a layer over 65536 characters or over 32 disclosures": _vi_layer_too_large,
+    "VI bound with an L2 or L3b layer that has no disclosure or a non-empty last part": (
+        _vi_layer_without_disclosure_or_with_a_last_part
+    ),
+    'VI bound with a layer payload lacking _sd_alg sha-256 or a delegate_payload array of {"...": string} entries': (
+        _vi_payload_not_sd_sha256
+    ),
+    "VI bound with two referenced mandate.checkout.1 values": _vi_two_checkout_mandates,
+    "VI Autonomous bound with an L3b header lacking a string kid": _vi_l3b_without_kid,
+    "VI Autonomous bound with no, or more than one, referenced mandate.checkout.open.1 in L2, or an L1 cnf.jwk that is not EC P-256": (
+        _vi_open_mandates_not_one_or_user_key_not_p256
+    ),
+    "VI Autonomous bound with L2's sd_hash not the digest of l1": lambda: [
+        CARD_MASTERCARD_VI_AUTONOMOUS.bound({**CARD["C7"]["bound"]["presented"], "l1": CARD["C7"]["bound"]["presented"]["l1"] + "x~"}),
+    ],
+    # L1 names AGENT's key and L2 is signed under USER's, so L2's signature is the chain's one fault.
+    "VI Autonomous bound with an L2 signature that does not verify under L1's cnf.jwk": lambda: [
+        CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(user=CARD["fixed"]["AGENT"])),
+    ],
     "VI Autonomous bound with an L1 or L2 cnf.jwk whose x or y is not unpadded base64url of 32 bytes": (
         _key_coordinate_not_32_bytes
     ),
@@ -555,6 +723,15 @@ CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
         _segment_or_disclosure_with_a_pad_bit
     ),
 }
+
+
+# The one row the buyer half does not read: advertise is the seller's.
+CARD_SELLER_ROWS = ["advertise with a link over 2048 characters"]
+
+
+def test_card_agreed_refusals_name_every_row_the_buyer_half_reads() -> None:
+    cases = sorted(r["case"] for r in CARD["agreedRefusals"]["rows"])
+    assert sorted([*CARD_REFUSALS, *CARD_SELLER_ROWS]) == cases
 
 
 @pytest.mark.parametrize("case", list(CARD_REFUSALS))
