@@ -172,7 +172,7 @@ def test_x402_exact_solana_the_offers_recent_blockhash_is_the_builds() -> None:
     assert decompile(hexb(out.request["message"]))["blockhash"] == S["V1"]["blockhash"]
 
 
-@pytest.mark.parametrize("offered", ["x", "", "0" * 44, "1" * 31, 7])
+@pytest.mark.parametrize("offered", ["x", "", "0" * 44, "1" * 31, "2" * 43, "z" * 44, 7])
 def test_x402_exact_solana_an_offered_recent_blockhash_that_is_not_a_base58_key_is_not_taken(offered: Any) -> None:
     """x402's exact SVM scheme: a client whose offered blockhash is absent or malformed fetches its own. So the buyer's
     recentBlockhash is the build's, and without one the option is declined x402/input-missing before any fetch."""

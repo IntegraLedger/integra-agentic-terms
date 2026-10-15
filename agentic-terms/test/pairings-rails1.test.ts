@@ -196,7 +196,7 @@ describe("x402/exact/solana", () => {
   });
   it("an offered extra.recentBlockhash that is not a base58 key is not taken: the buyer's own is the build's, and without one the option is declined x402/input-missing", async () => {
     // x402's exact SVM scheme: a client whose offered blockhash is absent or malformed fetches its own.
-    for (const offered of ["x", "", "0".repeat(44), "1".repeat(31), 7]) {
+    for (const offered of ["x", "", "0".repeat(44), "1".repeat(31), "2".repeat(43), "z".repeat(44), 7]) {
       const option = { ...f.option, extra: { ...f.option.extra, recentBlockhash: offered } } as Option;
       const doc = docOf(exactSvm, option, f.resource);
       const given = { decimals: f.decimals, tokenProgram: f.tokenProgram };

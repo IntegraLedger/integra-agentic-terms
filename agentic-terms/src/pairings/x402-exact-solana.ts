@@ -1,9 +1,10 @@
 /**
  * The buyer piece for `x402/exact/solana`: the v0 message whose one memo is the option's `extra.memo`, signed by the
- * payer as `solana-message`. The recent blockhash is the option's `extra.recentBlockhash` when it is a base58 key, else
- * the buyer's; the mint's decimals and token program are the buyer's reads.
+ * payer as `solana-message`. The recent blockhash is the option's `extra.recentBlockhash` when it is a base58 key of 32
+ * bytes, else the buyer's; the mint's decimals and token program are the buyer's reads.
  */
 import type { Json, Refusal } from "@integraledger/lcp";
+import { isKey } from "@integraledger/lcp/svm";
 import type { PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Inputs } from "../types.js";
 import { bigintOf, inputsOf, isRefusal, refuse } from "./common.js";
@@ -22,7 +23,7 @@ export function withUnitPrice(c: Record<string, unknown>): Record<string, unknow
 
 function inputs(accepted: PaymentRequirements, given: Inputs): Record<string, Json> | Refusal {
   const offered: unknown = accepted.extra?.["recentBlockhash"];
-  const fromOffer = typeof offered === "string" && SOLANA_ADDRESS.test(offered);
+  const fromOffer = isKey(offered);
   const read = inputsOf(given, PAIRING, {
     decimals: "uint",
     tokenProgram: "string",
