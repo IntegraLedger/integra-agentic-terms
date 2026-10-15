@@ -107,8 +107,9 @@ git commit -s -m "Describe what the change does"
 ```
 
 `-s` adds the `Signed-off-by:` line that certifies you wrote the change or have the right to submit it under this
-repository's license ([developercertificate.org](https://developercertificate.org)). CI fails on any pushed commit
-without one.
+repository's license ([developercertificate.org](https://developercertificate.org)). On every push to `main`, CI reads
+every commit in `main`'s history and fails if a commit has no `Signed-off-by:` trailer or its message matches the agent
+pattern in `.github/workflows/ci.yml`. It runs after the push and cannot hold a commit back.
 
 This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 

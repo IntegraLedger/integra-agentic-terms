@@ -141,8 +141,10 @@ To sign off commits you have already made on your branch:
 git rebase --signoff main
 ```
 
-CI checks every pushed commit. It fails on a commit without a `Signed-off-by:` line, and on a commit message that
-carries a `Co-authored-by:` trailer or a tool's attribution line.
+On every push to `main`, CI reads every commit in `main`'s history and fails if a commit has no `Signed-off-by:` trailer
+or its message matches the agent pattern in `.github/workflows/ci.yml` (`Co-authored-by`, `generated with` and the names
+it lists, in upper or lower case). It runs after the push and cannot hold a commit back, so sign off every commit before
+you open a pull request.
 
 ## Conduct
 
