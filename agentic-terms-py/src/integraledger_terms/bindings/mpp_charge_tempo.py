@@ -86,8 +86,9 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
 
 
 def _signed_memo_call(presented: Any) -> Echoed | Refusal:
-    """The echoed challenge, when the signed transaction holds exactly one transferWithMemo call to currency whose
-    memo is this challenge's attribution memo."""
+    """The echoed challenge, when the signed transaction is for the challenge's chain and holds exactly one
+    transferWithMemo call to currency whose memo is this challenge's attribution memo. draft-tempo-charge-00 binds a
+    Tempo transaction to its chain id: a transaction signed for another chain is tempo/tx-malformed."""
     e = echoed_for(presented, MEMO)
     if isinstance(e, Refusal):
         return e
@@ -104,6 +105,8 @@ def _signed_memo_call(presented: Any) -> Echoed | Refusal:
     tx = decode_tempo_tx(bytes.fromhex(sig[2:]))
     if isinstance(tx, Refusal):
         return tx
+    if tx.chain_id != chain_of(e.checked):
+        return Refusal("tempo/tx-malformed")
     realm, id_ = presented["challenge"]["realm"], presented["challenge"]["id"]
     found = 0
     for call in tx.calls:

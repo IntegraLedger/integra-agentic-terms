@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -204,6 +205,28 @@ def test_mpp_charge_tempo_a_splits_member_present_as_null_offers_nothing(binding
     assert (code(out), getattr(out, "detail", None)) == ("no-payable-option", "mpp/no-payable-option")
     assert link.calls == 0
     assert signer.requests == []
+
+
+MEMO_REFUSALS = MEMO["agreedRefusals"]["rows"]
+
+
+def test_mpp_charge_tempo_memo_chain_rows_are_read() -> None:
+    assert len(MEMO_REFUSALS) > 0
+
+
+@pytest.mark.parametrize("row", MEMO_REFUSALS, ids=[r["case"] for r in MEMO_REFUSALS])
+def test_mpp_charge_tempo_memo_a_transaction_for_another_chain_is_refused(row: dict[str, Any]) -> None:
+    """The vector file's chain rows: MV7's wire T with its chain id, its first field, the row's transactionChainId,
+    presented against C_T placed at position 0, as MV7's is. draft-tempo-charge-00 binds the transaction to the
+    challenge's chainId, 42431 where it names none."""
+    presented = next(r for r in MEMO["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
+    call = {"to": MEMO["fixed"]["pathUSD"], "data": MEMO["MV7"]["expectCalldata"]}
+    valid_before = int(datetime.fromisoformat(presented["challenge"]["expires"]).timestamp())
+    assert tempo_wire([call], 42431, valid_before) == presented["payload"]["signature"]
+    assert MPP_CHARGE_TEMPO_MEMO.bound(copy.deepcopy(presented)) == H
+    wire = tempo_wire([call], row["transactionChainId"], valid_before)
+    other = {**copy.deepcopy(presented), "payload": {"type": "transaction", "signature": wire}}
+    assert MPP_CHARGE_TEMPO_MEMO.bound(other) == Refusal(row["expect"])
 
 
 MV13 = PUSH["MV13"]
