@@ -20,7 +20,6 @@ from ._x402 import chosen, payment_with, presented_with, read_for
 ID = "x402/exact/sui"
 
 MAX_TX_BYTES = 128 * 1024
-MAX_SIGNATURE = 8192
 NETWORKS = ("sui:mainnet", "sui:testnet", "sui:devnet")
 _PAY_TO = re.compile(r"0x[0-9a-f]{64}")
 _IDENT = "[A-Za-z_][A-Za-z0-9_]*"
@@ -130,7 +129,7 @@ def _presented_tx(presented: object) -> SuiTx | Refusal:
         return parts
     _, payload, _ = parts
     signature, transaction = payload.get("signature"), payload.get("transaction")
-    if not isinstance(signature, str) or not 0 < len(signature.encode("utf-16-le", "surrogatepass")) // 2 <= MAX_SIGNATURE:
+    if not isinstance(signature, str) or signature == "":
         return Refusal("x402/signature-malformed")
     if not isinstance(transaction, str):
         return Refusal("x402/payload-malformed")

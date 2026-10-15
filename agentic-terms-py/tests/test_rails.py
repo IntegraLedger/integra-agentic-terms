@@ -1158,6 +1158,20 @@ def test_sui_agreed_refusals() -> None:
     assert X402_EXACT_SUI.bound(p) == Refusal(rows["payload.transaction not a string"])
 
 
+def test_sui_bound_takes_a_string_signature_of_any_length_and_refuses_an_empty_or_non_string_one() -> None:
+    """x402's Sui scheme bounds no signature length; the row "payload.signature not a string, or empty" is the one
+    signature refusal."""
+    v2 = SUI["V2"]["tx"]["transactionBase64"]
+    for signature in ("A", "A" * 8192, "A" * 8193, "A" * 65_536, "\U0001f600" * 4097):
+        p = sui_payment(v2)
+        p["payload"]["signature"] = signature
+        assert X402_EXACT_SUI.bound(p) == SUI["V2"]["expectBound"]
+    for bad in ("", 1, None, ["A"]):
+        p = sui_payment(v2)
+        p["payload"]["signature"] = bad
+        assert X402_EXACT_SUI.bound(p) == Refusal("x402/signature-malformed")
+
+
 def test_sui_agreed_refusals_of_a_transaction_text() -> None:
     """Each agreedRefusals row that gives the transaction as a string: decoding it is the row's refusal."""
     rows = [row for row in SUI["agreedRefusals"]["rows"] if isinstance(row.get("transaction"), str)]
