@@ -25,7 +25,7 @@ const fromHex = (h: string): Uint8Array => Uint8Array.from(Buffer.from(h, "hex")
 const A = fromHex(B.fixed.A);
 const C = fromHex(B.fixed.C);
 const H: AtrHash = B.rows.find((r: Loose) => r.name === "B1").expect.h;
-const LINK = `https://atr.seller.example/${H}`;
+const LINK: string = B.fixed.link;
 const AG = B.fixed.agreement;
 const AGREEMENT_NONCE: string = B.rows.find((r: Loose) => r.name === "BA1").expect.agreementMessage.nonce;
 const MD = N.fixed.request.methodDetails;

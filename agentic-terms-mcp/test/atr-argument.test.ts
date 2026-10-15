@@ -3,7 +3,7 @@
 // fetches and signs nothing for it. The ATR is the byte 0xff: its padded standard base64 is `/w==` (RFC 4648 §4), and
 // its SHA-256 is node:crypto's. The offers, the agreement and the channel opening are the lcp vector files' (buyer.json,
 // x402-exact-eip155-erc7710.json and x402-batch-settlement.json), each placed for that hash by its pairing's advertise.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
@@ -21,7 +21,7 @@ const S: string = B.rows.find((r: { name: string }) => r.name === "B6").input.th
 
 const FF = Uint8Array.of(0xff);
 const H = `0x${createHash("sha256").update(FF).digest("hex")}`;
-const LINK = `https://atr.seller.example/${H}`;
+const LINK = `https://atr.seller.example/${randomUUID()}`;
 /** 0xff in padded standard base64: `/` holds six one bits, and `w` two one bits and four zero pad bits. */
 const CANONICAL = "/w==";
 
@@ -226,7 +226,7 @@ describe("atr.base64 from atr_confirm, read back by atr_check", { timeout: 60_00
     const h = `0x${createHash("sha256").update(bytes).digest("hex")}`;
     const document = structuredClone(B.fixed.D);
     document.extensions.legalContext.info.value = h;
-    document.extensions.legalContext.info.legalContextUrl = `https://atr.seller.example/${h}`;
+    document.extensions.legalContext.info.legalContextUrl = `https://atr.seller.example/${randomUUID()}`;
     const c = connect({ fetch: (async () => new Response(new Uint8Array(bytes), { status: 200 })) as unknown as Fetch });
     const pairing = "x402/exact/eip155/eip3009";
     const confirmed = await call(c, "atr_confirm", { pairing, document, account: B.fixed.account });

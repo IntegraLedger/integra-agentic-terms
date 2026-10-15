@@ -7,7 +7,7 @@ import { exactEip3009, type PaymentRequirements } from "@integraledger/lcp/x402"
 import { confirm } from "../src/index.js";
 import { ABC, serving, vectors } from "./support.js";
 
-const X = vectors<{ fixed: { H: string; O: PaymentRequirements; resource: { url: string }; payer: string } }>(
+const X = vectors<{ fixed: { H: string; O: PaymentRequirements; resource: { url: string }; payer: string; link: string } }>(
   "x402-exact-eip155-eip3009.json",
 ).fixed;
 const LONG_AGREEMENT = "https://api.seller.example/agreement/" + "\u{1F600}".repeat(1006);
@@ -28,7 +28,7 @@ describe("an agreement URL over 2048 UTF-16 code units", () => {
           info: {
             type: "sha256",
             value: X.H,
-            legalContextUrl: `https://atr.seller.example/${X.H}`,
+            legalContextUrl: X.link,
             legalContextAgreementUrl: LONG_AGREEMENT,
           },
         },

@@ -17,7 +17,7 @@ const B = vectors("buyer.json");
 const N = vectors("mpp-charge-nearintents.json");
 const A = Uint8Array.from(Buffer.from(B.fixed.A, "hex"));
 const H: string = B.rows.find((r: { name: string }) => r.name === "B1").expect.h;
-const LINK = `https://atr.seller.example/${H}`;
+const LINK: string = B.fixed.link;
 const AG = B.fixed.agreement;
 const MD = N.fixed.request.methodDetails;
 const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} };

@@ -24,7 +24,7 @@ from support import ACCOUNT, PAIRING, load, serving
 FIXED = PAIRING["fixed"]
 H: str = FIXED["H"]
 O: dict[str, Any] = FIXED["O"]
-LINK = f"https://atr.seller.example/{H}"
+LINK: str = FIXED["link"]
 GRIN = "\U0001f600"
 
 # 27 + 1011 code points; 27 + 2022 UTF-16 code units: 2049, one over the bound.

@@ -8,6 +8,7 @@
 // `maxClaimableAmount` is the recorded charge plus the option's amount (x402 batch-settlement's client rule:
 // "`chargedCumulativeAmount + amount`"). The ATR, its hash and the batch-settlement opening's signatures are the lcp
 // vector files'.
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
@@ -360,7 +361,7 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
 describe("mpp/session/hedera is held over MCP with its landed receipt", () => {
   const V = vectors("mpp-session-hedera-solana-xrpl.json");
   const session = "mpp/session/hedera";
-  const AGREEMENT = `https://api.seller.example/agreement/${H_ABC}`;
+  const AGREEMENT = `https://api.seller.example/agreement/${randomUUID()}`;
   const challenge = V.SS1.hedera.challenge;
   const doc = () =>
     (BINDINGS.find((b) => b.id === session) as unknown as { advertise(d: object, h: string, l: string, o: object, a: string): object }).advertise(
