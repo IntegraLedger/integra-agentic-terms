@@ -15,7 +15,7 @@ TOO_LONG = "https://pay.seller.example/" + "a" * (2049 - len("https://pay.seller
 
 def test_agreement_fault_on_the_refused_link_rows() -> None:
     refused = [r for r in LINKS if r["refusedAs"] != "accepted"]
-    assert len(refused) == 17
+    assert len(refused) == 19
     for row in refused:
         assert agreement_fault(row["link"]).fault == row["refusedAs"], row["name"]
 

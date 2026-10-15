@@ -336,8 +336,18 @@ def test_finish_rows_decline_another_pairings_chosen_payment_before_any_build() 
 
 
 # The one https-link rule, over core-vectors.json's shared links rows: an accepted link is fetched, a refused one is
-# link-not-https before any fetch.
+# link-not-https before any fetch. httpx refuses some hosts the rule accepts, such as LK23's xn--zz, which is not valid
+# Punycode: the gate declines that link atr-unfetchable, and nothing is fetched.
 LINKS = load("core-vectors.json")["links"]["rows"]
+
+
+def httpx_refuses(link: str) -> bool:
+    """Whether httpx refuses a request to the link before it is sent, as its IDNA 2008 encoding of the host does."""
+    try:
+        httpx.Request("GET", link)
+    except (httpx.InvalidURL, UnicodeError):
+        return True
+    return False
 
 
 @pytest.mark.parametrize("case", LINKS, ids=[r["name"] for r in LINKS])
@@ -346,7 +356,10 @@ def test_the_https_link_rule(case: dict[str, Any]) -> None:
     link = serving(A)
     stub = StubBinding(BINDING, read_answer=Advertised(h=HASH_A, link=case["link"], offer={"required": document(), "options": [O]}))
     result = run_confirm(document(), link, binding=stub)
-    if case["accept"]:
+    if case["accept"] and httpx_refuses(case["link"]):
+        assert declined(result, "atr-unfetchable")
+        assert link.calls == 0
+    elif case["accept"]:
         assert link.calls == 1
     else:
         assert result == Declined("link-not-https", f"x402/{case['refusedAs']}")
