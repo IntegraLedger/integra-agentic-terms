@@ -19,7 +19,7 @@ from ._tron_proto import (
     encode_tron_raw,
     tron_address,
 )
-from ._x402 import chosen, payment_with, presented_with, read_for
+from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/tron/lcp-trc20-memo"
 LCP_TRC20_MEMO = "lcp-trc20-memo"
@@ -56,8 +56,8 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     amount = o.get("amount")
     if not isinstance(amount, str) or _DECIMAL.fullmatch(amount) is None or int(amount) >= UINT256_LIMIT:
         return Refusal("tron/option-malformed")
-    t = safe_int(o.get("maxTimeoutSeconds"))
-    if t is None or not 1 <= t <= MAX_TIMEOUT_SECONDS:
+    t = timeout_seconds(o.get("maxTimeoutSeconds"))
+    if t is None or t > MAX_TIMEOUT_SECONDS:
         return Refusal("tron/option-malformed")
     return True
 

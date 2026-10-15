@@ -106,13 +106,15 @@ def test_x402_exact_near_v1_args_and_request_hash() -> None:
 
 
 def test_x402_exact_near_v2_presented_options() -> None:
-    """bound reads V2's signed delegate action under each presented option of V2.presentedOptions, and gives the row's
-    expectBound."""
+    """V2's signed delegate action under each presented option of V2.presentedOptions: bound holds the presented option
+    to the filter read applies, so a row whose option read does not offer gives its expect refusal, and a row whose
+    option read offers gives its expectBound."""
     rows = N["V2"]["presentedOptions"]
-    assert rows, "the vector file holds no V2.presentedOptions rows"
+    assert any("expect" in row for row in rows), "the vector file holds no refused V2.presentedOptions row"
     for row in rows:
         p = {**presented(N["V2"]["expectSignedDelegateAction"]), "accepted": row["accepted"]}
-        assert X402_EXACT_NEAR.bound(p) == row["expectBound"], row["case"]
+        want = Refusal(row["expect"]) if "expect" in row else row["expectBound"]
+        assert X402_EXACT_NEAR.bound(p) == want, row["case"]
 
 
 def test_x402_exact_near_v2_complete_and_bound() -> None:
@@ -133,25 +135,31 @@ def delegate_with_height(height: int) -> bytes:
     return delegate[:at] + height.to_bytes(8, "little") + delegate[at + 8 :]
 
 
-def test_x402_exact_near_any_integer_timeout_and_a_window_of_at_least_one_block() -> None:
-    # x402's scheme_exact_near maps maxTimeoutSeconds to max(1, ...) blocks, so read, build and bound take any safe
-    # integer. The expected request hash is V2's delegate action with maxBlockHeight finalHeight + 1, under V1's prefix.
+def test_x402_exact_near_a_positive_timeout_opens_a_window_of_that_many_blocks() -> None:
+    # x402's scheme_exact_near opens max(1, ceil(maxTimeoutSeconds / estimatedBlockSeconds)) blocks, with one-second
+    # blocks; under the positive safe integer the filter holds, that is maxTimeoutSeconds blocks. Each expected request
+    # hash is V2's delegate action with maxBlockHeight finalHeight plus the window, under V1's prefix; a window of 60
+    # gives V1's expectRequestHash.
     prefix = bytes.fromhex(N["V1"]["expectPrefix"])
     final = int(F["finalHeight"])
     assert hashlib.sha256(prefix + delegate_with_height(final + 60)).hexdigest() == N["V1"]["expectRequestHash"]
-    one_block = hashlib.sha256(prefix + delegate_with_height(final + 1)).hexdigest()
-    for timeout in (1, 0, -60, -(2**53 - 1)):
+    for timeout, blocks in ((1, 1), (60, 60), (60.0, 60)):
         option = {**F["O"], "maxTimeoutSeconds": timeout}
         read = X402_EXACT_NEAR.read(x402_doc(option, F["resource"]))
         assert not isinstance(read, Refusal) and read.offer["options"] == [option], timeout
         unsigned = X402_EXACT_NEAR.build(near_choice(option), F["H"])
         assert not isinstance(unsigned, Refusal), timeout
-        assert unsigned.request["hash"].hex() == one_block, timeout
+        want = hashlib.sha256(prefix + delegate_with_height(final + blocks)).hexdigest()
+        assert unsigned.request["hash"].hex() == want, timeout
         under = {**presented(N["V2"]["expectSignedDelegateAction"]), "accepted": option}
         assert X402_EXACT_NEAR.bound(under) == N["V2"]["expectBound"], timeout
     absent = {k: v for k, v in F["O"].items() if k != "maxTimeoutSeconds"}
-    for option in [absent, *({**F["O"], "maxTimeoutSeconds": v} for v in ("60", 1.5, 2**53, None, True))]:
+    refused = (0, -60, -(2**53 - 1), "60", 1.5, 2**53, None, True)
+    for option in [absent, *({**F["O"], "maxTimeoutSeconds": v} for v in refused)]:
+        assert X402_EXACT_NEAR.read(x402_doc(option, F["resource"])) == Refusal("x402/no-payable-option"), option
         assert X402_EXACT_NEAR.build(near_choice(option), F["H"]) == Refusal("near/option-malformed"), option
+        under = {**presented(N["V2"]["expectSignedDelegateAction"]), "accepted": option}
+        assert X402_EXACT_NEAR.bound(under) == Refusal("near/option-malformed"), option
 
 
 V2_SDA = base64.b64decode(N["V2"]["expectSignedDelegateAction"])

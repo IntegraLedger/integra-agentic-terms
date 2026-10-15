@@ -13,7 +13,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._jose import json_bytes
 from ._lcp import from_legal_context, is_object, normal_hash, safe_int, uint256_of
-from ._x402 import LEGAL_CONTEXT, OptionFilter, chosen, payment_with, presented_with, read_for
+from ._x402 import LEGAL_CONTEXT, OptionFilter, chosen, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/starknet"
 
@@ -119,8 +119,7 @@ def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("starknet/caller-forbidden")
     if uint256_of(option.get("amount")) is None:
         return Refusal("starknet/option-malformed")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
-    if timeout is None or timeout < 1:
+    if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("starknet/option-malformed")
     return True
 

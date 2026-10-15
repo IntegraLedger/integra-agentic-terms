@@ -12,7 +12,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
-from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for, timeout_seconds
 from ._xrpl import (
     Blob,
     decode_presented,
@@ -53,9 +53,12 @@ def _is_this(option: Mapping[str, Any]) -> bool:
 
 
 def _payable(option: Mapping[str, Any]) -> bool:
-    """True when build can write the Payment's Amount: XRP drops, or an issued amount with extra.issuer."""
+    """True when build can write the Payment's Amount, XRP drops or an issued amount with extra.issuer, and the
+    timeout is a positive safe integer."""
     amount, asset = option.get("amount"), option.get("asset")
     if not isinstance(amount, str) or not isinstance(asset, str) or not isinstance(option.get("payTo"), str):
+        return False
+    if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return False
     if asset == "XRP":
         return _DROPS.fullmatch(amount) is not None
@@ -64,7 +67,7 @@ def _payable(option: Mapping[str, Any]) -> bool:
 
 
 # The pairing's one option filter, which read, build and bound apply: an option of this pairing whose Amount build can
-# write (_payable), else x402/option-malformed.
+# write and whose timeout is a positive safe integer (_payable), else x402/option-malformed.
 _THIS = filter_of(_is_this, _payable)
 
 

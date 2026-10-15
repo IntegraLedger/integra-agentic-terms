@@ -30,7 +30,7 @@ from ._svm import (
     to_base64,
     wire_of,
 )
-from ._x402 import accepted_by, chosen, filter_of, is_v2, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, is_v2, payment_with, read_for, timeout_seconds
 
 ID = "x402/exact/solana"
 MAX_MEMO = 256
@@ -56,13 +56,18 @@ def pairs(option: Mapping[str, Any]) -> bool:
 
 
 def payable(option: Mapping[str, Any]) -> bool:
-    """The amount is a u64 in decimal."""
+    """The amount is a u64 in decimal and the timeout a positive safe integer."""
     amount = option.get("amount")
-    return isinstance(amount, str) and _DECIMAL.fullmatch(amount) is not None and int(amount) < U64_LIMIT
+    return (
+        isinstance(amount, str)
+        and _DECIMAL.fullmatch(amount) is not None
+        and int(amount) < U64_LIMIT
+        and timeout_seconds(option.get("maxTimeoutSeconds")) is not None
+    )
 
 
 # The pairing's one option filter, which read, build and bound apply: an option of this pairing whose amount build can
-# pay (payable), else x402/option-malformed.
+# pay and whose timeout is a positive safe integer (payable), else x402/option-malformed.
 _THIS = filter_of(pairs, payable)
 _read = read_for(_THIS)
 

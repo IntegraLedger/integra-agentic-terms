@@ -28,7 +28,7 @@ from ._ton_tlb import (
     store_address,
     store_internal_message,
 )
-from ._x402 import chosen, payment_with, presented_with, read_for
+from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/tvm"
 OP_JETTON_TRANSFER = 0x0F8A7EA5
@@ -257,8 +257,8 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("tvm/option-malformed")
     if _decimal_below(o.get("amount"), COINS_LIMIT) is None:
         return Refusal("tvm/option-malformed")
-    timeout = safe_int(o.get("maxTimeoutSeconds"))
-    if timeout is None or timeout < 1 or timeout >= UINT32_LIMIT:
+    timeout = timeout_seconds(o.get("maxTimeoutSeconds"))
+    if timeout is None or timeout >= UINT32_LIMIT:
         return Refusal("tvm/option-malformed")
     return True
 

@@ -11,10 +11,10 @@ from typing import Any, Literal
 
 from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
-from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
+from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
 from ._scale import compact, compact_at
 from ._ss58 import ss58_decode
-from ._x402 import chosen, payment_with, presented_with, read_for
+from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/polkadot/lcp-assets-remark"
 
@@ -153,8 +153,8 @@ def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("polkadot/option-malformed")
     if _decimal_below(option.get("amount"), _U128_LIMIT) in (None, 0):
         return Refusal("polkadot/option-malformed")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
-    if timeout is None or timeout < 1 or timeout > 3600:
+    timeout = timeout_seconds(option.get("maxTimeoutSeconds"))
+    if timeout is None or timeout > 3600:
         return Refusal("polkadot/option-malformed")
     return True if ss58_decode(option.get("payTo")) is not None else Refusal("polkadot/address-malformed")
 

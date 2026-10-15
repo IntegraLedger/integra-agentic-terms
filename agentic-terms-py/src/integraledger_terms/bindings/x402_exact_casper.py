@@ -12,7 +12,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._jose import js_length
 from ._lcp import is_object, normal_hash, safe_int, uint256_of
-from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for, timeout_seconds
 
 ID = "x402/exact/casper"
 
@@ -46,7 +46,6 @@ def casper_option(option: object) -> bool:
     extra = option.get("extra")
     network = option.get("network")
     asset = option.get("asset")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
     return (
         option.get("scheme") == "exact"
         and isinstance(network, str)
@@ -58,8 +57,7 @@ def casper_option(option: object) -> bool:
         and is_object(extra)
         and _is_name(extra.get("name"))
         and _is_name(extra.get("version"))
-        and timeout is not None
-        and timeout > 0
+        and timeout_seconds(option.get("maxTimeoutSeconds")) is not None
     )
 
 

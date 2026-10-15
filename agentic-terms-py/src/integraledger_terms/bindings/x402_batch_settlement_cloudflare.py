@@ -14,7 +14,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from ._batch import SCHEME
 from ._lcp import is_object, normal_hash, safe_int
-from ._x402 import accepted_by, chosen, filter_of, legal_context_of, read_for
+from ._x402 import accepted_by, chosen, filter_of, legal_context_of, read_for, timeout_seconds
 
 ID = "x402/batch-settlement/cloudflare"
 NETWORK = "cloudflare:402"
@@ -32,7 +32,14 @@ def is_pairing(option: Mapping[str, Any]) -> bool:
     return isinstance(asset, str) and _CURRENCY.fullmatch(asset) is not None and "version" in option["extra"]
 
 
-_FILTER = filter_of(is_pairing)
+def _payable(option: Mapping[str, Any]) -> bool:
+    """What the pairing serves: an option whose maxTimeoutSeconds is a positive safe integer."""
+    return timeout_seconds(option.get("maxTimeoutSeconds")) is not None
+
+
+# The pairing's one option filter, which read, build and bound apply: an option the pairing names, refused
+# x402/option-malformed where its maxTimeoutSeconds is not a positive safe integer.
+_FILTER = filter_of(is_pairing, _payable)
 
 
 @dataclass(frozen=True, slots=True)

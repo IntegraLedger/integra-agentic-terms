@@ -25,7 +25,7 @@ from ._hedera_proto import (
     write_body,
 )
 from ._lcp import from_lcp_string, from_legal_context, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, payment_with, presented_with, read_for
+from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
 
 EXACT = "x402/exact/hedera"
 EXECUTOR = "x402/exact/hedera/transfer-executor"
@@ -83,8 +83,11 @@ def _named(o: Mapping[str, Any]) -> bool:
 
 def _servable(o: Mapping[str, Any]) -> bool:
     """Everything but the transfer method: network, asset, payee, amount and timeout."""
-    timeout = safe_int(o.get("maxTimeoutSeconds"))
-    return _named(o) and amount_of(o.get("amount")) is not None and timeout is not None and timeout > 0
+    return (
+        _named(o)
+        and amount_of(o.get("amount")) is not None
+        and timeout_seconds(o.get("maxTimeoutSeconds")) is not None
+    )
 
 
 def check_exact(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:

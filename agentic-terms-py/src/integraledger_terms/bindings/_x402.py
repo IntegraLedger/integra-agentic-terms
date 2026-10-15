@@ -42,6 +42,14 @@ def filter_of(
     return check
 
 
+def timeout_seconds(value: object) -> int | None:
+    """An option's maxTimeoutSeconds as an int when it is a positive safe integer, the one rule every x402 pairing's
+    option filter holds the member to; None otherwise. A JSON number with an integral value reads as that integer, so
+    60.0 is 60. A pairing's own upper bound, where it has one, applies beside it."""
+    seconds = safe_int(value)
+    return seconds if seconds is not None and seconds > 0 else None
+
+
 def is_v2(doc: object) -> bool:
     return is_object(doc) and safe_int(doc.get("x402Version")) == 2 and not isinstance(doc.get("x402Version"), bool)
 

@@ -19,7 +19,7 @@ from .._types import Advertised, Json, Refusal
 from ._cbor import UNDEFINED, CborMap, decode_cbor, is_tag, map_get
 from ._codec import b58_decode, canonical_or_none
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for
+from ._x402 import accepted_by, chosen, filter_of, payment_with, read_for, timeout_seconds
 
 ID = "x402/exact/ccd"
 
@@ -86,7 +86,6 @@ def ccd_option(o: object) -> bool:
         return False
     extra = o.get("extra")
     network, asset, amount = o.get("network"), o.get("asset"), o.get("amount")
-    timeout = safe_int(o.get("maxTimeoutSeconds"))
     return (
         o.get("scheme") == "exact"
         and isinstance(network, str)
@@ -99,8 +98,7 @@ def ccd_option(o: object) -> bool:
         and isinstance(amount, str)
         and _DECIMAL.fullmatch(amount) is not None
         and int(amount) < _UINT64_LIMIT
-        and timeout is not None
-        and timeout > 0
+        and timeout_seconds(o.get("maxTimeoutSeconds")) is not None
     )
 
 

@@ -13,7 +13,7 @@ from .._core import AtrHash
 from .._types import Advertised, Json, Refusal
 from . import _stellar
 from ._lcp import is_object, normal_hash, safe_int
-from ._x402 import accepted_by, chosen, filter_of, legal_context_of, read_for
+from ._x402 import accepted_by, chosen, filter_of, legal_context_of, read_for, timeout_seconds
 
 ID = "x402/exact/stellar"
 
@@ -45,13 +45,12 @@ def _payable(option: Mapping[str, Any]) -> bool:
     5 * (2^32 - 1) seconds: build sets the authorization entry's expiration ledger, a uint32, to the current ledger
     plus ceil(maxTimeoutSeconds / 5)."""
     amount = option.get("amount")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
+    timeout = timeout_seconds(option.get("maxTimeoutSeconds"))
     return (
         isinstance(amount, str)
         and _AMOUNT.fullmatch(amount) is not None
         and int(amount) < _I128_LIMIT
         and timeout is not None
-        and timeout > 0
         and -(-timeout // 5) <= _UINT32_MAX
     )
 

@@ -38,7 +38,17 @@ from ._evm import (
 )
 from ._jose import js_length
 from ._lcp import chain_id_of, is_address, is_object, legal_context_info, normal_hash, safe_int, uint256_of
-from ._x402 import LEGAL_CONTEXT, MAX_SIGNATURE_BYTES, OptionFilter, accepted_by, chosen, is_v2, payment_with, read_for
+from ._x402 import (
+    LEGAL_CONTEXT,
+    MAX_SIGNATURE_BYTES,
+    OptionFilter,
+    accepted_by,
+    chosen,
+    is_v2,
+    payment_with,
+    read_for,
+    timeout_seconds,
+)
 
 EXACT_EIP3009 = "x402/exact/eip155/eip3009"
 EXACT_PERMIT2 = "x402/exact/eip155/permit2"
@@ -190,8 +200,8 @@ def _payable(pairing: str, option: Mapping[str, Any]) -> bool:
     """An option build can pay: its amount and time bound; for auth-capture also the token's EIP-712 name and
     version, the escrow terms _auth_capture_terms reads, and a maxTimeoutSeconds below 2^48, since now plus it is the
     payment's preApprovalExpiry, a uint48."""
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
-    if uint256_of(option.get("amount")) is None or timeout is None or timeout <= 0:
+    timeout = timeout_seconds(option.get("maxTimeoutSeconds"))
+    if uint256_of(option.get("amount")) is None or timeout is None:
         return False
     if _scheme_of(pairing) != "auth-capture":
         return True

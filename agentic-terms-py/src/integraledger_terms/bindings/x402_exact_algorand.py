@@ -14,7 +14,7 @@ from .._types import Advertised, Json, Refusal
 from . import _algorand
 from ._codec import b64_decode, b64_encode
 from ._lcp import from_lcp_string, is_list, is_object, is_well_formed, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, payment_with, presented_with, read_for
+from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/algorand"
 
@@ -62,8 +62,7 @@ def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         or ("feePayer" in extra_map and not _algorand.is_address(extra_map["feePayer"]))
     ):
         return Refusal("avm/option-malformed")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
-    if _uint64(option.get("amount")) is None or timeout is None or timeout <= 0:
+    if _uint64(option.get("amount")) is None or timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("avm/option-malformed")
     return True
 

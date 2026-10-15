@@ -15,7 +15,7 @@ from .._types import Advertised, Json, Refusal
 from ._cbor_spans import CborError, Item, SpanReader
 from ._lcp import from_lcp_string, is_object, normal_hash
 from ._rail_bytes import base64_bytes
-from ._x402 import chosen, payment_with, presented_with, read_for
+from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/cardano"
 
@@ -198,6 +198,8 @@ def cardano_option_check(option: object) -> Refusal | None:
         return Refusal("x402/option-not-this-pairing")
     amount = option.get("amount")
     if not isinstance(amount, str) or _DECIMAL.fullmatch(amount) is None:
+        return Refusal("x402/option-not-this-pairing")
+    if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("x402/option-not-this-pairing")
     return None
 

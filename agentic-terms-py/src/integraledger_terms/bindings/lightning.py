@@ -19,8 +19,8 @@ from ._jose import member_names, parse_json
 from ._mpp import check_challenge, credential_of, echoed_for
 from ._mpp import read as mpp_read
 from ._mpp_checks import decode_object
-from ._lcp import is_object, legal_context_info, normal_hash, safe_int
-from ._x402 import OptionFilter, accepted_by, chosen, filter_of, is_v2, payment_with, read_for
+from ._lcp import is_object, legal_context_info, normal_hash
+from ._x402 import OptionFilter, accepted_by, chosen, filter_of, is_v2, payment_with, read_for, timeout_seconds
 
 LNBTC = "x402/exact/lnbtc"
 NAMED = "x402/exact/lnbtc/invoice-named"
@@ -80,7 +80,6 @@ def check_option(o: Mapping[str, Any], h: AtrHash | Literal["any"] | None) -> Bo
         return network
     pay_to = o.get("payTo")
     amount = o.get("amount")
-    max_timeout = safe_int(o.get("maxTimeoutSeconds"))
     if (
         extra.get("paymentFlow") != "upfront"
         or o.get("asset") != "BTC"
@@ -88,8 +87,7 @@ def check_option(o: Mapping[str, Any], h: AtrHash | Literal["any"] | None) -> Bo
         or _PAY_TO.fullmatch(pay_to) is None
         or not isinstance(amount, str)
         or _POSITIVE.fullmatch(amount) is None
-        or max_timeout is None
-        or max_timeout <= 0
+        or timeout_seconds(o.get("maxTimeoutSeconds")) is None
     ):
         return Refusal("x402/option-malformed")
     return b

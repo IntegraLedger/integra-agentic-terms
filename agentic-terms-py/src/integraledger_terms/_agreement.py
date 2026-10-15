@@ -24,7 +24,7 @@ from ._core import atr_hash as hash_of
 from .bindings._codec import b64_decode, js_json
 from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
-from .bindings._x402 import MAX_OPTIONS, is_offered
+from .bindings._x402 import MAX_OPTIONS, is_offered, timeout_seconds
 from ._types import (
     Advertised,
     AgreementPayment,
@@ -46,7 +46,6 @@ SETTLE_S = 60
 VERIFY_S = 10
 WINDOW_EXTRA_S = 180
 MAX_ANSWER_BYTES = 65_536
-MAX_SAFE_INTEGER = 2**53 - 1
 RETRY_DEFAULT_S = 2
 RETRY_MIN_S = 1
 
@@ -375,14 +374,8 @@ def _challenge_fault(required: Mapping[str, Any]) -> str | None:
 def _bounds(option: Mapping[str, Any]) -> tuple[int, int] | None:
     """The paid request's deadline and the whole exchange's, in seconds, from the option's maxTimeoutSeconds: a JSON
     number with an integral value from 1 to 2^53 - 1, whether written 60 or 60.0."""
-    t = option.get("maxTimeoutSeconds")
-    if isinstance(t, bool):
-        return None
-    if isinstance(t, float):
-        if not t.is_integer():
-            return None
-        t = int(t)
-    if not isinstance(t, int) or t <= 0 or t > MAX_SAFE_INTEGER:
+    t = timeout_seconds(option.get("maxTimeoutSeconds"))
+    if t is None:
         return None
     return min(t, EXCHANGE_CAP_S) + SETTLE_S + VERIFY_S, t + WINDOW_EXTRA_S
 

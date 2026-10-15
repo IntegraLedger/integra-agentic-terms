@@ -11,7 +11,7 @@ from typing import Any
 from .._core import AtrHash, is_hash
 from .._types import Advertised, Json, Refusal
 from ._lcp import chain_id_of, is_address, safe_int, uint256_of
-from ._x402 import accepted_by, chosen, filter_of, read_for
+from ._x402 import accepted_by, chosen, filter_of, read_for, timeout_seconds
 
 ID = "x402/exact/eip155/eip3009"
 
@@ -61,7 +61,6 @@ def _payable(option: Mapping[str, Any]) -> bool:
     if not isinstance(extra, Mapping):
         return False
     name, version = extra.get("name"), extra.get("version")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
     return (
         isinstance(name, str)
         and name != ""
@@ -70,8 +69,7 @@ def _payable(option: Mapping[str, Any]) -> bool:
         and is_address(option.get("asset"))
         and is_address(option.get("payTo"))
         and uint256_of(option.get("amount")) is not None
-        and timeout is not None
-        and timeout > 0
+        and timeout_seconds(option.get("maxTimeoutSeconds")) is not None
     )
 
 

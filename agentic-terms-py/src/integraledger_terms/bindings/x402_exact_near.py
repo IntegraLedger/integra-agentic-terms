@@ -22,7 +22,7 @@ from ._borsh_near import (
 from ._codec import b64_decode, js_json
 from ._jose import js_length, parse_json
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, payment_with, presented_with, read_for
+from ._x402 import chosen, payment_with, presented_with, read_for, timeout_seconds
 
 ID = "x402/exact/near"
 FT_TRANSFER_GAS = 30_000_000_000_000
@@ -64,8 +64,7 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("near/option-malformed")
     if _decimal_below(o.get("amount"), U128_LIMIT) is None:
         return Refusal("near/option-malformed")
-    # Any integer timeout: build opens a window of max(1, maxTimeoutSeconds) blocks, x402's own mapping.
-    if safe_int(o.get("maxTimeoutSeconds")) is None:
+    if timeout_seconds(o.get("maxTimeoutSeconds")) is None:
         return Refusal("near/option-malformed")
     return True
 
@@ -159,7 +158,7 @@ class X402ExactNear:
 
     def build(self, c: Json, h: AtrHash) -> NearUnsigned | Refusal:
         """The delegate action for the chosen option: one ft_transfer whose memo is the hash's LCP string, with the
-        key's next nonce and a window of max(1, maxTimeoutSeconds) blocks past the final height."""
+        key's next nonce and a window of maxTimeoutSeconds blocks past the final height."""
         if not is_object(c):
             return Refusal("x402/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
@@ -179,9 +178,10 @@ class X402ExactNear:
         nonce = c.get("accessKeyNonce")
         if not isinstance(nonce, int) or not _big(nonce) or nonce < 0 or nonce + 1 >= U64_LIMIT:
             return Refusal("x402/option-malformed")
-        timeout = safe_int(accepted.get("maxTimeoutSeconds"))
-        assert timeout is not None
-        window = max(1, timeout)
+        # x402's NEAR scheme opens max(1, ceil(maxTimeoutSeconds / estimatedBlockSeconds)) blocks; with one-second
+        # blocks and the positive timeout the filter holds, that is maxTimeoutSeconds blocks.
+        window = timeout_seconds(accepted.get("maxTimeoutSeconds"))
+        assert window is not None
         height = c.get("finalHeight")
         if not isinstance(height, int) or not _big(height) or height < 0 or height + window >= U64_LIMIT:
             return Refusal("x402/option-malformed")

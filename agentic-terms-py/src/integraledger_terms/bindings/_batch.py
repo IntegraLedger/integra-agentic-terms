@@ -7,7 +7,7 @@ from typing import Any
 
 from .._types import Refusal
 from ._lcp import is_object, safe_int
-from ._x402 import OptionFilter, accepted_by
+from ._x402 import OptionFilter, accepted_by, timeout_seconds
 
 SCHEME = "batch-settlement"
 MIN_DELAY = 900
@@ -34,8 +34,12 @@ def is_decimal(value: object) -> bool:
 def payable(option: Mapping[str, Any]) -> bool:
     """An option whose amount is a decimal below 2^128 and whose maxTimeoutSeconds is a positive safe integer."""
     amount = option.get("amount")
-    timeout = safe_int(option.get("maxTimeoutSeconds"))
-    return isinstance(amount, str) and is_decimal(amount) and int(amount) < U128_LIMIT and timeout is not None and timeout > 0
+    return (
+        isinstance(amount, str)
+        and is_decimal(amount)
+        and int(amount) < U128_LIMIT
+        and timeout_seconds(option.get("maxTimeoutSeconds")) is not None
+    )
 
 
 def payload_of(presented: object, check: OptionFilter) -> tuple[Mapping[str, Any], Mapping[str, Any]] | Refusal:
