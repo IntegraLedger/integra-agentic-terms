@@ -638,9 +638,6 @@ def _vi_open_mandates_not_one_or_user_key_not_p256() -> list[object]:
     return [listing([other]), listing([opened, opened_twice]), CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(user=ed25519_key))]
 
 
-# A VI pairing's build takes the checkout_jwt string as its choice, where Binding types the choice as a mapping.
-VI_IMMEDIATE: Any = CARD_MASTERCARD_VI_IMMEDIATE
-VI_AUTONOMOUS: Any = CARD_MASTERCARD_VI_AUTONOMOUS
 
 
 # card.json's agreedRefusals rows that the buyer half reads (read, build and bound), by case: each builds the inputs
@@ -666,11 +663,11 @@ CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
     "VI read or build of a checkout_jwt that is not a string of three dot-separated visible-ASCII segments whose second decodes to a JSON object": lambda: [
         CARD_MASTERCARD_VI_IMMEDIATE.read("a.b"),
         CARD_MASTERCARD_VI_IMMEDIATE.read(42),
-        VI_AUTONOMOUS.build(f"a.{_encoded([1])}.b", CARD["fixed"]["H"]),
+        CARD_MASTERCARD_VI_AUTONOMOUS.build(f"a.{_encoded([1])}.b", CARD["fixed"]["H"]),
     ],
     "VI read or build of a checkout_jwt over 16384 characters": lambda: [
         CARD_MASTERCARD_VI_IMMEDIATE.read("a" * 16385),
-        VI_IMMEDIATE.build("a" * 16385, CARD["fixed"]["H"]),
+        CARD_MASTERCARD_VI_IMMEDIATE.build("a" * 16385, CARD["fixed"]["H"]),
     ],
     "TAP bound with presented not an object, or signatureInput not a string": lambda: [
         CARD_VISA_TAP.bound("sig2=()"),
@@ -794,9 +791,8 @@ def test_card_c5_vi_read_and_build() -> None:
     assert CARD_MASTERCARD_VI_IMMEDIATE.read(c5["read"]["doc"]) == Advertised(
         h=c5["read"]["expect"]["h"], link=c5["read"]["expect"]["link"], offer={}
     )
-    vi: Any = CARD_MASTERCARD_VI_IMMEDIATE
-    assert vi.build(CJ, c5["build"]["h"]) == c5["build"]["expect"]
-    assert vi.build(CJ, c5["conflict"]["h"]) == Refusal(c5["conflict"]["expect"])
+    assert CARD_MASTERCARD_VI_IMMEDIATE.build(CJ, c5["build"]["h"]) == c5["build"]["expect"]
+    assert CARD_MASTERCARD_VI_IMMEDIATE.build(CJ, c5["conflict"]["h"]) == Refusal(c5["conflict"]["expect"])
     assert c5["build"]["expect"]["transactionId"] == CARD["vi"]["printed"]["CH"]
 
 
