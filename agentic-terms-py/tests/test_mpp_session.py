@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -543,6 +544,30 @@ def test_mpp_subscription_tempo_rows_whose_key_authorization_is_for_another_chai
         presented = sub1_with("chainId", row["chainId"])
         assert MPP_SUBSCRIPTION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
         assert channel.ref(presented) == Refusal(row["expect"]), row["case"]
+
+
+KEY_AUTHORIZATIONS: dict[str, Any] = json.loads((Path(__file__).parent / "tempo_key_authorizations.json").read_text())
+
+
+def answered(result: Any) -> Any:
+    """A binding's answer as tempo_key_authorizations.json writes it: a refusal's code, else the value."""
+    return result.code if isinstance(result, Refusal) else result
+
+
+def test_mpp_subscription_tempo_key_authorization_rows() -> None:
+    # tempo_key_authorizations.json's rows, each key authorization in B6's credential: a limit reads as [token, limit,
+    # period] or [token, limit], an allowed call as [target, [[selector, [recipient, ...]], ...]], with a 20-byte token,
+    # target and recipients, 4-byte selectors and canonical unsigned integers; any other form is
+    # tempo/key-authorization-malformed, through bound and channel.ref alike.
+    channel = MPP_SUBSCRIPTION_TEMPO.channel  # type: ignore[attr-defined]
+    rows = KEY_AUTHORIZATIONS["rows"]
+    assert {row["expect"]["bound"] == H for row in rows} == {True, False}
+    got: dict[str, Any] = {}
+    for row in rows:
+        presented = {**SUB_B6, "payload": {"type": "keyAuthorization", "signature": row["signature"]}}
+        bound, ref = MPP_SUBSCRIPTION_TEMPO.bound(presented), channel.ref(presented)
+        got[row["case"]] = {"bound": answered(bound), "ref": answered(ref)}
+    assert got == {row["case"]: row["expect"] for row in rows}
 
 
 def test_mpp_subscription_tempo_the_issued_key_is_read_in_any_case_with_its_type() -> None:

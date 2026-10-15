@@ -301,6 +301,46 @@ def _within_scopes(item: RlpItem, calls: bool) -> bool:
     return True
 
 
+def _item(items: list[RlpItem], i: int) -> RlpItem | None:
+    """Item i of a list's items, or None past their end."""
+    return items[i] if i < len(items) else None
+
+
+def _items_of(item: RlpItem | None) -> list[RlpItem]:
+    """The items of an RLP list; none for an absent item or a byte string."""
+    return [] if item is None or item.items is None else item.items
+
+
+def _fixed_bytes(item: RlpItem | None, n: int) -> bool:
+    """Whether item is a byte string of n bytes."""
+    return item is not None and item.items is None and len(item.data) == n
+
+
+def _limits_read(item: RlpItem | None) -> bool:
+    """Whether every limit reads as [token, limit, period], or as [token, limit] for a limit whose period is 0: a
+    20-byte token, then canonical unsigned integers (rlp_uint)."""
+    for limit in _items_of(item):
+        if limit.items is None or len(limit.items) not in (2, 3):
+            return False
+        if not _fixed_bytes(limit.items[0], 20) or any(rlp_uint(i) is None for i in limit.items[1:]):
+            return False
+    return True
+
+
+def _allowed_calls_read(item: RlpItem | None) -> bool:
+    """Whether every allowed call reads as [target, [[selector, [recipient, ...]], ...]]: a 20-byte target, 4-byte
+    selectors and 20-byte recipients."""
+    for scope in _items_of(item):
+        if scope.items is None or not _fixed_bytes(_item(scope.items, 0), 20):
+            return False
+        for rule in _items_of(_item(scope.items, 1)):
+            if rule.items is None or not _fixed_bytes(_item(rule.items, 0), 4):
+                return False
+            if not all(_fixed_bytes(r, 20) for r in _items_of(_item(rule.items, 1))):
+                return False
+    return True
+
+
 @dataclass(frozen=True, slots=True)
 class KeyAuthorization:
     """A signed key authorization's digest, its key id, its key type (item 1, as Tempo numbers it: secp256k1 0, P256 1,
@@ -314,8 +354,11 @@ class KeyAuthorization:
 
 
 def decode_key_authorization(signed: object) -> KeyAuthorization | Refusal:
-    """A signed key authorization: an RLP list of the authorization (3 to 9 items) and a byte-string signature. The
-    digest is keccak256 over the authorization's bytes as received; the witness is item 6, 32 bytes, when present."""
+    """A signed key authorization: an RLP list of the authorization (3 to 9 items) and a byte-string signature, with a
+    20-byte key id (item 2), a chain id and a key type that are canonical unsigned integers (items 0 and 1), and limits
+    and allowed calls (items 4 and 5) within their bounds (_within_scopes) and in their forms (_limits_read,
+    _allowed_calls_read); else tempo/key-authorization-malformed. The digest is keccak256 over the authorization's bytes
+    as received; the witness is item 6, 32 bytes, when present."""
     bad = Refusal("tempo/key-authorization-malformed")
     if not isinstance(signed, str) or len(signed) > 2 + 2 * MAX_KEY_AUTHORIZATION_BYTES:
         return bad
@@ -337,6 +380,8 @@ def decode_key_authorization(signed: object) -> KeyAuthorization | Refusal:
     for i in (4, 5):
         if i < len(auth.items) and not _within_scopes(auth.items[i], i == 5):
             return bad
+    if not _limits_read(_item(auth.items, 4)) or not _allowed_calls_read(_item(auth.items, 5)):
+        return bad
     witness: str | None = None
     if len(auth.items) > 6:
         w = auth.items[6]
