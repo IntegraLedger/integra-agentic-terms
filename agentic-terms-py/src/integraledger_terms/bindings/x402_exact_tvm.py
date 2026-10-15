@@ -166,9 +166,9 @@ def tvm_carrier(settlement_boc: object, network: object) -> tuple[AtrHash, Cell]
     Maybe ^Cell and has_other_actions are read; W5 reads nothing after has_other_actions 0, and neither does this, so
     bits and references there are carried, not read. A body W5 does not run as a signed request, or whose signed part
     ends before those fields, is tvm/not-w5-signed, and an empty action list or has_other_actions 1 is tvm/actions.
-    The signature is not verified. Each message is read as
-    TON's action phase sends it (message_of), at the configuration held for the network: a source of addr_none or an addr_std with no
-    anycast (the outgoing message's the W5 wallet's own), a destination TON sends to, a value and an extra_flags of at
+    The signature is not verified. Each message is read as TON's action phase sends it (message_of), at the
+    configuration held for the network: a source of addr_none or an addr_std with no anycast (the outgoing message's
+    the W5 wallet's own), a destination TON sends to, a value and an extra_flags of at
     most 3 each in its shortest form, no extra currency, its state init validated as TON validates it, a referenced
     body that is an ordinary cell with nothing after it, and at most two nested Merkle proofs or updates; the W5
     action's send mode is one TON sends with (_sends_with). The settlement message TON would not send is
