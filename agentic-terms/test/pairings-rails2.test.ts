@@ -11,6 +11,8 @@ import { exactNear } from "@integraledger/lcp/near";
 import { exactPolkadotRemark, ss58Decode } from "@integraledger/lcp/polkadot";
 import { exactStarknet } from "@integraledger/lcp/starknet";
 import { exactSui } from "@integraledger/lcp/sui";
+import { TransactionDataBuilder } from "@mysten/sui/transactions";
+import { fromBase58 } from "@mysten/sui/utils";
 import { exactTronMemo } from "@integraledger/lcp/tron";
 import { exactTvm } from "@integraledger/lcp/tvm";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
@@ -27,6 +29,9 @@ import {
   vectors,
   type Pairing,
 } from "./support.js";
+
+/** U+FEFF in UTF-8. */
+const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 type Doc = PaymentRequired & { extensions: { legalContext: { info: { legalContextUrl: string } } } };
 
@@ -380,7 +385,51 @@ const polkadotRow: Row = (() => {
 const SUI = vectors<{
   fixed: { H: string; sender: string; O: PaymentRequirements; resource: { url: string } };
   V2: { tx: { transactionBase64: string }; expectReference: unknown };
+  V3: { case: string; tx?: { transactionBase64: string; blake2b: string; digest: string }; expectBound: string }[];
+  agreedRefusals: { rows: { case: string; transaction?: unknown; expect: string }[] };
 }>("x402-exact-sui.json");
+
+/** A row's `{"$repeat": [s, n]}` transaction as s repeated n times, or undefined for a row that gives none. */
+function repeated(transaction: unknown): string | undefined {
+  const r = (transaction as { $repeat?: [string, number] } | undefined)?.$repeat;
+  return Array.isArray(r) ? r[0].repeat(r[1]) : undefined;
+}
+
+/** The number of code points in s. */
+const codePoints = (s: string): number => [...s].length;
+
+// Each agreedRefusals row whose transaction is {"$repeat": [s, n]}: a text over the decoded bound in UTF-16 code units,
+// whose code points are not a multiple of 4, is the row's refusal.
+describe("x402/exact/sui agreedRefusals: a transaction beyond the BMP", () => {
+  const rows = SUI.agreedRefusals.rows.filter((r) => repeated(r.transaction) !== undefined);
+  it("the file holds such rows", () => expect(rows.length).toBeGreaterThan(0));
+  for (const r of rows) {
+    it(`${r.case}: ${r.expect}`, async () => {
+      const text = repeated(r.transaction)!;
+      expect([text.length % 4, codePoints(text) % 4 !== 0]).toEqual([0, true]);
+      const payment = { x402Version: 2, accepted: SUI.fixed.O, payload: { signature: "AAAA", transaction: text } };
+      expect(await exactSui.bound(payment as never)).toEqual({ refused: true, code: r.expect });
+    });
+  }
+});
+
+// Each V3 row whose transaction holds the bytes EF BB BF, a MoveCall's module name led by U+FEFF: bound gives the
+// row's hash, and @mysten/sui 2.35.0 gives the digest from the bytes, base58 of the row's Blake2b.
+describe("x402/exact/sui V3: a call whose module name is led by U+FEFF", () => {
+  const rows = SUI.V3.filter((r) => r.tx !== undefined && Buffer.from(r.tx.transactionBase64, "base64").includes(BOM));
+  it("the file holds such rows", () => expect(rows.length).toBeGreaterThan(0));
+  for (const r of rows) {
+    it(r.case, async () => {
+      const tx = r.tx!;
+      const bytes = Uint8Array.from(Buffer.from(tx.transactionBase64, "base64"));
+      expect(TransactionDataBuilder.getDigestFromBytes(bytes)).toBe(tx.digest);
+      expect(toHex(fromBase58(tx.digest))).toBe(tx.blake2b);
+      const payment = { x402Version: 2, accepted: SUI.fixed.O, payload: { signature: "AAAA", transaction: tx.transactionBase64 } };
+      expect(await exactSui.bound(payment as never)).toBe(r.expectBound);
+      expect(JSON.parse(JSON.stringify(await exactSui.reference(payment as never)))).toMatchObject({ digest: tx.digest });
+    });
+  }
+});
 
 const suiRow: Row = (() => {
   const f = SUI.fixed;
@@ -433,7 +482,23 @@ const APT = vectors<{
     };
   };
   V2: { expectReference: unknown };
+  agreedRefusals: { rows: { case: string; transaction?: unknown; expect: string }[] };
 }>("x402-exact-aptos.json");
+
+// Each agreedRefusals row whose transaction is {"$repeat": [s, n]}: a text over the decoded bound in UTF-16 code units,
+// whose code points are not a multiple of 4, is the row's refusal.
+describe("x402/exact/aptos agreedRefusals: a transaction beyond the BMP", () => {
+  const rows = APT.agreedRefusals.rows.filter((r) => repeated(r.transaction) !== undefined);
+  it("the file holds such rows", () => expect(rows.length).toBeGreaterThan(0));
+  for (const r of rows) {
+    it(`${r.case}: ${r.expect}`, async () => {
+      const text = repeated(r.transaction)!;
+      expect([text.length % 4, codePoints(text) % 4 !== 0]).toEqual([0, true]);
+      const payment = { x402Version: 2, accepted: APT.fixed.O, payload: { transaction: text } };
+      expect(await exactAptos.reference(payment as never)).toEqual({ refused: true, code: r.expect });
+    });
+  }
+});
 
 const uleb = (n: number): Buffer => {
   const out: number[] = [];

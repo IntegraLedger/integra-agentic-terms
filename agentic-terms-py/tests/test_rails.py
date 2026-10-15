@@ -23,6 +23,7 @@ from integraledger_terms.bindings.x402_exact_aptos import aptos_option_check, de
 from integraledger_terms.bindings._ss58 import ss58_decode
 from integraledger_terms.bindings._lcp import to_lcp_string
 from integraledger_terms.bindings.x402_exact_polkadot_lcp_assets_remark import decode_profile_call, encode_profile_call, split_signed
+from integraledger_terms.bindings._sui_tx import parse_transaction_data
 from integraledger_terms.bindings.x402_exact_sui import decode_sui_tx, sui_carrier, sui_option_check
 from integraledger_terms.bindings.x402_exact_starknet import MASK_250, SELECTOR_TRANSFER, chain_id_felt, sn_nonce
 
@@ -597,6 +598,29 @@ def test_aptos_agreed_refusals_of_a_transaction_text() -> None:
     assert rows
     for row in rows:
         assert decode_aptos_tx(row["transaction"]) == Refusal(row["expect"]), row["case"]
+
+
+def repeated(transaction: object) -> str | None:
+    """A row's {"$repeat": [s, n]} transaction as s repeated n times, or None for a row that gives none."""
+    if not isinstance(transaction, dict) or "$repeat" not in transaction:
+        return None
+    text, times = transaction["$repeat"]
+    assert isinstance(text, str) and isinstance(times, int)
+    return text * times
+
+
+def utf16_units(text: str) -> int:
+    return sum(2 if ord(c) > 0xFFFF else 1 for c in text)
+
+
+def test_aptos_agreed_refusals_of_a_transaction_beyond_the_bmp() -> None:
+    """Each agreedRefusals row whose transaction is {"$repeat": [s, n]}: a text over the decoded bound in UTF-16 code
+    units, whose code points are not a multiple of 4, is the row's refusal."""
+    rows = [(row, text) for row in AP["agreedRefusals"]["rows"] if (text := repeated(row.get("transaction"))) is not None]
+    assert rows
+    for row, text in rows:
+        assert utf16_units(text) % 4 == 0 and len(text) % 4 != 0, row["case"]
+        assert decode_aptos_tx(text) == Refusal(row["expect"]), row["case"]
 
 
 # ── x402/exact/polkadot/lcp-assets-remark
@@ -1182,6 +1206,31 @@ def test_sui_agreed_refusals_of_a_transaction_text() -> None:
     assert rows
     for row in rows:
         assert decode_sui_tx(row["transaction"]) == Refusal(row["expect"]), row["case"]
+
+
+def test_sui_agreed_refusals_of_a_transaction_beyond_the_bmp() -> None:
+    """Each agreedRefusals row whose transaction is {"$repeat": [s, n]}: a text over the decoded bound in UTF-16 code
+    units, whose code points are not a multiple of 4, is the row's refusal."""
+    rows = [(row, text) for row in SUI["agreedRefusals"]["rows"] if (text := repeated(row.get("transaction"))) is not None]
+    assert rows
+    for row, text in rows:
+        assert utf16_units(text) % 4 == 0 and len(text) % 4 != 0, row["case"]
+        assert decode_sui_tx(text) == Refusal(row["expect"]), row["case"]
+        assert X402_EXACT_SUI.bound(sui_payment(text)) == Refusal(row["expect"]), row["case"]
+
+
+def test_sui_v3_a_call_whose_module_name_is_led_by_a_bom() -> None:
+    """Each V3 row whose transaction holds the bytes EF BB BF: its MoveCall's module name keeps the U+FEFF, the bytes
+    serialise back to themselves, bound gives the row's hash, and the digest is base58 of the row's Blake2b."""
+    rows = [row for row in SUI["V3"] if "tx" in row and b"\xef\xbb\xbf" in base64.b64decode(row["tx"]["transactionBase64"])]
+    assert rows
+    for row in rows:
+        tx = sui_decoded(row["tx"])
+        assert tx.digest == b58_encode(bytes.fromhex(row["tx"]["blake2b"][2:])), row["case"]
+        commands = parse_transaction_data(tx.data)["V1"]["kind"]["ProgrammableTransaction"]["commands"]
+        modules = [c["MoveCall"]["module"] for c in commands if c["$kind"] == "MoveCall"]
+        assert any(m.startswith("\ufeff") for m in modules), row["case"]
+        assert X402_EXACT_SUI.bound(sui_payment(row["tx"]["transactionBase64"])) == row["expectBound"], row["case"]
 
 
 def test_sui_the_pairings_filter() -> None:
