@@ -32,6 +32,7 @@ from integraledger_terms.bindings._channel import BatchUnsigned
 from integraledger_terms.bindings._svm import PAYMENT_CHANNELS, key_bytes
 from integraledger_terms.bindings.mpp_session import MppSessionEvm, MppSessionTempo
 from integraledger_terms.bindings.mpp_session_hedera import MppSessionHedera
+from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 from breadth import ABC, H, LINK, Recording, offered, run
 from mpp_docs import issued, placed_doc
@@ -268,6 +269,20 @@ def test_xrpl_build_within_at_100_is_xs3s_claim_on_xs2s_channel() -> None:
         "payload": {"action": "voucher", "channelId": channel, "amount": HS["XS3"]["drops"], "signature": "C0" * 64},
     }
     assert unsigned.complete(["0x" + "C0" * 64]) == Refusal("mpp/credential-malformed")
+
+
+def test_xrpl_build_within_refuses_an_action_the_draft_does_not_define_as_channel_kind_does() -> None:
+    # draft-xrpl-session-00 L334-377 at tempoxyz/mpp-specs 08e7dd87, as the session file's row cites it: the payload's
+    # action is open, voucher or close. Any other, a topUp among them, is mpp/session-action from build_within as from
+    # channel_kind.
+    xrpl = MPP_SESSION_XRPL
+    assert isinstance(xrpl, MppSessionXrpl)
+    code = agreed("an xrpl topUp, use or bearer")
+    for action in ("topUp", "use", "bearer"):
+        presented = {"challenge": XRPL_OPENING["challenge"], "payload": {"action": action, "channelId": HS["XS2"]["expectChannel"]}}
+        assert xrpl.channel_kind(presented) == Refusal(code)
+        w = {"challenge": XRPL_OPENING["challenge"], "opening": XRPL_OPENING, "cumulativeAmount": 100, "action": action}
+        assert xrpl.build_within(w, H) == Refusal(code)
 
 
 def test_build_within_refuses_an_action_it_does_not_build_and_another_hash() -> None:

@@ -270,8 +270,9 @@ class MppSessionXrpl:
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         """A claim, or a close's final claim, on the channel the held opening created: one xrpl-claim request over the
         claim bytes (CLM\\0, the channel id, the drops), for the channel's key, with the channel id derived from the
-        opening's signed blob."""
-        o = within_checks(w, h, "session/xrpl", _opening, U64_LIMIT, ("topUp", "use", "bearer"))
+        opening's signed blob. draft-xrpl-session-00 defines open, voucher and close: any other action, a topUp among
+        them, is mpp/session-action."""
+        o = within_checks(w, h, "session/xrpl", _opening, U64_LIMIT, ())
         if isinstance(o, Refusal):
             return o
         channel = _opening_channel(o.tx)
