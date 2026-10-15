@@ -57,6 +57,11 @@ export function markdownUrl(url: string): string {
   return url === "/" ? "/index.md" : `${url}.md`;
 }
 
+/** Where a page's social card is written: `/og/<slugs>/image.png`, and `/og/image.png` for the home page. */
+export function ogImagePath(slugs: string[]): string {
+  return `/og/${[...slugs, "image.png"].join("/")}`;
+}
+
 /**
  * A page as Markdown a reader outside the site can use: the page's authored Markdown with the edits the remark plugins
  * make through `replaceSource()` (links to other pages rewritten to their site URLs), numeric character references

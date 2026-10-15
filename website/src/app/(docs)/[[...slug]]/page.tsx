@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { JsonLd } from "@/components/JsonLd";
 import { Mermaid } from "@/components/Mermaid";
 import { TwoslashPopups } from "@/components/TwoslashPopups";
-import { markdownPath, markdownUrl } from "@/lib/llms";
+import { markdownPath, markdownUrl, ogImagePath } from "@/lib/llms";
 import { absoluteUrl, breadcrumbJsonLd, docSourcePath, repoFile, siteConfig } from "@/lib/site";
 import { source } from "@/lib/source";
 import { popupsPath, twoslashPopups } from "@/lib/twoslash";
@@ -87,7 +87,9 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   const { slug = [] } = await props.params;
   const page = source.getPage(slug);
   if (!page) return {};
+  const title = slug.length === 0 ? siteConfig.title : page.data.title;
   const description = page.data.description ?? siteConfig.description;
+  const image = { url: ogImagePath(page.slugs), width: 1200, height: 630, alt: title };
   return {
     title: slug.length === 0 ? { absolute: siteConfig.title } : page.data.title,
     description,
@@ -95,10 +97,12 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
     openGraph: {
       type: "article",
       url: absoluteUrl(page.url),
-      title: page.data.title,
+      title,
       description,
       siteName: siteConfig.name,
       locale: siteConfig.locale,
+      images: [image],
     },
+    twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 }

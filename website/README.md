@@ -15,6 +15,7 @@ TypeDoc generates from the packages' TypeScript source at every build.
 | `/llms.txt` | The index of every page, for AI agents ([llmstxt.org](https://llmstxt.org)). |
 | `/llms-full.txt` | Every page as Markdown, in one file. |
 | `/<page>.md`, `/index.md` | One page as Markdown, at its address with `.md` appended. The build writes each page's copy at `/md/<page>.md`. |
+| `/og/<page>/image.png`, `/og/image.png` | Each page's social card, 1200×630, written at build time. |
 | `/twoslash/<page>.json` | A page's Twoslash popups, fetched when a reader first opens one. |
 | `/api/search` | The static search index. |
 | `/sitemap.xml`, `/robots.txt` | For crawlers. |
