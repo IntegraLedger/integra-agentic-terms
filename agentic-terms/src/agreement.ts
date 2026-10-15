@@ -11,17 +11,19 @@
  */
 import {
   BINDINGS,
+  fromBase64,
   hash,
   hashEquals,
   isHttpsLink,
   isOtherSchemeLink,
   parseJson,
+  toBase64,
   type AtrHash,
   type Refusal,
 } from "@integraledger/lcp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected, trimHttpWhitespace } from "./gate.js";
-import { fromBase64, isRefusal } from "./pairings/common.js";
+import { isRefusal } from "./pairings/common.js";
 import type {
   AgreeOptions,
   AgreementPayment,
@@ -77,14 +79,6 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/** Standard base64 of the UTF-8 bytes of `text`. */
-function toBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary);
-}
-
 /**
  * The JSON text `JSON.stringify` writes for the agreement payment, which the protocol package reads back: nested at
  * most 64 levels. Undefined when it nests deeper, or `JSON.stringify` writes nothing for it or throws.
@@ -104,8 +98,8 @@ function paymentText(signed: unknown): string | undefined {
  * kept as a character; undefined for anything else.
  */
 function fromBase64Json(header: string): unknown {
-  const bytes = header.length > MAX_ANSWER_BYTES ? undefined : fromBase64(header);
-  if (bytes === undefined) return undefined;
+  const bytes = header.length > MAX_ANSWER_BYTES ? null : fromBase64(header);
+  if (bytes === null) return undefined;
   try {
     return parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
   } catch {
@@ -415,7 +409,7 @@ export async function exchange(
   const signed: Presented = paid.signed;
   const text = paymentText(signed);
   if (text === undefined) return declined("signed-not-bound", "The agreement payment is not plain JSON.");
-  const payment = toBase64(text);
+  const payment = toBase64(new TextEncoder().encode(text));
   const moved = { signed, bytes, h };
   const keep = (d: Declined): Declined => ({ ...d, moved });
   const pending = (detail: string): Declined => keep(declined("agreement-pending", detail));

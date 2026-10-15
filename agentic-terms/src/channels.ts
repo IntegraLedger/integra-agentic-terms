@@ -7,10 +7,20 @@
  * legal context is signed under the held hash. Both are served through the binding's `buildWithin`. `recordCharge`
  * records the server's cumulative charge, bounded by what was signed.
  */
-import { fromLcpString, hash, hashEquals, parseJson, type AtrHash, type Json, type Refusal } from "@integraledger/lcp/core";
+import {
+  fromBase64,
+  fromLcpString,
+  hash,
+  hashEquals,
+  parseJson,
+  toBase64,
+  type AtrHash,
+  type Json,
+  type Refusal,
+} from "@integraledger/lcp/core";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
-import { fromBase64, fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
+import { fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
 import { KEY } from "./pairings/x402-batch-settlement-solana.js";
 import {
   MAX_ATR_BYTES,
@@ -108,12 +118,6 @@ async function guarded<T>(run: () => Promise<T> | T): Promise<T | Refusal> {
   } catch {
     return refuse("member-failed");
   }
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
 }
 
 /**
@@ -319,7 +323,7 @@ export async function within(
   const channel = b.channel;
 
   const bytes = fromBase64(hold.atr);
-  if (bytes === undefined || bytes.length > MAX_ATR_BYTES) return declined("signed-not-bound", "The held ATR is unreadable.");
+  if (bytes === null || bytes.length > MAX_ATR_BYTES) return declined("signed-not-bound", "The held ATR is unreadable.");
   const h = await hash(bytes);
   if (!hashEquals(hold.h, h)) return declined("hash-mismatch", "The held ATR does not hash to the held hash.");
   const opened = await guarded(() => b.bound(hold.opening));
