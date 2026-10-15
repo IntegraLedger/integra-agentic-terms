@@ -49,8 +49,9 @@ pnpm run build
 The diagrams are drawn in one browser build: Chrome Headless Shell 156.0.8078.4 for Linux x64, the build the locked
 `playwright-core` names, from Chrome for Testing's
 [download bucket](https://googlechromelabs.github.io/chrome-for-testing/). `scripts/browser.mjs` holds its version, its
-address and the SHA-256 of its archive; `pnpm run browser` fetches the archive, checks it and unpacks it. The build
-uses no other browser: on a machine without it, it stops and names that command.
+address and the SHA-256 of its archive; `pnpm run browser` fetches the archive, retrying five times after a network
+error or an answer other than 2xx, checks it and unpacks it. The build uses no other browser: on a machine without it,
+it stops and names that command.
 
 The site is built on Linux x64, in CI or on a maintainer's Linux x64 machine. The browser build is pinned for that one
 platform because a build for another platform measures text through that platform's own font engine, so its diagrams

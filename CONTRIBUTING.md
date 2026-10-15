@@ -94,9 +94,9 @@ node scripts/docs.mjs generate
 ```
 
 The site in `website/` builds, after the packages, with `pnpm install --frozen-lockfile && pnpm run browser && pnpm
-run build` inside that folder, on Linux x64. `pnpm run browser` fetches the browser build the Mermaid diagrams are
-drawn in, Chrome Headless Shell, which `website/scripts/browser.mjs` pins by version and by the SHA-256 of its archive,
-and the build refuses any other. The build is pinned for Linux x64 alone, since a browser build for another platform
+run build` inside that folder, on Linux x64. `pnpm run browser` fetches, retrying a failed download five times, the
+browser build the Mermaid diagrams are drawn in, Chrome Headless Shell, which `website/scripts/browser.mjs` pins by
+version and by the SHA-256 of its archive, and the build refuses any other. The build is pinned for Linux x64 alone, since a browser build for another platform
 measures text through that platform's own font engine, so the site is built in CI or on a maintainer's Linux x64
 machine. After the build, `node scripts/check-diagrams.mjs` in `website/` draws every diagram twice, the second time
 under a font configuration that changes every font's rendering, and checks that both give the same SVGs, that a
