@@ -1,6 +1,7 @@
 """Sui's TransactionData in BCS, as the @mysten/sui 2.35.0 schema defines it, with its transforms: addresses as
-0x and 64 lower-case hex digits, object digests as base58 of exactly 32 bytes, type tags as their string forms, and
-TransactionExpiration's Epoch as a double. A transaction reads only when writing its parse back gives its bytes."""
+0x and 64 lower-case hex digits, object digests as base58 of exactly 32 bytes, and type tags as their string forms.
+TransactionExpiration's Epoch is the u64 Sui's EpochId is, read exactly at every value. A transaction reads only when
+writing its parse back gives its bytes."""
 
 import hashlib
 import re
@@ -91,12 +92,6 @@ def _digest_input(value: Any) -> bytes:
 
 OBJECT_DIGEST = Transform(BYTE_VECTOR, output=b58_encode, input=_digest_input, validate=_digest_validate)
 
-
-def _unsafe_u64_output(value: str) -> float:
-    return float(int(value))
-
-
-UNSAFE_U64 = Transform(U64, output=_unsafe_u64_output)
 
 SUI_OBJECT_REF = Struct([("objectId", ADDRESS), ("version", U64), ("digest", OBJECT_DIGEST)])
 SHARED_OBJECT_REF = Struct([("objectId", ADDRESS), ("initialSharedVersion", U64), ("mutable", BOOL)])
@@ -267,7 +262,7 @@ ALLOWED_PROPOSERS = Struct(
     [("epoch", U64), ("proposers", Transform(Vector(U32), output=_proposers_not_empty, input=_proposers_increasing))]
 )
 VALIDITY = Struct([*_EPOCH_BOUNDS, ("allowedProposers", option(ALLOWED_PROPOSERS))])
-TRANSACTION_EXPIRATION = Enum([("None", None), ("Epoch", UNSAFE_U64), ("ValidDuring", VALID_DURING), ("Validity", VALIDITY)])
+TRANSACTION_EXPIRATION = Enum([("None", None), ("Epoch", U64), ("ValidDuring", VALID_DURING), ("Validity", VALIDITY)])
 
 # ── objects, for the genesis kind
 

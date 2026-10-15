@@ -138,3 +138,26 @@ def test_a_call_whose_name_is_not_utf8_is_malformed() -> None:
     for name in (b"\xff", b"\xc0\x80", b"\xed\xa0\x80", b"co\xefin"):
         data = transaction([pure(H)], [move_call(module=name)])
         assert decode_sui_tx(b64(data)) == Refusal("sui/tx-malformed"), name
+
+
+# ── An Epoch expiration: Sui's EpochId is a u64.
+
+V2 = base64.b64decode(SUI["V2"]["tx"]["transactionBase64"])
+
+
+def test_v2_ends_with_its_epoch_expiration() -> None:
+    """Recipe R's expiration is its last field: TransactionExpiration::Epoch (1) and the epoch as eight bytes,
+    little-endian."""
+    assert V2[-9] == 1 and int.from_bytes(V2[-8:], "little") == int(SUI["V2"]["expectReference"]["untilEpoch"])
+
+
+@pytest.mark.parametrize("epoch", [2**53 - 1, 2**53, 2**53 + 1, 2**63 + 1, 2**64 - 1])
+def test_an_epoch_at_any_u64_reads_exactly(epoch: int) -> None:
+    data = V2[:-8] + u64(epoch)
+    tx = decode_sui_tx(b64(data))
+    assert not isinstance(tx, Refusal), tx
+    assert (tx.until_epoch, tx.digest, sui_carrier(tx)) == (epoch, digest(data), SUI["fixed"]["H"])
+
+
+def test_an_epoch_with_a_byte_after_it_is_malformed() -> None:
+    assert decode_sui_tx(b64(V2[:-8] + u64(2**53 + 1) + b"\x00")) == Refusal("sui/tx-malformed")
