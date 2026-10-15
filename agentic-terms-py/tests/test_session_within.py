@@ -31,6 +31,7 @@ from integraledger_terms._types import Refusal
 from integraledger_terms.bindings._channel import BatchUnsigned
 from integraledger_terms.bindings._svm import PAYMENT_CHANNELS, key_bytes
 from integraledger_terms.bindings.mpp_session import MppSessionEvm, MppSessionTempo
+from integraledger_terms.bindings.mpp_session_hedera import MppSessionHedera
 
 from breadth import ABC, H, LINK, Recording, offered, run
 from mpp_docs import issued, placed_doc
@@ -120,6 +121,27 @@ def compact(signature: str) -> str:
     assert len(raw) == 65 and raw[64] in (27, 28), signature
     vs = int.from_bytes(raw[32:64], "big") | (raw[64] - 27) << 255
     return "0x" + raw[:32].hex() + vs.to_bytes(32, "big").hex()
+
+
+def test_hedera_refuses_an_action_the_draft_does_not_define_as_channel_kind_does() -> None:
+    # draft-hedera-session-00 L840-845 at tempoxyz/mpp-specs 08e7dd87, as the session file's row cites it: the
+    # payload's action is one of open, topUp, voucher and close. A use or a bearer is mpp/session-action from
+    # channel_kind, channel_ref and build_within; a topUp, which it defines, is within and is not built.
+    hedera = MPP_SESSION_HEDERA
+    assert isinstance(hedera, MppSessionHedera)
+    code = agreed("a hedera use")
+    placed = HS["SS1"]["hedera"]["placed"]
+    opening = {"challenge": placed, "payload": {"action": "open", "channelId": HS["HS1"]["expectChannelId"], "txHash": HS["HS3"]["txHash"], "cumulativeAmount": "0", "signature": "0x00"}}
+    for action in ("use", "bearer"):
+        presented = {"challenge": placed, "payload": {"action": action, "channelId": HS["HS1"]["expectChannelId"]}}
+        assert hedera.channel_kind(presented) == Refusal(code)
+        assert hedera.channel_ref(presented) == Refusal(code)
+        w = {"challenge": placed, "opening": opening, "cumulativeAmount": 1, "action": action}
+        assert hedera.build_within(w, H) == Refusal(code)
+    top_up = {"challenge": placed, "payload": {"action": "topUp", "channelId": HS["HS1"]["expectChannelId"]}}
+    assert hedera.channel_kind(top_up) == "within"
+    w = {"challenge": placed, "opening": opening, "cumulativeAmount": 1, "action": "topUp"}
+    assert hedera.build_within(w, H) == Refusal("mpp/within-action-not-built")
 
 
 def test_hedera_within_complete_takes_a_signature_of_one_byte_or_more() -> None:

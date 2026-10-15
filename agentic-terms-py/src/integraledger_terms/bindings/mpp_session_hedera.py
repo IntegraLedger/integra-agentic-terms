@@ -66,7 +66,8 @@ def voucher(channel: str, escrow: str, chain_id: int, cumulative: int) -> dict[s
     }
 
 
-WITHIN_ACTIONS = ("voucher", "topUp", "use")
+# draft-hedera-session-00 defines open, topUp, voucher and close: the actions within a channel are a voucher and a topUp.
+WITHIN_ACTIONS = ("voucher", "topUp")
 
 
 def _opening(presented: Mapping[str, Any]) -> Echoed | Refusal:
@@ -227,7 +228,7 @@ class MppSessionHedera:
         return e.h
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
-        """open, close, or within for a voucher, topUp or use."""
+        """open, close, or within for a voucher or topUp; any other action is mpp/session-action."""
         return action_kind(presented, WITHIN_ACTIONS)
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
@@ -260,8 +261,9 @@ class MppSessionHedera:
 
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         """A voucher, or a close's final voucher, on the channel the held opening opened: the voucher with the channel
-        id, the escrow and the chain from the opening, signed as EIP-712."""
-        o = within_checks(w, h, "session/hedera", _opening, U128_LIMIT, ("topUp", "use", "bearer"))
+        id, the escrow and the chain from the opening, signed as EIP-712. A topUp is not built; an action
+        draft-hedera-session-00 does not define is mpp/session-action."""
+        o = within_checks(w, h, "session/hedera", _opening, U128_LIMIT, ("topUp",))
         if isinstance(o, Refusal):
             return o
         network = hedera_session_network_of(o.checked.details)
