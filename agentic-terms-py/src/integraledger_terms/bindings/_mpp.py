@@ -308,8 +308,10 @@ def read(doc: object) -> Advertised | Refusal:
 # ── The network.
 
 
-def _chain_of(checked: Checked) -> int:
-    chain_id = positive_int(checked.details.get("chainId"))
+def chain_of(c: "Checked | EchoedChallenge") -> int:
+    """The chain an EVM or Tempo charge challenge pays on: its methodDetails.chainId, or Tempo's default where it names
+    none. The filter has read chainId as a positive safe integer where it is present."""
+    chain_id = positive_int(c.details.get("chainId"))
     return TEMPO_DEFAULT_CHAIN if chain_id is None else chain_id
 
 
@@ -385,7 +387,7 @@ def network(challenge: object) -> str | Refusal:
     d = c.details
     key = f"{c.intent}/{c.method}"
     if key in ("charge/evm", "charge/tempo"):
-        return f"eip155:{_chain_of(c)}"
+        return f"eip155:{chain_of(c)}"
     if key in ("session/evm", "session/tempo", "subscription/tempo"):
         return session_network(challenge)
     if key in ("charge/solana", "session/solana"):

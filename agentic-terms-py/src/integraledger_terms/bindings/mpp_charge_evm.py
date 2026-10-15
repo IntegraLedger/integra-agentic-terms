@@ -12,9 +12,8 @@ from .._types import Advertised, Refusal
 from ._evm import PERMIT2, Witness, permit2_typed_data
 from ._lcp import is_address, is_list, is_object, normal_hash
 from ._mpp import (
-    Checked,
-    EchoedChallenge,
     MppUnsigned,
+    chain_of,
     challenge_hash,
     credential_of,
     echoed_for,
@@ -24,9 +23,7 @@ from ._mpp import (
     read,
     same_bytes,
     text,
-    TEMPO_DEFAULT_CHAIN,
 )
-from ._mpp_checks import positive_int
 from ._mpp_evm import eip3009_typed_data, transfer_calldata
 
 AUTHORIZATION = "mpp/charge/evm/authorization"
@@ -37,12 +34,6 @@ HASH = "mpp/charge/evm/hash"
 MAX_SIGNATURE = 8192
 MAX_WIRE = 65_536
 PAYMENT_WITNESS = [{"name": "challengeHash", "type": "bytes32"}, {"name": "externalId", "type": "string"}]
-
-
-def chain_of(c: Checked | EchoedChallenge) -> int:
-    """The challenge's methodDetails.chainId, or Tempo's default."""
-    chain_id = positive_int(c.details.get("chainId"))
-    return TEMPO_DEFAULT_CHAIN if chain_id is None else chain_id
 
 
 def did(chain_id: int, from_: str) -> str:

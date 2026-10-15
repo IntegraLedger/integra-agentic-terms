@@ -15,6 +15,7 @@ from ._mpp import (
     Echoed,
     MppUnsigned,
     attribution_memo,
+    chain_of,
     check_attribution,
     credential_of,
     echoed_for,
@@ -29,7 +30,7 @@ from ._mpp import (
 from ._mpp_checks import tempo_splits
 from ._mpp_evm import transfer_calldata
 from ._tempo import MAX_WIRE_BYTES, TRANSFER_WITH_MEMO_SELECTOR, TRANSFER_WITH_MEMO_TOPIC, decode_tempo_tx, memo_calldata
-from .mpp_charge_evm import chain_of, did
+from .mpp_charge_evm import did
 
 MEMO = "mpp/charge/tempo/memo"
 PUSH = "mpp/charge/tempo/push"
