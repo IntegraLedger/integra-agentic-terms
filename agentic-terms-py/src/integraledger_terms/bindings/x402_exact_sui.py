@@ -141,12 +141,6 @@ def _bound(presented: object) -> AtrHash | Refusal:
     return tx if isinstance(tx, Refusal) else sui_carrier(tx)
 
 
-def _reference_refuses(presented: object) -> bool:
-    """Whether reference refuses the payment: its transaction does not decode, or has no epoch bound."""
-    tx = _presented_tx(presented)
-    return isinstance(tx, Refusal) or tx.until_epoch is None
-
-
 @dataclass(frozen=True, slots=True)
 class SuiUnsigned:
     """What the payer's wallet is handed, and the payment the wallet's signed transaction completes."""
@@ -157,10 +151,10 @@ class SuiUnsigned:
     _expected: AtrHash
 
     def complete(self, signed: Mapping[str, str]) -> dict[str, Any] | Refusal:
-        """The payment, when the signed transaction carries the built hash and is bounded by epoch."""
+        """The payment, when the signed transaction carries the built hash, with or without an epoch bound."""
         payment = payment_with(self._required, self._accepted, signed)
         got = _bound(payment)
-        if isinstance(got, Refusal) or got != self._expected or _reference_refuses(payment):
+        if isinstance(got, Refusal) or got != self._expected:
             return Refusal("x402/signed-not-bound")
         return payment
 

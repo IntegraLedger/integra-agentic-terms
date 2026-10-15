@@ -1213,5 +1213,11 @@ def test_sui_build_asks_for_one_unused_pure_input_holding_h_and_complete_accepts
         "extensions": doc["extensions"],
     }
     assert u.complete({"signature": "AAAA", "transaction": SUI["V1"]["tx"]["transactionBase64"]}) == Refusal("x402/signed-not-bound")
+    # V3's setExpiration({None: true}) row: a transaction with no epoch bound carrying H is recorded, never refused.
     unbounded = next(r for r in SUI["V3"] if r["case"].startswith("setExpiration"))["tx"]["transactionBase64"]
-    assert u.complete({"signature": "AAAA", "transaction": unbounded}) == Refusal("x402/signed-not-bound")
+    signed = u.complete({"signature": "AAAA", "transaction": unbounded})
+    assert isinstance(signed, dict) and signed["payload"] == {"signature": "AAAA", "transaction": unbounded}
+    assert X402_EXACT_SUI.bound(signed) == SUI_F["H"]
+    other = X402_EXACT_SUI.build({"required": doc, "accepted": SUI_F["O"]}, "0x" + "ab" * 32)
+    assert not isinstance(other, Refusal)
+    assert other.complete({"signature": "AAAA", "transaction": unbounded}) == Refusal("x402/signed-not-bound")
