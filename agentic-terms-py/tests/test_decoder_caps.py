@@ -2,6 +2,8 @@
 say, and each row says whether the caps admit its input."""
 
 import base64
+import sys
+from types import FrameType
 from typing import Any
 
 from support import Msgpack, load, msgpack_longer_forms, msgpack_strings, msgpack_value
@@ -80,13 +82,18 @@ def test_scval_caps() -> None:
             accepted = False
         assert accepted is row["accept"], row["name"]
     for row in V["scval"]["envelopes"]:
-        decoded = _stellar.decode_stellar_tx(row["xdr"], "stellar:testnet")
-        if not row["accept"]:
-            assert decoded == Refusal("stellar/tx-malformed"), row["name"]
-        elif "expect" in row:
-            assert decoded == Refusal(row["expect"]), row["name"]
-        else:
-            assert isinstance(decoded, _stellar.Payment), row["name"]
+        assert_verdict(row, _stellar.decode_stellar_tx(row["xdr"], "stellar:testnet"))
+
+
+def assert_verdict(row: dict[str, Any], decoded: object) -> None:
+    """decode_stellar_tx's answer is the envelope row's: stellar/tx-malformed where the caps refuse it, else its expect,
+    else the payment."""
+    if not row["accept"]:
+        assert decoded == Refusal("stellar/tx-malformed"), row["name"]
+    elif "expect" in row:
+        assert decoded == Refusal(row["expect"]), row["name"]
+    else:
+        assert isinstance(decoded, _stellar.Payment), row["name"]
 
 
 def entry_kinds(envelope: str) -> list[int] | None:
@@ -116,3 +123,57 @@ def test_scval_envelopes_of_another_operation_are_read_whole() -> None:
     for row in rows:
         assert row["accept"] is True and row["expect"] == "stellar/not-one-transfer", row["name"]
         assert _stellar.decode_stellar_tx(row["xdr"], "stellar:testnet") == Refusal(row["expect"]), row["name"]
+
+
+def one_level_deeper() -> list[tuple[dict[str, Any], bytes, int, bytes]]:
+    """The envelope rows that are another row with one level of its nesting added: the deeper row, its bytes, where
+    the level sits and the level's bytes, a run of at most 64 bytes whose removal gives the other row (the shortest such
+    level, where a row is deeper than more than one)."""
+    rows = [(row, base64.b64decode(row["xdr"])) for row in V["scval"]["envelopes"]]
+    found = []
+    for row, deeper in rows:
+        levels = []
+        for _, shallower in rows:
+            size = len(deeper) - len(shallower)
+            if 0 < size <= 64:
+                at = next((i for i, (a, b) in enumerate(zip(deeper, shallower)) if a != b), len(shallower))
+                if deeper[:at] + deeper[at + size :] == shallower:
+                    levels.append((at, deeper[at : at + size]))
+        if levels:
+            at, level = min(levels, key=lambda found_level: len(found_level[1]))
+            found.append((row, deeper, at, level))
+    return found
+
+
+def frames() -> int:
+    """How many frames the caller runs under."""
+    frame: FrameType | None = sys._getframe()
+    count = 0
+    while frame is not None:
+        count += 1
+        frame = frame.f_back
+    return count
+
+
+def test_scval_envelopes_keep_their_verdict_at_the_deepest_nesting_8192_characters_hold() -> None:
+    """Each envelope row that is another with one level added, that level repeated until 8,192 characters (6,144 bytes)
+    hold no more: the reader takes the bytes whole, and decode_stellar_tx gives the deeper row's verdict, the cap's
+    refusal where the nesting is read and the payment or the row's expect where it is not. The reader keeps a stack of
+    its own, so each read holds at a recursion limit 50 frames above the test's, far below the nesting."""
+    rows = one_level_deeper()
+    assert rows, "decoder-caps.json holds no envelope row one level deeper than another"
+    for row, deeper, at, level in rows:
+        data = deeper[:at] + level * ((6144 - len(deeper)) // len(level)) + deeper[at:]
+        text = base64.b64encode(data).decode("ascii")
+        assert len(text) <= 8192 < len(base64.b64encode(data + level)), row["name"]
+        before = sys.getrecursionlimit()
+        sys.setrecursionlimit(frames() + 50)
+        try:
+            try:
+                _stellar_xdr.envelope(data)
+            except _stellar_xdr.NotOneTransfer:
+                pass
+            decoded = _stellar.decode_stellar_tx(text, "stellar:testnet")
+        finally:
+            sys.setrecursionlimit(before)
+        assert_verdict(row, decoded)
