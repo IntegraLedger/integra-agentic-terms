@@ -1,5 +1,6 @@
-"""Tempo's pieces the MPP pairings read and build: the 0x76 transaction's calls, the TIP-20 transferWithMemo calldata,
-the TIP-20 channel reserve's descriptor and ids, and the account keychain's key authorizations."""
+"""Tempo's pieces the MPP pairings read and build: the 0x76 transaction's calls and sender, the TIP-20
+transferWithMemo calldata, the TIP-20 channel reserve's descriptor and ids, and the account keychain's key
+authorizations."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,7 @@ from ._codec import hex_bytes, to_hex
 from ._lcp import is_address, normal_hash
 from ._mpp_evm import address_word, uint_word
 from ._rlp import RlpItem, rlp_bytes, rlp_decode, rlp_list, rlp_uint, rlp_uint_bytes
+from ._secp256k1 import N, recover
 
 TRANSFER_WITH_MEMO_SELECTOR = "0x95777d59"
 TRANSFER_WITH_MEMO_TOPIC = "0x57bc7354aa85aed339e000bccffabbc529466af35f0772c8f8ee1145927de7f0"
@@ -28,6 +30,15 @@ _VALID_BEFORE = 8
 _FEE_TOKEN = 10
 _FEE_PAYER_SIGNATURE = 11
 _UINT_FIELDS = (0, 1, 2, 3, 6, 7, 8, 9)
+# Tempo's signature lengths and type bytes (tempoxyz/tempo 9bb63953, tt_signature.rs).
+_SECP256K1_LENGTH = 65
+_P256_LENGTH = 129
+_WEBAUTHN_MIN = 128
+_WEBAUTHN_MAX = 2048
+_P256 = 0x01
+_WEBAUTHN = 0x02
+_KEYCHAIN = 0x03
+_KEYCHAIN_V2 = 0x04
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,21 +151,73 @@ def tempo_channel_id(d: Any) -> str | Refusal:
     )
 
 
+def _sender_signed(items: list[RlpItem]) -> bytes:
+    """What the sender signed: 0x76 ‖ rlp(every envelope field before the sender's signature). When a fee payer has
+    signed, fee_token is written as 0x80 and the fee payer's signature as 0x00."""
+    fields = [i.raw for i in items[:-1]]
+    fee_payer = items[_FEE_PAYER_SIGNATURE]
+    if not (not fee_payer.is_list and fee_payer.raw == b"\x80"):
+        fields[_FEE_TOKEN] = b"\x80"
+        fields[_FEE_PAYER_SIGNATURE] = b"\x00"
+    return bytes([TEMPO_TX_TYPE]) + rlp_list(fields)
+
+
 def expiring_nonce_hash(signed_tx: bytes, sender: object) -> str | Refusal:
-    """keccak256(0x76 ‖ rlp(every envelope field before the sender's signature) ‖ sender). When a fee payer has
-    signed, fee_token is written as 0x80 and the fee payer's signature as 0x00, as the sender signed them."""
+    """keccak256 of what the sender signed (_sender_signed) ‖ sender."""
     items = _envelope(signed_tx)
     if isinstance(items, Refusal):
         return items
     if not is_address(sender):
         return Refusal("tempo/tx-malformed")
     assert isinstance(sender, str)
-    fields = [i.raw for i in items[:-1]]
-    fee_payer = items[_FEE_PAYER_SIGNATURE]
-    if not (not fee_payer.is_list and fee_payer.raw == b"\x80"):
-        fields[_FEE_TOKEN] = b"\x80"
-        fields[_FEE_PAYER_SIGNATURE] = b"\x00"
-    return to_hex(keccak256(bytes([TEMPO_TX_TYPE]) + rlp_list(fields) + bytes.fromhex(sender[2:])))
+    return to_hex(keccak256(_sender_signed(items) + bytes.fromhex(sender[2:])))
+
+
+def _address_of_key(xy: bytes) -> str:
+    """The address of an uncompressed public key's 64 coordinate bytes."""
+    return to_hex(keccak256(xy)[12:])
+
+
+def _primitive_signer(signature: bytes, digest: bytes) -> str | Refusal:
+    """The signer of a primitive Tempo signature over digest: secp256k1's 65 bytes (r, s, v with v 0, 1, 27, 28 or 35
+    and above) by recovery, its s in the lower half of the order; P256's 0x01 and 129 bytes, and WebAuthn's 0x02 and
+    128 to 2,048 bytes, by the public key they carry, whose address is the signer the chain recovers once it verifies
+    them."""
+    bad = Refusal("tempo/tx-malformed")
+    if len(signature) == _SECP256K1_LENGTH:
+        v = signature[64]
+        parity = v if v in (0, 1) else v - 27 if v in (27, 28) else (v - 35) % 2 if v >= 35 else -1
+        r, s = int.from_bytes(signature[:32], "big"), int.from_bytes(signature[32:64], "big")
+        if parity < 0 or s > N // 2:
+            return bad
+        key = recover(digest, r, s, parity == 1)
+        return bad if key is None else _address_of_key(key)
+    body = signature[1:]
+    if signature[:1] == bytes([_P256]) and len(body) == _P256_LENGTH:
+        return _address_of_key(body[64:128])
+    if signature[:1] == bytes([_WEBAUTHN]) and _WEBAUTHN_MIN <= len(body) <= _WEBAUTHN_MAX:
+        return _address_of_key(body[-64:])
+    return bad
+
+
+def tempo_sender(signed_tx: bytes) -> str | Refusal:
+    """The sender of a signed 0x76 transaction, as Tempo recovers it from the sender's signature over what the sender
+    signed (_sender_signed): a primitive signature's signer, or for a keychain signature (0x03, or 0x04 whose inner
+    signature signs keccak256(0x04 ‖ that hash ‖ the account), each a 20-byte account and a primitive signature) that
+    account. Any other signature is tempo/tx-malformed."""
+    items = _envelope(signed_tx)
+    if isinstance(items, Refusal):
+        return items
+    signature = items[-1].data
+    digest = keccak256(_sender_signed(items))
+    if len(signature) != _SECP256K1_LENGTH and signature[:1] in (bytes([_KEYCHAIN]), bytes([_KEYCHAIN_V2])):
+        account = signature[1:21]
+        if len(account) != 20:
+            return Refusal("tempo/tx-malformed")
+        signed = keccak256(bytes([_KEYCHAIN_V2]) + digest + account) if signature[0] == _KEYCHAIN_V2 else digest
+        inner = _primitive_signer(signature[21:], signed)
+        return inner if isinstance(inner, Refusal) else to_hex(account)
+    return _primitive_signer(signature, digest)
 
 
 def encode_key_authorization(a: Any, signature: str | None = None) -> bytes | Refusal:
@@ -241,11 +304,12 @@ def _within_scopes(item: RlpItem, calls: bool) -> bool:
 @dataclass(frozen=True, slots=True)
 class KeyAuthorization:
     """A signed key authorization's digest, its key id, its key type (item 1, as Tempo numbers it: secp256k1 0, P256 1,
-    WebAuthn 2; any other value as given) and its witness."""
+    WebAuthn 2; any other value as given), its chain id (item 0) and its witness."""
 
     digest: str
     key_id: str
     key_type: int
+    chain_id: int
     witness: str | None
 
 
@@ -267,8 +331,8 @@ def decode_key_authorization(signed: object) -> KeyAuthorization | Refusal:
     key_id = auth.items[2]
     if key_id.is_list or len(key_id.data) != 20:
         return bad
-    key_type = rlp_uint(auth.items[1])
-    if rlp_uint(auth.items[0]) is None or key_type is None:
+    chain_id, key_type = rlp_uint(auth.items[0]), rlp_uint(auth.items[1])
+    if chain_id is None or key_type is None:
         return bad
     for i in (4, 5):
         if i < len(auth.items) and not _within_scopes(auth.items[i], i == 5):
@@ -280,4 +344,6 @@ def decode_key_authorization(signed: object) -> KeyAuthorization | Refusal:
             return bad
         if len(w.data) == 32:
             witness = to_hex(w.data)
-    return KeyAuthorization(digest=to_hex(keccak256(auth.raw)), key_id=to_hex(key_id.data), key_type=key_type, witness=witness)
+    return KeyAuthorization(
+        digest=to_hex(keccak256(auth.raw)), key_id=to_hex(key_id.data), key_type=key_type, chain_id=chain_id, witness=witness
+    )

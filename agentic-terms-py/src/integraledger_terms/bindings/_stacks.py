@@ -24,6 +24,8 @@ UTF-8, a byte-order mark included.
 import re
 from dataclasses import dataclass
 
+from ._secp256k1 import N, point_of
+
 # The most bytes a Clarity value's type admits, the most characters a string-utf8 holds, and the deepest a type nests
 # (stacks-core 4.0.5, clarity-types/src/types/mod.rs).
 _MAX_VALUE_SIZE = 1024 * 1024
@@ -38,9 +40,6 @@ _CONTRACT_NAME = re.compile(r"[a-zA-Z]([a-zA-Z0-9]|[-_]){0,127}|__transient")
 # return); and the bytes a smart contract's code holds: printable ASCII, tab and newline.
 _ASCII_TEXT = bytes([*range(0x20, 0x7F), 0x09, 0x0A, 0x0C, 0x0D])
 _CODE_TEXT = bytes([*range(0x20, 0x7F), 0x09, 0x0A])
-# secp256k1's field prime and group order (SEC 2, 2.4.1).
-_P = 2**256 - 2**32 - 977
-_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 # Edwards25519's field prime, curve constant d, a square root of -1 and group order L (RFC 8032, 5.1).
 _ED_P = 2**255 - 19
 _ED_D = -121665 * pow(121666, -1, _ED_P) % _ED_P
@@ -259,12 +258,7 @@ def _compressed_point(key: bytes) -> bool:
     2.3.4)."""
     if len(key) != 33 or key[0] not in (2, 3):
         return False
-    x = int.from_bytes(key[1:], "big")
-    if x >= _P:
-        return False
-    y2 = (pow(x, 3, _P) + 7) % _P
-    y = pow(y2, (_P + 1) // 4, _P)
-    return y * y % _P == y2
+    return point_of(int.from_bytes(key[1:], "big"), key[0] == 3) is not None
 
 
 def _spending_condition(r: _Reader) -> None:
@@ -326,7 +320,7 @@ def _microblock_header(r: _Reader) -> bytes:
     header = r.read(1 + 2 + 32 + 32 + 65)
     signature = header[67:]
     _need(signature[0] <= 3)
-    _need(int.from_bytes(signature[1:33], "big") < _N and int.from_bytes(signature[33:], "big") < _N)
+    _need(int.from_bytes(signature[1:33], "big") < N and int.from_bytes(signature[33:], "big") < N)
     return header
 
 

@@ -13,7 +13,7 @@ from .._types import Advertised, Refusal
 from ._channel import BatchUnsigned, ChannelRef
 from ._codec import hex_bytes, to_hex
 from ._evm import PERMIT2, ZERO_ADDRESS, Witness, permit2_typed_data
-from ._lcp import is_address, is_object, normal_hash
+from ._lcp import is_address, is_object, normal_hash, safe_int
 from ._mpp import (
     Echoed,
     MppUnsigned,
@@ -51,6 +51,7 @@ from ._tempo import (
     encode_key_authorization,
     expiring_nonce_hash,
     tempo_channel_id,
+    tempo_sender,
 )
 
 SESSION_EVM = "mpp/session/evm"
@@ -529,10 +530,14 @@ def _tempo_bound_within(presented: Any) -> AtrHash | Refusal:
 
 def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
     """The echoed challenge, when the signed transaction holds exactly one open call to the escrow whose salt word
-    is H, and on v2 the descriptor's channel carries that salt. The transaction is signed for the challenge's chain,
-    methodDetails.chainId (4217 where a v1 challenge names none): draft-tempo-session-00 binds the channel to the escrow
-    and the chain, and the server broadcasts this transaction there. A transaction whose chain id is another is
-    tempo/tx-malformed."""
+    is H. The transaction is signed for the challenge's chain, methodDetails.chainId (4217 where a v1 challenge names
+    none): draft-tempo-session-00 binds the channel to the escrow and the chain, and the server broadcasts this
+    transaction there. A transaction whose chain id is another is tempo/tx-malformed. On v2, the payload's descriptor
+    matches that transaction, as draft-tempo-session-00 requires: it carries H as its salt (_descriptor_salt), the
+    transaction's sender as its payer (tempo_sender, the payer the draft recovers from the transaction) and the
+    expiring nonce hash of this transaction under that sender (expiring_nonce_hash); a descriptor naming another payer
+    or another hash gives a channel id this transaction does not open: tempo/descriptor-mismatch. A sender that cannot
+    be read is tempo/tx-malformed."""
     e = echoed_for(presented, SESSION_TEMPO)
     if isinstance(e, Refusal):
         return e
@@ -546,7 +551,8 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
         return Refusal("mpp/credential-malformed")
     if (len(wire) - 2) // 2 > MAX_WIRE:
         return Refusal("tempo/tx-too-large")
-    tx = decode_tempo_tx(bytes.fromhex(wire[2:]))
+    raw = bytes.fromhex(wire[2:])
+    tx = decode_tempo_tx(raw)
     if isinstance(tx, Refusal):
         return tx
     if tx.chain_id != p.chain_id:
@@ -570,6 +576,15 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
     if p.version == "v2":
         salt = _descriptor_salt(e.payload, p)
         if isinstance(salt, Refusal) or not hash_equals(salt, e.h):
+            return Refusal("tempo/descriptor-mismatch")
+        d = e.payload["descriptor"]
+        sender = tempo_sender(raw)
+        if isinstance(sender, Refusal):
+            return sender
+        if not same_bytes(d["payer"], sender):
+            return Refusal("tempo/descriptor-mismatch")
+        nonce_hash = expiring_nonce_hash(raw, sender)
+        if isinstance(nonce_hash, Refusal) or not same_bytes(nonce_hash, d["expiringNonceHash"]):
             return Refusal("tempo/descriptor-mismatch")
     return e
 
@@ -721,18 +736,20 @@ def _issued_key(details: Mapping[str, Any]) -> tuple[str, int] | Refusal:
 
 
 def _authorized_key(k: KeyAuthorization, details: Mapping[str, Any]) -> str | Refusal:
-    """The key id of the challenge's issued key (_issued_key), when the payer's key authorization authorizes that key:
-    its key id and its key type are the challenge's. Tempo's subscription draft requires the authorization to name the
-    exact access key methodDetails.accessKey describes, both its accessKeyAddress and its keyType; a key authorization
-    for another key id or key type is tempo/key-not-authorized, so the activation and the payments under the key are
-    read under the one key the challenge issued."""
+    """The key id of the challenge's issued key (_issued_key), when the payer's key authorization authorizes that key on
+    the challenge's chain: its key id and its key type are the challenge's, and then its chain id is
+    methodDetails.chainId. Tempo's subscription draft requires the authorization to name the exact access key
+    methodDetails.accessKey describes, both its accessKeyAddress and its keyType, and its chain ID to equal
+    methodDetails.chainId. A key authorization for another key id, key type or chain is tempo/key-not-authorized, so
+    the activation and the payments under the key are read under the one key the challenge issued."""
     issued = _issued_key(details)
     if isinstance(issued, Refusal):
         return issued
     key_id, key_type = issued
     if not same_bytes(k.key_id, key_id) or k.key_type != key_type:
         return Refusal("tempo/key-not-authorized")
-    return key_id
+    chain = safe_int(details.get("chainId"))
+    return key_id if chain is not None and chain == k.chain_id else Refusal("tempo/key-not-authorized")
 
 
 def _subscription_witness(presented: Mapping[str, Any]) -> Echoed | Refusal:

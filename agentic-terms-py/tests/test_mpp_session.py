@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from eth_account import Account
+from eth_utils.crypto import keccak
 
 from integraledger_terms import (
     MPP_SESSION_EVM,
@@ -207,8 +208,9 @@ TEMPO_DOC = placed_doc(issued("tempo", "session", TF["requestV2"]), H, LINK)
 TEMPO_ACCOUNT = f"eip155:42431:{TF['payer']}"
 
 
-def open_wire(request: Any) -> str:
-    """TS2's wire: the open call in a 0x76 transaction, signed by the payer over keccak256(0x76 ‖ rlp(fields))."""
+def open_wire(request: Any, signature: Any = None) -> str:
+    """TS2's wire: the open call in a 0x76 transaction, signed by the payer over keccak256(0x76 ‖ rlp(fields)); or
+    with the signature bytes signature(that hash) gives."""
     assert request["kind"] == "tempo-call", request
     fields = [
         rlp_uint_bytes(request["chainId"]),
@@ -225,8 +227,9 @@ def open_wire(request: Any) -> str:
         rlp_bytes(b""),
         rlp_list([]),
     ]
-    signature = sig65(keccak256(b"\x76" + rlp_list(fields)), TF["payerKey"])
-    return "0x76" + rlp_list([*fields, rlp_bytes(bytes.fromhex(signature[2:]))]).hex()
+    digest = keccak256(b"\x76" + rlp_list(fields))
+    signed = bytes.fromhex(sig65(digest, TF["payerKey"])[2:]) if signature is None else signature(digest)
+    return "0x76" + rlp_list([*fields, rlp_bytes(signed)]).hex()
 
 
 class TempoAnswer:
@@ -241,14 +244,15 @@ class TempoAnswer:
         return sign_typed(request["typedData"])
 
 
-def tempo_opening(request_text: str, chain: int) -> dict[str, Any]:
-    """The opening the binding's build writes for a challenge of request_text, completed with its open call in a
-    transaction of TS2's other fields for chain, signed with fixed.payerKey, and the payer's voucher."""
+def tempo_opening(request_text: str, chain: int, signature: Any = None, payer: str = TF["payer"]) -> dict[str, Any]:
+    """The opening the binding's build writes for a challenge of request_text and payer, completed with its open call
+    in a transaction of TS2's other fields for chain, signed with fixed.payerKey or as signature gives, and the payer's
+    voucher."""
     unsigned = MPP_SESSION_TEMPO.build(
-        {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": TF["payer"], "deposit": int(TF["deposit"])}, H
+        {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": payer, "deposit": int(TF["deposit"])}, H
     )
     assert not isinstance(unsigned, Refusal), unsigned
-    signed_tx = open_wire({**unsigned.funding, "chainId": chain})
+    signed_tx = open_wire({**unsigned.funding, "chainId": chain}, signature)
     voucher = unsigned.voucher(signed_tx)
     assert not isinstance(voucher, Refusal), voucher
     opening = unsigned.complete(signed_tx, sign_typed(voucher))
@@ -276,6 +280,87 @@ def test_mpp_session_tempo_rows_whose_transaction_is_for_another_chain() -> None
 
 
 OPERATOR = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"  # the published Anvil key #2's address, a test value
+
+
+def with_descriptor(opening: dict[str, Any], members: dict[str, Any]) -> dict[str, Any]:
+    """The opening with members in place of its descriptor's, and its channelId the draft's keccak256 over the
+    descriptor so changed, the escrow and the chain (draft-tempo-session-00 L339-352)."""
+    descriptor = {**opening["payload"]["descriptor"], **members}
+    channel_id = tempo_channel_id({**descriptor, "escrow": TF["escrowV2"], "chainId": TF["chainId"]})
+    return {**opening, "payload": {**opening["payload"], "descriptor": descriptor, "channelId": channel_id}}
+
+
+def test_mpp_session_tempo_rows_whose_descriptor_names_another_payer_or_nonce_hash() -> None:
+    # mpp-session-tempo.json's agreedRefusals rows that change the v2 descriptor's payer or expiringNonceHash
+    # (draft-tempo-session-00 L366-367, L1181-1182 and L1186-1188, as the rows' about cites them): the payer is the
+    # address the transaction recovers to, and the expiring nonce hash is the transaction's under that payer.
+    opening = tempo_opening(TF["requestV2"], TF["chainId"])
+    assert opening["payload"]["descriptor"]["expiringNonceHash"] == TEMPO["TS2"]["expectNonceHash"]
+    assert MPP_SESSION_TEMPO.bound(opening) == H
+    rows = [r for r in TEMPO["agreedRefusals"]["rows"] if {"payer", "expiringNonceHash"} >= set(r) - {"case", "expect"}]
+    assert rows
+    for row in rows:
+        presented = with_descriptor(opening, {k: row[k] for k in ("payer", "expiringNonceHash") if k in row})
+        assert MPP_SESSION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
+        assert voucher_within(presented) == Refusal(row["expect"]), row["case"]
+
+
+ACCOUNT = bytes.fromhex(OPERATOR[2:])
+N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141  # secp256k1's group order (SEC 2, 2.4.1)
+CARRIED = bytes(range(1, 65))  # a public key's 64 coordinate bytes, a test value: its signature is not verified here
+
+
+def k1(digest: bytes, v_of: Any = lambda parity: 27 + parity) -> bytes:
+    """r || s || v of the payer key's signature over digest, v written as v_of(the y parity)."""
+    raw = bytes.fromhex(sig65(digest, TF["payerKey"])[2:])
+    return raw[:64] + bytes([v_of(raw[64] - 27)])
+
+
+# The sender each signature form names, as Tempo reads its signatures (tempoxyz/tempo 9bb63953, tt_signature.rs):
+# secp256k1's 65 bytes by recovery, v 0, 1, 27, 28 or 35 and above; P256 (0x01, 129 bytes) and WebAuthn (0x02, 128 to
+# 2,048 bytes) by the key they carry, the address keccak256 of its coordinates names; a keychain signature (0x03, or
+# 0x04 whose inner signature signs keccak256(0x04 || the hash || the account)) by its account. The payer is the published
+# Anvil key #0's address, fixed.payer.
+SENDERS: list[tuple[str, Any, str]] = [
+    ("secp256k1, v 27 or 28", k1, TF["payer"]),
+    ("secp256k1, v 0 or 1", lambda d: k1(d, lambda p: p), TF["payer"]),
+    ("secp256k1, v 35 or 36", lambda d: k1(d, lambda p: 35 + p), TF["payer"]),
+    ("secp256k1, v 37 or 38", lambda d: k1(d, lambda p: 37 + p), TF["payer"]),
+    ("P256", lambda d: b"\x01" + bytes(64) + CARRIED + b"\x00", "0x" + keccak(CARRIED)[12:].hex()),
+    ("WebAuthn of 128 bytes", lambda d: b"\x02" + CARRIED + CARRIED, "0x" + keccak(CARRIED)[12:].hex()),
+    ("WebAuthn of 2048 bytes", lambda d: b"\x02" + bytes(1984) + CARRIED, "0x" + keccak(CARRIED)[12:].hex()),
+    ("keychain", lambda d: b"\x03" + ACCOUNT + k1(d), OPERATOR),
+    ("keychain v2", lambda d: b"\x04" + ACCOUNT + k1(keccak(b"\x04" + d + ACCOUNT)), OPERATOR),
+    ("keychain over P256", lambda d: b"\x03" + ACCOUNT + b"\x01" + bytes(64) + CARRIED + b"\x00", OPERATOR),
+]
+NOT_SENDERS: list[tuple[str, Any]] = [
+    ("secp256k1, v 29", lambda d: k1(d, lambda p: 29)),
+    ("secp256k1, s in the upper half", lambda d: k1(d)[:32] + (N - int.from_bytes(k1(d)[32:64], "big")).to_bytes(32, "big") + bytes([55 - k1(d)[64]])),
+    ("secp256k1, r 0", lambda d: bytes(32) + k1(d)[32:]),
+    ("P256 of 128 bytes", lambda d: b"\x01" + bytes(64) + CARRIED),
+    ("WebAuthn of 127 bytes", lambda d: b"\x02" + bytes(63) + CARRIED),
+    ("WebAuthn of 2049 bytes", lambda d: b"\x02" + bytes(1985) + CARRIED),
+    ("keychain of 10 account bytes", lambda d: b"\x03" + ACCOUNT[:10]),
+    ("keychain over type 9", lambda d: b"\x03" + ACCOUNT + b"\x09" + bytes(64)),
+    ("type 5", lambda d: b"\x05" + bytes(100)),
+    ("type 9", lambda d: b"\x09" + bytes(129)),
+    ("no bytes", lambda d: b""),
+]
+
+
+@pytest.mark.parametrize(("form", "signature", "sender"), SENDERS, ids=[s[0] for s in SENDERS])
+def test_mpp_session_tempo_a_v2_descriptor_names_the_transaction_s_sender(form: str, signature: Any, sender: str) -> None:
+    opening = tempo_opening(TF["requestV2"], TF["chainId"], signature, sender)
+    assert opening["payload"]["descriptor"]["payer"] == sender
+    assert MPP_SESSION_TEMPO.bound(opening) == H
+    other = OPERATOR if sender != OPERATOR else TF["payer"]
+    assert MPP_SESSION_TEMPO.bound(tempo_opening(TF["requestV2"], TF["chainId"], signature, other)) == Refusal("tempo/descriptor-mismatch")
+
+
+@pytest.mark.parametrize(("form", "signature"), NOT_SENDERS, ids=[s[0] for s in NOT_SENDERS])
+def test_mpp_session_tempo_a_signature_that_names_no_sender_is_tx_malformed(form: str, signature: Any) -> None:
+    opening = tempo_opening(TF["requestV2"], TF["chainId"], signature)
+    assert MPP_SESSION_TEMPO.bound(opening) == Refusal("tempo/tx-malformed")
 
 
 def test_mpp_session_tempo_a_v2_descriptor_names_the_challenge_s_operator() -> None:
@@ -409,6 +494,18 @@ def test_mpp_subscription_tempo_rows_whose_key_authorization_names_another_key()
     for row in rows:
         member = "keyId" if "keyId" in row else "keyType"
         presented = sub1_with(member, row[member])
+        assert MPP_SUBSCRIPTION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
+        assert channel.ref(presented) == Refusal(row["expect"]), row["case"]
+
+
+def test_mpp_subscription_tempo_rows_whose_key_authorization_is_for_another_chain() -> None:
+    # mpp-subscription-tempo.json's agreedRefusals rows with chainId (draft-tempo-subscription-00 L461-463, as the rows'
+    # about cites it): the key authorization's chain ID is methodDetails.chainId.
+    channel = MPP_SUBSCRIPTION_TEMPO.channel  # type: ignore[attr-defined]
+    rows = [r for r in SUB["agreedRefusals"]["rows"] if "chainId" in r]
+    assert rows
+    for row in rows:
+        presented = sub1_with("chainId", row["chainId"])
         assert MPP_SUBSCRIPTION_TEMPO.bound(presented) == Refusal(row["expect"]), row["case"]
         assert channel.ref(presented) == Refusal(row["expect"]), row["case"]
 
