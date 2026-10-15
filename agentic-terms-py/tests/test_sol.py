@@ -1398,6 +1398,7 @@ SV = load("mpp-session-hedera-solana-xrpl.json")
 SESSION_DETAILS = (decode_object(SV["SS1"]["solana"]["challenge"]["request"]) or {})["methodDetails"]
 SESSION_PLANT = SV["plants"]["solana"]
 SV2_OPEN = {"action": "open", "channelId": SV["SV2"]["channel"], "transaction": SV["SV2"]["wireBase64"]}
+SV5_OPEN = {"action": "open", "channelId": SV["SV5"]["opening"]["channel"], "transaction": SV["SV5"]["opening"]["wireBase64"]}
 PAYER_SEED = bytes.fromhex(SF["payerSeed"])
 
 
@@ -1490,6 +1491,40 @@ def test_mpp_session_solana_sv5_the_payer_signs_sv3s_session_proof_after_the_ope
     assert MPP_SESSION_SOLANA.bound(out.signed) == H
     use = {**out.signed, "payload": {**payload, "action": "use"}}
     assert MPP_SESSION_SOLANA.bound_within(use) == H
+
+
+def session_agreed(case_start: str) -> str:
+    """The code of the one agreedRefusals row of the session file whose case starts with case_start."""
+    codes = [r["expect"] for r in SV["agreedRefusals"]["rows"] if r["case"].startswith(case_start)]
+    assert len(codes) == 1, (case_start, codes)
+    found: str = codes[0]
+    return found
+
+
+def client_doc() -> list[dict[str, Any]]:
+    """SS1's C_S with methodDetails.voucherSigner "client", the mode a challenge naming none is in."""
+    issued_request = decode_object(SV["SS1"]["solana"]["challenge"]["request"])
+    assert issued_request is not None
+    request = {**issued_request, "methodDetails": {**issued_request["methodDetails"], "voucherSigner": "client"}}
+    return mpp_session_doc({**SV["SS1"]["solana"]["challenge"], "request": b64u(json.dumps(request, separators=(",", ":")))})
+
+
+def test_mpp_session_solana_an_opening_carries_authentication_in_operator_mode_only() -> None:
+    # draft-solana-session-00 L1197 at tempoxyz/mpp-specs 08e7dd87, as the session file's rows cite it: an open's
+    # authentication is REQUIRED for an operator voucher signer and MUST be absent for client, the default.
+    operator = operator_doc()[0]
+    authentication = {**SV["SV5"]["expectAuthentication"], "challengeId": operator["id"], "signature": "x"}
+    assert MPP_SESSION_SOLANA.bound(credential(operator, {**SV5_OPEN, "authentication": authentication})) == H
+    without = session_agreed("a solana opening without authentication")
+    assert MPP_SESSION_SOLANA.bound(credential(operator, SV5_OPEN)) == Refusal(without)
+    unsigned = MPP_SESSION_SOLANA.build({"challenge": operator}, H)
+    assert not isinstance(unsigned, Refusal), unsigned
+    assert unsigned.complete(dict(SV5_OPEN)) == Refusal(without)
+    with_authentication = session_agreed("a solana opening with authentication")
+    for placed in (SV["SS1"]["solana"]["placed"], client_doc()[0]):
+        assert MPP_SESSION_SOLANA.bound(credential(placed, SV2_OPEN)) == H
+        named = {**authentication, "challengeId": placed["id"]}
+        assert MPP_SESSION_SOLANA.bound(credential(placed, {**SV2_OPEN, "authentication": named})) == Refusal(with_authentication)
 
 
 def test_mpp_session_solana_without_operator_mode_the_open_alone_completes_the_credential() -> None:

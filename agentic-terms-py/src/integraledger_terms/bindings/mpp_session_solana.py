@@ -92,8 +92,10 @@ class Opening:
 
 def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
     """The opening's checks: the one open of the challenge's program, its salt H's first 8 bytes, its channel the
-    payload's, and any authentication naming the challenge. The program, methodDetails.channelProgram, is a key, else
-    svm/input-malformed."""
+    payload's; then authentication, which draft-solana-session-00's open action requires for an operator voucher
+    signer and forbids for client, the default: missing for operator, or present for client, is
+    mpp/credential-malformed; present, it names the echoed challenge's id, else svm/proof-not-challenge. The program,
+    methodDetails.channelProgram, is a key, else svm/input-malformed."""
     e = echoed_for(presented, ID)
     if isinstance(e, Refusal):
         return e
@@ -119,7 +121,10 @@ def _opening(presented: Mapping[str, Any]) -> Opening | Refusal:
     declared = key_bytes(e.payload.get("channelId"))
     if declared is None or key_string(declared) != opened.channel:
         return Refusal("svm/channel-mismatch")
-    if "authentication" in e.payload:
+    authenticated = "authentication" in e.payload
+    if (e.checked.details.get("voucherSigner") == "operator") != authenticated:
+        return Refusal("mpp/credential-malformed")
+    if authenticated:
         auth = e.payload["authentication"]
         if not is_object(auth) or auth.get("challengeId") != presented["challenge"].get("id"):
             return Refusal("svm/proof-not-challenge")
@@ -166,8 +171,9 @@ class MppSessionSolana:
 
     def build(self, choice: Json, h: AtrHash) -> MppUnsigned | Refusal:
         """The values the buyer's channel client composes the open from: the salt (H's first 8 bytes), the program,
-        the network and the request's blockhash and slot. complete checks the composed open before returning the
-        credential."""
+        the network and the request's blockhash and slot. complete checks the composed open as bound does before
+        returning the credential: it carries authentication when the challenge's voucherSigner is operator, and none
+        otherwise."""
         if not is_object(choice):
             return Refusal("svm/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, ID)

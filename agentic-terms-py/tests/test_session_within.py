@@ -175,7 +175,10 @@ def test_solana_build_within_refuses_an_operator_channel_s_voucher() -> None:
     request = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
     request["methodDetails"].update(HS["SV5"]["methodDetails"])
     placed["request"] = base64.urlsafe_b64encode(json.dumps(request).encode("utf-8")).decode("ascii").rstrip("=")
-    opening = {**SOLANA_OPENING, "challenge": placed}
+    # SV5.opening, whose account 4 is the challenge's operator, with the authentication operator mode requires.
+    authentication = {**HS["SV5"]["expectAuthentication"], "challengeId": placed["id"], "signature": "x"}
+    payload = {"action": "open", "channelId": HS["SV5"]["opening"]["channel"], "transaction": HS["SV5"]["opening"]["wireBase64"], "authentication": authentication}
+    opening = {"challenge": placed, "payload": payload}
     w = {"challenge": placed, "opening": opening, "cumulativeAmount": 100, "action": "voucher"}
     assert MPP_SESSION_SOLANA.build_within(w, H) == Refusal("mpp/within-action-not-built")
 
