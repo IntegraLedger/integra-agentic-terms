@@ -2,7 +2,6 @@
 https links, the agreement URL, JSON objects and lists, safe integers and uint256 decimals, EVM addresses and
 networks."""
 
-import ipaddress
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -10,7 +9,7 @@ from typing import Any, TypeGuard
 
 from .._core import AtrHash, is_hash
 from ._jose import js_length
-from ._url import url_scheme
+from ._url import read_url
 
 MAX_LINK_CHARS = 2048
 MAX_SAFE_INTEGER = 2**53 - 1
@@ -101,40 +100,22 @@ _DNS_LABEL = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
 # An IP literal in brackets, or a DNS name of RFC 1123 labels (which includes dotted IPv4), then an optional port.
 _HOST_PORT = re.compile(rf"(?:\[[0-9A-Fa-f:.]+\]|{_DNS_LABEL}(?:\.{_DNS_LABEL})*\.?)(?::([0-9]{{0,5}}))?")
 _MAX_DNS_NAME = 253
-_IPV4_NUMBER = re.compile(r"(?:0[xX][0-9A-Fa-f]*|[0-9]+)")
-
-
-def _whatwg_ipv4(host: str) -> bool | None:
-    """For a host whose last label is a number, whether the WHATWG URL parser reads it as a valid IPv4 address; None
-    for a host the parser reads as a domain."""
-    labels = host.split(".")
-    if labels[-1] == "" and len(labels) > 1:
-        labels = labels[:-1]
-    if _IPV4_NUMBER.fullmatch(labels[-1]) is None:
-        return None
-    if len(labels) > 4:
-        return False
-    numbers: list[int] = []
-    for label in labels:
-        if _IPV4_NUMBER.fullmatch(label) is None:
-            return False
-        if label[:2] in ("0x", "0X"):
-            numbers.append(int(label[2:], 16) if label[2:] != "" else 0)
-        elif len(label) > 1 and label[0] == "0":
-            if any(c not in "01234567" for c in label):
-                return False
-            numbers.append(int(label, 8))
-        else:
-            numbers.append(int(label))
-    if any(n > 255 for n in numbers[:-1]):
-        return False
-    return numbers[-1] < 1 << (8 * (5 - len(numbers)))
+# The longest authority the rule accepts: a DNS name of 253 characters and its final dot, then ":" and five digits (an
+# IP literal in brackets is at most 47 characters). A longer one is refused before the authority is matched or read, so
+# both run on at most this many characters. len counts code points, and an authority that holds one past U+007F fails
+# _HOST_PORT, so the bound answers as a count of UTF-16 code units does.
+_MAX_AUTHORITY = _MAX_DNS_NAME + 1 + 6
 
 
 def is_https_link(value: object) -> TypeGuard[str]:
-    """The one https-link rule. The raw string holds no whitespace, control character or backslash; it parses as an
-    absolute URL; its scheme is https, compared case-insensitively (RFC 3986 section 3.1); its authority has a host, a
-    DNS name or an IP literal, and no userinfo."""
+    """The one https-link rule. The raw string holds no whitespace, control character or backslash, and no surrogate
+    code point: a lone surrogate, or a pair held as two code points, has no UTF-8 form (is_well_formed), and json.loads
+    reads a pair escaped in JSON text as the one code point it forms. It parses as an absolute URL by the WHATWG URL
+    Standard's basic URL parser, with no base; its scheme is https, compared case-insensitively (RFC 3986 section 3.1);
+    its authority has a host, a DNS name or an IP literal, and no userinfo.
+    The scheme, the authority, the host and the port are read by this package's own copy of the Standard's parser and
+    host parser (_url.read_url), so the answer is the same on every interpreter; the path, query and fragment never fail
+    that parse."""
     if not isinstance(value, str) or _LINK_FORBIDDEN.search(value) is not None:
         return False
     try:
@@ -142,7 +123,7 @@ def is_https_link(value: object) -> TypeGuard[str]:
     except UnicodeEncodeError:
         return False
     m = _HTTPS_AUTHORITY.match(value)
-    if m is None or "@" in m.group(1):
+    if m is None or len(m.group(1)) > _MAX_AUTHORITY or "@" in m.group(1):
         return False
     authority = m.group(1)
     hp = _HOST_PORT.fullmatch(authority)
@@ -154,13 +135,8 @@ def is_https_link(value: object) -> TypeGuard[str]:
         return False
     if port is not None and port != "" and int(port) > 65_535:
         return False
-    if host.startswith("["):
-        try:
-            ipaddress.IPv6Address(host[1:-1])
-        except ValueError:
-            return False
-        return True
-    return _whatwg_ipv4(host) is not False
+    u = read_url(value)
+    return u is not None and u.scheme == "https" and u.host is not None and u.host != "" and not u.credentials
 
 
 def from_legal_context(holder: object) -> tuple[AtrHash, str] | None:
@@ -189,11 +165,15 @@ def legal_context_info(lc: object) -> tuple[AtrHash, str] | None:
 
 
 def is_other_scheme_link(value: object) -> TypeGuard[str]:
-    """True for a string of at most 2048 UTF-16 code units that parses as an absolute URL whose scheme is not https:
-    the one failing link the x402, ACP, MPP and UCP reads refuse as link-not-https, where every other failing link is
-    legal-context-malformed; the x402 and ACP reads reach it through is_hash_with_non_https_link. Card's, ACK's and
-    AP2's reads refuse every link that is not https as legal-context-malformed."""
-    return isinstance(value, str) and js_length(value) <= MAX_LINK_CHARS and url_scheme(value) not in (None, "https")
+    """True for a string of at most 2048 UTF-16 code units that parses as an absolute URL whose scheme is not https, by
+    the WHATWG URL Standard's basic URL parser with no base, read by this package's own copy of it as is_https_link
+    reads one: the one failing link the x402, ACP, MPP and UCP reads refuse as link-not-https, where every other failing
+    link is legal-context-malformed; the x402 and ACP reads reach it through is_hash_with_non_https_link. Card's, ACK's
+    and AP2's reads refuse every link that is not https as legal-context-malformed."""
+    if not isinstance(value, str) or js_length(value) > MAX_LINK_CHARS:
+        return False
+    u = read_url(value)
+    return u is not None and u.scheme != "https"
 
 
 def is_hash_with_non_https_link(info: object) -> bool:

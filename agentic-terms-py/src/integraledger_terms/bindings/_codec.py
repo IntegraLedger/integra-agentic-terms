@@ -98,11 +98,17 @@ def to_hex(data: bytes) -> str:
     return "0x" + data.hex()
 
 
+def to_well_formed(text: str) -> str:
+    """text as String.prototype.toWellFormed gives it for a JavaScript string of text's UTF-16 code units: a surrogate
+    pair is the one code point it forms, held as one code point or as two, and each lone surrogate is U+FFFD."""
+    return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
+
+
 def text_encode(text: str) -> bytes:
     """The UTF-8 bytes TextEncoder writes for text as a JavaScript string of its UTF-16 code units (WHATWG Encoding,
     UTF-8 encode): a surrogate pair is the one four-byte character it forms, held as one code point or as two, and each
     lone surrogate is U+FFFD."""
-    return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
+    return to_well_formed(text).encode("utf-8")
 
 
 MAX_JSON_DEPTH = 64

@@ -16,7 +16,7 @@ from typing import Any
 from .._types import Refusal
 from ..bindings._bolt11 import decode, invoice_h
 from ..bindings._codec import canonical_json, utf16_key
-from ..bindings._url import url_scheme
+from ..bindings._url import read_url
 from ._common import bytes_of
 
 _HTTP_DOMAIN = "x402:exact:lnbtc:bolt11:http:1"
@@ -53,7 +53,8 @@ def _is_target_uri(url: object) -> bool:
         isinstance(url, str)
         and _ASCII_URI.fullmatch(url) is not None
         and _HTTP_TARGET.fullmatch(url) is not None
-        and url_scheme(url) in ("http", "https")
+        and (u := read_url(url)) is not None
+        and u.scheme in ("http", "https")
     )
 
 
@@ -65,7 +66,7 @@ def _is_absolute_uri(value: object) -> bool:
         and _ASCII_URI.fullmatch(value) is not None
         and _ABSOLUTE_URI.fullmatch(value) is not None
         and _USERINFO.match(value) is None
-        and url_scheme(value) is not None
+        and read_url(value) is not None
     )
 
 

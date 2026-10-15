@@ -47,6 +47,7 @@ def _outcome(got: object, h: str) -> tuple[str, str] | str:
 
 
 def test_the_rows_cover_each_kind_of_refused_value() -> None:
+    assert len(LINKS) == 32
     assert {r["refusedAs"] for r in LINKS} == {"accepted", "link-not-https", "legal-context-malformed"}
     assert [r["accept"] for r in LINKS] == [r["refusedAs"] == "accepted" for r in LINKS]
 

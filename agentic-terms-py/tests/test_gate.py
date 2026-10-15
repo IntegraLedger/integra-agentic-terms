@@ -29,6 +29,8 @@ from integraledger_terms import (
 )
 
 from integraledger_terms.bindings._lcp import is_https_link
+from test_punycode import work
+
 from support import (
     A,
     ACCOUNT,
@@ -341,6 +343,10 @@ def test_finish_rows_decline_another_pairings_chosen_payment_before_any_build() 
 LINKS = load("core-vectors.json")["links"]["rows"]
 
 
+def test_the_links_rows_are_the_32_the_vector_file_holds() -> None:
+    assert len(LINKS) == 32
+
+
 def httpx_refuses(link: str) -> bool:
     """Whether httpx refuses a request to the link before it is sent, as its IDNA 2008 encoding of the host does."""
     try:
@@ -382,6 +388,21 @@ def test_links_a_whatwg_parser_refuses(link: str) -> None:
     # An IPv4 number out of range, with five parts or an invalid octal part, an invalid IPv6 literal, a port above
     # 65535, and a lone surrogate: lcp's isHttpsLink refuses each.
     assert is_https_link(link) is False
+
+
+def test_the_https_link_rule_reads_no_authority_past_its_longest() -> None:
+    # The longest authority the rule accepts is a DNS name of 253 characters, its final dot, ":" and five digits, 260
+    # characters, as @integraledger/lcp's isHttpsLink bounds it. A longer one is refused before it is matched or read,
+    # so the rule's work (test_punycode.work: counted, never timed) does not grow with its length.
+    name = ".".join(["a" * 63, "b" * 63, "c" * 63, "d" * 61])
+    assert len(f"{name}.:65535") == 260
+    assert is_https_link(f"https://{name}.:65535/x") is True
+
+    def link(n: int) -> str:
+        return "https://[" + "0" * n + "]/x"
+
+    assert is_https_link(link(500)) is False
+    assert work(lambda: is_https_link(link(2_000))) == work(lambda: is_https_link(link(500)))
 
 
 def test_links_a_whatwg_parser_reads_as_ipv4_or_as_a_domain() -> None:
