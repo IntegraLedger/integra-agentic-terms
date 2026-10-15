@@ -100,7 +100,7 @@ async function mcpBinding(params: Record<string, unknown>, request: Record<strin
       bound.push({ name: n, valueHash: await valueHash(undefined) });
       continue;
     }
-    const text = canonicalJson(given[n] as Json);
+    const text = canonicalJson(given[n]);
     if (typeof text !== "string") return malformed();
     bound.push({ name: n, valueHash: await valueHash(new TextEncoder().encode(text)) });
   }

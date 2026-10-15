@@ -34,7 +34,7 @@ export function decodeObject(s: unknown): Record<string, Json> | undefined {
   try {
     const v: unknown = parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
     if (!isObject(v) || depthOf(v, 0) > MAX_JSON_DEPTH) return undefined;
-    return typeof canonicalJson(v as Json) === "string" ? (v as Record<string, Json>) : undefined;
+    return typeof canonicalJson(v) === "string" ? (v as Record<string, Json>) : undefined;
   } catch {
     return undefined;
   }

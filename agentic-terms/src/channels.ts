@@ -20,7 +20,7 @@ import {
 } from "@integraledger/lcp/core";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
-import { fromBinding, isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
+import { isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
 import { KEY } from "./pairings/x402-batch-settlement-solana.js";
 import {
   MAX_ATR_BYTES,
@@ -111,10 +111,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 const stepsOf = (binding: Binding): ChannelSteps => binding as unknown as ChannelSteps;
 
-/** Calls a binding member, reading a throw as a refusal and its answer at the binding boundary (`fromBinding`). */
+/** Calls a binding member, reading a throw as a refusal. */
 async function guarded<T>(run: () => Promise<T> | T): Promise<T | Refusal> {
   try {
-    return fromBinding(await run()) as T | Refusal;
+    return await run();
   } catch {
     return refuse("member-failed");
   }

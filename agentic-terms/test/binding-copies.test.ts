@@ -1,7 +1,7 @@
 // A binding from another copy of the protocol package, as a bundler or a nested install loads one beside the gate's
-// own. That copy's refusals are not members of the gate's copy's, so the gate reads what a binding's members answer by
-// the protocol package's refusal form, `{ refused: true, code }`, and reads everything else (a signer's answer, a
-// seller's document) by membership only. The other copy is the installed package's pairing entry points bundled by
+// own. Every copy marks the refusals it makes and reads every copy's mark, so the gate reads that copy's refusals as
+// refusals, and a value only shaped `{ refused: true, code }` (a signer's answer, a seller's document) as data. The
+// other copy is the installed package's pairing entry points bundled by
 // esbuild into one module and imported from a temporary folder. Each expected outcome is the same pairing's through the
 // gate's own copy, checked beside it: ACP's currency is three lowercase letters (acp-checkout.json V4's choice carries
 // "usd"), so "USD" is acp/choice-malformed; a session whose legal context is not in its metadata is acp/no-legal-context
@@ -156,14 +156,14 @@ async function at<T>(now: number, run: () => Promise<T>): Promise<T> {
 }
 
 describe("the other copy is a second copy of the protocol package", () => {
-  it("its refusal has the protocol package's form and is not one the gate's copy made", async () => {
+  it("its refusal is a refusal to the gate's copy too: every copy reads the package's mark", async () => {
     const choice = { ...ACP.V4.choice, currency: "USD" };
     const own = await delegated.build(choice as never, ACP.fixed.H);
     const theirs = await (other.delegated as unknown as typeof delegated).build(choice as never, ACP.fixed.H);
     expect(own).toEqual({ refused: true, code: "acp/choice-malformed" });
     expect(theirs).toEqual(own);
     expect(isRefusal(own)).toBe(true);
-    expect(isRefusal(theirs)).toBe(false);
+    expect(isRefusal(theirs)).toBe(true);
   });
 });
 

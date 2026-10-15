@@ -22,33 +22,12 @@ export function refuse(code: string): Refusal {
 }
 
 /**
- * True for a refusal the gate's copy of the protocol package made (its `isRefusal`) or the gate made (`refuse`).
- * Membership, not shape, makes a value one of them: a value from a seller, a signer or a caller that is shaped
- * `{ refused: true, … }` is never passed on as a refusal. A binding's answers are read by `fromBinding` first.
+ * True for a refusal any installed copy of the protocol package made (its `isRefusal`, which reads the package's mark)
+ * or the gate made (`refuse`). The mark and membership, not shape, make a value one of them: a value from a seller, a
+ * signer or a caller that is shaped `{ refused: true, … }` is never passed on as a refusal.
  */
 export function isRefusal(v: unknown): v is Refusal {
   return isLcpRefusal(v) || (typeof v === "object" && v !== null && made.has(v));
-}
-
-/**
- * A binding member's answer, read at the binding boundary. An answer of the protocol package's refusal form is that
- * refusal, made the gate's own with its code: a plain object whose own members are exactly `refused`, true, and `code`,
- * a string. A binding from another copy of the protocol package answers its refusals in this form, and the gate's copy
- * does not count them as its own. Every other answer is returned unchanged.
- */
-export function fromBinding(v: unknown): unknown {
-  return isRefusal(v) || !hasRefusalForm(v) ? v : refuse(v.code);
-}
-
-/** Whether `v` is a plain object whose own members are exactly `refused`, true, and `code`, a string, both data members. */
-function hasRefusalForm(v: unknown): v is Refusal {
-  if (typeof v !== "object" || v === null) return false;
-  const proto: unknown = Object.getPrototypeOf(v);
-  if ((proto !== Object.prototype && proto !== null) || Reflect.ownKeys(v).length !== 2) return false;
-  return (
-    Object.getOwnPropertyDescriptor(v, "refused")?.value === true &&
-    typeof Object.getOwnPropertyDescriptor(v, "code")?.value === "string"
-  );
 }
 
 export function isObject(v: unknown): v is Record<string, unknown> {

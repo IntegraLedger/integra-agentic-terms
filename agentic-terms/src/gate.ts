@@ -6,7 +6,7 @@
  * confirms a payment held later against kept bytes.
  */
 import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash, type Json, type Refusal } from "@integraledger/lcp/core";
-import { fromBinding, isRefusal, refuse } from "./pairings/common.js";
+import { isRefusal, refuse } from "./pairings/common.js";
 import { PIECES } from "./pairings/index.js";
 import {
   MAX_ATR_BYTES,
@@ -33,37 +33,9 @@ interface Steps {
   bound(presented: unknown): Promise<AtrHash | Refusal> | AtrHash | Refusal;
 }
 
-/** The binding's members, each answer read at the binding boundary (`fromBinding`). */
+/** The binding's members, as the gate calls them. */
 function steps(binding: Binding): Steps {
-  const b = binding as unknown as Steps;
-  return {
-    get id() {
-      return b.id;
-    },
-    read: (doc) => fromBinding(b.read(doc)) as Read | Refusal,
-    build: async (choice, h) => built(fromBinding(await b.build(choice, h))),
-    bound: async (presented) => fromBinding(await b.bound(presented)) as AtrHash | Refusal,
-  };
-}
-
-/**
- * A binding's build: where it is a plain object whose `complete` takes the signer's answer, each answer of that
- * `complete` is read at the binding boundary too.
- */
-function built(unsigned: unknown): unknown {
-  if (!isObject(unsigned) || isRefusal(unsigned) || typeof unsigned["complete"] !== "function") return unsigned;
-  const proto: unknown = Object.getPrototypeOf(unsigned);
-  if (proto !== Object.prototype && proto !== null) return unsigned;
-  const complete = unsigned["complete"] as (...answer: unknown[]) => unknown;
-  return {
-    ...unsigned,
-    complete: (...answer: unknown[]): unknown => {
-      const completed = complete.apply(unsigned, answer);
-      return isObject(completed) && typeof completed["then"] === "function"
-        ? Promise.resolve(completed).then(fromBinding)
-        : fromBinding(completed);
-    },
-  };
+  return binding as unknown as Steps;
 }
 
 /** A build refusal that means the pairing has nothing for the buyer to sign: the gate confirms only. */

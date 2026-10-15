@@ -1,6 +1,8 @@
-// What the gate reads as a refusal: a value the protocol package made (its root `isRefusal`, which recognises only the
-// refusals it made) or one the gate made. A value shaped `{ refused: true, code }` that neither made is data, as
-// @integraledger/lcp 0.2.0's `isRefusal` states: "A caller's value shaped { refused: true, … } is not a refusal".
+// What the gate reads as a refusal: a value any installed copy of the protocol package made (its `isRefusal` reads the
+// package's mark, which every copy sets and reads) or one the gate made. A value shaped `{ refused: true, code }` that
+// neither made is data, as @integraledger/lcp's `isRefusal` states: "A caller's value shaped `{ refused: true, … }`, a
+// value read from JSON, and a spread or `structuredClone` copy of a refusal hold no mark, so none of them is a
+// refusal".
 import { describe, expect, it } from "vitest";
 import { canonicalJson, isRefusal as isLcpRefusal } from "@integraledger/lcp";
 import { isRefusal, refuse } from "../src/pairings/common.js";
