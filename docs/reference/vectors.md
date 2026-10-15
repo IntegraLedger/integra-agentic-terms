@@ -61,13 +61,13 @@ document `D` advertising `hash(A)`, the published Anvil development key as the p
 | BA10 | As BA9, pending: the exchange is bounded by the chosen EVM option's `maxTimeoutSeconds` plus 180 seconds, never the Solana option's. |
 | BA11 | `maxTimeoutSeconds` written `60.0` is the number 60: the agreement is paid as in BA1. |
 | BA12 | A pairing whose payment is not a public proof, in an offer that names no agreement URL: the link is fetched and compared, then `agreement-not-offered`, with no agreement URL fetched and nothing signed; a link serving `C` is `hash-mismatch`. |
-| BA13 | A `PAYMENT-REQUIRED` written without its pad characters (`requiredUnpadded`): the 402 carries no readable `PAYMENT-REQUIRED`, so `agreement-failed` after one fetch, with nothing signed or paid. |
+| BA13 | A `PAYMENT-REQUIRED` written without its pad characters (`requiredUnpadded`): the 402 carries no readable `PAYMENT-REQUIRED`, so `agreement-failed` after one request to the agreement URL, with nothing signed or paid. |
 | BA14 | An agreement URL that answers the unpaid request `202`: `agreement-pending` after that one request, with nothing signed, paid or returned for approval. |
 | BA15 | BA3's exchange with `retry-after` in each other form: one to nine digits wait that many seconds, at least 1; absent or in any other form, an HTTP-date included, the wait is 2 seconds; no request goes past the exchange's bound. |
 | BA16 | `agree` with `inputs` given and not an object: `no-payable-option` (`x402/input-malformed`), before the agreement URL is fetched or the signer called. |
 | BA17 | A receipt led by a byte order mark: `agreement-failed` once the agreement payment is sent, the decline carrying it as `moved`; the main payment is never signed. |
-| BA18 | A `PAYMENT-REQUIRED` whose JSON follows a byte order mark, or with a space inside: `agreement-failed` after one fetch, with nothing signed or paid. |
-| BA19 | A `PAYMENT-REQUIRED` whose final character carries a non-zero pad bit (`requiredPadBit`): `agreement-failed` after one fetch, with nothing signed or paid. |
+| BA18 | A `PAYMENT-REQUIRED` whose JSON follows a byte order mark, or with a space inside: `agreement-failed` after one request to the agreement URL, with nothing signed or paid. |
+| BA19 | A `PAYMENT-REQUIRED` whose final character carries a non-zero pad bit (`requiredPadBit`): `agreement-failed` after one request to the agreement URL, with nothing signed or paid. |
 | BE1 | The ATR served under a content coding (gzip, x-gzip, deflate, br, stacked, two gzip members, `identity, gzip`): `atr-unfetchable` before anything is hashed or signed; every request asks for `Accept-Encoding: identity`. |
 | BE2 | The agreement URL's `402` or `200` answered under a content coding: `agreement-failed`; after the agreement payment is signed, the main payment never is. |
 | BS1, BS2 | `x402/exact/stellar` and `mpp/charge/stellar`: a simulated transfer of another amount, on another token contract, or from another account than the payer is declined `offer-unreadable` (`stellar/amount-mismatch`, `stellar/asset-mismatch`, `stellar/payer-mismatch`) before the signer is called; the transfer the option asks for reaches the signer as `stellar-auth`. |

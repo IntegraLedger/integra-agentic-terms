@@ -5,9 +5,9 @@ boundChallenge rows, each a challenge placed with the id and opaque of the file'
 row's pairing, given as the sole challenge with that B2 row's account, inputs and time. The card and Stripe files hold
 no such rows: their subjects are B2's challenge with the member each pairing's checks read set to a value they refuse
 (card: externalId, absent or a string; Stripe: methodDetails.metadata, an object within Stripe's bounds). The link
-serves abc, whose SHA-256 (FIPS 180-2 B.1) is each document's H. Every expected value is lcp's: BX1's decline, each
-row's own refusal and pairings_of's answer for the changed card and Stripe challenges. The TypeScript gate runs the same
-subjects (mpp-refused-challenge.test.ts)."""
+serves abc, whose SHA-256 (FIPS 180-2 B.1) is each document's H. Every expected value is lcp's: BX1's decline and
+pairings_of's answer for the changed card and Stripe challenges. The TypeScript gate runs the same subjects
+(mpp-refused-challenge.test.ts)."""
 
 import copy
 import json
