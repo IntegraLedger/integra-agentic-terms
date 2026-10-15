@@ -49,7 +49,7 @@ const call = (c: ReturnType<typeof connect>, name: string, args: object) =>
   c.request("tools/call", { name, arguments: args, _meta: M });
 const names = (m: Message): string[] => (at(m, "result.tools") as { name: string }[]).map((t) => t.name).sort();
 
-describe("the MCP server over stdio", { timeout: 60_000 }, () => {
+describe("the MCP server over stdio", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(1_790_000_000_000);

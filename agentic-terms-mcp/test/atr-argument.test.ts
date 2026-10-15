@@ -163,7 +163,7 @@ const TOOLS: Record<string, Tool> = {
   },
 };
 
-describe("the atr argument: padded standard base64 in its canonical form", { timeout: 60_000 }, () => {
+describe("the atr argument: padded standard base64 in its canonical form", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(B.fixed.now * 1000);
@@ -215,7 +215,7 @@ const ROUND_TRIPS: [string, Uint8Array, string][] = [
   ["every byte value", EVERY_BYTE, Buffer.from(EVERY_BYTE).toString("base64")],
 ];
 
-describe("atr.base64 from atr_confirm, read back by atr_check", { timeout: 60_000 }, () => {
+describe("atr.base64 from atr_confirm, read back by atr_check", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(B.fixed.now * 1000);

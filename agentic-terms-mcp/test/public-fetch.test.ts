@@ -58,6 +58,12 @@ describe("isPublicAddress", () => {
   );
 });
 
+/**
+ * A signal that never aborts on its own. The fetch reads the request's signal; a request that never settles is stopped by
+ * the test's two-minute timeout (vitest.config.ts).
+ */
+const neverAborted = (): AbortSignal => new AbortController().signal;
+
 /** A resolver that answers `addresses` for every host. */
 const resolving = (...addresses: string[]): Resolve => (_host, _options, callback) =>
   callback(null, addresses.map((address) => ({ address, family: address.includes(":") ? 6 : 4 })));
@@ -108,7 +114,7 @@ describe("publicFetch", () => {
   });
   afterAll(() => new Promise<void>((resolve) => tcp.close(() => resolve())));
 
-  const init = () => ({ method: "GET" as const, redirect: "manual" as const, signal: AbortSignal.timeout(5_000) });
+  const init = () => ({ method: "GET" as const, redirect: "manual" as const, signal: neverAborted() });
 
   it.each(["https://127.0.0.1:PORT/atr", "https://[::1]:PORT/atr", "https://[::ffff:127.0.0.1]:PORT/atr", "https://0x7f.1:PORT/atr"])(
     "refuses %s before any connection",
@@ -196,7 +202,7 @@ describe("fetchVia", () => {
   const init = (headers?: Record<string, string>) => ({
     method: "GET" as const,
     redirect: "manual" as const,
-    signal: AbortSignal.timeout(5_000),
+    signal: neverAborted(),
     ...(headers === undefined ? {} : { headers }),
   });
 

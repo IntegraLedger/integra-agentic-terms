@@ -9,8 +9,6 @@ import type { Fetch, Signer } from "@integraledger/terms";
 import { createBuyerServer } from "../src/index.js";
 
 export type Message = { id?: number; result?: unknown; error?: { code: number; message: string; data?: unknown } };
-/** How long a request to a server in this process waits for its answer: a bound well past its time under load. */
-const ANSWER_MS = 30_000;
 
 /** The value at a dotted path inside a parsed JSON-RPC message, or undefined. */
 export const at = (v: unknown, path: string): unknown =>
@@ -32,7 +30,7 @@ export function connect(
 
 /**
  * One stdio connection to `dist/bin.js`, the built binary, in its own Node.js process. A request waits for the binary's
- * own answer, and fails when the process closes before it answers: no clock bounds it.
+ * own answer, and fails when the process closes before it answers.
  */
 export function spawnBin() {
   const bin = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
@@ -53,8 +51,9 @@ export function spawnBin() {
 }
 
 /**
- * Writes JSON-RPC lines to `input` and reads the answers from `output` by id. A request waits for its answer until
- * `ended` settles, when it is given, and otherwise for ANSWER_MS.
+ * Writes JSON-RPC lines to `input` and reads the answers from `output` by id. A request waits for its answer, or until
+ * `ended` settles, when it is given. It sets no time bound of its own: a request that is never answered is stopped by
+ * the test's two-minute timeout (vitest.config.ts).
  */
 function lines(input: Writable, output: Readable, ended?: Promise<string>) {
   const waiting = new Map<number, (m: Message) => void>();
@@ -81,22 +80,16 @@ function lines(input: Writable, output: Readable, ended?: Promise<string>) {
     }
   });
   let next = 1;
-  /**
-   * Writes one request and resolves with the answer carrying its id, or rejects when `ended` settles first, or, with no
-   * `ended`, when none comes within ANSWER_MS.
-   */
+  /** Writes one request and resolves with the answer carrying its id, or rejects when `ended` settles first. */
   function request(method: string, params: object = {}): Promise<Message> {
     const id = next++;
     return new Promise<Message>((resolve, reject) => {
       const fail = (why: string) => {
-        clearTimeout(timer);
         waiting.delete(id);
         failing.delete(id);
         reject(new Error(`no answer to ${method}: ${why}`));
       };
-      const timer = ended === undefined ? setTimeout(() => fail(`none within ${ANSWER_MS} ms`), ANSWER_MS) : undefined;
       waiting.set(id, (m) => {
-        clearTimeout(timer);
         waiting.delete(id);
         failing.delete(id);
         resolve(m);

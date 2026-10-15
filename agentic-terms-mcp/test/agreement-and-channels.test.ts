@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
-import { BINDINGS } from "../src/index.js";
+import { BINDINGS, createBuyerServer } from "../src/index.js";
 import { at, connect } from "./stdio.js";
 
 const vectors = (name: string) =>
@@ -216,28 +216,46 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
   it("a cancelled atr_agree call ends the agreement exchange: the payment is not sent again", async () => {
     let paid = 0;
     let cancel: () => void = () => undefined;
+    // Settles with the paid call's own result, which the server computes when its handler ends and does not send for a
+    // cancelled call, or with nothing at a second payment, whichever comes first.
+    let end: (result: unknown) => void = () => undefined;
+    const ended = new Promise<unknown>((resolve) => (end = resolve));
     const fetch = (async (url: string, init: { headers?: Record<string, string> }) => {
       if (url === LINK) return new Response(new Uint8Array(A), { status: 200 });
       if (init.headers?.["PAYMENT-SIGNATURE"] === undefined) {
         return new Response(null, { status: 402, headers: { "payment-required": base64Json(AG.required) } });
       }
       paid++;
-      cancel();
+      if (paid === 1) cancel();
+      else end(undefined);
       return new Response(null, { status: 202, headers: { "retry-after": "1" } });
     }) as unknown as Fetch;
     const agreementSigner = recording(B.fixed.account, () => S);
-    const c = connect({ fetch, agreementSigner });
+    const c = connect({ fetch, agreementSigner }, (options) => {
+      const server = createBuyerServer(options);
+      const project = server.server.projectCallToolResult.bind(server.server);
+      server.server.projectCallToolResult = (result, schema) => {
+        if (paid > 0) end(result);
+        return project(result, schema);
+      };
+      return server;
+    });
     const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account });
     const chosen = at(confirmed, "result.structuredContent.chosen");
     const atr = Buffer.from(A).toString("base64");
     const shown = await call(c, "atr_agree", { atr, chosen });
-    // The paid call is request 3 on this connection; the client cancels it once its payment has been sent.
+    // The paid call is request 3 on this connection; the client cancels it once its payment has been sent, and gets no
+    // answer to it.
     cancel = () => c.notify("notifications/cancelled", { requestId: 3, _meta: M });
-    void call(c, "atr_agree", { atr, chosen, approved: at(shown, "result.structuredContent.approve") }).catch(() => undefined);
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    void call(c, "atr_agree", { atr, chosen, approved: at(shown, "result.structuredContent.approve") });
+    const result = await ended;
     await c.close();
-    expect(agreementSigner.requests.length).toBe(1);
     expect(paid).toBe(1);
+    expect(agreementSigner.requests.length).toBe(1);
+    expect(at(result, "structuredContent.decline")).toEqual({
+      code: "agreement-pending",
+      detail: "The caller's signal ended the exchange after the agreement payment was sent.",
+    });
   });
 
   it("atr_transact returns the agreement payment to approve, then pays it with the agreement signer and hands the full payment to the payment signer", async () => {
