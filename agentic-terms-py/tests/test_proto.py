@@ -638,8 +638,6 @@ def _vi_open_mandates_not_one_or_user_key_not_p256() -> list[object]:
     return [listing([other]), listing([opened, opened_twice]), CARD_MASTERCARD_VI_AUTONOMOUS.bound(_vi_resigned(user=ed25519_key))]
 
 
-
-
 # card.json's agreedRefusals rows that the buyer half reads (read, build and bound), by case: each builds the inputs
 # its row describes, as @integraledger/lcp's card test builds them.
 CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
