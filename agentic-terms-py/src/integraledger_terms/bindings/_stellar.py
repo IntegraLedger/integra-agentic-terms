@@ -329,10 +329,10 @@ def read_signed_transfer(text: object, network: object, landed: bool) -> SignedT
 
 
 def decode_stellar_tx(text: object, network: object) -> Payment | Refusal:
-    """The one transfer of a strict base64 envelope of at most 8 KiB, read whole, with the one address authorization
-    entry whose address is from and the SHA-256 of that entry's preimage. The entry's root invocation must be that same
-    transfer, byte for byte, with no sub-invocations; the payment's contract, to and amount are the signed
-    invocation's."""
+    """The one transfer of a strict base64 envelope of at most MAX_XDR characters, counted in UTF-16 code units (6 KiB
+    of XDR), read whole, with the one address authorization entry whose address is from and the SHA-256 of that entry's
+    preimage. The entry's root invocation must be that same transfer, byte for byte, with no sub-invocations; the
+    payment's contract, to and amount are the signed invocation's."""
     p = read_signed_transfer(text, network, False)
     if isinstance(p, Refusal):
         return p
