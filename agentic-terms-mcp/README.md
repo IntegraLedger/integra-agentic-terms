@@ -69,6 +69,23 @@ cp -r node_modules/@integraledger/terms-mcp/skills/confirming-the-atr-hash-befor
 
 ## Quickstart
 
+The skill becomes instructions your agent follows, so add it only on purpose. pnpm 12 asks first: an install that adds
+this package prints `Agent skills awaiting approval: @integraledger/terms-mcp.` and links no skill. To approve it:
+
+```sh
+pnpm permissions approve @integraledger/terms-mcp
+```
+
+pnpm then writes the decision into `pnpm-workspace.yaml` and links the skill into your agent's skill folder:
+
+```yaml
+permissions:
+  '@integraledger/terms-mcp':
+    skills: true
+```
+
+`pnpm permissions approve '!@integraledger/terms-mcp'` denies it, and writes `skills: false`.
+
 With the server and the skill installed, the agent's flow for an x402 payment is:
 
 1. The seller answers `402 Payment Required`. The agent calls `atr_confirm` with the pairing, the seller's
