@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._jose import js_length
 from ._lcp import is_object, normal_hash, safe_int, uint256_of
-from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds
+from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/casper"
 
@@ -214,3 +214,16 @@ class X402ExactCasper:
         h = normal_hash(n if n.startswith("0x") else "0x" + n)
         assert h is not None
         return h
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the call that executes the payer's signed
+        authorization. A payment that is not x402 v2, carries a refused member or has a payload that is not an object is
+        casper/payload-malformed, as bound refuses it. The payment is held to x402_shape's gate, the one bound applies
+        first; any other gets its refusal."""
+        return x402_broadcaster(
+            presented,
+            "payee",
+            envelope="casper/payload-malformed",
+            refused="casper/payload-malformed",
+            payload="casper/payload-malformed",
+        )

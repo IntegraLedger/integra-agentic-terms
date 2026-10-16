@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from . import _stacks
 from ._codec import b64_decode
 from ._lcp import is_object, normal_hash
-from ._mpp import chosen_for, credential_of, echoed_for, read
+from ._mpp import by_type, chosen_for, credential_of, echoed_for, mpp_broadcaster, read
 
 ID = "mpp/charge/usdc/stacks"
 
@@ -158,3 +158,8 @@ class MppChargeUsdcStacks:
         if call.args[3] != MEMO_PREFIX + bytes.fromhex(e.h[2:]):
             return Refusal("mpp/stacks-memo-not-h")
         return e.h
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts a credential of type transaction: the seller's server sponsors and broadcasts the Stacks
+        transaction the payer signed. A credential of any other type gets mpp/credential-type, as bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"transaction": "payee"}))

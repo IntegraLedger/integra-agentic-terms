@@ -9,7 +9,7 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._channel import BatchUnsigned, ChannelRef
 from ._codec import hex_bytes, to_hex
 from ._evm import PERMIT2, ZERO_ADDRESS, Witness, address_of_word, permit2_typed_data
@@ -18,6 +18,7 @@ from ._mpp import (
     Echoed,
     MppUnsigned,
     Params,
+    by_type,
     credential_of,
     did_pkh_address,
     echoed_for,
@@ -28,6 +29,7 @@ from ._mpp import (
     read,
     request_address,
     same_bytes,
+    session_broadcaster,
     text,
 )
 from ._mpp_checks import (
@@ -240,6 +242,11 @@ class _Opening:
     o: Mapping[str, Any]
 
 
+# The payload types an EVM session opening takes, which _evm_opened reads, each with who broadcasts the funding it
+# carries: the payer a hash, the seller's server an authorization or a permit2. A top-up takes the same types.
+_EVM_FUNDING: Mapping[str, Broadcaster] = {"hash": "payer", "authorization": "payee", "permit2": "payee"}
+
+
 def _evm_opening(payload: Mapping[str, Any]) -> _Opening | Refusal:
     """The opening of an EVM session payload: the open payload, or a voucher's deposit whose action is open."""
     if payload.get("action") == "open":
@@ -265,6 +272,26 @@ def _evm_kind(presented: Any) -> str | Refusal:
     if action == "close":
         return "close"
     return Refusal("mpp/session-action")
+
+
+def _evm_broadcasts(credential: Mapping[str, Any]) -> Broadcaster | Refusal:
+    """Who broadcasts an EVM session payment, by its action, as draft-evm-session-00 has it: an opening by its type
+    (_EVM_FUNDING), else mpp/credential-type; a top-up by its type likewise, else mpp/not-an-opening; a voucher, which
+    the seller's server redeems when it settles or closes, "payee", or, carrying an opening deposit, by that deposit's
+    type, else mpp/credential-type; a close, the escrow call the seller's server sends, "payee". Each refusal is the one
+    bound gives the credential. Any other action is mpp/not-an-opening, as bound refuses it."""
+    p = credential["payload"]
+    action = p.get("action")
+    if action == "open":
+        return by_type(_EVM_FUNDING)(credential)
+    if action == "topUp":
+        return by_type(_EVM_FUNDING, "mpp/not-an-opening")(credential)
+    if action == "voucher":
+        deposit = p.get("deposit")
+        if not is_object(deposit) or deposit.get("action") != "open":
+            return "payee"
+        return by_type(_EVM_FUNDING)({**credential, "payload": deposit})
+    return "payee" if action == "close" else Refusal("mpp/not-an-opening")
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,7 +320,7 @@ def _evm_opened(presented: Mapping[str, Any]) -> _EvmOpened | Refusal:
     if isinstance(opening, Refusal):
         return opening
     kind, o = opening.kind, opening.o
-    if kind not in ("hash", "authorization", "permit2"):
+    if kind not in _EVM_FUNDING:
         return Refusal("mpp/credential-type")
     salt = normal_hash(o.get("salt"))
     if salt is None:
@@ -500,6 +527,14 @@ def _tempo_kind(presented: Any) -> str | Refusal:
     if action == "close":
         return "close"
     return Refusal("mpp/session-action")
+
+
+def _tempo_broadcasts(credential: Mapping[str, Any]) -> Broadcaster | Refusal:
+    """Who broadcasts a Tempo session payment: the seller's server, every payment the session takes, as
+    draft-tempo-session-00 has it. An opening of a type other than transaction, the one bound takes, is
+    mpp/not-an-opening, as bound refuses it."""
+    p = credential["payload"]
+    return Refusal("mpp/not-an-opening") if p.get("action") == "open" and p.get("type") != "transaction" else "payee"
 
 
 _DESCRIPTOR_KEYS = ("payer", "payee", "operator", "token", "salt", "authorizedSigner", "expiringNonceHash")
@@ -955,6 +990,15 @@ class MppSessionEvm(_Held):
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _evm_bound(presented)
 
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """By the payment's action and type (_evm_broadcasts), for the actions channel_kind takes. "payer": an opening
+        or a top-up of type hash, which the payer broadcast; no member reads a top-up, so the seller confirms it outside
+        the package. "payee": an opening or a top-up of type authorization or permit2, which the seller's server submits
+        to the escrow; a voucher, which it redeems when it settles or closes; and the close, the escrow call it sends.
+        Any other credential gets the refusal bound gives it: mpp/credential-type for an opening of another type, and
+        mpp/not-an-opening for a top-up of another type or any other action."""
+        return session_broadcaster(presented, _evm_kind, _evm_broadcasts, "mpp/not-an-opening")
+
 
 @dataclass(frozen=True, slots=True)
 class MppSessionTempo(_Held):
@@ -977,6 +1021,13 @@ class MppSessionTempo(_Held):
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _tempo_bound(presented)
 
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts every payment the session takes, for the actions channel_kind takes and an opening of
+        type transaction (_tempo_broadcasts), as draft-tempo-session-00 has it: the seller's server broadcasts the
+        signed transaction of an opening or a top-up, redeems vouchers when it settles or closes, and sends the close.
+        Any other credential gets mpp/not-an-opening, as bound refuses it."""
+        return session_broadcaster(presented, _tempo_kind, _tempo_broadcasts, "mpp/not-an-opening")
+
 
 @dataclass(frozen=True, slots=True)
 class MppSubscriptionTempo(_Held):
@@ -995,3 +1046,10 @@ class MppSubscriptionTempo(_Held):
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _subscription_bound(presented)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts a credential of type keyAuthorization, the one channel_kind takes: the payer's root key
+        signs a key authorization, and the seller's server sends the activation transaction that registers its access
+        key, and each later transfer under that key. A credential of any other type gets mpp/not-an-opening, as bound
+        refuses it."""
+        return session_broadcaster(presented, _subscription_kind, lambda c: "payee", "mpp/not-an-opening")

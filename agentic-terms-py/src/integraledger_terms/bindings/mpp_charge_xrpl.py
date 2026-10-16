@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._lcp import is_object
-from ._mpp import chosen_for, credential_of, echoed_for, fetched_of, read
+from ._mpp import by_type, chosen_for, credential_of, echoed_for, fetched_of, mpp_broadcaster, read
 from ._mpp_checks import is_xrpl_invoice_id, xrpl_network_of
 from ._xrpl import decode_presented, is_blob_hex, mpp_invoice_id, network_id_held, same_invoice
 
@@ -161,3 +161,9 @@ class MppChargeXrpl:
         if not hash_equals("0x" + invoice.lower(), e.h):
             return Refusal("mpp/carrier-not-challenge")
         return e.h
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """By the credential's type: transaction, "payee", a signed blob the seller's server submits; hash, "payer", a
+        transaction the payer broadcast. A credential of any other type gets mpp/credential-type, as bound refuses
+        it."""
+        return mpp_broadcaster(presented, by_type({"transaction": "payee", "hash": "payer"}))

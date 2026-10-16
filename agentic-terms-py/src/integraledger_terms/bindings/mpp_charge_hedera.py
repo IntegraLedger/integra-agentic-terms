@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._codec import b64_decode
 from ._hedera_proto import (
     INT64_LIMIT,
@@ -22,7 +22,17 @@ from ._hedera_proto import (
     write_body,
 )
 from ._lcp import is_object, is_well_formed
-from ._mpp import attribution_memo, challenge_bound, check_attribution, checked_for, credential_of, fetched_of, read
+from ._mpp import (
+    attribution_memo,
+    by_type,
+    challenge_bound,
+    check_attribution,
+    checked_for,
+    credential_of,
+    fetched_of,
+    mpp_broadcaster,
+    read,
+)
 from ._mpp_checks import decode_object, hedera_charge_request_legs
 from .x402_exact_hedera import HederaUnsigned
 
@@ -147,3 +157,10 @@ class MppChargeHedera:
             return Refusal("mpp/attribution-malformed")
         ok = check_attribution(memo, challenge["realm"], challenge["id"])
         return b.h if ok is True else ok if isinstance(ok, Refusal) else Refusal("mpp/attribution-mismatch")
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """By the credential's type, as the charge's build writes the request: hash, the default, whose request carries
+        broadcast true, "payer", a body the payer's signer broadcast, presented by its transaction id; transaction,
+        whose request carries no broadcast, "payee", a signed transaction the seller's server broadcasts. A credential
+        of any other type gets mpp/credential-type, as bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"transaction": "payee", "hash": "payer"}))

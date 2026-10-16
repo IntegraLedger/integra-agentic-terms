@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._jose import decode_json_segment, js_length, json_bytes, jws_segments, within_depth
 from ._lcp import (
     AgreementFault,
@@ -97,3 +97,8 @@ class AckPaymentRequest:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         return Refusal("ack/no-signed-place")
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payer broadcasts: it pays the Payment Request through its payment service before presenting the receipt.
+        Settlement is the seller's report. bound applies no shape gate, so it answers whatever is presented."""
+        return "payer"

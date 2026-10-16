@@ -13,6 +13,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 
 from integraledger_terms import Advertised, AtrHash, Json, Refusal, Unsigned
+from integraledger_terms._types import Broadcaster
 
 # The shared vectors as @integraledger/lcp ships them, where the TypeScript gate beside this package installs it.
 VECTORS = Path(__file__).resolve().parents[2] / "agentic-terms" / "node_modules" / "@integraledger" / "lcp" / "vectors"
@@ -210,6 +211,10 @@ class StubBinding:
         if self.bound_answer is not None:
             return self.bound_answer
         answer: AtrHash | Refusal = self.inner.bound(presented)
+        return answer
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        answer: Broadcaster | Refusal = self.inner.broadcaster(presented)
         return answer
 
 

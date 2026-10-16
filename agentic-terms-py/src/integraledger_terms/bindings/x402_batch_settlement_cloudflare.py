@@ -11,10 +11,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._batch import SCHEME
 from ._lcp import is_object, normal_hash, safe_int
-from ._x402 import accepted_by, chosen, filter_of, is_amount, legal_context_of, read_for, timeout_seconds
+from ._x402 import (
+    accepted_by,
+    chosen,
+    filter_of,
+    is_amount,
+    legal_context_of,
+    read_for,
+    timeout_seconds,
+    x402_broadcaster,
+)
 
 ID = "x402/batch-settlement/cloudflare"
 NETWORK = "cloudflare:402"
@@ -84,3 +93,8 @@ class X402BatchSettlementCloudflare:
             return accepted
         lc = legal_context_of(presented.get("extensions"))
         return lc if isinstance(lc, Refusal) else lc[0]
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: Cloudflare, for the seller, verifies the agent's signed request and bills its
+        registered identity off chain. bound reads no payload, so the gate is x402_shape's without it."""
+        return x402_broadcaster(presented, "payee", payload=None)

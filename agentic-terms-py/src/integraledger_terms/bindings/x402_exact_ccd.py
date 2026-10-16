@@ -15,11 +15,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._cbor import UNDEFINED, CborMap, decode_cbor, is_tag, map_get
 from ._codec import b58_decode, canonical_or_none
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds
+from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/ccd"
 
@@ -270,3 +270,9 @@ class X402ExactCcd:
         memo, and no sponsor, receiver, amount or token. No signature is verified here; the chain accepts the
         transaction only with the sender's valid signature."""
         return _signed(presented)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator, the sponsor, signs and submits the sponsored transaction the
+        payer signed. A payload that is not an object is ccd/transaction-malformed, as bound refuses it. The payment is
+        held to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee", payload="ccd/transaction-malformed")

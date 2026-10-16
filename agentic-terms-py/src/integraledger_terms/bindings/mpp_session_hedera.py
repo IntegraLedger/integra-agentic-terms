@@ -9,11 +9,11 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._evm import ZERO_ADDRESS, address_of_word, address_word, bytes32_word, bytes_of, hex_of, uint_word
 from ._lcp import is_address, is_list, is_object, normal_hash
-from ._mpp import Echoed, chosen_for, credential_of, echoed_for, fetched_of, read
+from ._mpp import Echoed, chosen_for, credential_of, echoed_for, fetched_of, read, session_broadcaster
 from ._mpp_checks import hedera_session_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 
@@ -68,6 +68,16 @@ def voucher(channel: str, escrow: str, chain_id: int, cumulative: int) -> dict[s
 
 # draft-hedera-session-00 defines open, topUp, voucher and close: the actions within a channel are a voucher and a topUp.
 WITHIN_ACTIONS = ("voucher", "topUp")
+
+
+def _broadcasts(credential: Mapping[str, Any]) -> Broadcaster | Refusal:
+    """Who broadcasts a Hedera session payment, by its action, as draft-hedera-session-00 has it: the payer an opening
+    or a top-up, each a transaction it broadcast and names by txHash; the seller's server a voucher, which it redeems
+    when it closes, and the close, which it sends. Any other action is mpp/session-action, as bound refuses it."""
+    action = credential["payload"].get("action")
+    if action == "open" or action == "topUp":
+        return "payer"
+    return "payee" if action == "voucher" or action == "close" else Refusal("mpp/session-action")
 
 
 def _opening(presented: Mapping[str, Any]) -> Echoed | Refusal:
@@ -228,6 +238,13 @@ class MppSessionHedera:
         if channel_id(payer, payee, token, salt, signer, escrow, _chain(network)) != channel:
             return Refusal("hedera/channel-id-mismatch")
         return e.h
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """By the payment's action (_broadcasts), for the actions channel_kind takes. "payer": the opening, whose two
+        calls the payer's signer broadcasts, and a top-up, which no member reads, so the seller confirms it outside the
+        package. "payee": a voucher, which the seller's server redeems when it closes, and the close, the escrow call it
+        sends. Any other action gets mpp/session-action, as bound refuses it."""
+        return session_broadcaster(presented, self.channel_kind, _broadcasts, "mpp/session-action")
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open, close, or within for a voucher or topUp; any other action is mpp/session-action."""

@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from . import _stellar
 from ._lcp import is_object, safe_int
-from ._mpp import chosen_for, credential_of, echoed_for, expires_of, fetched_of, read
-from ._mpp_checks import is_fee_payer, is_stellar_recipient
+from ._mpp import chosen_for, credential_of, echoed_for, expires_of, fetched_of, mpp_broadcaster, read
+from ._mpp_checks import decode_object, is_fee_payer, is_stellar_recipient
 
 ID = "mpp/charge/stellar"
 _HASH = re.compile(r"[0-9a-fA-F]{64}")
@@ -31,6 +31,21 @@ def _presented_xdr(credential: Mapping[str, Any], payload: Mapping[str, Any]) ->
         return landed if isinstance(landed, str) else Refusal("stellar/read-first")
     xdr = payload.get("transaction")
     return xdr if isinstance(xdr, str) else Refusal("stellar/tx-malformed")
+
+
+def _broadcaster_for(credential: Mapping[str, Any]) -> Broadcaster | Refusal:
+    """Who broadcasts a Stellar charge credential, by its type: a transaction, which the seller's server submits, and,
+    where the echoed request's feePayer is not true, a hash, which the payer broadcast. Under feePayer true MPP's
+    Stellar charge forbids push mode, so a hash credential there is mpp/credential-type, as bound refuses it, and so is
+    a credential of any other type."""
+    kind = credential["payload"].get("type")
+    if kind == "transaction":
+        return "payee"
+    if kind != "hash":
+        return Refusal("mpp/credential-type")
+    request = decode_object(credential["challenge"].get("request"))
+    details = request.get("methodDetails") if request is not None else None
+    return Refusal("mpp/credential-type") if is_object(details) and details.get("feePayer") is True else "payer"
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,3 +166,10 @@ class MppChargeStellar:
         if not agrees:
             return Refusal("stellar/not-one-transfer")
         return e.h
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """By the credential's type (_broadcaster_for): transaction, "payee", a signed transaction the seller's server
+        submits; hash, where the request's feePayer is not true, "payer", a transaction the payer broadcast. A hash
+        credential under feePayer true, and a credential of any other type, get mpp/credential-type, as bound refuses
+        them."""
+        return mpp_broadcaster(presented, _broadcaster_for)

@@ -11,11 +11,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._cbor_spans import CborError, Item, SpanReader
 from ._lcp import from_lcp_string, is_object, normal_hash
 from ._rail_bytes import base64_bytes
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/cardano"
 
@@ -282,3 +282,8 @@ class X402ExactCardano:
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """The hash in the CIP-20 message the signed body commits to. Witnesses are not verified here."""
         return _bound(presented)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the transaction the payer signed. The payment is held
+        to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

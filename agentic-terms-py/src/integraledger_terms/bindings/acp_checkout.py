@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._codec import canonical_or_none
 from ._jose import js_length, json_bytes
 from ._lcp import (
@@ -198,6 +198,13 @@ class AcpCheckoutDelegated:
         h = normal_hash(a["checkout_session_id"])
         return h if h is not None else Refusal("acp/id-not-hash")
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts a payment within bound's shape gate: the seller's PSP charges the vault token the
+        buyer's agent obtained. Any other value gets acp/allowance-malformed, as bound refuses it."""
+        if is_object(presented) and _is_allowance(presented.get("allowance")):
+            return "payee"
+        return Refusal("acp/allowance-malformed")
+
 
 @dataclass(frozen=True, slots=True)
 class AcpCheckoutUndelegated:
@@ -212,3 +219,8 @@ class AcpCheckoutUndelegated:
 
     def bound(self, presented: Json) -> Refusal:
         return Refusal("acp/not-buyer-signed")
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's payment handler charges the payment the checkout completed. bound applies
+        no shape gate, so it answers whatever is presented."""
+        return "payee"

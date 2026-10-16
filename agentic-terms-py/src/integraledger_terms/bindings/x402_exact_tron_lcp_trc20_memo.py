@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._tron_proto import (
     INT64_LIMIT,
@@ -19,7 +19,7 @@ from ._tron_proto import (
     encode_tron_raw,
     tron_address,
 )
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/tron/lcp-trc20-memo"
 LCP_TRC20_MEMO = "lcp-trc20-memo"
@@ -179,3 +179,8 @@ class X402ExactTronLcpTrc20Memo:
             return Refusal("tron/not-transfer")
         h = _memo_hash(raw.data)
         return h if h is not None else Refusal("tron/memo-not-lcp")
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator broadcasts the TRC-20 transfer the payer signed. The payment
+        is held to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

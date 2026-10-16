@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._borsh_near import (
     U64_LIMIT,
     U128_LIMIT,
@@ -24,7 +24,7 @@ from ._borsh_near import (
 from ._codec import b64_decode, js_json
 from ._jose import js_length, member_names, parse_json
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/near"
 FT_TRANSFER_GAS = 30_000_000_000_000
@@ -269,3 +269,8 @@ class X402ExactNear:
         if not isinstance(sda, str):
             return Refusal("x402/payload-malformed")
         return near_carrier(sda)
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: a relayer of the seller's facilitator submits the delegate action the payer signed. The
+        payment is held to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._jose import MIB, js_length, json_bytes
 from ._lcp import agreement_fault, from_lcp_string, is_agreement_url, is_https_link, is_list, is_object, is_other_scheme_link
 from .ap2_checkout_mandate import checkout_binding, checkout_jwt_of
@@ -170,6 +170,11 @@ class UcpAp2Mandate:
     def bound(self, presented: Json) -> AtrHash | Refusal:
         return _bound_ap2(presented)
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the business's payment handler executes the payment the buyer's checkout mandate
+        authorizes. A value that is not a JSON object gets ap2/mandate-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("ap2/mandate-malformed")
+
 
 @dataclass(frozen=True, slots=True)
 class UcpUnsignedPairing:
@@ -184,3 +189,8 @@ class UcpUnsignedPairing:
 
     def bound(self, presented: Json) -> Refusal:
         return Refusal("ucp/not-buyer-signed")
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the business's payment handler executes the payment the checkout or booking completed.
+        bound applies no shape gate, so it answers whatever is presented."""
+        return "payee"

@@ -11,10 +11,19 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._lcp import is_object, normal_hash
 from ._rail_bytes import U64_LIMIT, base64_bytes, decimal_below, parse_json
-from ._x402 import chosen, is_amount, legal_context_of, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import (
+    chosen,
+    is_amount,
+    legal_context_of,
+    payment_with,
+    presented_with,
+    read_for,
+    timeout_seconds,
+    x402_broadcaster,
+)
 
 ID = "x402/exact/aptos"
 
@@ -263,3 +272,8 @@ class X402ExactAptos:
             return Refusal("x402/payload-malformed")
         lc = legal_context_of(extensions)
         return Refusal("x402/no-legal-context") if isinstance(lc, Refusal) else lc[0]
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the transaction the payer signed and names its hash.
+        The payment is held to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

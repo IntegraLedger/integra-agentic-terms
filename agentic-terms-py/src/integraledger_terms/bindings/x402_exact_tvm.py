@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._codec import b64_decode
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._ton_cell import Builder, Cell, Malformed, merkle_depth, parse_boc, serialize_boc
@@ -28,7 +28,7 @@ from ._ton_tlb import (
     store_address,
     store_internal_message,
 )
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/tvm"
 OP_JETTON_TRANSFER = 0x0F8A7EA5
@@ -417,3 +417,8 @@ class X402ExactTvm:
         if not _carries(p[0], carried[1]):
             return Refusal("tvm/carrier-mismatch")
         return carried[0]
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator sends the request the payer's W5 wallet signed. The payment is
+        held to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

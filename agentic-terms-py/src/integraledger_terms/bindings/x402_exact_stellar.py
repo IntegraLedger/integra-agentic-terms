@@ -10,10 +10,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from . import _stellar
 from ._lcp import is_object, normal_hash, safe_int
-from ._x402 import accepted_by, chosen, filter_of, is_amount, legal_context_of, read_for, timeout_seconds
+from ._x402 import (
+    accepted_by,
+    chosen,
+    filter_of,
+    is_amount,
+    legal_context_of,
+    read_for,
+    timeout_seconds,
+    x402_broadcaster,
+)
 
 ID = "x402/exact/stellar"
 
@@ -131,3 +140,8 @@ class X402ExactStellar:
         if not signed.agrees:
             return Refusal("stellar/not-one-transfer")
         return lc[0]
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the Soroban transfer the payer authorized. The payment
+        is held to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

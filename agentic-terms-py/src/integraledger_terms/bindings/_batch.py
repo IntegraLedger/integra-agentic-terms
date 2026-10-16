@@ -1,13 +1,14 @@
 """What the x402 batch-settlement pairings share: the scheme's name, the withdraw delay's range, an option build can
-pay, the payload of a presented payment of one pairing, and the EVM hex signature."""
+pay, the payload of a presented payment of one pairing, who broadcasts a payment of the channel, and the EVM hex
+signature."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
-from .._types import Refusal
+from .._types import Broadcaster, Refusal
 from ._lcp import is_object, safe_int
-from ._x402 import OptionFilter, accepted_by, is_amount, timeout_seconds
+from ._x402 import OptionFilter, accepted_by, is_amount, timeout_seconds, x402_shape
 
 SCHEME = "batch-settlement"
 MIN_DELAY = 900
@@ -59,6 +60,26 @@ def payload_of(presented: object, check: OptionFilter) -> tuple[Mapping[str, Any
     if not is_object(payload):
         return Refusal("x402/payload-malformed")
     return accepted, payload
+
+
+def batch_broadcaster(presented: object, kind: Callable[[Mapping[str, Any]], object]) -> Broadcaster | Refusal:
+    """The broadcaster of a batch-settlement channel: "payee", for a payment within x402_shape's gate whose payload
+    kind, the payload read of the pairing's channel_kind, takes. A payment of a type kind refuses
+    x402/channel-kind-unknown gets x402/not-an-opening, as bound refuses it. bound reads a deposit alone, so kind is the
+    reader of every other type: a payment it refuses for its content, such as a refund whose amount the channel contract
+    does not take, gets kind's refusal. A deposit's content is bound's to read. kind reads no option, so which option
+    accepted is does not change the answer."""
+    shape = x402_shape(presented)
+    if isinstance(shape, Refusal):
+        return shape
+    assert is_object(presented)
+    payload = presented["payload"]
+    k = kind(payload)
+    if not isinstance(k, Refusal):
+        return "payee"
+    if k.code == "x402/channel-kind-unknown":
+        return Refusal("x402/not-an-opening")
+    return "payee" if payload.get("type") == "deposit" else k
 
 
 def is_hex_signature(value: object) -> bool:

@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
-from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds
+from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds, x402_broadcaster
 from ._xrpl import (
     Blob,
     decode_presented,
@@ -240,3 +240,8 @@ class X402ExactXrpl:
         signature is not verified here."""
         p = _presented(presented)
         return p if isinstance(p, Refusal) else p[2]
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the signed Payment blob. The payment is held to
+        x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

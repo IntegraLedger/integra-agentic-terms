@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
-from ._batch import SCHEME, U128_LIMIT, is_delay, is_hex_signature, payable, payload_of
+from .._types import Advertised, Broadcaster, Json, Refusal
+from ._batch import SCHEME, U128_LIMIT, batch_broadcaster, is_delay, is_hex_signature, payable, payload_of
 from ._batch_evm import (
     ERC3009_DEPOSIT_COLLECTOR,
     PERMIT2_DEPOSIT_COLLECTOR,
@@ -99,11 +99,16 @@ def channel_ref(presented: object) -> ChannelRef | Refusal:
 def channel_kind(presented: object) -> ChannelKind | Refusal:
     """deposit is the opening and voucher is within. A refund with no amount is the close; one with an amount is
     within, where that amount is a positive decimal below 2^128, as the channel contract's refund and
-    refundWithSignature take a uint128 and refuse 0. Any other amount is x402/payload-malformed."""
+    refundWithSignature take a uint128 and refuse 0. Any other amount is x402/payload-malformed. The payment is held to
+    the pairing's filter first (payload_of), and its payload read by _payload_kind."""
     got = payload_of(presented, _FILTER)
     if isinstance(got, Refusal):
         return got
-    payload = got[1]
+    return _payload_kind(got[1])
+
+
+def _payload_kind(payload: Mapping[str, Any]) -> ChannelKind | Refusal:
+    """channel_kind's read of the payload, which reads no option; broadcaster makes it too."""
     kind = payload.get("type")
     if kind == "deposit":
         return "open"
@@ -381,6 +386,13 @@ class X402BatchSettlementEip155:
 
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         return build_within(w, h)
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts every payment type channel_kind takes: the seller's facilitator executes the deposit's
+        token authorization, redeems vouchers when it claims, and executes a refund. A payment of any other type gets
+        x402/not-an-opening, as bound refuses it; bound reads a deposit alone, so a refund whose amount is not a
+        positive decimal below 2^128 gets x402/payload-malformed, as channel_kind refuses it (batch_broadcaster)."""
+        return batch_broadcaster(presented, _payload_kind)
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         return channel_kind(presented)

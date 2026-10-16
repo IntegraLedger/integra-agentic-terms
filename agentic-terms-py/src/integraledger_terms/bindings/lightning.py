@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import MAX_ATR_BYTES, AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._bolt11 import FIELD, Bolt11, Currency, decode, invoice_h
 from ._channel import ChannelKind, ChannelRef
 from ._jose import member_names, parse_json
-from ._mpp import check_challenge, credential_of, echoed_for
+from ._mpp import check_challenge, credential_of, echoed_for, mpp_broadcaster, session_broadcaster
 from ._mpp import read as mpp_read
 from ._mpp_checks import decode_object
 from ._lcp import is_object, legal_context_info, normal_hash
@@ -30,6 +30,7 @@ from ._x402 import (
     payment_with,
     read_for,
     timeout_seconds,
+    x402_broadcaster,
 )
 
 LNBTC = "x402/exact/lnbtc"
@@ -224,6 +225,11 @@ class X402ExactLnbtc:
         assert not isinstance(b, Refusal)
         return invoice_h(b, "m")
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payer broadcasts: its node pays the invoice before the preimage is presented, and the seller's node,
+        which received the payment, confirms it. bound reads no payload, so the gate is x402_shape's without it."""
+        return x402_broadcaster(presented, "payer", payload=None)
+
 
 @dataclass(frozen=True, slots=True)
 class X402ExactLnbtcInvoiceNamed:
@@ -257,6 +263,11 @@ class X402ExactLnbtcInvoiceNamed:
         lc = extensions.get("legalContext") if is_object(extensions) else None
         decoded = legal_context_info(lc.get("info")) if is_object(lc) else None
         return Refusal("ln/no-legal-context") if decoded is None else decoded[0]
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payer broadcasts: its node pays the invoice before the preimage is presented, and the seller's node,
+        which received the payment, confirms it. bound reads no payload, so the gate is x402_shape's without it."""
+        return x402_broadcaster(presented, "payer", payload=None)
 
 
 # ── mpp/charge/lightning and mpp/session/lightning ──
@@ -368,6 +379,20 @@ class MppLightning:
             return Refusal("ln/no-payment-in-action")
         return echoed.h
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payer broadcasts: its node pays the invoice before the preimage is presented, and the seller's node,
+        which received the payment, confirms it, for a credential within credential_shape's gate (mpp_broadcaster)."""
+        return mpp_broadcaster(presented, lambda c: "payer")
+
+
+def _session_broadcasts(c: Mapping[str, Any]) -> Broadcaster | Refusal:
+    """Who broadcasts a Lightning session payment, by its action: the payer an opening, a bearer proof or a top-up; the
+    seller's node the close. Any other action is ln/no-payment-in-action, as bound refuses it."""
+    a = c["payload"].get("action")
+    if a == _OPEN or a == "bearer" or a == "topUp":
+        return "payer"
+    return "payee" if a == "close" else Refusal("ln/no-payment-in-action")
+
 
 # The one network name every Lightning session channel key carries: a bearer or close challenge names no invoice.
 _SESSION_CHANNEL_NETWORK = "lightning"
@@ -379,6 +404,13 @@ class MppLightningSession(MppLightning):
     """mpp/session/lightning: the MPP Lightning binding with the channel members of its session."""
 
     id: str = MPP_SESSION
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """By the payment's action, for the actions channel_kind takes (_session_broadcasts). "payer": the opening and a
+        top-up, whose deposits the payer's node paid, and a bearer proof, which draws on them; the seller's node, which
+        received each deposit, confirms it. "payee": the close, whose refund the seller's node pays. Any other action
+        gets ln/no-payment-in-action, as bound refuses it."""
+        return session_broadcaster(presented, self.channel_kind, _session_broadcasts, "ln/no-payment-in-action")
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """The session action: open opens the channel, bearer and topUp are within it, close ends it."""

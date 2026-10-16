@@ -31,6 +31,10 @@ DeclineCode = Literal[
     "agreement-failed",
 ]
 
+# Who puts what a payer presents on its rail: "payer", which sent the payment before presenting it, so the seller reads
+# a landed payment, or "payee", the seller, or the facilitator or processor acting for it, which sends or executes it.
+Broadcaster = Literal["payer", "payee"]
+
 
 @dataclass(frozen=True, slots=True)
 class Moved:
@@ -193,6 +197,14 @@ class Binding(Protocol):
         ...
 
     def bound(self, presented: Any) -> AtrHash | Refusal: ...
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """Who puts the presented payment on its rail: "payer" or "payee". It answers only for a payment of a type and
+        kind the pairing takes, within the shape gate bound applies first, and gives any other payment the refusal bound
+        gives that fault; a fault bound finds in H, the challenge, an amount or a signature does not change the answer.
+        A session's or batch channel's bound reads the opening alone, so for any other action the reader is
+        channel_kind: a payment it refuses for its own content gets its refusal. It reads no rail and no peer."""
+        ...
 
 
 class Signer(Protocol):

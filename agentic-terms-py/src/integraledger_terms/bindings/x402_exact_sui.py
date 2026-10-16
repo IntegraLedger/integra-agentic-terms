@@ -10,12 +10,12 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._bcs import BcsError
 from ._lcp import is_object, normal_hash
 from ._rail_bytes import U64_LIMIT, base64_bytes, decimal_below
 from ._sui_tx import command_arguments, parse_transaction_data, sui_digest
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/sui"
 
@@ -193,3 +193,8 @@ class X402ExactSui:
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """The hash inside the transaction the payer signed. The signature is not verified here."""
         return _bound(presented)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator executes the transaction the payer signed. The payment is held
+        to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

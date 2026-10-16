@@ -8,17 +8,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._evm import PERMIT2, Witness, permit2_typed_data
 from ._lcp import is_address, is_list, is_object, normal_hash
 from ._mpp import (
     MppUnsigned,
+    by_type,
     chain_of,
     challenge_hash,
     credential_of,
     echoed_for,
     expires_of,
     is_hex_bytes,
+    mpp_broadcaster,
     offer_for,
     read,
     same_bytes,
@@ -34,6 +36,9 @@ HASH = "mpp/charge/evm/hash"
 
 MAX_SIGNATURE = 8192
 MAX_WIRE = 65_536
+# Who broadcasts the EVM transaction and hash charges' credentials, by type: a signed transaction, the seller's server;
+# a hash, the payer. Each of the two pairings takes either, as its read keys do.
+_CALL_TYPES: Mapping[str, Broadcaster] = {"transaction": "payee", "hash": "payer"}
 PAYMENT_WITNESS = [{"name": "challengeHash", "type": "bytes32"}, {"name": "externalId", "type": "string"}]
 
 
@@ -136,6 +141,12 @@ class MppChargeEvmAuthorization:
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _authorization_bound(presented)
 
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts a credential of type authorization: the payer signs an EIP-3009 authorization, and the
+        seller's server submits transferWithAuthorization with it. A credential of any other type gets
+        mpp/credential-type, as bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"authorization": "payee"}))
+
 
 # ── mpp/charge/evm/permit2.
 
@@ -236,6 +247,12 @@ class MppChargeEvmPermit2:
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _permit2_bound(presented)
 
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts a credential of type permit2: the payer signs a Permit2 transfer, and the seller's
+        server, the spender it names, submits it to Permit2. A credential of any other type gets mpp/credential-type, as
+        bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"permit2": "payee"}))
+
 
 # ── mpp/charge/evm/transaction and mpp/charge/evm/hash.
 
@@ -326,6 +343,12 @@ class MppChargeEvmTransaction:
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _no_signed_place(presented, TRANSACTION)
 
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """By the credential's type, as the read keys take either: transaction, "payee", a signed transaction the
+        seller's server broadcasts; hash, "payer", a transaction the payer broadcast. A credential of any other type
+        gets mpp/no-signed-place, the code bound gives every credential within its shape gate."""
+        return mpp_broadcaster(presented, by_type(_CALL_TYPES, "mpp/no-signed-place"))
+
 
 @dataclass(frozen=True, slots=True)
 class MppChargeEvmHash:
@@ -340,3 +363,9 @@ class MppChargeEvmHash:
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _no_signed_place(presented, HASH)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """By the credential's type, as the read keys take either: hash, "payer", a transaction the payer broadcast;
+        transaction, "payee", a signed transaction the seller's server broadcasts. A credential of any other type gets
+        mpp/no-signed-place, the code bound gives every credential within its shape gate."""
+        return mpp_broadcaster(presented, by_type(_CALL_TYPES, "mpp/no-signed-place"))

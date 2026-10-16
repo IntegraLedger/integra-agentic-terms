@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._codec import b64u_encode, text_encode
 from ._jose import (
     MIB,
@@ -236,3 +236,8 @@ class Ap2CheckoutMandate:
         if js_length(decoded[1]) > MAX_LINK:
             return Refusal("ap2/too-large")
         return decoded[0]
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's payment processor executes the payment the closed Checkout Mandate
+        authorizes. A value that is not a JSON object gets ap2/mandate-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("ap2/mandate-malformed")

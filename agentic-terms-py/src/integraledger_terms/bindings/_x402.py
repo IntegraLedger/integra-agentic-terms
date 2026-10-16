@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, TypeGuard
 
 from .._core import AtrHash
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._codec import canonical_or_none
 from ._jose import js_length
 from ._lcp import (
@@ -174,3 +174,39 @@ def presented_with(presented: object, check: OptionFilter) -> tuple[Mapping[str,
     if not is_object(payload):
         return Refusal("x402/payload-malformed")
     return accepted, payload, presented.get("extensions")
+
+
+def x402_shape(
+    presented: object,
+    envelope: str = "x402/not-v2",
+    refused: str | None = None,
+    payload: str | None = "x402/payload-malformed",
+) -> Literal[True] | Refusal:
+    """The shape gate an x402 pairing's bound applies before anything else: the payment is an x402 v2 object, its
+    accepted an object and its payload an object, each refused with the code the pairing's bound gives: envelope for a
+    payment that is not x402 v2; refused for one that carries a refused member, where bound reads that member before
+    accepted; x402/payload-malformed for an accepted that is not an object; and payload for a payload that is not an
+    object, None where bound reads no payload. Which option accepted is, and what the payload carries, are not read."""
+    if not is_v2(presented):
+        return Refusal(envelope)
+    assert is_object(presented)
+    if refused is not None and "refused" in presented:
+        return Refusal(refused)
+    if not is_object(presented.get("accepted")):
+        return Refusal("x402/payload-malformed")
+    if payload is None or is_object(presented.get("payload")):
+        return True
+    return Refusal(payload)
+
+
+def x402_broadcaster(
+    presented: object,
+    answer: Broadcaster,
+    envelope: str = "x402/not-v2",
+    refused: str | None = None,
+    payload: str | None = "x402/payload-malformed",
+) -> Broadcaster | Refusal:
+    """The broadcaster of an x402 pairing whose every payment takes one path: answer for a payment within x402_shape's
+    gate, with the pairing's codes, and that gate's refusal for any other."""
+    shape = x402_shape(presented, envelope, refused, payload)
+    return shape if isinstance(shape, Refusal) else answer

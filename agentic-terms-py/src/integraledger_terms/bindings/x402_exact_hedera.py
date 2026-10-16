@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._codec import b64_decode
 from ._hedera_proto import (
     INT64_LIMIT,
@@ -25,7 +25,7 @@ from ._hedera_proto import (
     write_body,
 )
 from ._lcp import from_lcp_string, from_legal_context, is_object, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 EXACT = "x402/exact/hedera"
 EXECUTOR = "x402/exact/hedera/transfer-executor"
@@ -222,6 +222,12 @@ class X402ExactHedera:
         h = from_lcp_string(memo)
         return h if h is not None else Refusal("hedera/memo-not-lcp")
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator, the transaction's fee payer, adds its signature to the
+        transaction the payer signed and submits it. The payment is held to x402_shape's gate, the one bound applies
+        first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")
+
 
 # ── x402/exact/hedera/transfer-executor ─────────────────────────────────────────────────────────────────────────────
 
@@ -317,3 +323,9 @@ class X402ExactHederaExecutor:
         lc = extensions.get("legalContext") if is_object(extensions) else None
         decoded = from_legal_context({"legalContext": lc.get("info")}) if is_object(lc) else None
         return Refusal("hedera/no-legal-context") if decoded is None else decoded[0]
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the executor's transfer under the authorization the
+        payer signed, and names its transaction. The payment is held to x402_shape's gate, the one bound applies first;
+        any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

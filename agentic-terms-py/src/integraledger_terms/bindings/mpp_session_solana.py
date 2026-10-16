@@ -11,11 +11,21 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._codec import b58_decode, canonical_json
 from ._lcp import is_object, is_well_formed
-from ._mpp import Echoed, EchoedChallenge, MppUnsigned, chosen_for, credential_of, echoed_for, fetched_of, read
+from ._mpp import (
+    Echoed,
+    EchoedChallenge,
+    MppUnsigned,
+    chosen_for,
+    credential_of,
+    echoed_for,
+    fetched_of,
+    read,
+    session_broadcaster,
+)
 from ._mpp_checks import solana_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 from ._svm import (
@@ -297,6 +307,20 @@ class MppSessionSolana:
             return credential
         o = _opening(credential)
         return o if isinstance(o, Refusal) else o.h
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts every payment the session takes, for the actions channel_kind takes, as
+        draft-solana-session-00 has it: the seller's server co-signs and broadcasts the opening and a top-up, each a
+        transaction the payer signed, redeems vouchers and the operator's use metering when it settles, and broadcasts
+        the close. Any other action, a voucher where the challenge's voucherSigner is operator and a use where it is not
+        among them, gets mpp/session-action, as bound refuses it. bound reads the opening alone, so channel_kind reads
+        the rest: a close that lacks the member its mode requires, or carries the one its mode forbids, gets
+        mpp/credential-malformed, as channel_kind refuses it. Where channel_kind refuses the echoed challenge itself
+        (another intent or method, or a request that does not decode or whose methodDetails is not an object), the
+        challenge decides, and broadcaster answers."""
+        return session_broadcaster(
+            presented, _kind, lambda c: "payee", "mpp/session-action", lambda c: echoed_details(c, "solana")
+        )
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open; close, carrying voucher under a client voucher signer and authentication under an operator one; or

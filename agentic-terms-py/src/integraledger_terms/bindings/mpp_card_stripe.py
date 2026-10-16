@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Refusal
-from ._mpp import credential_of, echoed_for, read
+from .._types import Advertised, Broadcaster, Refusal
+from ._mpp import credential_of, echoed_for, mpp_broadcaster, read
 
 CHARGE_CARD = "mpp/charge/card"
 CHARGE_STRIPE = "mpp/charge/stripe"
@@ -37,6 +37,12 @@ class _ConfirmOnly:
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _bound(self.id, presented)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller submits the card payment the credential authorizes to its processor, or its
+        server creates the Stripe payment or subscription with the payer's shared payment token. Any credential outside
+        credential_shape's gate gets its refusal, as bound refuses it."""
+        return mpp_broadcaster(presented, lambda c: "payee")
 
 
 def charge_card() -> _ConfirmOnly:

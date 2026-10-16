@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._evm import (
     ESCROW_V1_0,
     ESCROW_V1_1,
@@ -49,6 +49,7 @@ from ._x402 import (
     payment_with,
     read_for,
     timeout_seconds,
+    x402_broadcaster,
 )
 
 EXACT_EIP3009 = "x402/exact/eip155/eip3009"
@@ -726,6 +727,12 @@ class X402EvmBinding:
         if self.id == EXACT_ERC7710_SALT:
             return _erc7710_salt_bound(presented)
         return _auth_capture_bound(self.id, presented)
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the Permit2 transfer, or the escrow call that executes
+        the authorization, the payer signed, or redeems the delegation the payer signed. The payment is held to
+        x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")
 
 
 X402_EXACT_EIP155_PERMIT2 = X402EvmBinding(EXACT_PERMIT2, public_proof=True)

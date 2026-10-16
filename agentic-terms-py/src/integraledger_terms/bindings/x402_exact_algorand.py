@@ -10,11 +10,11 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from . import _algorand
 from ._codec import b64_decode, b64_encode
 from ._lcp import from_lcp_string, is_list, is_object, is_well_formed, normal_hash, safe_int, to_lcp_string
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds
+from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/algorand"
 
@@ -237,3 +237,8 @@ class X402ExactAlgorand:
             return p
         carried = carrier(p[1])
         return carried if isinstance(carried, Refusal) else carried.h
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the signed transaction complete returns. The payment
+        is held to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")

@@ -10,7 +10,7 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._codec import b64u_decode, b64u_encode, to_hex
 from ._evm import ZERO_ADDRESS
 from ._jose import js_length, within_depth
@@ -469,6 +469,63 @@ def credential_of(c: object) -> Mapping[str, Any] | Refusal:
     return c
 
 
+def credential_shape(c: object) -> Mapping[str, Any] | Refusal:
+    """The shape gate challenge_bound applies before any other check: credential_of's shape, at most 64 KiB as JSON, and
+    at most 16 arrays and objects deep. Any other value is mpp/credential-malformed."""
+    shaped = credential_of(c)
+    if isinstance(shaped, Refusal):
+        return shaped
+    return shaped if _json_within(shaped, MAX_CREDENTIAL) else Refusal("mpp/credential-malformed")
+
+
+# Who broadcasts a credential within credential_shape's gate, or the refusal of what reads it.
+BroadcastOf = Callable[[Mapping[str, Any]], Broadcaster | Refusal]
+
+
+def mpp_broadcaster(presented: object, answer: BroadcastOf) -> Broadcaster | Refusal:
+    """The broadcaster of an MPP pairing: answer reads a credential within credential_shape's gate, which every MPP
+    bound applies first, and gives who broadcasts it, or answer's refusal for a credential of a type or action the
+    pairing does not take. Any other credential is mpp/credential-malformed, as bound refuses it."""
+    c = credential_shape(presented)
+    return c if isinstance(c, Refusal) else answer(c)
+
+
+def by_type(types: Mapping[str, Broadcaster], not_taken: str = "mpp/credential-type") -> BroadcastOf:
+    """The answer types names for a credential's payload type: the types the pairing takes, each with who broadcasts it.
+    A credential of any other type gets not_taken, the code the pairing's bound gives it."""
+
+    def answer(c: Mapping[str, Any]) -> Broadcaster | Refusal:
+        t = c["payload"].get("type")
+        return types[t] if isinstance(t, str) and t in types else Refusal(not_taken)
+
+    return answer
+
+
+def session_broadcaster(
+    presented: object,
+    kind: Callable[[Any], object],
+    answer: BroadcastOf,
+    not_taken: str,
+    challenge: Callable[[Mapping[str, Any]], object] | None = None,
+) -> Broadcaster | Refusal:
+    """The broadcaster of an MPP session: kind, the session's channel_kind, decides which actions it takes, and answer
+    reads who broadcasts a credential of one of them. A credential whose action kind refuses mpp/session-action gets
+    not_taken, the code the session's bound gives a credential that is not an opening. bound reads no action but the
+    opening, so kind is the reader of the rest: a credential kind refuses for its own content, such as a close that
+    lacks the member its mode requires, gets kind's refusal. Where kind refuses because challenge, its read of the
+    echoed challenge, refuses, the challenge decides, and answer reads the credential."""
+
+    def read(c: Mapping[str, Any]) -> Broadcaster | Refusal:
+        k = kind(c)
+        if not isinstance(k, Refusal):
+            return answer(c)
+        if k.code == "mpp/session-action":
+            return Refusal(not_taken)
+        return answer(c) if challenge is not None and isinstance(challenge(c), Refusal) else k
+
+    return mpp_broadcaster(presented, read)
+
+
 class Held(dict[str, Any]):
     """A credential with the read made for it, held as @integraledger/lcp holds it under the payment's own FETCHED
     member: an attribute no JSON decode makes, so no wire form carries it. bound and build_within take a
@@ -498,11 +555,9 @@ class Bound:
 def challenge_bound(c: object) -> Bound | Refusal:
     """H from an echoed challenge: its id derives from H in the form its intent and method take, its opaque names H,
     and its request decodes. A realm with no UTF-8 form is mpp/challenge-malformed."""
-    shaped = credential_of(c)
+    shaped = credential_shape(c)
     if isinstance(shaped, Refusal):
         return shaped
-    if not _json_within(shaped, MAX_CREDENTIAL):
-        return Refusal("mpp/credential-malformed")
     challenge = shaped["challenge"]
     if not is_well_formed(challenge["realm"]):
         return Refusal("mpp/challenge-malformed")

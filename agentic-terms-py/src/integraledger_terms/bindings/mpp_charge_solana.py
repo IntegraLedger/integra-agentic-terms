@@ -10,9 +10,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
-from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, fetched_of, read
+from ._mpp import (
+    Checked,
+    MppUnsigned,
+    by_type,
+    chosen_for,
+    credential_of,
+    echoed_for,
+    fetched_of,
+    mpp_broadcaster,
+    read,
+)
 from ._mpp_checks import is_solana_external_id, usdc_profile
 from ._svm import (
     MEMO_V3,
@@ -35,6 +45,10 @@ from ._svm import (
 SOLANA_ID = "mpp/charge/solana"
 USDC_SOLANA_ID = "mpp/charge/usdc/solana"
 MAX_BUNDLE = 8
+# Who broadcasts a Solana charge credential, by type, as draft-solana-charge-00 has it: a transaction or a bundle, the
+# seller's server; a signature, the payer. usdc's Solana profile takes only a transaction.
+_SOLANA_TYPES: Mapping[str, Broadcaster] = {"transaction": "payee", "bundle": "payee", "signature": "payer"}
+_USDC_TYPES: Mapping[str, Broadcaster] = {"transaction": "payee"}
 _MEMO_V3_KEY = key_bytes(MEMO_V3)
 _MEMO_V4_KEY = key_bytes(MEMO_V4)
 
@@ -200,6 +214,13 @@ class MppChargeSolana:
         if not hash_equals(carrier.h, e.h):
             return Refusal("mpp/carrier-not-challenge")
         return e.h
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """By the credential's type, as draft-solana-charge-00 has it: transaction and bundle, "payee", signed
+        transactions the seller's server broadcasts, a bundle's in order; signature, "payer", a transaction the payer
+        broadcast. usdc's Solana profile takes only transaction. A credential of any other type gets
+        mpp/credential-type, as bound refuses it."""
+        return mpp_broadcaster(presented, by_type(_USDC_TYPES if self.transaction_only else _SOLANA_TYPES))
 
 
 def _is_number(value: object) -> bool:

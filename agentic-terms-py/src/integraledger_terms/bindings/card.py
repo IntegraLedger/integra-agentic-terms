@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._codec import b64u_decode, text_encode
 from ._jose import (
     SdJwt,
@@ -413,6 +413,11 @@ class CardVisaTap:
     def bound(self, presented: Json) -> AtrHash | Refusal:
         return tap_bound(presented)
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller submits the card payment to its processor. A value that is not an object
+        gets card/tap-signature-input-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("card/tap-signature-input-malformed")
+
 
 @dataclass(frozen=True, slots=True)
 class CardMastercardViImmediate:
@@ -436,6 +441,11 @@ class CardMastercardViImmediate:
             return user
         return checkout_hash(user)
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller submits the card payment the mandate authorizes to its processor. A value
+        that is not an object gets card/vi-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("card/vi-malformed")
+
 
 @dataclass(frozen=True, slots=True)
 class CardMastercardViAutonomous:
@@ -451,6 +461,11 @@ class CardMastercardViAutonomous:
     def bound(self, presented: Json) -> AtrHash | Refusal:
         return vi_autonomous_bound(presented)
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller submits the card payment the mandates authorize to its processor. A value
+        that is not an object gets card/vi-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("card/vi-malformed")
+
 
 @dataclass(frozen=True, slots=True)
 class CardSellerReference:
@@ -465,3 +480,8 @@ class CardSellerReference:
 
     def bound(self, presented: Json) -> Refusal:
         return Refusal("card/no-signed-place")
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller submits the card payment to its processor, with H in its processor
+        reference. bound applies no shape gate, so it answers whatever is presented."""
+        return "payee"

@@ -9,18 +9,20 @@ from typing import Any
 
 from .._core import AtrHash
 from .._keccak import keccak256
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._codec import b58_encode, b64u_decode, canonical_or_none, to_hex
 from ._jose import UNPARSED, parse_json
 from ._lcp import is_address, is_object, normal_hash
 from ._mpp import (
     Checked,
     MppUnsigned,
+    by_type,
     chosen_for,
     credential_of,
     echoed_for,
     expires_of,
     is_hex_bytes,
+    mpp_broadcaster,
     read,
     same_bytes,
     text,
@@ -210,6 +212,12 @@ class MppChargeUsdcEvm:
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _evm_bound(presented)
 
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts a credential of type authorization: the payer signs an EIP-3009 authorization, and the
+        seller's server submits it and pays the gas. A credential of any other type gets mpp/credential-type, as bound
+        refuses it."""
+        return mpp_broadcaster(presented, by_type({"authorization": "payee"}))
+
 
 # ── mpp/charge/usdc/gateway.
 
@@ -364,3 +372,9 @@ class MppChargeUsdcGateway:
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         return _gateway_bound(presented)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts a credential of type transfer: the seller's server submits the burn intent the payer
+        signed through Circle Gateway, which settles it. A credential of any other type gets mpp/credential-type, as
+        bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"transfer": "payee"}))

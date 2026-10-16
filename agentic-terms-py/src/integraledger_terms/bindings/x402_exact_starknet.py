@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._jose import json_bytes
 from ._lcp import from_legal_context, is_object, normal_hash, safe_int, uint256_of
 from ._x402 import (
@@ -22,6 +22,7 @@ from ._x402 import (
     presented_with,
     read_for,
     timeout_seconds,
+    x402_broadcaster,
 )
 
 ID = "x402/exact/starknet"
@@ -288,3 +289,9 @@ class X402ExactStarknet:
         if int(decoded[0], 16) & MASK_250 != nonce:
             return Refusal("starknet/nonce-not-bound")
         return decoded[0]
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator executes the outside execution the payer signed and names its
+        transaction. The payment is held to x402_shape's gate, the one bound applies first; any other gets its
+        refusal."""
+        return x402_broadcaster(presented, "payee")

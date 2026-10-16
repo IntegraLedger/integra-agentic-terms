@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._codec import to_hex
 from ._lcp import is_list, is_object, is_well_formed, normal_hash
 from ._mpp import (
     Echoed,
     MppUnsigned,
     attribution_memo,
+    by_type,
     chain_of,
     check_attribution,
     credential_of,
@@ -22,6 +23,7 @@ from ._mpp import (
     expires_of,
     fetched_of,
     is_hex_bytes,
+    mpp_broadcaster,
     offer_for,
     read,
     request_address,
@@ -189,6 +191,11 @@ class MppChargeTempoMemo:
         m = _signed_memo_call(c)
         return m if isinstance(m, Refusal) else m.h
 
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts a credential of type transaction: the seller's server broadcasts the signed transaction
+        the credential carries. A credential of any other type gets mpp/credential-type, as bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"transaction": "payee"}))
+
 
 @dataclass(frozen=True, slots=True)
 class MppChargeTempoPush:
@@ -207,3 +214,8 @@ class MppChargeTempoPush:
             return c
         m = _landed_memo_log(c)
         return m if isinstance(m, Refusal) else m.h
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payer broadcasts a credential of type hash, and presents the transaction's hash. A credential of any
+        other type gets mpp/credential-type, as bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"hash": "payer"}))

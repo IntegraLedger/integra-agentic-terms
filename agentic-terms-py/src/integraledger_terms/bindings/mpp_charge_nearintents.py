@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Refusal
+from .._types import Advertised, Broadcaster, Refusal
 from ._lcp import from_lcp_string
-from ._mpp import echoed_for, read
+from ._mpp import by_type, echoed_for, mpp_broadcaster, read
 from ._mpp_checks import is_external_id
 
 ID = "mpp/charge/nearintents"
@@ -44,3 +44,8 @@ class MppChargeNearIntents:
         if not hash_equals(h, e.h):
             return Refusal("mpp/carrier-not-challenge")
         return e.h
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payer broadcasts a credential of type hash: it sends its deposit before presenting the deposit's hash. A
+        credential of any other type gets near/not-hash-credential, as bound refuses it."""
+        return mpp_broadcaster(presented, by_type({"hash": "payer"}, "near/not-hash-credential"))

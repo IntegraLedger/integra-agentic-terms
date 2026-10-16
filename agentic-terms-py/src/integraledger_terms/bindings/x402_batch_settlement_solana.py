@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Json, Refusal
-from ._batch import SCHEME, is_delay, payable, payload_of
+from .._types import Advertised, Broadcaster, Json, Refusal
+from ._batch import SCHEME, batch_broadcaster, is_delay, payable, payload_of
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._lcp import is_list, is_object, normal_hash, safe_int, to_lcp_string
 from ._svm import (
@@ -153,6 +153,30 @@ def _tx_of(payload: Mapping[str, Any]) -> SvmTx | None | Refusal:
     if isinstance(wire, Refusal):
         return wire
     return decode_svm_tx(wire)
+
+
+def _payload_kind(payload: Mapping[str, Any]) -> ChannelKind | Refusal:
+    """channel_kind's read of the payload, which reads no option; broadcaster makes it too. A deposit with no
+    transaction that decodes is x402/payload-malformed, and one whose channel instruction does not read gets that
+    refusal. Any other type, and a deposit whose channel instruction is a request_close, is
+    x402/channel-kind-unknown."""
+    kind = payload.get("type")
+    if kind == "voucher":
+        return "within"
+    if kind == "refund":
+        return "close"
+    if kind == "deposit":
+        tx = _tx_of(payload)
+        if tx is None or isinstance(tx, Refusal):
+            return Refusal("x402/payload-malformed")
+        ix = channel_instruction(tx)
+        if isinstance(ix, Refusal):
+            return ix
+        if ix.kind == "open":
+            return "open"
+        if ix.kind == "top_up":
+            return "within"
+    return Refusal("x402/channel-kind-unknown")
 
 
 def _opening_carrier(tx: SvmTx) -> Carrier | Refusal:
@@ -392,29 +416,20 @@ class X402BatchSettlementSolana:
 
         return BatchUnsigned([voucher_request], voucher)
 
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts every payment type channel_kind takes: the seller's facilitator, the feePayer, co-signs
+        and sends the deposit and top-up transactions the payer signed, redeems vouchers when it settles, and sends the
+        refund. A payment of any other type gets x402/not-an-opening, as bound refuses it (batch_broadcaster)."""
+        return batch_broadcaster(presented, _payload_kind)
+
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open for a deposit whose channel instruction is open; within for a top_up deposit or a voucher; close
-        for a refund."""
+        for a refund. The payment is held to the pairing's filter first (payload_of), and its payload read by
+        _payload_kind."""
         x = payload_of(presented, _THIS)
         if isinstance(x, Refusal):
             return x
-        kind = x[1].get("type")
-        if kind == "voucher":
-            return "within"
-        if kind == "refund":
-            return "close"
-        if kind == "deposit":
-            tx = _tx_of(x[1])
-            if tx is None or isinstance(tx, Refusal):
-                return Refusal("x402/payload-malformed")
-            ix = channel_instruction(tx)
-            if isinstance(ix, Refusal):
-                return ix
-            if ix.kind == "open":
-                return "open"
-            if ix.kind == "top_up":
-                return "within"
-        return Refusal("x402/channel-kind-unknown")
+        return _payload_kind(x[1])
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The channel PDA from the payment's config, which must equal its voucher's id and its channel

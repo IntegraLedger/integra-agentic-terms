@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Json, Refusal
+from .._types import Advertised, Broadcaster, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
-from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, read
+from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, read, session_broadcaster
 from ._mpp_checks import xrpl_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 from ._xrpl import channel_id, claim_bytes, decode_presented, is_blob_hex, network_id_held
@@ -234,6 +234,13 @@ class MppSessionXrpl:
             return shaped
         o = _opening(presented)
         return o if isinstance(o, Refusal) else o.h
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts every payment the session takes, for the actions channel_kind takes: the opening, a
+        voucher and the close. The seller's server submits the signed PaymentChannelCreate the opening carries, redeems
+        claims when it closes, and sends the close. Any other action, a top-up among them, gets mpp/session-action, as
+        bound refuses it."""
+        return session_broadcaster(presented, self.channel_kind, lambda c: "payee", "mpp/session-action")
 
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open, close, or within for a voucher."""
