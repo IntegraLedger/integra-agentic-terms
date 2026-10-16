@@ -25,7 +25,7 @@ It holds no keys, reads none of the record's content, and carries no business or
 
 | Package | For | Install |
 | --- | --- | --- |
-| `@integraledger/terms` | TypeScript agents | `npm install @integraledger/terms@0.3.0 @integraledger/lcp@0.4.0` |
+| `@integraledger/terms` | TypeScript agents | `npm install @integraledger/terms@0.3.0 @integraledger/lcp@0.4.2` |
 | `@integraledger/terms-mcp` | Any agent with an MCP client: the gate as tools, and a skill | `npx -y @integraledger/terms-mcp@0.3.0` |
 | `integraledger-terms` | Python agents | `pip install integraledger-terms` |
 

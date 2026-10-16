@@ -51,7 +51,7 @@ flowchart LR
 
 | Package | Folder | What it is | Install |
 | --- | --- | --- | --- |
-| [`@integraledger/terms`](./agentic-terms) | `agentic-terms/` | The buyer gate for TypeScript agents. | `npm install @integraledger/terms@0.3.0 @integraledger/lcp@0.4.0` |
+| [`@integraledger/terms`](./agentic-terms) | `agentic-terms/` | The buyer gate for TypeScript agents. | `npm install @integraledger/terms@0.3.0 @integraledger/lcp@0.4.2` |
 | [`@integraledger/terms-mcp`](./agentic-terms-mcp) | `agentic-terms-mcp/` | The gate as MCP tools (`terms-mcp`), and the skill `confirming-the-atr-hash-before-paying`. | `npx -y @integraledger/terms-mcp@0.3.0` |
 | [`integraledger-terms`](./agentic-terms-py) | `agentic-terms-py/` | The buyer gate for Python agents (module `integraledger_terms`). | `pip install integraledger-terms` |
 

@@ -3,7 +3,7 @@ the checks pairings_of makes for it: a challenge pairings_of_placed does not nam
 code pairings_of gives it, and of one it names, bound and the channel members read only the request members their own
 read keys or derivation use. Each credential is a vector file's B6 row as it presents it, whose expected H is that
 row's; the request is re-encoded as base64url of its RFC 8785 JSON after each change. Each expected refusal is the
-protocol package's answer to the same credential, as its own test of these reads (lcp 0.4.0,
+protocol package's answer to the same credential, as its own test of these reads (lcp 0.4.1,
 test/mpp-echoed-request.test.ts) records it."""
 
 import copy
