@@ -424,6 +424,24 @@ def test_the_sellers_own_challenge_naming_another_hash_declines_before_any_signe
     assert signer.requests == []
 
 
+def test_a_within_challenge_the_tempo_channel_members_refuse_declines_before_any_signer_call() -> None:
+    # The seller's own challenge naming the held channel, which build_within reads as the channel members read the
+    # voucher carrying it (mpp-challenge.json withinChallenge rows 5 and 7): fixed.requestV1, a v1 challenge over the
+    # held v2 channel, and fixed.requestV2 naming another operator, 0x11 repeated, decline offer-unreadable with the
+    # members' code.
+    v1 = json.loads(TF["requestV1"])
+    v1["methodDetails"]["channelId"] = CHANNEL
+    other = json.loads(TF["requestV2"])
+    other["methodDetails"] |= {"channelId": CHANNEL, "operator": "0x" + "11" * 20}
+    hold = tempo_hold()
+    for request, code in ((v1, "mpp/not-bound-within"), (other, "tempo/descriptor-mismatch")):
+        challenge = {**own(), "request": b64u(json.dumps(request, separators=(",", ":")))}
+        signer = wallet()
+        out = asyncio.run(within([challenge], hold, MPP_SESSION_TEMPO, signer))
+        assert out == Declined("offer-unreadable", code)
+        assert signer.requests == []
+
+
 # ── the within challenge's opaque: MPP's flat string-to-string map (draft-httpauth-payment-01, lines 348-352), read
 # as the protocol package reads one: base64url without padding whose final character's unused bits are zero (RFC 4648
 # section 3.5), at most 8 KiB decoded, UTF-8 with a leading byte order mark kept as a character. An opaque that is not

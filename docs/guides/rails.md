@@ -111,7 +111,7 @@ sign, point or leading zero, does not offer the pairing (`mpp/request-malformed`
 | Pairing | Request | Inputs |
 | --- | --- | --- |
 | `x402/exact/algorand` | `algorand-txn` | `params` (object: algod's `firstValid` and `minFee` and `feePerByte` as decimals, `genesisHash`, `genesisId`) |
-| `x402/exact/aptos` | `aptos-transaction`: the wallet builds and signs the scheme's payment | none |
+| `x402/exact/aptos` | `aptos-transaction`: the wallet builds and signs the scheme's payment. An answer that is not an object whose `transaction` is a string is declined `signed-not-bound` (`x402/signature-malformed`). The transaction is read as the seller's `reference` reads it, and declined `signed-not-bound` with `reference`'s code for each fault: text that is not base64 of a transaction prefix that reads to the end of its fields, or that names a module, function or struct with a name that is not a Move identifier, `aptos/tx-malformed`; a transaction over 64 KiB decoded, `aptos/tx-too-large`; a payload that is not an entry function call, `aptos/not-entry-function`; a call that is not the framework `primary_fungible_store::transfer` or `fungible_asset::transfer` with one struct type argument and three arguments, `aptos/not-an-x402-transfer`; and a transaction for a chain other than the option's network, `aptos/chain-mismatch` | none |
 | `x402/exact/sui` | `sui-transaction`: the wallet builds the payment and adds the request's `pureInput` | none |
 | `x402/exact/near` | `near-delegate` | `publicKey` (string), `accessKeyNonce` (decimal), `finalHeight` (decimal): from your RPC |
 | `mpp/charge/nearintents` | none: the comparison is the buyer's whole step | none |

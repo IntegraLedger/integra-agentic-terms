@@ -191,6 +191,11 @@ An MPP session closes with `refund: {}`; a partial refund in a session is declin
   no legal context is not refused: its voucher pays under the held H. One whose `opaque` legal context cannot be read is
   `offer-unreadable` (`mpp/legal-context-malformed`).
 - An MPP challenge that names a channel this hold did not open: `no-payable-option`. The signer is not called.
+- An MPP challenge for the held channel that the session's channel members would refuse in the voucher carrying it:
+  `offer-unreadable`, with their code. On Tempo, a `v2` challenge whose escrow, chain and operator do not give the held
+  channel (`tempo/descriptor-mismatch`), and a `v1` challenge over a `v2` channel (`mpp/not-bound-within`); on Solana,
+  an `operator` voucher signer over a `client` channel (`mpp/session-action`, and for a close
+  `mpp/credential-malformed`). The signer is not called.
 - An x402 challenge under which the voucher or refund would name a channel this hold did not open:
   `no-payable-option`. Before it calls the signer, `within` completes the build with placeholder answers and reads the
   channel that payment names with the binding's `channel.ref`. On Solana the channel address is derived from the
