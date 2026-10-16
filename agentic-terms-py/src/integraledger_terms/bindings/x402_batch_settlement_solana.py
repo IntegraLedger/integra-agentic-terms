@@ -34,7 +34,9 @@ from ._svm import (
     integer_of,
     is_curve_key,
     is_key,
+    is_payer_input,
     is_solana_network,
+    is_u64,
     key_string,
     memo_carrier,
     memo_data,
@@ -209,42 +211,47 @@ class X402BatchSettlementSolana:
         """The opening: the open transaction, then the first voucher, each for the payer or its authorizer to sign. The
         transaction ends with two v3 Memo instructions: extra.memo, then x402's binding memo for
         extra.receiverAuthorizer. A payerAuthorizer that is not a point on the Ed25519 curve, which the program's open
-        refuses as the authorized signer, is svm/input-malformed."""
+        refuses as the authorized signer, is svm/input-malformed. H is checked first, then the form of the choice's
+        payer, token program, blockhash and compute budget (is_payer_input), deposit, payerAuthorizer, salt and
+        openSlot, then its document and option, then the option's memo against H and its token program against the
+        choice's."""
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(choice):
             return Refusal("x402/not-v2")
+        deposit: Any = choice.get("deposit")
+        authorizer: Any = choice.get("payerAuthorizer")
+        salt: Any = choice.get("salt")
+        open_slot: Any = choice.get("openSlot")
+        if (
+            not is_payer_input(choice)
+            or not isinstance(deposit, int)
+            or isinstance(deposit, bool)
+            or not 0 < deposit < U64_LIMIT
+            or not is_curve_key(authorizer)
+            or not is_u64(salt)
+            or not is_u64(open_slot)
+            or open_slot > MAX_SAFE_INTEGER
+        ):
+            return Refusal("svm/input-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if normal_hash(h) is None:
-            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")
-        deposit: Any = choice.get("deposit")
         token_program: Any = choice.get("tokenProgram")
-        if (
-            token_program != extra["tokenProgram"]
-            or not isinstance(deposit, int)
-            or isinstance(deposit, bool)
-            or not 0 < deposit < U64_LIMIT
-        ):
+        if token_program != extra["tokenProgram"]:
             return Refusal("svm/input-malformed")
         fee_payer: str = extra["feePayer"]
         payer: Any = choice.get("payer")
-        authorizer: Any = choice.get("payerAuthorizer")
-        salt: Any = choice.get("salt")
-        open_slot: Any = choice.get("openSlot")
         blockhash: Any = choice.get("recentBlockhash")
-        if not is_curve_key(authorizer):
-            return Refusal("svm/input-malformed")
         channel = channel_pda(payer, fee_payer, accepted["asset"], authorizer, salt, open_slot)
         if isinstance(channel, Refusal):
             return channel
-        if open_slot > MAX_SAFE_INTEGER:
-            return Refusal("svm/input-malformed")
         limit, price = choice.get("computeUnitLimit"), choice.get("computeUnitPrice")
         delay = safe_int(extra["withdrawDelay"])
         assert delay is not None

@@ -8,7 +8,7 @@ Nothing here fetches, hashes an ATR or signs.
 import hashlib
 import re
 import struct
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -516,6 +516,21 @@ def is_u64(value: object) -> bool:
 
 def _is_u32(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < U32_LIMIT
+
+
+def is_payer_input(c: Mapping[str, Any]) -> bool:
+    """True when the members a payer passes to every x402 Solana build have their rail form: the payer and the recent
+    blockhash base58 public keys, the token program Token's or Token-2022's, and the compute unit limit and price, when
+    given, a u32 and a u64. Each build checks them before the choice's document and option, so a malformed one is
+    svm/input-malformed, the code the message builders give it, whatever the document holds."""
+    limit, price = c.get("computeUnitLimit"), c.get("computeUnitPrice")
+    return (
+        is_key(c.get("payer"))
+        and c.get("tokenProgram") in (TOKEN, TOKEN_2022)
+        and is_key(c.get("recentBlockhash"))
+        and _is_u32(0 if limit is None else integer_of(limit))
+        and is_u64(0 if price is None else price)
+    )
 
 
 def _compute_budget(limit: int, price: int) -> list[Instruction]:

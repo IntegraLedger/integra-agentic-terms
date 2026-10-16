@@ -392,6 +392,12 @@ class Signing:
     unsigned: StellarUnsigned
 
 
+def is_payer(value: object) -> bool:
+    """True for a strkey a Soroban transfer's from can be: a well-formed G, C or M strkey. A build refuses any other
+    payer before it reads the simulated transaction."""
+    return is_account(value) or is_contract(value) or is_muxed(value)
+
+
 def signing_for(text: object, network: object, expiration: object, zero_source: bool) -> Signing | Refusal:
     """The from entry's preimage with its expiration ledger set, the payment that entry signs, whether the operation
     invokes exactly that, and the completion that writes the payer's signature."""

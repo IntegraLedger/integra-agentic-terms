@@ -190,7 +190,11 @@ class X402ExactPolkadotLcpAssetsRemark:
         return read_for(_check)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> PolkadotUnsigned | Refusal:
-        """The profile call for the chosen option, the hash's LCP string as its remark."""
+        """The profile call for the chosen option, the hash's LCP string as its remark. H is checked first, then the
+        document and the option."""
+        nh = normal_hash(h)
+        if nh is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(choice):
             return Refusal("polkadot/option-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
@@ -198,9 +202,6 @@ class X402ExactPolkadotLcpAssetsRemark:
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        nh = normal_hash(h)
-        if nh is None:
-            return Refusal("x402/payload-malformed")
         dest = ss58_decode(accepted["payTo"])
         assert dest is not None
         call = encode_profile_call(int(accepted["asset"]), dest, int(accepted["amount"]), to_lcp_string(nh).encode())

@@ -172,16 +172,17 @@ class X402ExactSui:
         return read_for(_check)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> SuiUnsigned | Refusal:
-        """The wallet request: the scheme's payment plus one unused Pure input holding the hash, bounded by epoch."""
+        """The wallet request: the scheme's payment plus one unused Pure input holding the hash, bounded by epoch. H is
+        checked first, then the choice's document and option."""
+        expected = normal_hash(h)
+        if expected is None:
+            return Refusal("x402/payload-malformed")
         c = choice if is_object(choice) else {}
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _check)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        expected = normal_hash(h)
-        if expected is None:
-            return Refusal("x402/payload-malformed")
         request = {
             "kind": "sui-transaction",
             "accepted": accepted,

@@ -115,21 +115,22 @@ class X402ExactEip155Eip3009:
         return _READ(doc)
 
     def build(self, choice: Json, h: AtrHash) -> _Unsigned | Refusal:
-        """The EIP-712 TransferWithAuthorization request whose nonce is h."""
+        """The EIP-712 TransferWithAuthorization request whose nonce is h. H is checked first, then the choice's from
+        and now, then its document and option."""
+        if not is_hash(h):
+            return Refusal("x402/payload-malformed")
         if not isinstance(choice, Mapping):
             return Refusal("x402/not-v2")
+        payer = choice.get("from")
+        now = safe_int(choice.get("now"))
+        if not is_address(payer) or now is None or now < 0:
+            return Refusal("x402/option-malformed")
         required = choice.get("required")
         accepted = choice.get("accepted")
         served = chosen(required, accepted, _FILTER)
         if isinstance(served, Refusal):
             return served
         assert isinstance(required, Mapping) and isinstance(accepted, Mapping)
-        payer = choice.get("from")
-        now = safe_int(choice.get("now"))
-        if not is_address(payer) or now is None or now < 0:
-            return Refusal("x402/option-malformed")
-        if not is_hash(h):
-            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         name, version = extra["name"], extra["version"]
         asset, pay_to, amount = accepted["asset"], accepted["payTo"], accepted["amount"]

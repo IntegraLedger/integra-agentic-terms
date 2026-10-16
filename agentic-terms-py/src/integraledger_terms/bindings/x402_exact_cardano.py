@@ -263,16 +263,16 @@ class X402ExactCardano:
 
     def build(self, choice: Json, h: AtrHash) -> CardanoUnsigned | Refusal:
         """The wallet request: the scheme's payment with a TTL, and these auxiliary data committed in the signed
-        body."""
+        body. H is checked first, then the document and the option."""
+        expected = normal_hash(h)
+        if expected is None:
+            return Refusal("x402/payload-malformed")
         c = choice if is_object(choice) else {}
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _check)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        expected = normal_hash(h)
-        if expected is None:
-            return Refusal("x402/payload-malformed")
         aux = auxiliary_data(expected)
         if isinstance(aux, Refusal):
             return aux

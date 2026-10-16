@@ -106,23 +106,17 @@ class X402ExactTronLcpTrc20Memo:
 
     def build(self, c: Json, h: AtrHash) -> TronUnsigned | Refusal:
         """The unsigned transaction for the chosen option: one TriggerSmartContract calling transfer(payTo, amount)
-        on the token, with the hash's LCP string as its memo."""
+        on the token, with the hash's LCP string as its memo. H is checked first, then the form of the choice's payer,
+        fee limit, reference block and now, then its document and option, then the expiration now and the option's
+        timeout give."""
+        nh = normal_hash(h)
+        if nh is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(c):
             return Refusal("x402/option-malformed")
-        required, accepted = c.get("required"), c.get("accepted")
-        ok = chosen(required, accepted, check)
-        if ok is not True:
-            return ok
-        assert is_object(required) and is_object(accepted)
         owner = tron_address(c.get("payer"))
         if isinstance(owner, Refusal):
             return owner
-        asset = tron_address(accepted.get("asset"))
-        if isinstance(asset, Refusal):
-            return asset
-        pay_to = tron_address(accepted.get("payTo"))
-        if isinstance(pay_to, Refusal):
-            return pay_to
         fee_limit = c.get("feeLimit")
         if not isinstance(fee_limit, int) or not _int(fee_limit) or not 1 <= fee_limit <= MAX_FEE_LIMIT:
             return Refusal("tron/fee-limit")
@@ -137,14 +131,22 @@ class X402ExactTronLcpTrc20Memo:
         now = c.get("now")
         if not isinstance(now, int) or not _int(now) or now < 1:
             return Refusal("tron/tx-malformed")
+        required, accepted = c.get("required"), c.get("accepted")
+        ok = chosen(required, accepted, check)
+        if ok is not True:
+            return ok
+        assert is_object(required) and is_object(accepted)
+        asset = tron_address(accepted.get("asset"))
+        if isinstance(asset, Refusal):
+            return asset
+        pay_to = tron_address(accepted.get("payTo"))
+        if isinstance(pay_to, Refusal):
+            return pay_to
         timeout = safe_int(accepted.get("maxTimeoutSeconds"))
         assert timeout is not None
         expiration = now + timeout * 1000
         if expiration >= INT64_LIMIT:
             return Refusal("tron/tx-malformed")
-        nh = normal_hash(h)
-        if nh is None:
-            return Refusal("x402/payload-malformed")
         amount = int(accepted["amount"])
         call_data = TRANSFER_SELECTOR + bytes(12) + pay_to[1:] + amount.to_bytes(32, "big")
         raw = TronRaw(

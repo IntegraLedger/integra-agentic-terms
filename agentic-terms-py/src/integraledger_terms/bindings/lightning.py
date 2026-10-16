@@ -204,7 +204,10 @@ class X402ExactLnbtc:
         return read_for(_LNBTC_FILTER)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> LnUnsigned | Refusal:
-        """The invoice to pay, once its m is h and its h is the request hash."""
+        """The invoice to pay, once its m is h and its h is the request hash. H is checked first: a value that is not a
+        32-byte hash, "any" included, is ln/no-metadata."""
+        if normal_hash(h) is None:
+            return Refusal("ln/no-metadata")
         c = _choice(choice)
         if isinstance(c, Refusal):
             return c

@@ -245,20 +245,21 @@ class _Choice:
 
 
 def _choice_of(pairing: str, choice: object, h: object) -> _Choice | Refusal:
-    """The checks every build makes on the choice, giving the chain id, the now + maxTimeoutSeconds bound and H."""
+    """The checks every build makes on the choice, giving the chain id, the now + maxTimeoutSeconds bound and H. H is
+    checked first, then the choice's from and now, then its document and option."""
+    nonce = normal_hash(h)
+    if nonce is None:
+        return Refusal("x402/payload-malformed")
     if not is_object(choice):
         return Refusal("x402/not-v2")
+    payer, now = choice.get("from"), safe_int(choice.get("now"))
+    if not is_address(payer) or now is None or now < 0:
+        return Refusal("x402/option-malformed")
     required, accepted = choice.get("required"), choice.get("accepted")
     wrong = chosen(required, accepted, _evm_filter(pairing))
     if wrong is not True:
         return wrong
     assert is_object(required) and is_object(accepted)
-    payer, now = choice.get("from"), safe_int(choice.get("now"))
-    if not is_address(payer) or now is None or now < 0:
-        return Refusal("x402/option-malformed")
-    nonce = normal_hash(h)
-    if nonce is None:
-        return Refusal("x402/payload-malformed")
     chain_id = chain_id_of(accepted["network"])
     assert chain_id is not None
     timeout = safe_int(accepted["maxTimeoutSeconds"])

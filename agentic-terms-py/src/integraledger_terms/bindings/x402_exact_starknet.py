@@ -220,26 +220,27 @@ class X402ExactStarknet:
         return read_for(CHECK)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> StarknetUnsigned | Refusal:
-        """x402's typed data for the chosen option, with Nonce the hash's low 250 bits."""
+        """x402's typed data for the chosen option, with Nonce the hash's low 250 bits. H is checked first, then the
+        form of the choice's from and now, then its document and option, then from against the option's fee payer."""
+        nh = normal_hash(h)
+        if nh is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(choice):
+            return Refusal("starknet/option-malformed")
+        account = felt_value(choice.get("from"))
+        if account is None:
+            return Refusal("starknet/felt-malformed")
+        now = safe_int(choice.get("now"))
+        if now is None or now < 0:
             return Refusal("starknet/option-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, CHECK)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        account = felt_value(choice.get("from"))
-        if account is None:
-            return Refusal("starknet/felt-malformed")
         fee_payer = accepted["extra"]["feePayer"]
         if account == felt_value(fee_payer):
             return Refusal("starknet/caller-forbidden")
-        nh = normal_hash(h)
-        if nh is None:
-            return Refusal("x402/payload-malformed")
-        now = safe_int(choice.get("now"))
-        if now is None or now < 0:
-            return Refusal("starknet/option-malformed")
         amount = uint256_of(accepted["amount"])
         timeout = safe_int(accepted["maxTimeoutSeconds"])
         assert amount is not None and timeout is not None

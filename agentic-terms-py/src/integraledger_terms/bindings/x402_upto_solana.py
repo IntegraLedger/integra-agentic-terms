@@ -26,7 +26,9 @@ from ._svm import (
     decode_svm_tx,
     integer_of,
     is_key,
+    is_payer_input,
     is_solana_network,
+    is_u64,
     memo_length,
     static_nonce,
     svm_carrier,
@@ -103,35 +105,45 @@ class X402UptoSolana:
 
     def build(self, choice: Json, h: AtrHash) -> SvmUnsigned | Refusal:
         """The open message the payer signs: the channel escrows the option's amount, and its one memo is
-        extra.memo."""
+        extra.memo. The payload carries openSlot as a JSON number, so an openSlot above 2^53 - 1 is
+        svm/input-malformed. H is checked first, then the form of the choice's payer, token program, blockhash and
+        compute budget (is_payer_input), nonce, openSlot and now, then its document and option, then the option's memo
+        against H and its token program against the choice's."""
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(choice):
             return Refusal("x402/not-v2")
+        now = safe_int(choice.get("now"))
+        nonce: Any = choice.get("nonce")
+        open_slot: Any = choice.get("openSlot")
+        if (
+            not is_payer_input(choice)
+            or not is_u64(nonce)
+            or not is_u64(open_slot)
+            or open_slot > MAX_SAFE_INTEGER
+            or now is None
+            or now < 0
+        ):
+            return Refusal("svm/input-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if normal_hash(h) is None:
-            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")
-        now = safe_int(choice.get("now"))
         token_program: Any = choice.get("tokenProgram")
-        if token_program != extra["tokenProgram"] or now is None or now < 0:
+        if token_program != extra["tokenProgram"]:
             return Refusal("svm/input-malformed")
         fee_payer: str = extra["feePayer"]
         signer: str = extra["receiverAuthorizer"]
         payer: Any = choice.get("payer")
-        nonce: Any = choice.get("nonce")
-        open_slot: Any = choice.get("openSlot")
         blockhash: Any = choice.get("recentBlockhash")
         channel = channel_pda(payer, fee_payer, accepted["asset"], signer, nonce, open_slot)
         if isinstance(channel, Refusal):
             return channel
-        if open_slot > MAX_SAFE_INTEGER:
-            return Refusal("svm/input-malformed")
         amount = int(accepted["amount"])
         limit, price = choice.get("computeUnitLimit"), choice.get("computeUnitPrice")
         message = build_channel_message(

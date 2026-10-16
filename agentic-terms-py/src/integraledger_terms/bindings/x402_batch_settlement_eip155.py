@@ -201,19 +201,15 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     opens, totalClaimed and the server's chargedCumulativeAmount are 0: the scheme's server requires the opening
     voucher's maxClaimableAmount to equal chargedCumulativeAmount + amount, which is 0, and its facilitator ("Not below
     claimed") requires it to be strictly greater than totalClaimed. So a zero price is paid by a later voucher
-    (build_within), never by an opening."""
+    (build_within), never by an opening. H is checked first, then the choice's members, then its document and option,
+    then the price and the channel configuration."""
+    salt = normal_hash(h)
+    if salt is None:
+        return Refusal("x402/option-malformed")
     if not is_object(c):
         return Refusal("x402/not-v2")
-    required, accepted = c.get("required"), c.get("accepted")
-    ok = chosen(required, accepted, _FILTER)
-    if ok is not True:
-        return ok
-    assert is_object(required) and is_object(accepted)
-    if accepted["amount"] == "0":
-        return Refusal("x402/option-malformed")
-    salt = normal_hash(h)
     payer, payer_authorizer, auth_salt = c.get("from"), c.get("payerAuthorizer"), c.get("authSalt")
-    if salt is None or not is_address(payer) or not is_address(payer_authorizer) or not is_hash32(auth_salt):
+    if not is_address(payer) or not is_address(payer_authorizer) or not is_hash32(auth_salt):
         return Refusal("x402/option-malformed")
     deposit = c.get("deposit")
     if not _uint(deposit, 1):
@@ -221,6 +217,13 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     assert isinstance(deposit, int)
     now = safe_int(c.get("now"))
     if now is None or now < 0:
+        return Refusal("x402/option-malformed")
+    required, accepted = c.get("required"), c.get("accepted")
+    ok = chosen(required, accepted, _FILTER)
+    if ok is not True:
+        return ok
+    assert is_object(required) and is_object(accepted)
+    if accepted["amount"] == "0":
         return Refusal("x402/option-malformed")
     extra = accepted["extra"]
     chain_id = chain_id_of(accepted["network"])

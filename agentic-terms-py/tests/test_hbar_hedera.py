@@ -345,8 +345,8 @@ def test_x402_exact_hedera_transfer_executor_an_amount_of_zero_is_not_served() -
 
 def test_x402_exact_hedera_transfer_executor_valid_before_is_a_safe_integer() -> None:
     """validBefore, now plus the option's maxTimeoutSeconds, is a safe integer: a sum of 2^53 - 1, ECMAScript's
-    Number.MAX_SAFE_INTEGER, is served, and a sum past it is hedera/option-malformed, before the hash is read, as
-    @integraledger/lcp's transfer-executor build answers."""
+    Number.MAX_SAFE_INTEGER, is served, and a sum past it is hedera/option-malformed. H is read first, so a hash that
+    is not one is x402/payload-malformed with either sum, as @integraledger/lcp's transfer-executor build answers."""
     longest = {**XF["O"], "maxTimeoutSeconds": 2**53 - 1}
 
     def build(option: dict[str, Any], now: int, h: str = F["H"]) -> Any:
@@ -359,7 +359,7 @@ def test_x402_exact_hedera_transfer_executor_valid_before_is_a_safe_integer() ->
         assert not isinstance(served, Refusal) and served.request["validBefore"] == 2**53 - 1
     for option, now in ((XF["O"], 2**53 - timeout), (longest, 1), (longest, XF["now"])):
         assert build(option, now) == Refusal("hedera/option-malformed")
-        assert build(option, now, "x") == Refusal("hedera/option-malformed")
+        assert build(option, now, "x") == Refusal("x402/payload-malformed")
     assert build(XF["O"], XF["now"], "x") == Refusal("x402/payload-malformed")
 
 

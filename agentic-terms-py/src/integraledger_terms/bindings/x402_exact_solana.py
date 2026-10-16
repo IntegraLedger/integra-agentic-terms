@@ -13,8 +13,6 @@ from .._core import AtrHash
 from .._types import Advertised, Broadcaster, Json, Refusal
 from ._lcp import is_object, normal_hash, to_lcp_string
 from ._svm import (
-    TOKEN,
-    TOKEN_2022,
     SvmBuildInput,
     SvmSigning,
     SvmTx,
@@ -23,6 +21,7 @@ from ._svm import (
     decode_svm_tx,
     integer_of,
     is_key,
+    is_payer_input,
     is_solana_network,
     memo_length,
     static_nonce,
@@ -107,23 +106,27 @@ class X402ExactSolana:
         return _read(doc)
 
     def build(self, choice: Json, h: AtrHash) -> SvmUnsigned | Refusal:
-        """The v0 message the payer signs for the chosen option, whose one memo is the option's extra.memo."""
+        """The v0 message the payer signs for the chosen option, whose one memo is the option's extra.memo. H is
+        checked first, then the form of the choice's payer, token program, decimals, blockhash and compute budget
+        (is_payer_input), then its document and option, then the option's memo against H."""
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(choice):
             return Refusal("x402/not-v2")
+        decimals = integer_of(choice.get("decimals"))
+        byte = isinstance(decimals, int) and not isinstance(decimals, bool) and 0 <= decimals <= 255
+        if not is_payer_input(choice) or not byte:
+            return Refusal("svm/input-malformed")
         required, accepted = choice.get("required"), choice.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if normal_hash(h) is None:
-            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")
-        token_program = choice.get("tokenProgram")
-        if token_program not in (TOKEN, TOKEN_2022):
-            return Refusal("svm/input-malformed")
+        token_program: Any = choice.get("tokenProgram")
         payer: Any = choice.get("payer")
         blockhash: Any = choice.get("recentBlockhash")
         limit = choice.get("computeUnitLimit")
@@ -134,7 +137,7 @@ class X402ExactSolana:
                 payer=payer,
                 mint=accepted["asset"],
                 token_program=token_program,
-                decimals=integer_of(choice.get("decimals")),
+                decimals=decimals,
                 pay_to=accepted["payTo"],
                 amount=int(accepted["amount"]),
                 recent_blockhash=blockhash,

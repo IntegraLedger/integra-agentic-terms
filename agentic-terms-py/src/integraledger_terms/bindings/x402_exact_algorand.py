@@ -152,17 +152,16 @@ class X402ExactAlgorand:
         genesis hash; any other genesis id, a leading byte-order mark included, is written as given. The payment entry
         is read as carrier reads it, with a 64-byte signature in place, as complete writes it, so build writes no
         payment bound refuses: an entry carrier would refuse, one whose base64 is longer than 8,192 characters included,
-        is avm/option-malformed."""
-        if not is_object(choice):
-            return Refusal("avm/option-malformed")
-        required, accepted = choice.get("required"), choice.get("accepted")
-        ok = chosen(required, accepted, check)
-        if ok is not True:
-            return ok
-        assert is_object(required) and is_object(accepted)
+        is avm/option-malformed. H is checked first, then the form of the choice's payer and suggested parameters: a
+        payer that is not an address's text (58 characters of the base32 alphabet and the checksum), or a parameter
+        outside its type, is avm/option-malformed, and a genesis hash that is not the base64 of 32 bytes
+        avm/network-mismatch. Then the choice's document and the option's place in it, then the genesis hash against
+        the option's network."""
         nh = normal_hash(h)
         if nh is None:
             return Refusal("x402/payload-malformed")
+        if not is_object(choice):
+            return Refusal("avm/option-malformed")
         payer = _algorand.decode_address(choice.get("payer"))
         pr = choice.get("params")
         if (
@@ -177,6 +176,11 @@ class X402ExactAlgorand:
         genesis = b64_decode(pr.get("genesisHash"))
         if genesis is None or len(genesis) != 32:
             return Refusal("avm/network-mismatch")
+        required, accepted = choice.get("required"), choice.get("accepted")
+        ok = chosen(required, accepted, check)
+        if ok is not True:
+            return ok
+        assert is_object(required) and is_object(accepted)
         reference = _NETWORK.fullmatch(accepted["network"])
         assert reference is not None
         if pr["genesisHash"].replace("+", "-").replace("/", "_")[:32] != reference.group(1):

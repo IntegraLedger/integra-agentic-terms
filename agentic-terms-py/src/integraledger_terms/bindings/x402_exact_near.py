@@ -224,17 +224,13 @@ class X402ExactNear:
         key's next nonce and a window of maxTimeoutSeconds blocks past the final height. publicKey is read as
         nearcore's PublicKey::from_str reads it: the key type before the first ':', ed25519 or secp256k1 in ASCII
         letters of either case, or no key type, which is Ed25519; then the base58 of exactly that type's key size, 32
-        bytes or 64. Any other text is x402/option-malformed."""
-        if not is_object(c):
-            return Refusal("x402/option-malformed")
-        required, accepted = c.get("required"), c.get("accepted")
-        ok = chosen(required, accepted, check)
-        if ok is not True:
-            return ok
-        assert is_object(required) and is_object(accepted)
+        bytes or 64. Any other text is x402/option-malformed. H is checked first, then the form of the choice's payer,
+        key, nonce and height, then its document and option, then the height with the option's timeout."""
         nh = normal_hash(h)
         if nh is None:
             return Refusal("x402/payload-malformed")
+        if not is_object(c):
+            return Refusal("x402/option-malformed")
         payer = c.get("payer")
         if not is_near_account_id(payer):
             return Refusal("x402/option-malformed")
@@ -244,12 +240,19 @@ class X402ExactNear:
         nonce = c.get("accessKeyNonce")
         if not isinstance(nonce, int) or not _big(nonce) or nonce < 0 or nonce + 1 >= U64_LIMIT:
             return Refusal("x402/option-malformed")
+        height = c.get("finalHeight")
+        if not isinstance(height, int) or not _big(height) or height < 0 or height >= U64_LIMIT:
+            return Refusal("x402/option-malformed")
+        required, accepted = c.get("required"), c.get("accepted")
+        ok = chosen(required, accepted, check)
+        if ok is not True:
+            return ok
+        assert is_object(required) and is_object(accepted)
         # x402's NEAR scheme opens max(1, ceil(maxTimeoutSeconds / estimatedBlockSeconds)) blocks; with one-second
         # blocks and the positive timeout the filter holds, that is maxTimeoutSeconds blocks.
         window = timeout_seconds(accepted.get("maxTimeoutSeconds"))
         assert window is not None
-        height = c.get("finalHeight")
-        if not isinstance(height, int) or not _big(height) or height < 0 or height + window >= U64_LIMIT:
+        if height + window >= U64_LIMIT:
             return Refusal("x402/option-malformed")
         args = ft_transfer_args(accepted["payTo"], accepted["amount"], nh)
         if isinstance(args, Refusal):

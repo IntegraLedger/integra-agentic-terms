@@ -188,22 +188,26 @@ class X402ExactXrpl:
 
     def build(self, choice: Json, h: AtrHash) -> XrplUnsigned | Refusal:
         """The Payment for the wallet to sign, with InvoiceID = SHA-256 of the option's extra.invoiceId, and NetworkID
-        the network's id where it is above 1024. complete reads the signed blob's NetworkID as bound does."""
-        c: Mapping[str, Any] = choice if is_object(choice) else {}
+        the network's id where it is above 1024. complete reads the signed blob's NetworkID as bound does. H is checked
+        first, then the form of the choice's account, fee and last ledger sequence, then its document and option, then
+        the sequence or ticket the option's transfer method names."""
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
+        if not is_object(choice):
+            return Refusal("x402/not-v2")
+        c: Mapping[str, Any] = choice
+        account, fee, last = c.get("account"), c.get("fee"), c.get("lastLedgerSequence")
+        if not isinstance(account, str) or not isinstance(fee, str) or _DROPS.fullmatch(fee) is None or not _u32(last):
+            return Refusal("x402/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _THIS)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if normal_hash(h) is None:
-            return Refusal("x402/payload-malformed")
         extra = accepted["extra"]
         if extra.get("invoiceId") != to_lcp_string(h):
             return Refusal("xrpl/carrier-mismatch")
         ticket = extra.get("assetTransferMethod") == "ticketSequence"
-        account, fee, last = c.get("account"), c.get("fee"), c.get("lastLedgerSequence")
-        if not isinstance(account, str) or not isinstance(fee, str) or _DROPS.fullmatch(fee) is None or not _u32(last):
-            return Refusal("x402/option-malformed")
         if not _u32(c.get("ticketSequence") if ticket else c.get("sequence")):
             return Refusal("x402/option-malformed")
         amount: Any = (

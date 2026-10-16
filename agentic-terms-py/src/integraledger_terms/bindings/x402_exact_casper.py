@@ -165,13 +165,13 @@ class X402ExactCasper:
         return read_for(CHECK)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> CasperUnsigned | Refusal:
-        """The CEP-3009 authorization the payer signs for the chosen option, with the hash as its nonce."""
-        c = choice if is_object(choice) else {}
-        required, accepted = c.get("required"), c.get("accepted")
-        wrong = chosen(required, accepted, CHECK)
-        if wrong is not True:
-            return wrong
-        assert is_object(required) and is_object(accepted)
+        """The CEP-3009 authorization the payer signs for the chosen option, with the hash as its nonce. H is checked
+        first, then the form of the choice's from and now, then its document and option."""
+        if normal_hash(h) is None:
+            return Refusal("casper/payload-malformed")
+        if not is_object(choice):
+            return Refusal("x402/not-v2")
+        c = choice
         from_ = c.get("from")
         if not _is_address(from_):
             return Refusal("casper/address-malformed")
@@ -179,6 +179,11 @@ class X402ExactCasper:
         now = safe_int(c.get("now"))
         if now is None or now < 0:
             return Refusal("casper/option-malformed")
+        required, accepted = c.get("required"), c.get("accepted")
+        wrong = chosen(required, accepted, CHECK)
+        if wrong is not True:
+            return wrong
+        assert is_object(required) and is_object(accepted)
         timeout = safe_int(accepted["maxTimeoutSeconds"])
         assert timeout is not None
         valid_before = now + timeout

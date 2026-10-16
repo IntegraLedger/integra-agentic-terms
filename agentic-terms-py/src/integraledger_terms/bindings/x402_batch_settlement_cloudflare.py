@@ -63,7 +63,10 @@ class X402BatchSettlementCloudflare:
 
     def build(self, c: Json, h: AtrHash) -> dict[str, Any] | Refusal:
         """The request's payment document: the option's amount and asset, with the challenge's extensions echoed,
-        when the challenge's legal context carries h."""
+        when the challenge's legal context carries h. H is checked first, then the document and the option."""
+        nh = normal_hash(h)
+        if nh is None:
+            return Refusal("x402/legal-context-conflict")
         if not is_object(c):
             return Refusal("x402/not-v2")
         required, accepted = c.get("required"), c.get("accepted")
@@ -74,7 +77,7 @@ class X402BatchSettlementCloudflare:
         lc = legal_context_of(required.get("extensions"))
         if isinstance(lc, Refusal):
             return lc
-        if lc[0] != normal_hash(h):
+        if lc[0] != nh:
             return Refusal("x402/legal-context-conflict")
         return {
             "x402Version": 2,

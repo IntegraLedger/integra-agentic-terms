@@ -237,19 +237,22 @@ class X402ExactCcd:
         return read_for(CHECK)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> CcdUnsigned | Refusal:
-        """One transfer to payTo whose memo carries the hash."""
-        c = choice if is_object(choice) else {}
+        """One transfer to payTo whose memo carries the hash. H is checked first, then the form of the choice's now,
+        then its document and option."""
+        if normal_hash(h) is None:
+            return Refusal("ccd/memo-not-lcp")
+        if not is_object(choice):
+            return Refusal("x402/not-v2")
+        c = choice
+        now = safe_int(c.get("now"))
+        if now is None or now < 0:
+            return Refusal("ccd/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
         wrong = chosen(required, accepted, CHECK)
         if wrong is not True:
             return wrong
         assert is_object(required) and is_object(accepted)
         sponsor = accepted["extra"]["feePayer"]
-        now = safe_int(c.get("now"))
-        if now is None or now < 0:
-            return Refusal("ccd/option-malformed")
-        if normal_hash(h) is None:
-            return Refusal("ccd/memo-not-lcp")
         timeout = safe_int(accepted["maxTimeoutSeconds"])
         assert timeout is not None
         request = {

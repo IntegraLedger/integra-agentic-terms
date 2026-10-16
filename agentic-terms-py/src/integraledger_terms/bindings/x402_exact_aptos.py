@@ -249,15 +249,16 @@ class X402ExactAptos:
         return read_for(_check)(doc)
 
     def build(self, choice: Json, h: AtrHash) -> AptosUnsigned | Refusal:
-        """The wallet request: the scheme's own payment, which carries no hash."""
+        """The wallet request: the scheme's own payment, which carries no hash. H is checked first, then the document
+        and the option."""
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         c = choice if is_object(choice) else {}
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, _check)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        if normal_hash(h) is None:
-            return Refusal("x402/payload-malformed")
         return AptosUnsigned(
             request={"kind": "aptos-transaction", "accepted": accepted}, _required=required, _accepted=accepted
         )

@@ -171,17 +171,19 @@ class X402ExactHedera:
 
     def build(self, c: Json, h: AtrHash) -> HederaUnsigned | Refusal:
         """The TransactionBody the payer signs: the fee payer's transaction id, the hash's LCP string as the memo, and
-        the payer's debit and the payee's credit of the option's amount, in HBAR or the option's token."""
+        the payer's debit and the payee's credit of the option's amount, in HBAR or the option's token. H is checked
+        first, then the form of the choice's payer, node, valid start, maximum fee and decimals, then its document and
+        option."""
+        nh = normal_hash(h)
+        if nh is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(c):
+            return Refusal("hedera/option-malformed")
+        if not _valid_build_inputs(c):
             return Refusal("hedera/option-malformed")
         ok = chosen(c.get("required"), c.get("accepted"), check_exact)
         if ok is not True:
             return ok
-        if not _valid_build_inputs(c):
-            return Refusal("hedera/option-malformed")
-        nh = normal_hash(h)
-        if nh is None:
-            return Refusal("x402/payload-malformed")
         a = c["accepted"]
         payer, pay_to, asset = c["payer"], a["payTo"], a["asset"]
         amount = amount_of(a["amount"])
@@ -280,24 +282,25 @@ class X402ExactHederaExecutor:
     def build(self, c: Json, h: AtrHash) -> ExecutorUnsigned | Refusal:
         """The request {kind hedera-executor, network, executors, asset, payTo, amount, validBefore}, validBefore being
         now plus the option's maxTimeoutSeconds. A now that is not a non-negative safe integer, or whose sum with
-        maxTimeoutSeconds is not a safe integer, is hedera/option-malformed."""
+        maxTimeoutSeconds is not a safe integer, is hedera/option-malformed. H is checked first, then the form of now,
+        then the choice's document and option, then the sum."""
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(c):
+            return Refusal("hedera/option-malformed")
+        now = safe_int(c.get("now"))
+        if now is None or now < 0:
             return Refusal("hedera/option-malformed")
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, check_executor)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        now = safe_int(c.get("now"))
-        if now is None or now < 0:
-            return Refusal("hedera/option-malformed")
         timeout = safe_int(accepted.get("maxTimeoutSeconds"))
         assert timeout is not None
         valid_before = safe_int(now + timeout)
         if valid_before is None:
             return Refusal("hedera/option-malformed")
-        if normal_hash(h) is None:
-            return Refusal("x402/payload-malformed")
         executors = executors_of(accepted)
         assert executors is not None
         request = {

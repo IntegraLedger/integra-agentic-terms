@@ -82,17 +82,24 @@ class X402ExactStellar:
         expiration at currentLedger + ceil(maxTimeoutSeconds / 5). The option's payTo must carry muxed_id(h) and
         equal the to of the invocation the payer's entry signs, and the operation must invoke exactly that. That
         invocation's token contract must then be the option's asset, its amount the option's amount exactly, and its
-        from the choice's payer. Nothing reaches the signer unless every one holds."""
-        c: Mapping[str, Any] = choice if is_object(choice) else {}
+        from the choice's payer. Nothing reaches the signer unless every one holds. H is checked first, then the choice
+        members whose form needs no document: the current ledger (stellar/tx-malformed) and the payer, which must be a
+        G, C or M strkey (stellar/payer-mismatch, as no other value can equal a transfer's from). Then the document and
+        the option, then the payTo carrier, then the simulated transaction."""
+        if normal_hash(h) is None:
+            return Refusal("x402/payload-malformed")
+        if not is_object(choice):
+            return Refusal("x402/not-v2")
+        c: Mapping[str, Any] = choice
+        ledger = safe_int(c.get("currentLedger"))
+        if ledger is None or ledger < 0:
+            return Refusal("stellar/tx-malformed")
+        if not _stellar.is_payer(c.get("payer")):
+            return Refusal("stellar/payer-mismatch")
         ok = chosen(c.get("required"), c.get("accepted"), _THIS)
         if ok is not True:
             return ok
         accepted = c["accepted"]
-        if normal_hash(h) is None:
-            return Refusal("x402/payload-malformed")
-        ledger = safe_int(c.get("currentLedger"))
-        if ledger is None or ledger < 0:
-            return Refusal("stellar/tx-malformed")
         m = _stellar.unmux(accepted["payTo"])
         if m is None or m.id != _stellar.muxed_id(h):
             return Refusal("stellar/carrier-mismatch")
