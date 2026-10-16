@@ -44,6 +44,7 @@ from ._mpp_checks import (
     xrpl_network_of,
 )
 from ._mpp_evm import address_word, receive_typed_data, uint_word
+from ._rlp import rlp_bytes, rlp_list
 from ._session_within import within_checks, within_unsigned
 from ._svm import key_bytes, key_string
 from ._tempo import (
@@ -211,23 +212,25 @@ def _signer_of(choice: Mapping[str, Any]) -> str | None:
 
 
 def _ref_from(pairing: str, kind: Callable[[Any], str | Refusal]) -> Callable[[Any], dict[str, str] | Refusal]:
-    """The network and the payload's channelId, lower-case. An opening is held as bound holds it (echoed_for), whose
-    refusal it gives: the credential's shape, H from the echoed challenge's id, the challenge's intent and method,
-    which must be pairing's, and pairing's filter. A within or close payment's challenge, which the seller issues
-    naming the channel, is read without them."""
+    """The network and the payload's channelId, lower-case. A payment kind refuses is refused with its code, an action
+    the pairing's draft does not define, such as use, among them, as the Hedera, Solana, XRP Ledger and Lightning
+    sessions' channel_ref refuse it. An opening is held as bound holds it (echoed_for), whose refusal it gives: the
+    credential's shape, H from the echoed challenge's id, the challenge's intent and method, which must be pairing's,
+    and pairing's filter. A within or close payment's challenge, which the seller issues naming the channel, is read
+    without them."""
 
     def ref(presented: Any) -> dict[str, str] | Refusal:
-        payload = _payload_of(presented)
-        if isinstance(payload, Refusal):
-            return payload
-        if kind(presented) == "open":
+        k = kind(presented)
+        if isinstance(k, Refusal):
+            return k
+        if k == "open":
             held = echoed_for(presented, pairing)
             if isinstance(held, Refusal):
                 return held
         p = params_of(presented.get("challenge"))
         if isinstance(p, Refusal):
             return p
-        channel = normal_hash(payload.get("channelId"))
+        channel = normal_hash(presented["payload"].get("channelId"))
         return Refusal("mpp/credential-malformed") if channel is None else {"network": p.network, "channel": channel}
 
     return ref
@@ -895,12 +898,14 @@ def _subscription_bound(presented: Any) -> AtrHash | Refusal:
 
 def _subscription_ref(presented: Any) -> dict[str, str] | Refusal:
     """The network and the key authorization's digest, for a key authorization that authorizes the challenge's issued
-    key (_authorized_key). The key authorization is the opening, and it is held as bound holds it (echoed_for), whose
-    refusal it gives: the credential's shape, H from the echoed challenge's id, the challenge's intent and method, which
-    must be the pairing's, and the pairing's filter."""
-    payload = _payload_of(presented)
-    if isinstance(payload, Refusal):
-        return payload
+    key (_authorized_key). A payment channel_kind refuses, one whose payload type is not keyAuthorization, is refused
+    with its code, as every session pairing's channel_ref refuses one. The key authorization is the opening, and it is
+    held as bound holds it (echoed_for), whose refusal it gives: the credential's shape, H from the echoed challenge's
+    id, the challenge's intent and method, which must be the pairing's, and the pairing's filter."""
+    kind = _subscription_kind(presented)
+    if isinstance(kind, Refusal):
+        return kind
+    payload = presented["payload"]
     held = echoed_for(presented, SUBSCRIPTION)
     if isinstance(held, Refusal):
         return held
@@ -950,12 +955,20 @@ def _subscription_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     source = f"did:pkh:eip155:{chain_id}:{choice['from']}"
 
     def complete(root_signature: Any) -> dict[str, Any] | Refusal:
+        """The credential carrying the signed key authorization, measured (measured) before the key authorization's
+        bound, as bound reads them: the credential carries the same RLP list, rlp([authorization, signature]), that
+        encode_key_authorization writes within its bound, so one over the credential size bound is
+        mpp/credential-malformed whatever the key authorization's own size."""
         if not is_hex_bytes(root_signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
         signed = encode_key_authorization(authorization, root_signature)
-        if isinstance(signed, Refusal):
-            return signed
-        return {"challenge": challenge, "source": source, "payload": {"type": "keyAuthorization", "signature": to_hex(signed)}}
+        root = hex_bytes(root_signature) or b""
+        carried = signed if isinstance(signed, bytes) else rlp_list([unsigned, rlp_bytes(root)])
+        payload = {"type": "keyAuthorization", "signature": to_hex(carried)}
+        credential = measured({"challenge": challenge, "source": source, "payload": payload})
+        if isinstance(credential, Refusal):
+            return credential
+        return signed if isinstance(signed, Refusal) else credential
 
     request = {"kind": "tempo-key-authorization", "authorization": authorization, "digest": to_hex(keccak256(unsigned))}
     return MppUnsigned(request, complete)

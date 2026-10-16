@@ -16,7 +16,11 @@ from eth_utils.crypto import keccak
 
 from integraledger_terms import (
     MPP_SESSION_EVM,
+    MPP_SESSION_HEDERA,
+    MPP_SESSION_LIGHTNING,
+    MPP_SESSION_SOLANA,
     MPP_SESSION_TEMPO,
+    MPP_SESSION_XRPL,
     MPP_SUBSCRIPTION_TEMPO,
     Binding,
     Confirmed,
@@ -1020,3 +1024,65 @@ def test_mpp_session_tempo_a_partial_refund_and_an_action_not_built_sign_nothing
     refused = asyncio.run(within(p.doc, hold, SessionWithin(MPP_SESSION_TEMPO, "mpp/within-action-not-built"), signer))
     assert refused == Declined("pairing-not-supported", "mpp/within-action-not-built")
     assert signer.requests == []
+
+
+# ── channel_ref keys only a payment of the channel: one channel_kind refuses is refused with its code, an action the
+# pairing's draft does not define among them. draft-tempo-session-00 and the EVM session draft define open, topUp,
+# voucher and close (tempoxyz/mpp-specs 08e7dd87), and draft-tempo-subscription-00's one credential is the
+# keyAuthorization; the Hedera, Solana, XRP Ledger and Lightning sessions' channel_ref refuse such a payment so. Each
+# case changes the pairing's B6 opening (mpp-session.test.ts in @integraledger/lcp 0.4.1).
+
+_RAILS = "mpp-session-hedera-solana-xrpl.json"
+_SESSIONS: dict[str, Any] = {
+    b.id: b
+    for b in (
+        MPP_SESSION_EVM,
+        MPP_SESSION_TEMPO,
+        MPP_SUBSCRIPTION_TEMPO,
+        MPP_SESSION_HEDERA,
+        MPP_SESSION_SOLANA,
+        MPP_SESSION_XRPL,
+        MPP_SESSION_LIGHTNING,
+    )
+}
+REF_CASES: list[tuple[str, str, str, dict[str, Any]]] = [
+    ("session/evm, an opening whose action is use", "mpp-session-evm.json", "mpp/session/evm", {"action": "use"}),
+    ("session/evm, an opening whose action is bearer", "mpp-session-evm.json", "mpp/session/evm", {"action": "bearer"}),
+    ("session/tempo, an opening whose action is use", "mpp-session-tempo.json", "mpp/session/tempo", {"action": "use"}),
+    (
+        "session/tempo, an opening whose action is bearer",
+        "mpp-session-tempo.json",
+        "mpp/session/tempo",
+        {"action": "bearer"},
+    ),
+    (
+        "subscription/tempo, a key authorization whose type is transaction",
+        "mpp-subscription-tempo.json",
+        "mpp/subscription/tempo",
+        {"type": "transaction"},
+    ),
+    ("session/hedera, an opening whose action is use", _RAILS, "mpp/session/hedera", {"action": "use"}),
+    ("session/solana, an opening whose action is bearer", _RAILS, "mpp/session/solana", {"action": "bearer"}),
+    ("session/xrpl, an opening whose action is topUp", _RAILS, "mpp/session/xrpl", {"action": "topUp"}),
+    (
+        "session/lightning, an opening whose action is use",
+        "mpp-session-lightning.json",
+        "mpp/session/lightning",
+        {"action": "use"},
+    ),
+]
+
+
+@pytest.mark.parametrize(("file", "pairing", "change"), [c[1:] for c in REF_CASES], ids=[c[0] for c in REF_CASES])
+def test_channel_ref_refuses_a_payment_channel_kind_refuses_with_its_code(
+    file: str, pairing: str, change: dict[str, Any]
+) -> None:
+    assert len(REF_CASES) == 9
+    binding = _SESSIONS[pairing]
+    rows = load(file)["buyer"]["rows"]
+    own = next(r for r in rows if r["name"] == "B6" and r.get("pairing") == pairing)["input"]["presented"]
+    assert binding.channel_kind(own) == "open"
+    assert not isinstance(binding.channel_ref(own), Refusal)
+    c = {**own, "payload": {**own["payload"], **change}}
+    assert binding.channel_kind(c) == Refusal("mpp/session-action")
+    assert binding.channel_ref(c) == Refusal("mpp/session-action")

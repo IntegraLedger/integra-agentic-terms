@@ -1,15 +1,28 @@
 """Each MPP pairing whose build returns a complete that makes a credential, run on its vector file's B2 inputs and the
 payment its B6 row carries (credential_size.PAIRINGS), against mpp-challenge.json's rows: buildChallenge (each build
 holds the chosen challenge as bound holds the challenge a credential echoes); a change made to the caller's challenge
-after build, which does not reach the credential; and inChannelSize on the session pairings with channel members and
-no build_within. Expected values are the rows' and @integraledger/lcp 0.4.1's (mpp-complete-size.test.ts)."""
+after build, which does not reach the credential; inChannelSize on the session pairings with channel members and no
+build_within; and completeOrder (each complete checks the credential it would return in its bound's order). Expected
+values are the rows' and @integraledger/lcp 0.4.1's (mpp-complete-size.test.ts)."""
 
+import base64
 import copy
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_CHARGE_EVM_TRANSACTION, Refusal
+from integraledger_terms import (
+    MPP_CHARGE_EVM_TRANSACTION,
+    MPP_CHARGE_LIGHTNING,
+    MPP_CHARGE_STELLAR,
+    MPP_CHARGE_USDC_STACKS,
+    MPP_CHARGE_XRPL,
+    MPP_SUBSCRIPTION_TEMPO,
+    Refusal,
+)
+from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list
+from integraledger_terms.bindings._tempo import encode_key_authorization
 
 from credential_size import (
     MC,
@@ -20,11 +33,13 @@ from credential_size import (
     built,
     described,
     description_for,
+    footprinted,
     mv11_transaction,
     set_up,
     size_of,
     with_fault,
 )
+from support import load
 
 CHALLENGE_ROWS: list[dict[str, Any]] = MC["buildChallenge"]["rows"]
 assert len(CHALLENGE_ROWS) == 8
@@ -163,3 +178,143 @@ def test_the_xrpl_session_complete_reads_the_blob_as_bound_reads_it_before_the_c
         assert binding.bound(presented) == Refusal("xrpl/blob-malformed"), claim
     assert unsigned.complete({"signedBlob": blob, "claimSignature": "zz"}) == Refusal("mpp/credential-malformed")
     assert binding.bound({**b6, "payload": {**b6["payload"], "signature": "zz"}}) == set_up("mpp/session/xrpl").h
+
+
+# ── completeOrder: a complete checks the credential it would return in its bound's order. bound measures a credential
+# before it reads the payment it carries, so a payment fault in a credential over the credential size bound is
+# mpp/credential-malformed from complete as from bound, and at the bound each gives the fault's own code (bound the
+# row's bound code, or H, where it reads nothing of the payment).
+
+ORDER_ROWS: list[dict[str, Any]] = MC["completeOrder"]["rows"]
+assert len(ORDER_ROWS) == 14
+_ROOT_SIGNATURE = "0x" + "11" * 8192
+_STACKS_WIRE = load("mpp-charge-usdc-stacks.json")["agreedRefusals"]["rows"][48]
+_OTHER_CHAIN: str = load("mpp-charge-evm-transaction.json")["agreedRefusals"]["rows"][0]["transactions"][0]
+
+
+def _b2(pairing: str) -> dict[str, Any]:
+    row = buyer(PAIRINGS[pairing].file, pairing, "B2")
+    assert row is not None
+    return row
+
+
+def _swapped(pairing: str, challenge: Any, field: str, value: Any) -> dict[str, Any]:
+    """The credential complete would make under challenge: the pairing's own, its payload's field set to value."""
+    s = set_up(pairing)
+    c = s.complete(s.placed)
+    return {**c, "challenge": challenge, "payload": {**c["payload"], field: value}}
+
+
+def _stellar_complete(challenge: Any, key_bytes: int) -> Any:
+    b2 = _b2("mpp/charge/stellar")
+    i = b2["input"]["inputs"]
+    choice = {
+        "challenge": challenge,
+        "payer": b2["input"]["account"].split(":")[2],
+        "now": b2["input"]["now"],
+        "simulatedXdr": footprinted(i["simulatedXdr"], key_bytes),
+        "currentLedger": i["currentLedger"],
+    }
+    return built(MPP_CHARGE_STELLAR.build(choice, b2["advertised"])).complete(bytes([0x11]) * 64)
+
+
+def _stellar_credential(challenge: Any) -> dict[str, Any]:
+    within = _stellar_complete(set_up("mpp/charge/stellar").placed, 5401)
+    over = footprinted(within["payload"]["transaction"], 5405)
+    assert len(over) == 8200
+    return _swapped("mpp/charge/stellar", challenge, "transaction", over)
+
+
+def _stacks_complete(challenge: Any) -> Any:
+    b2 = _b2("mpp/charge/usdc/stacks")
+    choice = {"challenge": challenge, "from": b2["input"]["account"].split(":")[2]}
+    wire = bytes.fromhex(_STACKS_WIRE["wireHex"].removeprefix("0x"))
+    return built(MPP_CHARGE_USDC_STACKS.build(choice, b2["advertised"])).complete(wire)
+
+
+def _stacks_credential(challenge: Any) -> dict[str, Any]:
+    assert _STACKS_WIRE["bytes"] == 16_385
+    wire = base64.b64encode(bytes.fromhex(_STACKS_WIRE["wireHex"].removeprefix("0x"))).decode("ascii")
+    return _swapped("mpp/charge/usdc/stacks", challenge, "transaction", wire)
+
+
+def _subscription_unsigned(challenge: Any) -> Any:
+    b2 = _b2("mpp/subscription/tempo")
+    choice = {"challenge": challenge, "from": b2["input"]["account"].split(":")[2], "now": b2["input"]["now"]}
+    return built(MPP_SUBSCRIPTION_TEMPO.build(choice, b2["advertised"]))
+
+
+def _subscription_credential(challenge: Any) -> dict[str, Any]:
+    u = _subscription_unsigned(set_up("mpp/subscription/tempo").placed)
+    unsigned = encode_key_authorization(u.request["authorization"])
+    assert isinstance(unsigned, bytes)
+    signed = rlp_list([unsigned, rlp_bytes(bytes.fromhex(_ROOT_SIGNATURE[2:]))])
+    assert len(signed) > 8192
+    return _swapped("mpp/subscription/tempo", challenge, "signature", "0x" + signed.hex())
+
+
+def _xrpl_complete(challenge: Any) -> Any:
+    b2 = _b2("mpp/charge/xrpl")
+    i = b2["input"]["inputs"]
+    choice = {"challenge": challenge, "account": b2["input"]["account"].split(":")[2], "fee": i["fee"]}
+    choice |= {"sequence": i["sequence"], "lastLedgerSequence": i["lastLedgerSequence"]}
+    return built(MPP_CHARGE_XRPL.build(choice, b2["advertised"])).complete("00" * 2049)
+
+
+def _evm_transaction_complete(challenge: Any) -> Any:
+    b2 = _b2("mpp/charge/evm/transaction")
+    choice = {"challenge": challenge, "from": b2["input"]["account"].split(":")[2], "now": b2["input"]["now"]}
+    return built(MPP_CHARGE_EVM_TRANSACTION.build(choice, b2["advertised"])).complete(_OTHER_CHAIN)
+
+
+def _lightning_complete(challenge: Any) -> Any:
+    b2 = _b2("mpp/charge/lightning")
+    return built(MPP_CHARGE_LIGHTNING.build({"challenge": challenge}, b2["advertised"])).complete("00")
+
+
+def _solana_session_complete(challenge: Any) -> Any:
+    b6 = buyer(PAIRINGS["mpp/session/solana"].file, "mpp/session/solana", "B6")
+    assert b6 is not None
+    opening = {**b6["input"]["presented"]["payload"], "action": "voucher"}
+    return PAIRINGS["mpp/session/solana"].run(challenge, _b2("mpp/session/solana"), {"payload": opening})
+
+
+# Each completeOrder fault: complete under a challenge, and the credential it would make, which bound is given.
+ORDER_FAULTS: dict[str, tuple[Callable[[Any], Any], Callable[[Any], dict[str, Any]]]] = {
+    "a signed envelope of 8,200 characters": (lambda c: _stellar_complete(c, 5405), _stellar_credential),
+    "a transaction of 16,385 bytes": (_stacks_complete, _stacks_credential),
+    "a signed key authorization over 8,192 bytes": (
+        lambda c: _subscription_unsigned(c).complete(_ROOT_SIGNATURE),
+        _subscription_credential,
+    ),
+    "a blob of 2,049 bytes": (_xrpl_complete, lambda c: _swapped("mpp/charge/xrpl", c, "blob", "00" * 2049)),
+    "an EIP-1559 transaction for chain 1": (
+        _evm_transaction_complete,
+        lambda c: _swapped("mpp/charge/evm/transaction", c, "signature", _OTHER_CHAIN),
+    ),
+    "a preimage that is not 64 hex digits": (
+        _lightning_complete,
+        lambda c: _swapped("mpp/charge/lightning", c, "preimage", "00"),
+    ),
+    "an opening whose action is voucher": (
+        _solana_session_complete,
+        lambda c: _swapped("mpp/session/solana", c, "action", "voucher"),
+    ),
+}
+
+
+def test_each_complete_order_row_names_a_pairing_of_credential_size_and_a_fault_this_test_makes() -> None:
+    for row in ORDER_ROWS:
+        assert row["pairing"] in PAIRINGS and row["fault"] in ORDER_FAULTS, row["case"]
+
+
+@pytest.mark.parametrize("row", ORDER_ROWS, ids=[r["case"] for r in ORDER_ROWS])
+def test_complete_order_a_complete_checks_the_credential_in_its_bounds_order(row: dict[str, Any]) -> None:
+    s = set_up(row["pairing"])
+    complete, credential = ORDER_FAULTS[row["fault"]]
+    challenge = described(s.placed, description_for(credential(s.placed), row["size"]))
+    presented = credential(challenge)
+    assert size_of(presented) == row["size"]
+    assert complete(challenge) == Refusal(row["expect"])
+    expect = s.h if row.get("boundTakes") else Refusal(row.get("bound", row["expect"]))
+    assert PAIRINGS[row["pairing"]].binding.bound(presented) == expect
