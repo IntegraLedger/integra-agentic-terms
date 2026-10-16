@@ -15,6 +15,11 @@ export const metadata: Metadata = {
   authors: [{ name: siteConfig.publisher.name, url: siteConfig.publisher.url }],
   publisher: siteConfig.publisher.name,
   robots: { index: true, follow: true },
+  // The llms.txt index that describes each page (https://llmstxt.org), as <link rel="describedby">. Next.js writes
+  // the metadata into the head in one order on every build. A link the layout renders itself is placed in the head in
+  // the order its part of the page's server payload reaches the renderer, which on the not-found page puts it before
+  // or after Next.js's robots meta element from one build to the next.
+  icons: { other: [{ rel: "describedby", url: "/llms.txt", type: "text/plain" }] },
   openGraph: {
     type: "website",
     siteName: siteConfig.name,
@@ -38,8 +43,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        {/* The llms.txt index that describes this page (https://llmstxt.org); React places it in <head>. */}
-        <link rel="describedby" href="/llms.txt" type="text/plain" />
         <a
           href="#main"
           className="sr-only z-50 rounded-md bg-fd-primary px-4 py-2 text-fd-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
