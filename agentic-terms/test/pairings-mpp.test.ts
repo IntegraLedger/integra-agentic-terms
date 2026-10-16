@@ -197,7 +197,8 @@ describe("mpp/charge/tempo/memo", () => {
       expect(sha256(tempoWire(r))).toBe(M.MV7.expectWireSha256);
       expect(await finish(ABC, chosen, tempoWire(r), tempoMemo)).toHaveProperty("signed");
       const by = (member: keyof MemoRow) => rows.filter((row) => row[member] !== undefined);
-      expect([by("transactionChainId").length, by("padding").length, by("calldata").length, rows.length]).toEqual([1, 1, 1, 3]);
+      const counts = [by("transactionChainId").length, by("padding").length, by("calldata").length, rows.length];
+      expect(counts).toEqual([1, 1, 1, 3]);
       for (const row of rows) {
         expect(Object.keys(row).filter((k) => k !== "case" && k !== "expect"), row.case).toHaveLength(1);
         const call = { ...r.call, data: row.calldata ?? r.call.data };

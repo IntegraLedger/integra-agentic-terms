@@ -409,9 +409,10 @@ def test_agreed_refusals_an_evm_build_with_a_zero_member() -> None:
 
 def test_agreed_refusals_an_evm_refund_amount() -> None:
     """The rows with refundAmounts: channel_kind, and channel_ref, which gives channel_kind's refusal, of a refund that
-    carries the opening's channelConfig and voucher, with each value as its amount, give the row's refusal. The channel contract's refund takes a uint128 and refuses 0
-    (x402-foundation/x402 751590a2, contracts/evm/src/x402BatchSettlement.sol L399, L418 and L555): a refund with no
-    amount is the close, and the amounts 1 and 2^128 - 1 are within."""
+    carries the opening's channelConfig and voucher, with each value as its amount, give the row's refusal. The channel
+    contract's refund takes a uint128 and refuses 0 (x402-foundation/x402 751590a2,
+    contracts/evm/src/x402BatchSettlement.sol L399, L418 and L555): a refund with no amount is the close, and the
+    amounts 1 and 2^128 - 1 are within; channel_ref of each gives the opening's channel."""
     rows = evm_rows("refundAmounts")
     payload = EVM_OPENINGS["eip3009"]["payload"]
 

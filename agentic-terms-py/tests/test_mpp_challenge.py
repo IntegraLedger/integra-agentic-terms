@@ -358,7 +358,8 @@ def _largest_taken(name: str) -> int:
     def taken(size: int) -> bool:
         wire = "0x" + "11" * size if name == "transaction" else _tempo_wire_of(size)
         source = f"did:pkh:eip155:{chain}:{_PAYER['payer']}"
-        answer = binding.bound({"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": wire}})
+        payload = {"type": "transaction", "signature": wire}
+        answer = binding.bound({"challenge": challenge, "source": source, "payload": payload})
         if answer == ok:
             return True
         assert answer == Refusal("mpp/credential-malformed"), answer

@@ -185,7 +185,8 @@ class MppChargeSolana:
             wire = signed_wire(signed_message, payer, signature)
             if isinstance(wire, Refusal):
                 return wire
-            return measured({"challenge": challenge, "payload": {"type": "transaction", "transaction": to_base64(wire)}})
+            payload = {"type": "transaction", "transaction": to_base64(wire)}
+            return measured({"challenge": challenge, "payload": payload})
 
         return MppUnsigned({"kind": "solana-message", "message": signed_message}, complete)
 

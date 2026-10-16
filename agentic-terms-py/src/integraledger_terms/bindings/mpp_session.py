@@ -450,13 +450,11 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         def complete_hash(funded: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
             if normal_hash(funded) is None or not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
                 return Refusal("mpp/credential-malformed")
-            return measured(
-                {"challenge": challenge, "source": source, "payload": {**base, "type": "hash", "hash": funded, "signature": voucher_signature}}
-            )
+            payload = {**base, "type": "hash", "hash": funded, "signature": voucher_signature}
+            return measured({"challenge": challenge, "source": source, "payload": payload})
 
-        return SessionUnsigned(
-            {"kind": "evm-calls", "chainId": chain_id, "calls": calls, "broadcast": True}, voucher_for(complete_hash), complete_hash
-        )
+        funding = {"kind": "evm-calls", "chainId": chain_id, "calls": calls, "broadcast": True}
+        return SessionUnsigned(funding, voucher_for(complete_hash), complete_hash)
 
     typed_data: dict[str, Any] | Refusal
     authorization: dict[str, Any]

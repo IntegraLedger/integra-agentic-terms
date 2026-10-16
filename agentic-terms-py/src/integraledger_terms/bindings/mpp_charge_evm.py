@@ -307,8 +307,10 @@ def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         if broadcast:
             if normal_hash(signed_or_hash) is None:
                 return Refusal("mpp/credential-malformed")
-            return measured({"challenge": challenge, "source": source, "payload": {"type": "hash", "hash": signed_or_hash}})
-        credential = {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
+            hashed = {"type": "hash", "hash": signed_or_hash}
+            return measured({"challenge": challenge, "source": source, "payload": hashed})
+        signed = {"type": "transaction", "signature": signed_or_hash}
+        credential = {"challenge": challenge, "source": source, "payload": signed}
         held = echoed_for(credential, pairing)
         if isinstance(held, Refusal):
             return held

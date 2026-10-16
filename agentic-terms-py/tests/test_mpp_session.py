@@ -595,9 +595,8 @@ def completed_for(own: dict[str, Any], wire: str, from_: str, request_text: str)
     request = json.loads(request_text)
     md = request["methodDetails"]
     if "descriptor" not in p:
-        channel = evm_channel_id(
-            from_, request["recipient"], request["currency"], H.lower(), p["authorizedSigner"], md["escrowContract"], md["chainId"]
-        )
+        payee, token, escrow = request["recipient"], request["currency"], md["escrowContract"]
+        channel = evm_channel_id(from_, payee, token, H.lower(), p["authorizedSigner"], escrow, md["chainId"])
         assert isinstance(channel, str), channel
         return {**own, "payload": {**p, "transaction": wire, "channelId": channel}}
     nonce_hash = expiring_nonce_hash(bytes.fromhex(wire[2:]), from_)
@@ -608,7 +607,7 @@ def completed_for(own: dict[str, Any], wire: str, from_: str, request_text: str)
     return {**own, "payload": {**p, "transaction": wire, "channelId": channel, "descriptor": descriptor}}
 
 
-def test_mpp_session_tempo_build_refuses_a_transaction_with_the_code_bound_gives_the_credential_complete_would_give() -> None:
+def test_mpp_session_tempo_build_refuses_a_transaction_with_the_code_bound_gives_its_credential() -> None:
     # mpp-session-tempo.json's agreedRefusals rows with from or padding. build's voucher and complete return no
     # credential bound refuses: each gives the code bound gives the credential complete would give for the transaction.
     # A row with from is build's opening from that address, its transaction signed with fixed.payerKey, so its sender,
