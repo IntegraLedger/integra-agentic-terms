@@ -4,7 +4,7 @@ The buyer gate for agents that pay: before your wallet signs anything, it confir
 hashes to the value the payment will carry, and builds the payment with that hash.
 
 ```sh
-npm install @integraledger/terms @integraledger/lcp
+npm install @integraledger/terms@0.3.0 @integraledger/lcp@0.4.0
 ```
 
 ## What it is
@@ -44,14 +44,15 @@ record's content: what the record says is for you and your principal to judge.
 ## Install
 
 ```sh
-npm install @integraledger/terms @integraledger/lcp
+npm install @integraledger/terms@0.3.0 @integraledger/lcp@0.4.0
 ```
 
 - Node.js `>=26.11.1`. ESM only.
 - `@integraledger/lcp` is a peer dependency of this package (`~0.4.0`): install it beside it, so your application and
   the gate share one copy, and import from it the bindings you pass in.
-- Chain libraries (`@solana/kit`, `@stellar/stellar-sdk` and others) are optional peers of `@integraledger/lcp`,
-  needed only by the pairings that use them.
+- Chain libraries are optional peers of `@integraledger/lcp`: `@mysten/sui`, `@solana/kit`, `@stellar/stellar-sdk`,
+  `@ton/core`, `algosdk`, `borsh`, `near-api-js` and `ripple-binary-codec`, at the versions `@integraledger/lcp`
+  names. Install the ones the pairings you pay use.
 
 ## Quickstart
 

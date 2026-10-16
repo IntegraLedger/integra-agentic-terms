@@ -4,7 +4,7 @@ The buyer gate as Model Context Protocol tools, with a skill that teaches an age
 it pays.
 
 ```sh
-npx -y @integraledger/terms-mcp
+npx -y @integraledger/terms-mcp@0.3.0
 ```
 
 ## What it is
@@ -50,7 +50,7 @@ Add the server to your MCP client. Most clients take a configuration like this:
   "mcpServers": {
     "terms": {
       "command": "npx",
-      "args": ["-y", "@integraledger/terms-mcp"]
+      "args": ["-y", "@integraledger/terms-mcp@0.3.0"]
     }
   }
 }
@@ -63,7 +63,7 @@ Then give your agent the skill. The package ships it at
 Claude Code, `.claude/skills/`), or paste the file into your agent's instructions:
 
 ```sh
-npm install @integraledger/terms-mcp
+npm install @integraledger/terms-mcp@0.3.0
 cp -r node_modules/@integraledger/terms-mcp/skills/confirming-the-atr-hash-before-paying .claude/skills/
 ```
 
