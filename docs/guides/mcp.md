@@ -16,7 +16,7 @@ Most MCP clients take a configuration like this:
   "mcpServers": {
     "terms": {
       "command": "npx",
-      "args": ["-y", "@integraledger/terms-mcp@0.3.0"]
+      "args": ["-y", "@integraledger/terms-mcp@0.3.1"]
     }
   }
 }
@@ -31,7 +31,7 @@ The skill is `skills/confirming-the-atr-hash-before-paying/SKILL.md` in the pack
 skills directory (for Claude Code, `.claude/skills/`), or paste the file into the agent's instructions:
 
 ```sh
-npm install @integraledger/terms-mcp@0.3.0
+npm install @integraledger/terms-mcp@0.3.1
 cp -r node_modules/@integraledger/terms-mcp/skills/confirming-the-atr-hash-before-paying .claude/skills/
 ```
 
