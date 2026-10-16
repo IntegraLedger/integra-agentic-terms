@@ -283,8 +283,9 @@ class MppSessionSolana:
         d = checked.details
 
         def complete(open_payload: Any) -> dict[str, Any] | Refusal:
-            if not is_object(open_payload) or open_payload.get("action") != "open":
-                return Refusal("mpp/session-action")
+            """The opening credential, {challenge, payload: open_payload}, once bound's read of it (_opening) takes
+            it, else that read's refusal: a payload that is not an object, or a credential over the credential size
+            bound, is mpp/credential-malformed, and another action mpp/session-action."""
             credential = {"challenge": challenge, "payload": open_payload}
             o = _opening(credential)
             return o if isinstance(o, Refusal) else credential

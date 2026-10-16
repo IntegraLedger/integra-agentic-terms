@@ -122,3 +122,44 @@ def test_in_channel_size_the_channel_members_of_the_sessions_without_a_build_wit
         assert channel_answers(binding, sized) == channel_answers(binding, plain)
     else:
         assert channel_answers(binding, sized) == [Refusal(row["expect"])] * 3
+
+
+def _session_build(pairing: str) -> tuple[Any, dict[str, Any], dict[str, Any]]:
+    """The pairing's build on its B2 inputs under its placed challenge, and its B6 credential."""
+    s = set_up(pairing)
+    b2 = buyer(PAIRINGS[pairing].file, pairing, "B2")
+    b6 = buyer(PAIRINGS[pairing].file, pairing, "B6")
+    assert b2 is not None and b6 is not None
+    account = b2["input"]["account"].split(":")[2]
+    choice: dict[str, Any] = {"challenge": s.placed, "from": account}
+    if pairing == "mpp/session/xrpl":
+        i = b2["input"]["inputs"]
+        choice |= {"deposit": int(i["deposit"]), "xrpl": {**i["xrpl"], "publicKey": i["xrpl"]["publicKey"][2:]}}
+    unsigned = PAIRINGS[pairing].binding.build(choice, s.h)
+    assert not isinstance(unsigned, Refusal), unsigned
+    return unsigned, s.placed, b6["input"]["presented"]
+
+
+def test_the_solana_session_complete_refuses_an_opening_that_is_not_an_object_as_bound_does() -> None:
+    """complete holds {challenge, payload: open} to bound's read: a payload that is not an object is
+    mpp/credential-malformed, from complete and from bound (mpp-complete-size.test.ts in @integraledger/lcp 0.4.1)."""
+    unsigned, placed, _ = _session_build("mpp/session/solana")
+    for opening in (None, "x", 5):
+        assert unsigned.complete(opening) == Refusal("mpp/credential-malformed"), opening
+        bound = PAIRINGS["mpp/session/solana"].binding.bound({"challenge": placed, "payload": opening})
+        assert bound == Refusal("mpp/credential-malformed"), opening
+
+
+def test_the_xrpl_session_complete_reads_the_blob_as_bound_reads_it_before_the_claim_signature() -> None:
+    """A signedBlob that is not a string is xrpl/blob-malformed, bound's code for it, with B6's claim signature and
+    with zz; B6's blob with the claim signature zz, which bound does not read, is mpp/credential-malformed from
+    complete, while bound gives H (mpp-complete-size.test.ts in @integraledger/lcp 0.4.1)."""
+    unsigned, _, b6 = _session_build("mpp/session/xrpl")
+    binding = PAIRINGS["mpp/session/xrpl"].binding
+    blob, signature = b6["payload"]["transaction"], b6["payload"]["signature"]
+    for claim in (signature, "zz"):
+        assert unsigned.complete({"signedBlob": 5, "claimSignature": claim}) == Refusal("xrpl/blob-malformed"), claim
+        presented = {**b6, "payload": {**b6["payload"], "transaction": 5, "signature": claim}}
+        assert binding.bound(presented) == Refusal("xrpl/blob-malformed"), claim
+    assert unsigned.complete({"signedBlob": blob, "claimSignature": "zz"}) == Refusal("mpp/credential-malformed")
+    assert binding.bound({**b6, "payload": {**b6["payload"], "signature": "zz"}}) == set_up("mpp/session/xrpl").h

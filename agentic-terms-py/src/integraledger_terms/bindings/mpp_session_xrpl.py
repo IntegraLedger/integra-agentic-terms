@@ -141,20 +141,20 @@ class XrplSessionUnsigned:
     _amount: Any
 
     def complete(self, signed: object) -> dict[str, Any] | Refusal:
-        """The opening credential, once its signed blob is an opening bound reads (_opening): its NetworkID one the
-        challenge's network takes, and H in its one LCP memo."""
+        """The opening credential, once its signed blob is an opening bound reads (_opening), in bound's order and with
+        its codes: the credential's size, the blob's type (xrpl/blob-malformed), its decode, its NetworkID one the
+        challenge's network takes, and H in its one LCP memo. Then the claim signature, which bound does not read: one
+        that is not hex bytes is mpp/credential-malformed. Only a value that is not an object is refused before
+        _opening, mpp/credential-malformed."""
         if not is_object(signed):
             return Refusal("mpp/credential-malformed")
         blob, signature = signed.get("signedBlob"), signed.get("claimSignature")
-        if not isinstance(blob, str) or not is_blob_hex(signature):
-            return Refusal("mpp/credential-malformed")
-        credential = {
-            "challenge": self._challenge,
-            "source": self._source,
-            "payload": {"action": "open", "transaction": blob, "amount": self._amount, "signature": signature},
-        }
+        payload = {"action": "open", "transaction": blob, "amount": self._amount, "signature": signature}
+        credential = {"challenge": self._challenge, "source": self._source, "payload": payload}
         o = _opening(credential)
-        return o if isinstance(o, Refusal) else credential
+        if isinstance(o, Refusal):
+            return o
+        return credential if is_blob_hex(signature) else Refusal("mpp/credential-malformed")
 
 
 @dataclass(frozen=True, slots=True)
