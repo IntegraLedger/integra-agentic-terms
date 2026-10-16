@@ -3,9 +3,7 @@ whose memo is MPP's attribution memo for the chosen challenge; H rides in the ch
 the memo's nonce is keccak256 of that id. Nothing here fetches, hashes the ATR or signs."""
 
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from .._core import AtrHash
 from .._types import Advertised, Broadcaster, Json, Refusal
@@ -28,12 +26,13 @@ from ._mpp import (
     challenge_bound,
     check_attribution,
     checked_for,
+    chosen_for,
     credential_of,
     fetched_of,
     mpp_broadcaster,
     read,
 )
-from ._mpp_checks import decode_object, hedera_charge_request_legs
+from ._mpp_checks import hedera_charge_request_legs
 from .x402_exact_hedera import HederaUnsigned
 
 ID = "mpp/charge/hedera"
@@ -51,22 +50,27 @@ def _whole(value: object) -> int | None:
     return None
 
 
-def build_charge(challenge: object, request: object, c: object) -> HederaUnsigned | Refusal:
+def build_charge(choice: object, h: object) -> HederaUnsigned | Refusal:
     """The body the payer signs for an MPP Hedera charge: the payer's own transaction id, MPP's attribution memo for
     this challenge as the memo, and the token transfers of currency: the payer's debit, the recipient's remainder and
-    each split. With credentialType hash, the default when none is named, the request carries broadcast: true, for a
-    signer that signs and broadcasts the body; with transaction (pull) the signature completes the transaction. A
-    challenge id or realm with no UTF-8 form is mpp/challenge-malformed, and such a clientId is hedera/option-malformed."""
-    if not is_object(challenge) or not is_well_formed(challenge.get("id")) or not is_well_formed(challenge.get("realm")):
-        return Refusal("mpp/challenge-malformed")
-    if not is_object(request):
+    each split. The chosen challenge is held as bound holds an echoed one (chosen_for), with bound's code for each
+    fault, in bound's order, and its id must derive from h, else mpp/id-not-ours; the request, id and realm are read
+    from the snapshot it holds. A choice that is not an object, and every other input the choice carries, is
+    hedera/option-malformed. With credentialType hash, the default when none is named, the request carries
+    broadcast: true, for a signer that signs and broadcasts the body; with transaction (pull) the signature completes
+    the transaction."""
+    if not is_object(choice):
         return Refusal("hedera/option-malformed")
-    legs = hedera_charge_request_legs(request)
+    checked = chosen_for(choice.get("challenge"), h, ID)
+    if isinstance(checked, Refusal):
+        return checked
+    challenge, c = checked.challenge, choice
+    legs = hedera_charge_request_legs(checked.request)
     if isinstance(legs, Refusal):
         return legs
     currency, amount, every = legs
-    vs = c.get("validStart") if is_object(c) else None
-    if not is_object(c) or not is_entity(c.get("payer")) or not is_entity(c.get("node")) or not is_object(vs):
+    vs = c.get("validStart")
+    if not is_entity(c.get("payer")) or not is_entity(c.get("node")) or not is_object(vs):
         return Refusal("hedera/option-malformed")
     seconds, nanos, max_fee, client_id = vs.get("seconds"), _whole(vs.get("nanos")), c.get("maxFee"), c.get("clientId")
     if (
@@ -94,10 +98,6 @@ def build_charge(challenge: object, request: object, c: object) -> HederaUnsigne
     return HederaUnsigned(request={"kind": "hedera-body", "bodyBytes": body})
 
 
-def _request_of(challenge: Mapping[str, Any]) -> dict[str, Any] | None:
-    return decode_object(challenge.get("request"))
-
-
 @dataclass(frozen=True, slots=True)
 class MppChargeHedera:
     id: str = ID
@@ -108,15 +108,9 @@ class MppChargeHedera:
         return read(doc)
 
     def build(self, choice: Json, h: AtrHash) -> HederaUnsigned | Refusal:
-        """The chosen challenge's id and realm, its decoded request, and the payer's values, built as build_charge
+        """The chosen challenge, held as bound holds an echoed one, and the payer's values, built as build_charge
         builds them. The body carries no hash of its own: the challenge's id derives from it."""
-        challenge = choice.get("challenge") if is_object(choice) else None
-        request = _request_of(challenge) if is_object(challenge) else None
-        if not is_object(choice) or not is_object(challenge) or request is None or not isinstance(challenge.get("id"), str):
-            return Refusal("mpp/choice-malformed")
-        keys = ("payer", "node", "validStart", "maxFee", "clientId", "credentialType")
-        c = {k: choice[k] for k in keys if k in choice}
-        return build_charge({"id": challenge["id"], "realm": challenge.get("realm")}, request, c)
+        return build_charge(choice, h)
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The hash from the echoed challenge, held to the pairing's filter (checked_for), once the payer's memo is this

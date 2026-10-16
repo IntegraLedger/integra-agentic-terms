@@ -128,18 +128,19 @@ class MppChargeHederaPiece(MppRailPiece):
         return dict(signed)
 
     def build(self, binding: Binding, choice: Any, h: AtrHash) -> Any:
-        """The binding's build, called with the chosen challenge's id and realm, its decoded request, and the payer's
-        values, credentialType among them. The body carries no hash of its own: the challenge's id derives from it, and
-        bound reads it there."""
+        """The binding's build, called with the chosen challenge, the payer's values, credentialType among them, and
+        H. The binding holds the challenge as bound holds an echoed one, with bound's code for each fault, and refuses
+        one whose id does not derive from H with mpp/id-not-ours. The body carries no hash of its own: the challenge's
+        id derives from it, and bound reads it there."""
         if isinstance(choice, Refusal):
             return choice
         challenge = choice.get("challenge") if isinstance(choice, Mapping) else None
-        request = request_of(challenge)
-        if not isinstance(challenge, Mapping) or request is None or not isinstance(challenge.get("id"), str):
+        if not isinstance(challenge, Mapping) or request_of(challenge) is None:
             return Refusal("mpp/choice-malformed")
-        keys = ("payer", "node", "validStart", "maxFee", "clientId", "credentialType")
-        c = {k: choice[k] for k in keys if k in choice}
-        return build_charge({"id": challenge["id"], "realm": challenge.get("realm")}, request, c)
+        if not isinstance(challenge.get("id"), str):
+            return Refusal("mpp/choice-malformed")
+        keys = ("challenge", "payer", "node", "validStart", "maxFee", "clientId", "credentialType")
+        return build_charge({k: choice[k] for k in keys if k in choice}, h)
 
 
 PIECE = MppChargeHederaPiece(

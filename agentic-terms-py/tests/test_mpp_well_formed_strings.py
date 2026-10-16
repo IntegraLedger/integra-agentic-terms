@@ -1,8 +1,9 @@
 """A string MPP hashes or signs must have a UTF-8 form: one holding a lone surrogate has none, so it is refused where it
 is read, as the protocol package refuses it, and nothing is hashed, signed or raised. A challenge's realm, which the
 attribution memo and the challenge hash take, is mpp/challenge-malformed when the challenge is checked and when an
-echoed challenge is read; an id is left to its read as H. MPP Hedera's charge build refuses such an id or realm
-mpp/challenge-malformed and such a clientId hedera/option-malformed; a Tempo charge's clientId is
+echoed challenge is read; an id is left to its read as H. MPP Hedera's charge build holds the chosen challenge as
+bound holds an echoed one, so such a realm is mpp/challenge-malformed and such an id mpp/id-not-ours, from build and
+from bound, and such a clientId is hedera/option-malformed; a Tempo charge's clientId is
 mpp/input-malformed; MPP Solana's session proof raises TypeError for such a channelId, payer or challengeId. The
 challenges are the vector files' (mpp-challenge.json's R_T and the Tempo memo pairing; mpp-charge-hedera.json), each
 with one member given a lone surrogate."""
@@ -12,8 +13,9 @@ from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_CHARGE_TEMPO_MEMO, Declined, Refusal, confirm
+from integraledger_terms import MPP_CHARGE_HEDERA, MPP_CHARGE_TEMPO_MEMO, Declined, Refusal, confirm
 from integraledger_terms import _gate
+from integraledger_terms.bindings._codec import js_json
 from integraledger_terms.bindings._mpp import challenge_bound, check_challenge
 from integraledger_terms.bindings.mpp_charge_hedera import build_charge
 from integraledger_terms.bindings.mpp_session_solana import session_proof
@@ -69,19 +71,24 @@ def test_a_tempo_client_id_with_no_utf8_form_is_input_malformed() -> None:
     assert MPP_CHARGE_TEMPO_MEMO.build({**choice, "clientId": "agent" + LONE}, H) == Refusal("mpp/input-malformed")
 
 
-def test_a_hedera_charge_refuses_an_id_or_realm_and_a_client_id_with_no_utf8_form() -> None:
+def test_a_hedera_charge_refuses_an_id_or_realm_with_bounds_code_and_a_client_id_with_no_utf8_form() -> None:
+    """The build holds the challenge as bound holds an echoed one: a realm that is not well-formed is
+    mpp/challenge-malformed, and an id that is not is no id derived from H, mpp/id-not-ours, from build and from bound
+    (well-formed-strings.test.ts in @integraledger/lcp 0.4.1); such a client id is hedera/option-malformed."""
+    own = placed_doc(issued("hedera", "charge", js_json(HEDERA["request"]), realm=HEDERA["realm"]), H, LINK)[0]
     c = {
         "payer": HEDERA["payer"],
         "node": HEDERA["node"],
         "validStart": {"seconds": int(HEDERA["validStart"]["seconds"]), "nanos": HEDERA["validStart"]["nanos"]},
         "maxFee": int(HEDERA["maxFee"]),
     }
-    challenge = {"id": HEDERA["challengeId"], "realm": HEDERA["realm"]}
-    assert not isinstance(build_charge(challenge, HEDERA["request"], c), Refusal)
-    for member in ("id", "realm"):
-        bad = {**challenge, member: challenge[member] + LONE}
-        assert build_charge(bad, HEDERA["request"], c) == Refusal("mpp/challenge-malformed")
-    assert build_charge(challenge, HEDERA["request"], {**c, "clientId": "agent" + LONE}) == Refusal("hedera/option-malformed")
+    assert not isinstance(build_charge({"challenge": own, **c}, H), Refusal)
+    for member, code in (("realm", "mpp/challenge-malformed"), ("id", "mpp/id-not-ours")):
+        bad = {**own, member: own[member] + LONE}
+        assert build_charge({"challenge": bad, **c}, H) == Refusal(code)
+        pushed = {"challenge": bad, "payload": {"type": "hash", "transactionId": "0.0.5555@1700000000.0"}}
+        assert MPP_CHARGE_HEDERA.bound(pushed) == Refusal(code)
+    assert build_charge({"challenge": own, **c, "clientId": "agent" + LONE}, H) == Refusal("hedera/option-malformed")
 
 
 @pytest.mark.parametrize("at", [0, 1, 2], ids=["channelId", "payer", "challengeId"])

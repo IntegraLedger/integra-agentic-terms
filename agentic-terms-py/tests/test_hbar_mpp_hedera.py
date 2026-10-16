@@ -16,6 +16,7 @@ from integraledger_terms.bindings.mpp_session_hedera import channel_id, voucher
 
 import ed25519
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, link_calls, plant, run
+from credential_size import with_fault
 from hbar_support import EVM_ACCOUNT, b16
 from mpp_docs import issued, placed_doc
 from support import ACCOUNT, digest, hexb, load, serving, sign_typed
@@ -187,6 +188,37 @@ def test_mpp_charge_hedera_build_complete_and_bound() -> None:
     assert BINDING.bound(credential({"type": "transaction", "transaction": wire})) == C["bound"]["expectBound"]
     other = credential({"type": "transaction", "transaction": C["bound"]["otherTransactionBase64"]})
     assert BINDING.bound(other) == Refusal(C["bound"]["expectOther"])
+
+
+CHALLENGE_ROWS: list[dict[str, Any]] = load("mpp-challenge.json")["buildChallenge"]["rows"]
+
+
+def hedera_choice(challenge: Any) -> dict[str, Any]:
+    return {
+        "challenge": challenge,
+        "payer": F["payer"],
+        "node": F["node"],
+        "validStart": {"seconds": int(F["validStart"]["seconds"]), "nanos": F["validStart"]["nanos"]},
+        "maxFee": int(F["maxFee"]),
+    }
+
+
+@pytest.mark.parametrize("row", CHALLENGE_ROWS, ids=[r["case"] for r in CHALLENGE_ROWS])
+def test_mpp_charge_hedera_build_holds_the_chosen_challenge_as_bound_holds_an_echoed_one(row: dict[str, Any]) -> None:
+    """mpp-challenge.json buildChallenge rows on mpp/charge/hedera: the file's fixed challenge, placed for fixed.H,
+    with the row's fault. build refuses it with the row's code, and bound gives the same code for its hash credential
+    naming push.transactionId."""
+    assert len(CHALLENGE_ROWS) == 8
+    challenge = with_fault(DOC[0], row)
+    assert BINDING.build(hedera_choice(challenge), H) == Refusal(row["expect"])
+    hashed = {"type": "hash", "transactionId": C["push"]["transactionId"]}
+    assert BINDING.bound({"challenge": challenge, "payload": hashed}) == Refusal(row["expect"])
+
+
+def test_mpp_charge_hedera_build_refuses_a_challenge_whose_id_derives_from_another_h() -> None:
+    """The placed challenge builds for its own H; for any other H, 32 bytes of 0x11, it is mpp/id-not-ours."""
+    assert not isinstance(BINDING.build(hedera_choice(DOC[0]), H), Refusal)
+    assert BINDING.build(hedera_choice(DOC[0]), "0x" + "11" * 32) == Refusal("mpp/id-not-ours")
 
 
 def test_mpp_charge_hedera_requests_are_refused() -> None:
@@ -362,10 +394,9 @@ def test_mpp_charge_hedera_build_hands_a_push_over_itself() -> None:
         "validStart": {"seconds": int(F["validStart"]["seconds"]), "nanos": F["validStart"]["nanos"]},
         "maxFee": int(F["maxFee"]),
     }
-    challenge = {"id": F["challengeId"], "realm": F["realm"]}
 
     def at(extra: dict[str, Any]) -> Any:
-        u = build_charge(challenge, F["request"], {**base, **extra})
+        u = build_charge({"challenge": DOC[0], **base, **extra}, H)
         if isinstance(u, Refusal):
             return u.code
         return {**u.request, "bodyBytes": bytes(u.request["bodyBytes"]).hex()}
