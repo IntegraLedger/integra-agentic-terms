@@ -19,10 +19,10 @@ for the buyer and its principal to judge.
 
 It works across payment protocols and rails. Each **pairing** of protocol, scheme and rail (such as
 `x402/exact/eip155/eip3009`: x402's `exact` scheme on an EVM chain, paid with an EIP-3009 authorization) has a
-**binding**, the field its specification defines for H. The gate serves every pairing of
-[`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol): x402, MPP, card, AP2, UCP, ACP and ACK, on
-EVM chains, Tempo, Solana, Stellar, the XRP Ledger, Hedera, Algorand, Aptos, Sui, NEAR, Starknet, Polkadot, TRON, TON,
-Cardano, Casper, Concordium, Stacks and Lightning.
+**binding**: the field of the pairing's payment, as the protocol's own specification defines that payment, that carries
+H. The gate serves every pairing of [`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol): x402,
+MPP, card, AP2, UCP, ACP and ACK, on EVM chains, Tempo, Solana, Stellar, the XRP Ledger, Hedera, Algorand, Aptos, Sui,
+NEAR, Starknet, Polkadot, TRON, TON, Cardano, Casper, Concordium, Stacks and Lightning.
 
 ## How the packages fit together
 
@@ -44,7 +44,8 @@ flowchart LR
 - **`integraledger-terms`** is the same gate in Python, with its own bindings. It is a second implementation of the
   same rules, not a wrapper.
 - **The shared vectors**, shipped in `@integraledger/lcp`'s `vectors/` directory, fix the rules byte for byte. Both
-  gates run every one and must produce the same hashes, the same requests and the same declines.
+  gates run every vector for the pairings and buyer rules they serve, and must produce the same hashes, the same
+  requests and the same declines.
 
 ## Packages
 
@@ -59,10 +60,11 @@ pairings it serves.
 
 ## Quickstart
 
-- **Your agent is TypeScript:** start with [`@integraledger/terms`](./agentic-terms#quickstart). One call,
-  `transact(offer, binding, signer, fetch)`, compares and pays.
-- **Your agent is Python:** start with [`integraledger-terms`](./agentic-terms-py#quickstart). One call,
-  `await transact(offer, binding, signer, client)`.
+- **Your agent is TypeScript:** start with [`@integraledger/terms`](./agentic-terms#quickstart).
+  `transact(offer, binding, signer, fetch)` compares and pays in one call; for a pairing that needs an agreement
+  payment, the first call returns it for your agent's approval, and a second call, with `approved`, pays.
+- **Your agent is Python:** start with [`integraledger-terms`](./agentic-terms-py#quickstart).
+  `await transact(offer, binding, signer, client)` does the same, with `approved=…` on the second call.
 - **Your agent uses MCP tools:** add [`@integraledger/terms-mcp`](./agentic-terms-mcp#install) to its client, and
   give it the skill.
 

@@ -99,20 +99,30 @@ seller's own flow completes the payment.
 
 ### Pairings that pay an agreement first
 
-If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, the payment does not itself carry H in public,
-and an agreement payment carrying it must be recorded first. The agreement payment is a payment like any other, and the
+If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, the payment is not itself a public proof of H,
+and an agreement payment carrying H must be recorded first. The agreement payment is a payment like any other, and the
 agent approves it as it approves any payment:
 
 - where the host offers `atr_agree`, call it with `atr.base64` and `chosen`, exactly as returned, `mac` included (a
   changed `chosen` is declined `chosen-unverified`, and nothing is fetched or signed). It returns `approve`, the
-  agreement payment, and signs nothing: `approve.option` is its `amount`, `asset`, `payTo` and `network`. To approve
-  it, call `atr_agree` again with `approved` set to `approve`, unchanged; it returns the `receipt`;
-- otherwise, request `chosen.agreement`. It answers with an x402 payment request for the same H; review it and pay it
-  through `atr_confirm` and `atr_finish` with the pairing its option names, then request the URL again with that
-  payment until it answers `200` with the receipt.
+  agreement payment, and signs nothing: `approve.option` is its `amount`, `asset`, `payTo` and `network`. Where the
+  agreement is already recorded, it returns the `receipt`. To approve the payment, call `atr_agree` again with
+  `approved` set to `approve`, exactly as returned; it returns the `receipt`;
+- otherwise, request `chosen.agreement`. It answers `402` with an x402 payment request. Pay it through `atr_confirm`
+  and `atr_finish` with the pairing of an option for which `atr_confirm` returns a `request` and no
+  `chosen.agreement`. Before the wallet signs, check that the `atrHash` `atr_confirm` returns for it is the H of the
+  payment being made, and pay nothing if it is not. Then request the URL again with that same payment until it answers
+  `200` with a receipt for that H.
 
-Then call `atr_confirm` again with the same arguments and the `receipt`. Only then does it return `request`. See
-[agreement payments](./agreement-payments.md).
+Then call `atr_confirm` again with the same arguments and the `receipt`. Only then does it return `request`. The
+receipt is the agreement URL's statement: `atr_confirm` checks that it names H and is a recorded agreement, and does
+not look up the transaction it names.
+
+Once the agreement payment is sent, a decline from `atr_agree` or `atr_transact` carries it as `moved`;
+`agreement-pending` means it may settle yet. To collect the receipt, call the same tool again without `approved`: the
+gate asks the agreement URL unpaid and goes on once it answers `200` with the receipt, or declines `agreement-pending`
+again while it answers `202`, signing nothing. Never call again with `approved` for the same agreement: every call with
+`approved` signs and sends a new agreement payment. See [agreement payments](./agreement-payments.md).
 
 ### Channels and sessions
 
@@ -146,10 +156,15 @@ declare const agreementSigner: Signer; // a second wallet that pays agreements; 
 serveStdio(() => createBuyerServer({ fetch: globalThis.fetch, signer, agreementSigner }));
 ```
 
+The `fetch` you pass is the server's whole network policy. The binary's public-address-only fetch is not exported. A
+server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses loopback,
+private-use, link-local and unique-local addresses.
+
 With a host signer, the agent never sees a request: `atr_transact` returns the payment to send and the ATR to keep, and
-declines exactly as the gate does. Every payment is still shown before it is signed: where the pairing needs an
-agreement payment, `atr_transact` first returns it as `approve` and signs nothing, and pays it only when called again
-with `approved` set to `approve`.
+declines exactly as the gate does. The agreement payment is shown before it is signed: where the pairing needs one,
+`atr_transact` first returns it as `approve`, with its amount, asset, payee and network, signs nothing, and pays it only
+when called again with `approved` set to `approve`. The payment for the resource is handed to the host's signer
+directly; approving it is the agent's step before it calls `atr_transact`. The gate applies no spending limit.
 
 ## What the server guarantees
 

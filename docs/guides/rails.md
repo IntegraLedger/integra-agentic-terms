@@ -20,11 +20,12 @@ The signer's `account` is CAIP-10. Its namespace selects the pairings it can pay
 
 | Namespace | Rails | Example |
 | --- | --- | --- |
-| `eip155` | EVM chains, Tempo, and MPP's EVM, Tempo and USDC pairings | `eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` |
+| `eip155` | EVM chains, Tempo, and MPP's EVM, Tempo and `usdc/evm` pairings | `eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` |
 | `solana` | Solana | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:<base58 address>` |
 | `stellar`, `xrpl`, `hedera`, `algorand`, `aptos`, `sui`, `near`, `starknet`, `polkadot`, `tron`, `tvm`, `cardano`, `casper`, `ccd`, `stacks` | The chain of that name (`tvm` is TON, `ccd` is Concordium) | `<namespace>:<network>:<address>` |
 | `lnbtc` | Lightning | `lnbtc:000000000019d6689c085ae165831e93:<node id>` |
-| any | Card, AP2, UCP, ACP and ACK pairings, where the account names the buyer | |
+| `cloudflare` | `x402/batch-settlement/cloudflare`, where the account names your agent | `cloudflare:402:agent.example` |
+| any | Card, AP2, UCP, ACP and ACK pairings, where the account names the buyer; MPP's card and Stripe pairings, which do not read it; `mpp/charge/nearintents`, on the challenge's origin network; `mpp/charge/usdc/gateway`, on a network the challenge accepts as a Gateway source | |
 
 ## EVM
 
@@ -178,7 +179,10 @@ agreement payment are done, and the protocol's own flow completes the payment.
 
 ## Pairings that pay an agreement first
 
-Every pairing whose payment is not itself a public proof of H pays the seller's agreement URL first, once the buyer's
-agent has approved that payment. The [pairings reference](../reference/pairings.md) marks them, and the
-[agreement payments guide](./agreement-payments.md) describes the exchange. Pass `agreementSigner` to `transact` when a
-different wallet pays the agreement, for example an EVM wallet beside a card.
+With `transact`, every pairing whose payment is not itself a public proof of H pays the seller's agreement URL first,
+once the buyer's agent has approved that payment. `confirm` and `finish` neither pay nor check the agreement; only
+`transact` and `agree` do (see [driving the steps yourself](./agreement-payments.md#driving-the-steps-yourself)). The
+[pairings reference](../reference/pairings.md) marks these pairings, and the
+[agreement payments guide](./agreement-payments.md) describes the exchange. The agreement payment's build reads the
+same `inputs` as the payment's own: a Solana agreement option reads the Solana inputs above. Pass `agreementSigner` to
+`transact` when a different wallet pays the agreement, for example an EVM wallet beside a card.

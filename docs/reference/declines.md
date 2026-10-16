@@ -17,8 +17,9 @@ type Declined = {
 
 In Python, a decline is `Declined(code, detail, moved)`, with `moved` a `Moved(signed, atr_bytes, h)` or `None`.
 
-`code` is one of the twelve values below. `detail` is either a sentence for a person to read, or a refusal code of the
-form `<protocol>/<reason>`, such as `x402/no-payable-option` or `mpp/credential-malformed`. Program against `code`;
+`code` is one of the twelve values below. `detail` is either a sentence for a person to read, or a refusal code,
+normally of the form `<protocol>/<reason>`, such as `x402/no-payable-option` or `mpp/credential-malformed`
+(`member-failed`, for a binding member that threw in `openChannel` or `within`, has no prefix). Program against `code`;
 log `detail`.
 
 ## Decline codes
@@ -35,8 +36,8 @@ log `detail`.
 | `signer-failed` | Your signer threw (TypeScript) or raised (Python). | Yes |
 | `signed-not-bound` | The pairing does not read the hash of the compared bytes from the payment, from a payment presented to `check` or from a channel opening; the signer's answer did not complete the payment; a channel opening or voucher does not belong to the held channel; the signed agreement payment or channel opening is not plain JSON (nested past 64 levels, or not written by JSON). The payment is not returned, and an agreement payment is not sent. | Yes, or not needed |
 | `agreement-not-offered` | The pairing's payment is not itself a public proof of H, and the seller's offer names no agreement URL. | No |
-| `agreement-pending` | The agreement URL answered `202` before the gate paid (another agreement payment for this ATR is settling); the agreement payment was sent and not recorded within the paid option's `maxTimeoutSeconds` plus 180 seconds; or the caller's `signal` ended the exchange after the agreement payment was sent. | For the agreement only |
-| `agreement-failed` | The agreement URL could not be reached; answered a status other than `200`, `202` or `402`; answered `402` without a readable `PAYMENT-REQUIRED`; answered `200` or `402` with a `Content-Encoding` other than `identity`; or answered `200` with something other than a receipt for this H, a receipt over 64 KiB included. The approved agreement payment names another agreement URL. The caller's `signal` ended the exchange before the agreement payment was sent. | For the agreement only, when it failed after payment |
+| `agreement-pending` | The agreement URL answered `202` before the gate paid (another agreement payment for this ATR is settling); the agreement payment is sent and not recorded within the paid option's `maxTimeoutSeconds` plus 180 seconds; or the caller's `signal` ended the exchange after the agreement payment is sent. | No, for a `202` before paying; otherwise for the agreement only |
+| `agreement-failed` | The unpaid request: the agreement URL could not be reached, or answered a status other than `200`, `202` or `402`, or a `402` without a readable `PAYMENT-REQUIRED`. The paid request: any answer but `200`, `202` or a `5xx`, a `402` included (an unreachable URL, a timeout and a `5xx` are retried). Either request: a redirect; a `200` or `402` with a `Content-Encoding` other than `identity`; or a `200` that is not a receipt for this H, a receipt over 64 KiB included. The approved agreement payment names another agreement URL. The caller's `signal` ended the exchange before the agreement payment is sent. | For the agreement only, when it failed after payment |
 
 The MCP server adds three codes of its own:
 
@@ -58,8 +59,11 @@ asked to broadcast, a session opening is sent on chain. If the gate declines aft
 
 The agreement exchange does the same: once the agreement payment has been sent, every decline carries it as `moved`.
 
-Keep `moved`. It is a payment that has left, or may have left, your wallet. Present it again to the seller rather than
-signing a new one.
+Keep `moved`. It is a payment that has left, or may have left, your wallet. For the payment for the resource, present it
+again to the seller rather than signing a new one. For an agreement payment, call again without `approved`: the gate
+asks the agreement URL unpaid and goes on once it answers `200` with the receipt, or declines `agreement-pending` again
+while it answers `202`, signing nothing. Never call again with `approved` for the same agreement: every call with
+`approved` signs and sends a new agreement payment.
 
 ## Detail codes the gate writes
 

@@ -20,8 +20,9 @@ match hands your signer a request built with that hash. After your signer answer
 the completed payment, and the payment is returned only if it is the hash of the bytes you received, or, where the proof
 is the agreement payment, without that reading.
 
-It runs in your process, with your HTTP client and your signer. It holds no keys, moves no funds, and never reads the
-record's content: what the record says is for you and your principal to judge.
+It runs in your process, with your HTTP client and your signer. It holds no keys and never reads the record's content:
+what the record says is for you and your principal to judge. The one payment it sends is the agreement payment your
+agent approved, to the agreement URL.
 
 ## Key concepts
 
@@ -32,14 +33,16 @@ record's content: what the record says is for you and your principal to judge.
 - **Legal Context Protocol (LCP):** the pattern this package implements: where the payment the buyer approves carries
   H, that approval is the buyer's acceptance of that exact record; where it does not, the pairing's `proves` says so.
 - **Pairing:** a payment protocol, scheme and rail combination, such as `x402/exact/eip155/eip3009`.
-- **Binding:** how H rides in a pairing's payment, the field its specification defines. For
-  `x402/exact/eip155/eip3009` it is the EIP-3009 `nonce`. Bindings are exported by
-  [`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol), one per pairing.
+- **Binding:** how H rides in a pairing's payment: the field of that payment, as the protocol's own specification
+  defines the payment, that carries H. For `x402/exact/eip155/eip3009` it is the EIP-3009 `nonce`. Bindings are exported
+  by [`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol), one per pairing.
 - **Buyer gate:** this package: the buyer-side check that compares the served bytes with H before anything is signed.
 - **Seller:** the party serving the resource.
-- **Facilitator:** the x402 role that verifies and settles. The gate never talks to one: it returns the payment to you.
+- **Facilitator:** the x402 role that verifies and settles. The gate never talks to one. It returns the payment to you,
+  except the approved agreement payment, which it sends to the agreement URL.
 - **Vectors:** the shared test cases that fix the rules byte for byte across languages. This package and the Python
-  gate, [`integraledger-terms`](https://pypi.org/project/integraledger-terms/), pass the same ones.
+  gate, [`integraledger-terms`](https://pypi.org/project/integraledger-terms/), run the same `buyer` rows and pairing
+  vectors.
 
 ## Install
 
@@ -114,8 +117,8 @@ console.log("H           ", result.h);
 console.log("signed nonce", payment.payload.authorization.nonce);
 console.log("kept bytes  ", result.bytes.length);
 
-// x402 over HTTP sends the payment as base64 of its JSON, in the PAYMENT-SIGNATURE header.
-const header = btoa(JSON.stringify(result.signed));
+// x402 over HTTP sends the payment as base64 of the UTF-8 bytes of its JSON, in the PAYMENT-SIGNATURE header.
+const header = Buffer.from(JSON.stringify(result.signed), "utf8").toString("base64");
 console.log("header      ", header.length > 0 ? "ready" : "empty");
 ```
 
@@ -164,10 +167,13 @@ Every function returns a value, never throws for a protocol outcome: either its 
 
 ## Guides
 
-### Pay in one call: `transact`
+### Pay with `transact`
 
 `transact(doc, binding, signer, fetch, options?)` runs the whole order: compare, pay the agreement your agent approved
-where the pairing needs one, sign, finish. Its result is:
+where the pairing needs one, sign, finish. For most pairings that is one call. For a pairing that needs an agreement
+payment, the first call returns that payment for your agent's approval, and a second call, with `approved`, pays it and
+then the resource. The payment for the resource is handed to your signer directly: approving it is your agent's step
+before it calls `transact`, and the gate applies no spending limit. Its result is:
 
 | Member | What it is |
 | --- | --- |
@@ -194,7 +200,14 @@ Any other member, or a member of the wrong kind, is declined before any fetch.
 ### Sign elsewhere: `confirm`, then `finish`
 
 When the key lives in a hardware wallet or a signing service, split the order. `chosen` is plain JSON, so it crosses
-process boundaries with the bytes:
+process boundaries with the bytes. `finish` recomputes H from the bytes you hand back and rebuilds the payment from
+`chosen`; it trusts both. Keep `chosen` and the bytes on your side of the boundary, or seal them, and carry `request`
+to the signer over a channel you trust.
+
+`confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. When `chosen.agreement` is
+set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
+`agree(bytes, chosen.agreement, signer, fetch)`, have your agent approve the `approve` it returns, call `agree` again
+with `{ approved }`, and sign `request` only with its `receipt` in hand.
 
 ```ts
 import { confirm, finish, type Fetch } from "@integraledger/terms";
@@ -238,7 +251,7 @@ const signature = await wallet.signTypedData(
   confirmed.request.typedData as Parameters<typeof wallet.signTypedData>[0],
 );
 
-// 3. Finish from what came back. finish recomputes H from the bytes; it trusts nothing it did not rebuild.
+// 3. Finish from what came back. finish recomputes H from the bytes and rebuilds the payment from chosen.
 const back = JSON.parse(handOff);
 const done = await finish(new Uint8Array(Buffer.from(back.atr, "base64")), back.chosen, signature, exactEip3009);
 if ("decline" in done) throw new Error(done.decline.code);
@@ -282,12 +295,20 @@ before anything is signed:
   public proof: the same rule as for the main payment's options.
 - The agreement URL's `402` must advertise the same H, or nothing is signed (`hash-mismatch`).
 - Once the agreement payment is sent, the gate sends the same payment again after each `202`, `5xx` or timeout, within
-  the paid option's `maxTimeoutSeconds` plus 180 seconds. It never signs a second agreement payment. `signal` ends the
-  exchange sooner.
-- Where the agreement is already recorded, the first call goes straight on to the main payment.
+  the paid option's `maxTimeoutSeconds` plus 180 seconds. Within one call it never signs a second agreement payment.
+  `signal` ends the exchange sooner.
+- The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not
+  look up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded,
+  and the first call goes straight on to the main payment.
 - A pairing that needs an agreement and whose offer names none is declined with `agreement-not-offered`.
 - `agree(bytes, url, signer, fetch, { approved, inputs, signal })` runs the exchange on its own, in the same two calls,
   for an agent that drives each step.
+
+Once the agreement payment is sent, every decline carries it as `moved`: `agreement-pending` when it may settle yet,
+and `agreement-failed` when the agreement URL answered otherwise. Either way, it has left your wallet. To collect the
+receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it answers `200` with
+the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. Never call again with
+`approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
 
 ### Channels and sessions
 
@@ -385,7 +406,8 @@ or `transact` returned `landed`, put it back into the payment as `landed` first.
 A decline is `{ decline: { code, detail } }`. `code` is one of twelve values; `detail` is a sentence or the protocol
 package's refusal code. Where your signer moved the payment itself before the gate declined (a Lightning node paid the
 invoice, a signer broadcast a transaction), the decline also carries `moved: { signed, bytes, h }`. Keep it, and present
-it again rather than signing a new payment.
+that same payment again rather than signing a new one. Where `moved` is an agreement payment, collect its receipt by
+calling again without `approved`, as [Pay the agreement first](#pay-the-agreement-first) says.
 
 | Code | Meaning |
 | --- | --- |
@@ -534,7 +556,8 @@ What the gate guarantees, in the code:
 - **The hash is read back from the payment.** `finish` returns a payment only when the binding reads, from the completed
   payment, the hash of the compared bytes, or, where the proof is the agreement payment, without that reading. For a
   pairing whose payment is not a public proof, `transact` signs the payment only after the agreement's receipt for that
-  hash.
+  hash. `confirm` and `finish` neither pay nor check the agreement: a caller that drives them signs `request` only with
+  the receipt `agree` returns.
 - **Every payment is shown before it is signed.** The agreement payment is returned for your agent's approval, with its
   amount, asset, payee and network, and is signed only when a second call carries it back.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
@@ -548,9 +571,11 @@ What the gate guarantees, in the code:
 What it does not do:
 
 - It does not read or judge the ATR's content.
-- It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit to the
-  agreement payment. A discrepancy is between the parties; what to approve is your agent's decision.
-- It does not authenticate the agreement's receipt. The public proof is the transaction the receipt names, on its
+- It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit. A
+  discrepancy is between the parties; what to approve is your agent's decision.
+- It does not authenticate the agreement's receipt. The receipt is the agreement URL's statement: the gate checks its
+  form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the first, unpaid
+  request is taken as an agreement already recorded. The public proof is the transaction the receipt names, on its
   network.
 - It carries no business or legal logic.
 - It does not store the ATR, talk to a facilitator, or settle a payment.

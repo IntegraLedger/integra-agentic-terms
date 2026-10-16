@@ -1,13 +1,14 @@
 ---
 title: Agreement payments
-description: For a payment that is not itself a public proof of H, the buyer's agent approves a small agreement payment that carries H, and the gate signs the payment for the resource only after its receipt.
+description: For a payment that is not itself a public proof of H, the buyer's agent approves a small agreement payment that carries H, and transact signs the payment for the resource only after its receipt.
 ---
 
 A card charge, a Stripe payment, a Lightning invoice, a checkout in which the buyer signs nothing: these payments do not
 put H anywhere public. For such a pairing, the proof of agreement is a second, small payment that does: the
 **agreement payment**. The seller names an **agreement URL** in its offer. The agreement payment is a payment like any
-other, so the buyer's agent approves it before anything is signed. The gate then pays it, waits until it is recorded,
-and only then signs the payment for the resource.
+other, so the buyer's agent approves it before anything is signed. `transact` then pays it, waits until it is recorded,
+and only then signs the payment for the resource. `confirm` and `finish` do none of this; see
+[Driving the steps yourself](#driving-the-steps-yourself).
 
 The [pairings reference](../reference/pairings.md) marks each pairing whose payment is not a public proof. In the
 registry, it is `pattern.publicProof === false`.
@@ -41,7 +42,8 @@ sequenceDiagram
 2. **Ask.** The gate sends one `GET` to the agreement URL, with no payment, no redirect and a 10-second deadline. This
    request and every paid one ask for `Accept-Encoding: identity`; a `200` or a `402` with any other `Content-Encoding` is
    `agreement-failed`, its body unread.
-   - `200`: the agreement is already recorded. The body must be the receipt for this H, and the gate goes on to step 7.
+   - `200`: taken as an agreement already recorded. The body must be the receipt for this H, and the gate goes on to
+     step 7.
    - `202`: another agreement payment for this ATR is settling. The gate declines `agreement-pending` and signs nothing.
    - `402`: the `PAYMENT-REQUIRED` header, padded standard base64 (RFC 4648 section 4) of an x402 document, is the
      agreement's payment request.
@@ -78,7 +80,9 @@ sequenceDiagram
    **the same payment** again. After a `5xx` or a timeout it does the same after 2 seconds.
    Each paid request has a deadline of the option's `maxTimeoutSeconds` (at most 120) plus 70 seconds; the whole
    exchange ends at `maxTimeoutSeconds` plus 180 seconds, with `agreement-pending`. Any other answer, a redirect
-   included, is `agreement-failed`. The gate never signs a second agreement payment. A `200` is the receipt:
+   included, is `agreement-failed`. Within one call the gate never signs a second agreement payment; every call with
+   `approved` signs a new one (see [Once the agreement payment is sent](#once-the-agreement-payment-is-sent)). A
+   `200` is the receipt:
 
 ```json
 {
@@ -89,26 +93,39 @@ sequenceDiagram
 }
 ```
 
-   `atrHash` must be this H and `agreed` must be `true`. Anything else is `agreement-failed`, and the payment for the
-   resource is never signed. The receipt is the agreement URL's own statement: the public proof is the transaction it
-   names on `network`, which anyone can read.
+   `atrHash` must be this H, `agreed` must be `true`, and `network` and `transaction` must be strings. Anything else is
+   `agreement-failed`, and the payment for the resource is never signed. The receipt is the agreement URL's statement:
+   the gate checks its form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the
+   first, unpaid request is taken as an agreement already recorded. The public proof is that transaction on `network`,
+   which anyone can read.
 
-7. **Pay the resource.** Only then does the gate build and sign the payment the offer asked for. `transact` returns the
-   receipt beside it as `agreement`.
+7. **Pay the resource.** Only then does the gate sign the payment the offer asked for, which it built, unsigned, at the
+   comparison: a build that refuses declines before any agreement is asked. `transact` returns the receipt beside the
+   payment as `agreement`.
 
-Every decline after the agreement payment was sent carries it as `moved`: keep it and present it again.
+Every decline after the agreement payment is sent carries it as `moved`: keep it, and call again without `approved` to
+learn whether it is recorded (see [Once the agreement payment is sent](#once-the-agreement-payment-is-sent)).
 
 ## Ending the exchange
 
 `transact` and `agree` take a `signal`, an `AbortSignal`, in their options. Aborting it ends the agreement exchange at
 its next step: a request in flight is abandoned and a wait is cut short.
 
-- Before the agreement payment is sent, the call declines `agreement-failed`. Nothing was signed or sent.
-- After it was sent, the call declines `agreement-pending`, with the payment as `moved`. The payment may still settle:
-  present the same payment again to collect the receipt, rather than signing a new one.
+- Before the agreement payment is sent, the call declines `agreement-failed`. Nothing is sent; the signer may have
+  signed it already, and that signature is discarded.
+- After it is sent, the call declines `agreement-pending`, with the payment as `moved`.
 
 The signal ends the agreement exchange only. Once the receipt is in hand, the payment for the resource is signed as
 usual.
+
+## Once the agreement payment is sent
+
+Once the agreement payment is sent, a decline carries it as `moved`. A decline `agreement-pending` means the agreement
+URL has not recorded the payment in time, or your `signal` ended the wait, and it may settle yet. To collect the
+receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it answers `200` with
+the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. A `402` returns the
+agreement payment for approval again, and whether to pay a second time is your agent's decision. Never call again with
+`approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
 
 ## Example
 
@@ -213,16 +230,26 @@ receipt.
 ## Driving the steps yourself
 
 `agree(bytes, url, signer, fetch, { approved, inputs, signal })` runs steps 2 to 6 on their own, for an agent that
-confirms with `confirm`, pays the agreement, and finishes with `finish`:
+confirms with `confirm` and finishes with `finish`. `confirm` and `finish` neither pay nor check the agreement; only
+`transact` and `agree` do. When `chosen.agreement` is set, the pairing's payment is not itself a public proof of H: do
+not sign yet. Call `agree(bytes, chosen.agreement, signer, fetch)`, have your agent approve the `approve` it returns,
+call `agree` again with `{ approved }`, and sign `request` only with its `receipt` in hand:
 
-1. `confirm` returns `chosen.agreement`, the URL, beside the request.
+1. `confirm` returns `chosen.agreement`, the URL, beside the request. Do not sign the request yet.
 2. Call `agree` with `confirmed.bytes`, that URL and your signer. It returns `{ approve, bytes, h }` and signs nothing,
    or `{ receipt }` where the agreement is already recorded.
 3. Once your agent approves it, call `agree` again with `approved: approve`. It returns `{ receipt }`.
-4. Only with the receipt in hand, sign `confirmed.request` and call `finish`.
+4. Only with the receipt in hand, sign `confirmed.request` and call `finish`. `finish` takes no receipt: it completes
+   the payment whether or not the agreement is paid.
 
-The MCP tools enforce the same order: `atr_confirm` returns no `request` until you pass the agreement's `receipt`, and
-`atr_agree` returns the agreement payment to approve before it signs anything.
+For `x402/batch-settlement/cloudflare`, `confirm` returns `request: null`, but its build is the payment: `transact`
+returns it as `signed`, and after `confirm` you get it with `finish(bytes, chosen, null, binding)`, once the receipt is
+in hand.
+
+The MCP tools keep the same order: `atr_confirm` returns no `request` until you pass a `receipt` for H, and `atr_agree`
+returns the agreement payment to approve before it signs anything. As with `transact`, the receipt is the agreement
+URL's statement: `atr_confirm` checks its form and that its `atrHash` is H, and does not look up the transaction it
+names.
 
 ## When the offer names no agreement URL
 

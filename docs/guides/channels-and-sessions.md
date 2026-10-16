@@ -26,7 +26,7 @@ The gate follows that shape:
 
 ## The pairings
 
-| Pairing | Opening | Within |
+| Pairing | Opening | Within (handed to the signer as a `batch` of) |
 | --- | --- | --- |
 | `x402/batch-settlement/eip155` | A deposit authorization and the first voucher, signed as a `batch` | A voucher (`eip712`) |
 | `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch` | A voucher (`ed25519-raw`) |
@@ -37,7 +37,8 @@ The gate follows that shape:
 | `mpp/session/xrpl` | A `PaymentChannelCreate` and the first claim | A claim |
 
 `within` signs in-channel payments for these seven pairings. For any other pairing it declines
-`pairing-not-supported`.
+`pairing-not-supported`. It hands your signer every in-channel payment as a `batch`: answer a `batch` with a list, one
+answer per request, in order.
 
 ## Example
 
@@ -182,6 +183,9 @@ An MPP session closes with `refund: {}`; a partial refund in a session is declin
 - A hold whose bytes, opening or channel do not agree: `hash-mismatch` or `signed-not-bound`. An `atr` that is not
   padded standard base64 in its canonical form is unreadable: `signed-not-bound`.
 - A challenge that advertises another H: `hash-mismatch`. The signer is not called.
+- An x402 challenge that advertises no H: `offer-unreadable` (`x402/no-legal-context`). An MPP session challenge with
+  no legal context is not refused: its voucher pays under the held H. One whose `opaque` legal context cannot be read is
+  `offer-unreadable` (`mpp/legal-context-malformed`).
 - An MPP challenge that names a channel this hold did not open: `no-payable-option`. The signer is not called.
 - An x402 challenge under which the voucher or refund would name a channel this hold did not open:
   `no-payable-option`. Before it calls the signer, `within` completes the build with placeholder answers and reads the

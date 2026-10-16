@@ -89,8 +89,8 @@ console.log("H          ", result.h);
 console.log("signed nonce", payment.payload.authorization.nonce);
 console.log("kept bytes ", result.bytes.length);
 
-// x402 over HTTP sends the payment as base64 of its JSON, in the PAYMENT-SIGNATURE header.
-const header = btoa(JSON.stringify(result.signed));
+// x402 over HTTP sends the payment as base64 of the UTF-8 bytes of its JSON, in the PAYMENT-SIGNATURE header.
+const header = Buffer.from(JSON.stringify(result.signed), "utf8").toString("base64");
 console.log("header     ", header.length > 0 ? "ready" : "empty");
 ```
 

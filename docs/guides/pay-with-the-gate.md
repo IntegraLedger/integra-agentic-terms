@@ -179,7 +179,7 @@ The gate returns the payment in the protocol's own form. You send it as that pro
 
 | Protocol | How the payment travels |
 | --- | --- |
-| x402 over HTTP | Base64 of the payment's JSON, in the `PAYMENT-SIGNATURE` request header, on a retry of the original request. |
+| x402 over HTTP | Base64 of the UTF-8 bytes of the payment's JSON, in the `PAYMENT-SIGNATURE` request header, on a retry of the original request. |
 | x402 over MCP | The payment object in the tool call's `_meta["x402/payment"]`. |
 | MPP | The credential in the field the challenge selects, `Authorization` by default, after the `Payment` scheme name. |
 | Card, AP2, UCP, ACP, ACK | The pairing's own message: the TAP field, the mandate, the checkout completion, as its protocol defines. |
@@ -193,6 +193,11 @@ Where `transact` or `finish` also returned `landed`, keep it beside the payment.
 - **A decline carries `moved`.** Your signer moved the payment itself (a Lightning invoice paid, a transaction
   broadcast) before the gate declined. `moved.signed` is that payment, with the bytes and their hash. Keep it and
   present it again rather than signing a new one. See [keeping the record](./keeping-the-record.md).
+- **The agreement payment may settle yet.** Once the agreement payment is sent, a decline is `agreement-pending`
+  with the payment as `moved`. To collect the receipt, call again without `approved`: the gate asks the agreement URL
+  unpaid and goes on once it answers `200` with the receipt, or declines `agreement-pending` again while it answers
+  `202`, signing nothing. Never call again with `approved` for the same agreement: every call with `approved` signs and
+  sends a new agreement payment.
 - **Any other decline.** Nothing was sent, and nothing should be. The [declines reference](../reference/declines.md)
   says what each code means. Whether to deal with the seller another way is your principal's decision.
 

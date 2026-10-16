@@ -27,7 +27,8 @@ In Python, any object with an `account` string and an `async def sign(self, requ
   If it cannot sign a request, it throws (TypeScript) or raises (Python), and the gate declines with `signer-failed`.
 
 The gate calls `sign` only after the comparison matched, at most twice for one payment (a funding and then a voucher),
-and never for a pairing whose build gives the buyer nothing to sign.
+and never for the payment of a pairing whose build gives the buyer nothing to sign (it may sign that pairing's
+agreement payment).
 
 ## Requests and answers
 

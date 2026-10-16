@@ -22,8 +22,9 @@ is the agreement payment, without that reading.
 
 It is the Python implementation of the same gate as the TypeScript package
 [`@integraledger/terms`](https://www.npmjs.com/package/@integraledger/terms). Both run the same rules and pass the same
-shared vectors, pairing for pairing. It holds no keys, moves no funds, and never reads the record's content: what the
-record says is for you and your principal to judge.
+shared vectors, pairing for pairing. It holds no keys and never reads the record's content: what the record says is
+for you and your principal to judge. The one payment it sends is the agreement payment your agent approved, to the
+agreement URL.
 
 ## Key concepts
 
@@ -35,11 +36,13 @@ record says is for you and your principal to judge.
   H, that approval is the buyer's acceptance of that exact record; where it does not, the pairing's statement of what
   it proves says so.
 - **Pairing:** a payment protocol, scheme and rail combination, such as `x402/exact/eip155/eip3009`.
-- **Binding:** how H rides in a pairing's payment, the field its specification defines. This package exports one
-  binding per pairing, named after its id: `X402_EXACT_EIP155_EIP3009`.
+- **Binding:** how H rides in a pairing's payment: the field of that payment, as the protocol's own specification
+  defines the payment, that carries H. This package exports one binding per pairing, named after its id:
+  `X402_EXACT_EIP155_EIP3009`.
 - **Buyer gate:** this package: the buyer-side check that compares the served bytes with H before anything is signed.
 - **Seller:** the party serving the resource.
-- **Facilitator:** the x402 role that verifies and settles. The gate never talks to one: it returns the payment to you.
+- **Facilitator:** the x402 role that verifies and settles. The gate never talks to one. It returns the payment to you,
+  except the approved agreement payment, which it sends to the agreement URL.
 - **Vectors:** the shared test cases that fix the rules byte for byte across languages.
 
 ## Install
@@ -157,7 +160,7 @@ Every function returns a value and never raises for a protocol outcome: either i
 
 ## Guides
 
-### Pay in one call: `transact`
+### Pay with `transact`
 
 `await transact(doc, binding, signer, fetch, *, inputs=None, agreement_signer=None, approved=None, signal=None)` runs
 the whole order: compare, pay the agreement your agent approved where the pairing needs one, sign, finish. It returns
@@ -165,7 +168,7 @@ the whole order: compare, pay the agreement your agent approved where the pairin
 
 | Field | What it is |
 | --- | --- |
-| `signed` | The payment to send, in the protocol's own form. `None` when the pairing gives the buyer nothing to sign. |
+| `signed` | The payment to send, in the protocol's own form. `None` when the pairing gives the buyer nothing to sign, except for `x402/batch-settlement/cloudflare`, whose build is itself the payment. |
 | `atr_bytes` | The ATR's exact bytes: your copy of the record. |
 | `h` | Their SHA-256. |
 | `agreement` | The agreement's `AgreementReceipt`, where the pairing needs an agreement payment. |
@@ -175,14 +178,16 @@ Where the pairing needs an agreement payment that is not yet recorded, it return
 instead, and nothing has been signed: see [Pay the agreement first](#pay-the-agreement-first).
 
 `inputs` are the buyer's own values a build needs, such as a recent blockhash; `agreement_signer` pays the agreement
-where a different wallet should; `approved` is the agreement payment your agent approved, exactly as a previous call
+where a different wallet should (without it, `signer` pays both); `approved` is the agreement payment your agent
+approved, exactly as a previous call
 returned it in `ToApprove.approve`; setting `signal`, an `asyncio.Event`, ends the agreement exchange. See the [rails guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/rails.md)
 for each pairing's inputs.
 
 ### Sign elsewhere: `confirm`, then `finish`
 
-When the key lives in a hardware wallet or a signing service, split the order. `Confirmed.chosen` holds plain JSON, so
-it crosses process boundaries with the bytes:
+When the key lives in a hardware wallet or a signing service, split the order. `Confirmed.chosen` is a `Chosen`
+dataclass whose fields are plain JSON. Send `dataclasses.asdict(confirmed.chosen)` with the bytes, and rebuild it with
+`Chosen(**data)` before `finish`. `finish` declines anything that is not a `Chosen` (`offer-unreadable`).
 
 ```python
 import asyncio
@@ -253,6 +258,17 @@ nonce is H: True
 A pairing signed in two steps (a channel funding, then its first voucher) makes `finish` return `Next`: sign
 `next.next` and call `finish` again with every answer so far, in order, as a list. `transact` does this for you.
 
+`confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. When
+`confirmed.chosen.agreement` is set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
+`to_approve = await agree(confirmed.atr_bytes, confirmed.chosen.agreement, signer, fetch)`, have your agent approve
+`to_approve.approve`, call `agree` again with `approved=to_approve.approve`, and sign `confirmed.request` only with the
+`Agreed` receipt in hand. See [Pay the agreement first](#pay-the-agreement-first).
+
+Where `request` is `None`, there is nothing to sign. For `x402/batch-settlement/cloudflare` the build is itself the
+payment: with the agreement's receipt in hand, `finish(confirmed.atr_bytes, confirmed.chosen, None, binding)` returns
+it. For every other such pairing, the comparison and, where the pairing needs one, the agreement payment are the whole
+of the buyer's step.
+
 ### Pay the agreement first
 
 Some payments are not a public proof of H: a card charge, a Stripe payment, a Lightning invoice, a checkout in which
@@ -273,14 +289,23 @@ before anything is signed:
   integral value: `60` and `60.0` are the same value.
 - The agreement URL's `402` must advertise the same H, or nothing is signed (`hash-mismatch`).
 - Once the agreement payment is sent, the gate sends the same payment again after each `202`, `5xx` or timeout, within
-  the paid option's `maxTimeoutSeconds` plus 180 seconds. It never signs a second agreement payment.
-- Setting `signal` ends the exchange sooner: before the payment is sent, `agreement-failed` with nothing signed; after,
-  `agreement-pending` with the payment as `moved`. Cancelling the task raises `asyncio.CancelledError` instead, and a
-  payment already sent is then not returned.
-- Where the agreement is already recorded, the first call goes straight on to the main payment.
+  the paid option's `maxTimeoutSeconds` plus 180 seconds. Within one call it never signs a second agreement payment.
+- Once the agreement payment is sent, every decline carries it as `moved`: `agreement-pending` when it may settle yet,
+  and `agreement-failed` when the agreement URL answered otherwise. Either way, it has left your wallet. To collect the
+  receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it answers `200` with
+  the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. Never call again with
+  `approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
+- Setting `signal` ends the exchange sooner: before the payment is sent, `agreement-failed`, and nothing is sent (a
+  payment signed in that window is discarded); after, `agreement-pending` with the payment as `moved`. Cancelling the
+  task raises `asyncio.CancelledError`, and a payment already sent is not returned: set the signal to get it back as
+  `moved`.
+- The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not look
+  up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded, and the
+  first call goes straight on to the main payment.
 - A pairing that needs an agreement and whose offer names none is declined with `agreement-not-offered`.
 - `await agree(atr_bytes, url, signer, fetch, approved=…, inputs=…, signal=…)` runs the exchange on its own, in the same
-  two calls.
+  two calls. With `confirm` and `finish`, call it before you sign: see [Sign
+  elsewhere](#sign-elsewhere-confirm-then-finish).
 
 ### Channels and sessions
 
@@ -411,8 +436,9 @@ Where `finish` or `transact` returned `landed`, put it back into the payment und
 
 A decline is `Declined(code, detail, moved)`. `code` is one of twelve values; `detail` is a sentence or the protocol's
 refusal code. Where your signer moved the payment itself before the gate declined (a Lightning node paid the invoice, a
-signer broadcast a transaction), `moved` is `Moved(signed, atr_bytes, h)`. Keep it, and present it again rather than
-signing a new payment.
+signer broadcast a transaction), `moved` is `Moved(signed, atr_bytes, h)`. A decline that follows a sent agreement
+payment carries that payment as `moved` too. Keep it: present a payment your signer moved again rather than signing a
+new one, and for an agreement payment, call again without `approved` to collect its receipt, never with `approved`.
 
 | Code | Meaning |
 | --- | --- |
@@ -426,8 +452,8 @@ signing a new payment.
 | `signer-failed` | Your signer raised. |
 | `signed-not-bound` | The pairing does not read the hash of the compared bytes from the payment. The payment is not returned. |
 | `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
-| `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
-| `agreement-failed` | The agreement URL could not be reached, answered `200` or `402` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. |
+| `agreement-pending` | The agreement payment is sent and not yet recorded, or the agreement URL answered `202` to the unpaid request: another is already settling. |
+| `agreement-failed` | The unpaid request: the agreement URL could not be reached, or answered a status other than `200`, `202` or `402`, or a `402` without a readable `PAYMENT-REQUIRED`. The paid request: any answer but `200`, `202` or `5xx`, a `402` included. Either request: a `200` or `402` with a `Content-Encoding` other than `identity`, or a `200` that is not a receipt for this H (a receipt over 64 KiB included). Also: the approved payment names another agreement URL, or `signal` ended the exchange before the payment is sent. |
 
 ## API reference
 
@@ -441,8 +467,8 @@ Everything below is exported from `integraledger_terms`.
 | `confirm` | `async (doc, binding, account, fetch, inputs=None) -> Confirmed \| Declined` | Read, fetch, compare, and build the signing request with H. `request` is `None` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
 | `finish` | `(atr_bytes, chosen, signature, binding) -> Finished \| Next \| Declined` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. |
 | `check` | `(atr_bytes, presented, binding) -> Checked \| Declined` | Confirm a held payment carries the hash of the kept bytes. |
-| `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, signal=None) -> ToApprove \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt. |
-| `open_channel` | `(atr_bytes, opened, binding, landed=None) -> ChannelHold \| Declined` | Hold a channel opened for the compared ATR. |
+| `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, signal=None) -> ToApprove \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing, or the receipt where the agreement is already recorded; with it, pay that payment and return the receipt. |
+| `open_channel` | `(atr_bytes, opened, binding, landed=None) -> ChannelHold \| Declined` | Hold a channel opened for the compared ATR. Pass `landed` where `transact` returned one. |
 | `within` | `async (doc, hold, binding, signer, refund=None, inputs=None) -> Within \| Declined` | Sign a later voucher, or a refund with `refund`, in a held channel. |
 | `record_charge` | `(hold, charged_cumulative_amount) -> ChannelHold \| Declined` | Record the seller's cumulative charge, between the last recorded and the most signed. |
 | `atr_hash` | `(data: bytes) -> AtrHash` | SHA-256 of the bytes, `0x` and 64 lower-case hex digits. |
@@ -476,7 +502,7 @@ passes such a link to its `fetch`.
 | `Declined` | `code`, `detail`, `moved`. |
 | `Moved` | `signed`, `atr_bytes`, `h`: the payment the signer moved before a decline, to keep and present again. |
 | `DeclineCode` | The twelve codes in the table above. |
-| `Chosen` | `pairing`, `choice`, `ref`, `agreement`: what the gate chose to pay, as JSON, with the agreement URL where the pairing needs one. |
+| `Chosen` | A dataclass: `pairing`, `choice`, `ref`, `agreement`, whose values are plain JSON; the agreement URL where the pairing needs one. |
 | `Signer` | A protocol: an `account` string (CAIP-10) and `async def sign(self, request) -> Signature`. |
 | `Binding` | A protocol: `id`, `public_proof`, `read`, `build`, `bound`. |
 | `Advertised`, `Step`, `Refusal`, `Unsigned`, `BatchUnsigned`, `ChannelRef` | The values a binding and the gate exchange, for code that implements a binding. |
@@ -576,7 +602,8 @@ What the gate guarantees, in the code:
 - **The hash is read back from the payment.** `finish` returns a payment only when the binding reads, from the completed
   payment, the hash of the compared bytes, or, where the proof is the agreement payment, without that reading. For a
   pairing whose payment is not a public proof, `transact` signs the payment only after the agreement's receipt for that
-  hash.
+  hash. `confirm` and `finish` neither pay nor check the agreement: a caller that drives them signs `request` only with
+  the receipt `agree` returns.
 - **Every payment is shown before it is signed.** The agreement payment is returned for your agent's approval, with its
   amount, asset, payee and network, and is signed only when a second call carries it back.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
@@ -589,10 +616,16 @@ What the gate guarantees, in the code:
 What it does not do:
 
 - It does not read or judge the ATR's content.
-- It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit to the
-  agreement payment. A discrepancy is between the parties; what to approve is your agent's decision.
-- It does not authenticate the agreement's receipt. The public proof is the transaction the receipt names, on its
+- It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit. A discrepancy
+  is between the parties; what to approve is your agent's decision.
+- `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. With `confirm` and
+  `finish`, when `confirmed.chosen.agreement` is set, call `agree` and sign `confirmed.request` only with the `Agreed`
+  receipt in hand.
+- It does not authenticate the agreement's receipt. The receipt is the agreement URL's statement: the gate checks its
+  form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the first, unpaid
+  request is taken as an agreement already recorded. The public proof is the transaction the receipt names, on its
   network.
+- It does not bound the amount a channel voucher adds: that is the amount the seller's new challenge asks.
 - It carries no business or legal logic.
 - It does not store the ATR, talk to a facilitator, or settle a payment.
 
@@ -602,8 +635,8 @@ The rules are fixed by the shared vectors that the TypeScript package `@integral
 directory: the buyer rows of `buyer.json` (the hash, a record changed by one byte, the fetch bounds, the agreement
 exchange) and each pairing's file (the request it builds and the payment it completes). This package's test suite runs
 every one on Python 3.11 and 3.14, and the TypeScript gate runs the same files, so both compute the same hashes, build
-the same requests and give the same declines. The tests read the vectors from the repository, so they run from a
-checkout, not from the published package.
+the same requests and give the same declines. The tests read the vectors from `@integraledger/lcp` as `pnpm install`
+places it in a checkout, so they run from a checkout after `pnpm install`, not from the published package.
 
 ## Requirements
 

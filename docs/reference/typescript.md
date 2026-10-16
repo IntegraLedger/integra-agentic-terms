@@ -49,6 +49,12 @@ where `finish` gives one. `options.signal` ends the agreement exchange. Options 
 `agreementSigner`, `approved` and `signal`, or a member of the wrong kind, and a `signer` or `agreementSigner` whose
 `account` is not a string, are declined before any fetch.
 
+The agreement payment is shown before it is signed: `transact` returns it with its amount, asset, payee and network,
+and signs it only when a second call carries it back. The payment for the resource is handed to `signer` directly;
+approving it is your agent's step before it calls `transact`. The gate applies no spending limit. Once the agreement
+payment is sent, a decline is `agreement-pending` with the payment as `moved`: see [`agree`](#agree) for collecting
+its receipt.
+
 ### `confirm`
 
 ```ts no-run
@@ -69,6 +75,11 @@ Only on a match does it build, with the hash it computed. `request` is what the 
 is handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment, which
 `finish` completes with no signature. `chosen.agreement` is the agreement URL, for a pairing whose payment is not a
 public proof.
+
+`confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. When `chosen.agreement` is
+set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
+`agree(bytes, chosen.agreement, signer, fetch)`, have your agent approve the `approve` it returns, call `agree` again
+with `{ approved }`, and sign `request` only with its `receipt` in hand.
 
 ### `finish`
 
@@ -130,6 +141,14 @@ declined `offer-unreadable` with `x402/option-not-in-document`. The option paid 
 values; `options.signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, or a member
 of the wrong kind, and a `signer` whose `account` is not a string, are declined before any fetch.
 See [agreement payments](../guides/agreement-payments.md).
+
+The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not look
+up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded.
+
+Once the agreement payment is sent, a decline is `agreement-pending` with the payment as `moved`; it may settle yet.
+To collect the receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it
+answers `200` with the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. Never
+call again with `approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
 
 ### `openChannel`
 

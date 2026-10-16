@@ -28,13 +28,14 @@ serves bytes whose SHA-256 is H. On most pairings, the payment the buyer approve
 x402 protocol, its `exact` scheme, on an EVM chain (`eip155`), paid with an EIP-3009 transfer authorization. The first
 segment of the id is the protocol: `x402`, `mpp`, `card`, `ap2`, `ucp`, `acp` or `ack`.
 
-**Binding.** How H rides in a pairing's payment: the field that pairing's specification defines. For
+**Binding.** How H rides in a pairing's payment: the field of that payment, as the protocol's own specification
+defines the payment, that carries H. For
 `x402/exact/eip155/eip3009` it is the EIP-3009 `nonce`: the buyer signs a transfer authorization whose nonce is H. For
 `mpp/charge/solana` it is a Memo instruction in the signed transaction. Each pairing has exactly one binding.
 
 In code, a binding is an object exported by [`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol).
 It has an `id`, a `read` that finds H and the link in the seller's document, a `build` that writes H into the payment,
-and a `bound` that reads H back out of a signed payment. The Python package carries the same bindings as constants,
+and a `bound` that reads H back out of a completed payment. The Python package carries the same bindings as constants,
 such as `X402_EXACT_EIP155_EIP3009`. The [pairings reference](./reference/pairings.md) lists every one.
 
 ## The buyer gate
@@ -72,9 +73,12 @@ sequenceDiagram
     A->>S: Send the payment
 ```
 
-`transact` runs the four steps in one call. `confirm` and `finish` split them for an agent whose signer lives elsewhere,
-such as a hardware wallet or a separate signing service. `check` repeats the last step later, over a payment you hold
-and the bytes you kept.
+`transact` runs the four steps in one call; for a pairing that needs an agreement payment, its first call returns that
+payment for your agent's approval, and a second call, with `approved`, pays. `confirm` and `finish` split the steps for
+an agent whose signer lives elsewhere, such as a hardware wallet or a separate signing service. `confirm` and `finish`
+neither pay nor check the agreement; only `transact` and `agree` do. `check` later confirms that a payment you hold
+carries, inside it, the hash of the bytes you kept. For a payment with no place for H it declines `signed-not-bound`,
+and the agreement receipt is the proof to keep.
 
 ## How H rides in a payment
 
@@ -102,9 +106,12 @@ Three properties follow, and each pairing states them:
 Some payments are not a public proof of H: a card payment, a Stripe charge, a Lightning invoice, a checkout in which the
 buyer signs nothing. For these pairings the seller's offer also names an **agreement URL**: an x402 resource for the same
 H, paid with a pairing whose payment is a public proof, usually for a nominal amount. The agreement payment is a payment
-like any other: the gate returns it for the buyer's agent to approve, pays it once approved, waits for its receipt, and
-only then signs the main payment. The
-[agreement payments](./guides/agreement-payments.md) guide covers the exchange.
+like any other: `transact` returns it for the buyer's agent to approve, pays it once approved, waits for its receipt,
+and only then signs the main payment. Where the agreement URL answers that the agreement is already recorded,
+`transact` takes that receipt without a payment. The receipt is the agreement URL's statement: the gate checks its form
+and that its `atrHash` is H, and does not look up the transaction it names. `confirm` and `finish` neither pay nor
+check the agreement; only `transact` and `agree` do. The [agreement payments](./guides/agreement-payments.md) guide
+covers the exchange.
 
 If such a pairing's offer names no agreement URL, the gate declines with `agreement-not-offered` and signs nothing.
 

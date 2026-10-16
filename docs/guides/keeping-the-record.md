@@ -13,7 +13,7 @@ The gate does not store anything. After a payment, what you keep is your proof o
 | H (`h`) | The hash of those bytes, as the gate computed it. |
 | The payment (`signed`) | What you sent. It carries H in its signed contents, for most pairings. |
 | `landed`, where returned | A landed receipt some pairings return beside the payment. `check` reads the payment with it. |
-| The agreement's receipt (`agreement`), where returned | The record of the agreement payment, for a pairing whose payment is not a public proof. |
+| The agreement's receipt (`agreement`), where returned | The agreement URL's answer that the agreement payment for H is recorded: `atrHash`, `network` and `transaction`. It is returned for a pairing whose payment is not a public proof. |
 
 Keep the bytes as bytes. Re-encoding them as a parsed and re-serialised JSON document changes the hash.
 
@@ -84,14 +84,22 @@ that the hash the pairing reads from it is the SHA-256 of the kept bytes, and de
 pairing reads none. That payment does not prove H in public. The proof of H is the agreement payment, which is itself a
 public-proof payment: check it with the binding of the pairing it was paid with.
 
+The gate returns the agreement's receipt as `agreement`, not the signed agreement payment. The receipt is the agreement
+URL's statement: the gate checks that it names H and is a recorded agreement, and does not look up the transaction it
+names. Keep it, and confirm H from that transaction on `network`: for an EIP-3009 agreement payment, the `nonce` of the
+token's `AuthorizationUsed` event is H.
+
 ## A moved payment
 
 A decline that carries `moved` means your signer moved the payment itself before the gate declined: a Lightning node
-paid the invoice, or a signer broadcast a transaction. `moved` holds the payment as signed, the ATR's bytes and their
-hash.
+paid the invoice, or a signer broadcast a transaction. It also means, in the agreement exchange, that the gate sent the
+agreement payment and then declined. `moved` holds the payment as signed, the ATR's bytes and their hash.
 
 - Keep all three, as you would keep a payment that succeeded.
-- Present `moved.signed` to the seller again rather than signing a new payment.
+- For the payment for the resource, present `moved.signed` to the seller again rather than signing a new payment.
+- For an agreement payment, call again without `approved` to collect its receipt, never with `approved`: every call
+  with `approved` signs and sends a new agreement payment. See
+  [agreement payments](./agreement-payments.md#once-the-agreement-payment-is-sent).
 - Whether to deal with the seller another way is your principal's decision.
 
 ## A payment still settling
