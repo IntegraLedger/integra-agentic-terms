@@ -22,7 +22,7 @@ from ._mpp import (
     echoed_for,
     expires_of,
     fetched_of,
-    is_hex_bytes,
+    measured,
     mpp_broadcaster,
     offer_for,
     read,
@@ -45,10 +45,14 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     """Without splits, a tempo-call: the one transferWithMemo of amount, carrying the attribution memo. With splits,
     tempo-calls: that call for amount less the splits, then one call per split in array order, transferWithMemo where
     the split names a memo and transfer otherwise, all on currency. The pairing's filter has read the splits. On push,
-    complete takes the transaction hash; on memo, the signed transaction, read as bound reads it: one that is not hex
-    bytes, or is over 64 KiB, is mpp/credential-malformed; one that does not decode, an empty one among them, gives
-    decode_tempo_tx's refusal, tempo/tx-malformed; and one signed for a chain other than the request's chainId is
-    tempo/tx-malformed."""
+    complete takes the transaction hash; on memo, the signed transaction, and it returns the credential only once
+    bound's read of it (_signed_memo_call) takes it, and otherwise gives that read's refusal, so it returns no credential
+    bound refuses: a transaction that is not hex bytes, or whose credential is over the credential size bound, 64 KiB,
+    is mpp/credential-malformed; one that does not decode, an empty one among them, gives decode_tempo_tx's refusal,
+    tempo/tx-malformed; one signed for a chain other than the request's chainId is tempo/tx-malformed; and one without
+    exactly one transferWithMemo to the currency carrying this challenge's attribution memo is tempo/memo-not-bound or
+    tempo/ambiguous. Nothing else in the transaction is compared with what build made, its sender and the splits' calls
+    among it: bound does not read them."""
     o = offer_for(choice, h, pairing)
     if isinstance(o, Refusal):
         return o
@@ -82,15 +86,10 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         if broadcast:
             if normal_hash(signed_or_hash) is None:
                 return Refusal("mpp/credential-malformed")
-            return {"challenge": challenge, "source": source, "payload": {"type": "hash", "hash": signed_or_hash}}
-        if not is_hex_bytes(signed_or_hash, 0, MAX_WIRE_BYTES):
-            return Refusal("mpp/credential-malformed")
-        tx = decode_tempo_tx(bytes.fromhex(signed_or_hash[2:]))
-        if isinstance(tx, Refusal):
-            return tx
-        if tx.chain_id != chain_id:
-            return Refusal("tempo/tx-malformed")
-        return {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
+            return measured({"challenge": challenge, "source": source, "payload": {"type": "hash", "hash": signed_or_hash}})
+        credential = {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
+        m = _signed_memo_call(credential)
+        return m if isinstance(m, Refusal) else credential
 
     shared = {"chainId": chain_id, "validBefore": valid_before, "broadcast": broadcast}
     if splits is None:

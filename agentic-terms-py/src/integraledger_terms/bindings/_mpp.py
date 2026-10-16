@@ -457,6 +457,14 @@ def _json_within(value: object, limit: int) -> bool:
     return walk(value)
 
 
+def measured(credential: dict[str, Any]) -> dict[str, Any] | Refusal:
+    """The credential a pairing's complete returns, measured as bound measures every credential before it reads it
+    (echoed_for): the whole credential, its echoed challenge included. One over the credential size bound, 64 KiB, or
+    nested more than 16 arrays and objects deep, is mpp/credential-malformed, the code bound gives it, so no complete
+    returns a credential bound refuses for its size, whatever the challenge's own size."""
+    return credential if _json_within(credential, MAX_CREDENTIAL) else Refusal("mpp/credential-malformed")
+
+
 def credential_of(c: object) -> Mapping[str, Any] | Refusal:
     """A credential's shape: an echoed challenge with an id, an optional string source, and a payload object. A
     credential that carries a refused member, the member refusals use, is mpp/credential-malformed."""

@@ -9,7 +9,7 @@ from typing import Any
 from .._core import AtrHash, hash_equals
 from .._types import Advertised, Broadcaster, Refusal
 from ._lcp import is_object
-from ._mpp import by_type, chosen_for, credential_of, echoed_for, fetched_of, mpp_broadcaster, read
+from ._mpp import by_type, chosen_for, credential_of, echoed_for, fetched_of, measured, mpp_broadcaster, read
 from ._mpp_checks import is_xrpl_invoice_id, xrpl_network_of
 from ._xrpl import decode_presented, is_blob_hex, mpp_invoice_id, network_id_held, same_invoice
 
@@ -51,17 +51,22 @@ class XrplChargeUnsigned:
     _network: str
 
     def complete(self, signed_blob: object) -> dict[str, Any] | Refusal:
-        """The credential of the wallet's signed blob, hex, read as bound reads it: a blob that does not decode, or is
-        multi-signed, gets the refusal bound gives it, and one whose NetworkID the challenge's network does not take
-        (network_id_held) is xrpl/network-mismatch."""
+        """The credential of the wallet's signed blob, hex, read in bound's order: the credential measured first
+        (measured), then the blob as bound reads it: a blob that does not decode, or is multi-signed, gets the refusal
+        bound gives it, and one whose NetworkID the challenge's network does not take (network_id_held) is
+        xrpl/network-mismatch."""
+        credential = measured({"challenge": self._challenge, "payload": {"type": "transaction", "blob": signed_blob}})
+        if isinstance(credential, Refusal):
+            return credential
         if not is_blob_hex(signed_blob):
             return Refusal("xrpl/blob-malformed")
+        assert isinstance(signed_blob, str)
         decoded = decode_presented(signed_blob)
         if isinstance(decoded, Refusal):
             return decoded
         if not network_id_held(decoded.tx, self._network):
             return Refusal("xrpl/network-mismatch")
-        return {"challenge": self._challenge, "payload": {"type": "transaction", "blob": signed_blob}}
+        return credential
 
 
 @dataclass(frozen=True, slots=True)

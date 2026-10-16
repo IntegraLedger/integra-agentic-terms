@@ -368,7 +368,16 @@ class StellarUnsigned:
     _key: bytes
 
     def complete(self, signature: object) -> str | Refusal:
-        """The base64 envelope with the entry's expiration set and its signature written as an account's."""
+        """The signed envelope written, as written gives it, refused when it is over MAX_XDR characters with
+        stellar/tx-too-large, as read_signed_transfer refuses it."""
+        xdr = self.written(signature)
+        if isinstance(xdr, Refusal):
+            return xdr
+        return Refusal("stellar/tx-too-large") if len(xdr) > MAX_XDR else xdr
+
+    def written(self, signature: object) -> str | Refusal:
+        """The base64 envelope with the entry's expiration set and its signature written as an account's, without
+        the envelope's size bound."""
         if not isinstance(signature, bytes) or len(signature) != 64:
             return Refusal("stellar/tx-malformed")
         env, c = self._parsed.envelope, self._parsed.credentials

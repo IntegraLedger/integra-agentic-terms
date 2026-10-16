@@ -208,20 +208,44 @@ def test_mpp_charge_tempo_a_splits_member_present_as_null_offers_nothing(binding
     assert signer.requests == []
 
 
-MEMO_REFUSALS = MEMO["agreedRefusals"]["rows"]
+def memo_rows(member: str, exact: int) -> list[dict[str, Any]]:
+    """The rows of mpp-charge-tempo-memo.json's agreedRefusals that carry member, the one change each makes to MV7's
+    wire T, selected by that member and never by index. It asserts how many it selects."""
+    rows: list[dict[str, Any]] = MEMO["agreedRefusals"]["rows"]
+    kept = [r for r in rows if member in r]
+    assert len(kept) == exact, (member, len(kept))
+    return kept
 
 
-def test_mpp_charge_tempo_memo_chain_rows_are_read() -> None:
-    assert len(MEMO_REFUSALS) > 0
+CHAIN_ROWS = memo_rows("transactionChainId", 1)
+MEMO_REFUSALS = [*CHAIN_ROWS, *memo_rows("padding", 1), *memo_rows("calldata", 1)]
+
+
+def test_mpp_charge_tempo_memo_rows_are_each_read_once() -> None:
+    assert len(MEMO_REFUSALS) == len(MEMO["agreedRefusals"]["rows"]) == 3
+
+
+def refused_wire(row: dict[str, Any], valid_before: int) -> str:
+    """MV7's wire T with the one change row names: its chain id, its first field, the row's transactionChainId; a
+    second call after its transferWithMemo, to C_T's currency with value 0, whose input is the row's padding zero
+    bytes; or the row's calldata as its call's input."""
+    changes = [k for k in ("transactionChainId", "padding", "calldata") if k in row]
+    assert len(changes) == 1 and set(row) == {"case", "expect", *changes}, row["case"]
+    path_usd = MEMO["fixed"]["pathUSD"]
+    calls = [{"to": path_usd, "data": row.get("calldata", MEMO["MV7"]["expectCalldata"])}]
+    if "padding" in row:
+        calls.append({"to": path_usd, "data": "0x" + "00" * row["padding"]})
+    return tempo_wire(calls, row.get("transactionChainId", 42431), valid_before)
 
 
 @pytest.mark.parametrize("row", MEMO_REFUSALS, ids=[r["case"] for r in MEMO_REFUSALS])
-def test_mpp_charge_tempo_memo_a_transaction_for_another_chain_is_refused(row: dict[str, Any]) -> None:
-    """The vector file's chain rows: MV7's wire T with its chain id, its first field, the row's transactionChainId,
-    presented against C_T placed at position 0, as MV7's is, and given to the complete of build's answer for that
-    challenge. draft-tempo-charge-00 binds the transaction to the challenge's chainId, 42431 where it names none. bound
-    and complete refuse it with the row's code."""
-    assert set(row) <= {"case", "transactionChainId", "expect"}, row["case"]
+def test_mpp_charge_tempo_memo_complete_refuses_with_the_code_bound_gives(row: dict[str, Any]) -> None:
+    """The vector file's agreedRefusals rows, each MV7's wire T with one change, presented against C_T placed at
+    position 0, as MV7's is, and given to the complete of build's answer for that challenge: draft-tempo-charge-00 binds
+    the transaction to the challenge's chainId, 42431 where it names none, and its memo to the challenge id. complete
+    returns no credential bound refuses: it gives the code bound gives the credential it would give, the row's, whether
+    the wire is signed for another chain, carries a second call whose padding takes the credential over the credential
+    size bound, 64 KiB, or carries another challenge's memo."""
     presented = next(r for r in MEMO["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
     call = {"to": MEMO["fixed"]["pathUSD"], "data": MEMO["MV7"]["expectCalldata"]}
     valid_before = int(datetime.fromisoformat(presented["challenge"]["expires"]).timestamp())
@@ -230,7 +254,7 @@ def test_mpp_charge_tempo_memo_a_transaction_for_another_chain_is_refused(row: d
     unsigned = MPP_CHARGE_TEMPO_MEMO.build({"challenge": copy.deepcopy(presented["challenge"]), "from": MEMO["fixed"]["payer"]}, H)
     assert not isinstance(unsigned, Refusal), unsigned
     assert unsigned.complete(presented["payload"]["signature"]) == presented
-    wire = tempo_wire([call], row["transactionChainId"], valid_before)
+    wire = refused_wire(row, valid_before)
     other = {**copy.deepcopy(presented), "payload": {"type": "transaction", "signature": wire}}
     assert MPP_CHARGE_TEMPO_MEMO.bound(other) == Refusal(row["expect"])
     assert unsigned.complete(wire) == Refusal(row["expect"])
@@ -243,12 +267,12 @@ def test_mpp_charge_tempo_memo_a_transaction_for_another_chain_is_refused(row: d
         assert MPP_CHARGE_TEMPO_MEMO.bound(carried) == Refusal("tempo/tx-malformed"), undecodable
 
 
-@pytest.mark.parametrize("row", MEMO_REFUSALS, ids=[f"signed for {r['transactionChainId']}" for r in MEMO_REFUSALS])
+@pytest.mark.parametrize("row", CHAIN_ROWS, ids=[f"signed for {r['transactionChainId']}" for r in CHAIN_ROWS])
 def test_mpp_charge_tempo_memo_a_challenge_naming_no_chain_is_paid_on_42431(row: dict[str, Any]) -> None:
     """The vector file's chain rows, under C_T without methodDetails.chainId: draft-tempo-charge-00 has the payer sign
     for 42431 where the challenge names no chain. MV7's wire T, signed for 42431, binds H, and the same T signed for
     the row's transactionChainId is the row's refusal."""
-    assert set(row) <= {"case", "transactionChainId", "expect"}, row["case"]
+    assert set(row) == {"case", "transactionChainId", "expect"}, row["case"]
     presented = next(r for r in MEMO["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
     raw = b64u_decode(presented["challenge"]["request"])
     assert raw is not None

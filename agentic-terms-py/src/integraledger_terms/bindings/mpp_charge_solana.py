@@ -20,6 +20,7 @@ from ._mpp import (
     credential_of,
     echoed_for,
     fetched_of,
+    measured,
     mpp_broadcaster,
     read,
 )
@@ -184,7 +185,7 @@ class MppChargeSolana:
             wire = signed_wire(signed_message, payer, signature)
             if isinstance(wire, Refusal):
                 return wire
-            return {"challenge": challenge, "payload": {"type": "transaction", "transaction": to_base64(wire)}}
+            return measured({"challenge": challenge, "payload": {"type": "transaction", "transaction": to_base64(wire)}})
 
         return MppUnsigned({"kind": "solana-message", "message": signed_message}, complete)
 

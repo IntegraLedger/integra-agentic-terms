@@ -13,7 +13,7 @@ from .._types import Advertised, Broadcaster, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._evm import ZERO_ADDRESS, address_of_word, address_word, bytes32_word, bytes_of, hex_of, uint_word
 from ._lcp import is_address, is_list, is_object, normal_hash
-from ._mpp import Echoed, chosen_for, credential_of, echoed_for, fetched_of, read, session_broadcaster
+from ._mpp import Echoed, chosen_for, credential_of, echoed_for, fetched_of, measured, read, session_broadcaster
 from ._mpp_checks import hedera_session_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 
@@ -135,7 +135,7 @@ class SessionUnsigned:
             "cumulativeAmount": "0",
             "signature": signature,
         }
-        return {"challenge": self._challenge, "payload": payload}
+        return measured({"challenge": self._challenge, "payload": payload})
 
 
 @dataclass(frozen=True, slots=True)

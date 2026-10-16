@@ -20,6 +20,7 @@ from ._mpp import (
     echoed_for,
     expires_of,
     is_hex_bytes,
+    measured,
     mpp_broadcaster,
     offer_for,
     read,
@@ -92,7 +93,7 @@ def _authorization_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     def complete(signature: Any) -> dict[str, Any] | Refusal:
         if not is_hex_bytes(signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
-        return {
+        return measured({
             "challenge": challenge,
             "source": did(chain_id, from_),
             "payload": {
@@ -105,7 +106,7 @@ def _authorization_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
                 "nonce": nonce,
                 "signature": signature,
             },
-        }
+        })
 
     return MppUnsigned({"kind": "eip712", "typedData": typed_data}, complete)
 
@@ -196,7 +197,7 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     def complete(signature: Any) -> dict[str, Any] | Refusal:
         if not is_hex_bytes(signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
-        return {
+        return measured({
             "challenge": challenge,
             "source": did(chain_id, from_),
             "payload": {
@@ -210,7 +211,7 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
                 "witness": {"challengeHash": challenge_hash_value, "externalId": external_id},
                 "signature": signature,
             },
-        }
+        })
 
     return MppUnsigned({"kind": "eip712", "typedData": typed_data}, complete)
 
@@ -286,10 +287,13 @@ def _eip1559_chain_id(wire: bytes) -> int | None:
 
 def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     """The call's request for the buyer's signer, on the challenge's chain. On hash, complete takes the transaction
-    hash; on transaction, the signed transaction, as draft-evm-charge-00's transaction verification reads it before it
-    broadcasts (L696-697 and L873-879 at tempoxyz/mpp-specs 08e7dd87): an EIP-1559 transaction, else
-    mpp/credential-malformed, whose chain id is the challenge's methodDetails.chainId, else evm/chain-mismatch. bound
-    reads nothing of it (mpp/no-signed-place)."""
+    hash; on transaction, the signed transaction. It checks in bound's order: first bound's hold of the echoed challenge
+    (echoed_for), which bound makes before its verdict, so a credential over the credential size bound is
+    mpp/credential-malformed, as bound gives it; then the transaction, 1 to 65,536 bytes of hex, else
+    mpp/credential-malformed, read as draft-evm-charge-00's transaction verification reads it before it broadcasts
+    (L696-697 and L873-879 at tempoxyz/mpp-specs 08e7dd87): an EIP-1559 transaction, else mpp/credential-malformed,
+    whose chain id is the challenge's methodDetails.chainId, else evm/chain-mismatch. bound reads nothing of it
+    (mpp/no-signed-place)."""
     o = offer_for(choice, h, pairing)
     if isinstance(o, Refusal):
         return o
@@ -303,7 +307,11 @@ def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         if broadcast:
             if normal_hash(signed_or_hash) is None:
                 return Refusal("mpp/credential-malformed")
-            return {"challenge": challenge, "source": source, "payload": {"type": "hash", "hash": signed_or_hash}}
+            return measured({"challenge": challenge, "source": source, "payload": {"type": "hash", "hash": signed_or_hash}})
+        credential = {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
+        held = echoed_for(credential, pairing)
+        if isinstance(held, Refusal):
+            return held
         if not is_hex_bytes(signed_or_hash, 1, MAX_WIRE):
             return Refusal("mpp/credential-malformed")
         tx_chain = _eip1559_chain_id(bytes.fromhex(signed_or_hash[2:]))
@@ -311,7 +319,7 @@ def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
             return Refusal("mpp/credential-malformed")
         if tx_chain != chain_id:
             return Refusal("evm/chain-mismatch")
-        return {"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": signed_or_hash}}
+        return credential
 
     request = {
         "kind": "evm-call",

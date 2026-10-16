@@ -2,6 +2,7 @@
 hash, the buyer's reading of placed challenges, the agreement URL, the subscription's bare id, the network each
 challenge pays on, and the issued checks and refusals the file records."""
 
+import functools
 import hashlib
 import json
 from typing import Any
@@ -342,18 +343,50 @@ def _tempo_wire_of(size: int) -> str:
     raise AssertionError(f"no padding gives {size} bytes")
 
 
+@functools.cache
+def _largest_taken(name: str) -> int:
+    """The largest signed transaction, in bytes, whose credential bound does not refuse for its size, for the
+    transaction or memo build's challenge: on the transaction pairing, whose bound then gives mpp/no-signed-place and
+    reads no byte of the transaction, so size bytes of 0x11 stand for a signed transaction of that length; on the memo
+    pairing, whose bound then gives H, a 0x76 transaction of that size (_tempo_wire_of). Bisection over 1,024 to 65,536
+    bytes, with bound the judge."""
+    binding, _, _ = _BUILDS[name]
+    challenge = _choice(name)["challenge"]
+    chain = (_R_E if name == "transaction" else _R_T)["methodDetails"]["chainId"]
+    ok: object = Refusal("mpp/no-signed-place") if name == "transaction" else H
+
+    def taken(size: int) -> bool:
+        wire = "0x" + "11" * size if name == "transaction" else _tempo_wire_of(size)
+        source = f"did:pkh:eip155:{chain}:{_PAYER['payer']}"
+        answer = binding.bound({"challenge": challenge, "source": source, "payload": {"type": "transaction", "signature": wire}})
+        if answer == ok:
+            return True
+        assert answer == Refusal("mpp/credential-malformed"), answer
+        return False
+
+    lo, hi = 1024, 65_536
+    assert taken(lo) and not taken(hi)
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        lo, hi = (mid, hi) if taken(mid) else (lo, mid)
+    return lo
+
+
 def test_a_charge_complete_refuses_an_answer_past_its_bound() -> None:
     """mpp-challenge.json's agreedRefusals row for complete with a signature outside 1 to 8192 bytes, a transaction hash
-    not 32 bytes, or a signed transaction over 64 KiB: an answer at each bound completes, and one past it is the row's
-    refusal. The EVM transactions at the bound and one byte past it are EIP-1559 transactions on the challenge's
-    chain, which complete reads, so the size bound alone refuses the one past it; the memo's at the bound is a 0x76
-    transaction on its chain."""
+    not 32 bytes, or a signed transaction whose credential is over the credential size bound, 64 KiB: an answer at each
+    bound completes, and one past it is the row's refusal. A signed transaction's bound is the largest whose credential
+    bound takes (_largest_taken). The EVM transactions at the bound and past it are EIP-1559 transactions on the
+    challenge's chain, which complete reads, so the size bound alone refuses those past it; the memo's at the bound is a
+    0x76 transaction on its chain."""
     expect = refused(_agreed("complete with a signature outside 1 to 8192 bytes"))
-    over = "0x" + "11" * 65_537
+    tx, memo = _largest_taken("transaction"), _largest_taken("memo")
     at_bound = [("authorization", "0x11"), ("authorization", "0x" + "11" * 8192), ("hash", H), ("push", H),
-                ("transaction", _evm_wire_of(65_536)), ("memo", _tempo_wire_of(65_536))]  # fmt: skip
+                ("transaction", _evm_wire_of(tx)), ("memo", _tempo_wire_of(memo))]  # fmt: skip
     past = [("authorization", "0x"), ("authorization", "0x" + "11" * 8193), ("hash", "0x" + "11" * 31),
-            ("push", "0x" + "11" * 33), ("transaction", _evm_wire_of(65_537)), ("memo", over)]  # fmt: skip
+            ("push", "0x" + "11" * 33), ("transaction", _evm_wire_of(tx + 1)), ("transaction", _evm_wire_of(48_000)),
+            ("transaction", _evm_wire_of(65_537)), ("memo", _tempo_wire_of(memo + 1)), ("memo", _tempo_wire_of(48_000)),
+            ("memo", "0x" + "11" * 65_537)]  # fmt: skip
     for name, answer in at_bound:
         assert not isinstance(_built(name).complete(answer), Refusal), (name, len(answer))
     for name, answer in past:

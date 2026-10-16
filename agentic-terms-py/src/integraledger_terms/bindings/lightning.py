@@ -16,7 +16,7 @@ from .._types import Advertised, Broadcaster, Json, Refusal
 from ._bolt11 import FIELD, Bolt11, Currency, decode, invoice_h
 from ._channel import ChannelKind, ChannelRef
 from ._jose import member_names, parse_json
-from ._mpp import check_challenge, credential_of, echoed_for, mpp_broadcaster, session_broadcaster
+from ._mpp import check_challenge, credential_of, echoed_for, measured, mpp_broadcaster, session_broadcaster
 from ._mpp import read as mpp_read
 from ._mpp_checks import decode_object
 from ._lcp import is_object, legal_context_info, normal_hash
@@ -328,14 +328,19 @@ class LnMppUnsigned:
     _return_invoice: object
 
     def complete(self, preimage: object) -> dict[str, Any] | Refusal:
+        """The credential carrying the preimage, measured (measured) before the preimage's form is read, as bound
+        measures a credential before it reads the payment."""
+        payload: dict[str, Any] = (
+            {"preimage": preimage}
+            if self._pairing == MPP_CHARGE
+            else {"action": _OPEN, "preimage": preimage, "returnInvoice": self._return_invoice}
+        )
+        credential = measured({"challenge": self._challenge, "payload": payload})
+        if isinstance(credential, Refusal):
+            return credential
         if not isinstance(preimage, str) or PREIMAGE.fullmatch(preimage) is None:
             return Refusal("ln/preimage-malformed")
-        if self._pairing == MPP_CHARGE:
-            return {"challenge": self._challenge, "payload": {"preimage": preimage}}
-        return {
-            "challenge": self._challenge,
-            "payload": {"action": _OPEN, "preimage": preimage, "returnInvoice": self._return_invoice},
-        }
+        return credential
 
 
 @dataclass(frozen=True, slots=True)

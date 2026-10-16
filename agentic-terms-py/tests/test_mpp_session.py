@@ -35,7 +35,8 @@ from integraledger_terms import _gate
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
-from integraledger_terms.bindings._tempo import encode_key_authorization, tempo_channel_id
+from integraledger_terms.bindings._tempo import encode_key_authorization, expiring_nonce_hash, tempo_channel_id
+from integraledger_terms.bindings.mpp_session import evm_channel_id
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, plant, run
 from mpp_docs import b64u, http_doc, issued, placed_doc
@@ -279,7 +280,8 @@ def tempo_opening(
 ) -> dict[str, Any]:
     """The opening the binding's build writes for a challenge of request_text and payer, completed with its open call
     in a transaction of TS2's other fields for chain, signed with fixed.payerKey or as signature gives, and the payer's
-    voucher. With dirty, the open call's argument word of that index has a non-zero first byte."""
+    voucher. With dirty, the open call's argument word of that index has a non-zero first byte. Where complete refuses
+    the transaction, as bound refuses the credential it would give, it is that credential (completed_for)."""
     unsigned = tempo_built(request_text, payer)
     call = unsigned.funding["call"]
     if dirty is not None:
@@ -287,7 +289,11 @@ def tempo_opening(
         call = {**call, "data": call["data"][:at] + "01" + call["data"][at + 2 :]}
     signed_tx = open_wire({**unsigned.funding, "call": call, "chainId": chain}, signature)
     voucher = unsigned.voucher(signed_tx)
-    assert not isinstance(voucher, Refusal), voucher
+    if isinstance(voucher, Refusal):
+        by_payer = tempo_built(request_text)
+        own = by_payer.complete(open_wire(by_payer.funding), VOUCHER_SIGNATURE)
+        assert isinstance(own, dict), own
+        return completed_for(own, signed_tx, payer, request_text)
     opening = unsigned.complete(signed_tx, sign_typed(voucher))
     assert isinstance(opening, dict), opening
     return opening
@@ -304,7 +310,7 @@ def test_mpp_session_tempo_rows_whose_transaction_is_for_another_chain() -> None
     # and L1227-1228, as the rows' about cites them): the transaction is signed for the challenge's chain. build's
     # voucher and complete refuse a transaction signed for the row's chain with the row's code, and bound and
     # build_within refuse it in the credential complete gives for the transaction signed for the challenge's chain.
-    rows = agreed_rows("the transactionChainId rows", lambda r: "transactionChainId" in r, exact=2, left=36)
+    rows = agreed_rows("the transactionChainId rows", lambda r: "transactionChainId" in r, exact=2, left=40)
     for row in rows:
         assert set(row) <= {"case", "sessionProtocol", "transactionChainId", "expect"}, row["case"]
         request_text = TF["requestV1"] if row.get("sessionProtocol") == "v1" else TF["requestV2"]
@@ -561,7 +567,7 @@ def test_mpp_session_tempo_rows_with_two_faults_are_refused_for_the_one_the_draf
     # `descriptor`, the computed `channelId`, the descriptor `expiringNonceHash`". Each fault alone is refused with its
     # own code, and the two together with the code of the one the draft checks first, the row's: by bound, and by
     # build_within, which reads the opening as bound does.
-    rows = agreed_rows("the faults rows", lambda r: "faults" in r, exact=26, left=12)
+    rows = agreed_rows("the faults rows", lambda r: "faults" in r, exact=26, left=16)
     for v1 in (False, True):
         assert MPP_SESSION_TEMPO.bound(faulted(v1, [])) == H
     ts1 = tempo_built(TF["requestV2"]).funding
@@ -578,6 +584,60 @@ def test_mpp_session_tempo_rows_with_two_faults_are_refused_for_the_one_the_draf
         both = faulted(v1, faults)
         assert MPP_SESSION_TEMPO.bound(both) == Refusal(row["expect"]), row["case"]
         assert voucher_within(both) == Refusal(row["expect"]), row["case"]
+
+
+def completed_for(own: dict[str, Any], wire: str, from_: str, request_text: str) -> dict[str, Any]:
+    """The credential the Tempo session build's complete writes for wire from from_ for a challenge of request_text,
+    as own carries it from fixed.payer, whatever bound answers it: on v1 the channelId from_ opens with the challenge's
+    values; on v2 the descriptor naming from_ as its payer, with the expiring nonce hash of wire under from_, and its
+    channelId."""
+    p = own["payload"]
+    request = json.loads(request_text)
+    md = request["methodDetails"]
+    if "descriptor" not in p:
+        channel = evm_channel_id(
+            from_, request["recipient"], request["currency"], H.lower(), p["authorizedSigner"], md["escrowContract"], md["chainId"]
+        )
+        assert isinstance(channel, str), channel
+        return {**own, "payload": {**p, "transaction": wire, "channelId": channel}}
+    nonce_hash = expiring_nonce_hash(bytes.fromhex(wire[2:]), from_)
+    assert isinstance(nonce_hash, str), nonce_hash
+    descriptor = {**p["descriptor"], "payer": from_, "expiringNonceHash": nonce_hash}
+    channel = tempo_channel_id({**descriptor, "escrow": md["escrowContract"], "chainId": md["chainId"]})
+    assert isinstance(channel, str), channel
+    return {**own, "payload": {**p, "transaction": wire, "channelId": channel, "descriptor": descriptor}}
+
+
+def test_mpp_session_tempo_build_refuses_a_transaction_with_the_code_bound_gives_the_credential_complete_would_give() -> None:
+    # mpp-session-tempo.json's agreedRefusals rows with from or padding. build's voucher and complete return no
+    # credential bound refuses: each gives the code bound gives the credential complete would give for the transaction.
+    # A row with from is build's opening from that address, its transaction signed with fixed.payerKey, so its sender,
+    # fixed.payer, is not the payer the credential names: on v2 the descriptor's (draft-tempo-session-00 L1180-1183), on
+    # v1 the payer of its channelId (L299-312). A row with padding is build's opening with a second call, to
+    # fixed.recipient, whose input is that many zero bytes, so its credential is over the credential size bound, 64 KiB.
+    # The same transaction without the row's change is completed, and gives H.
+    rows = agreed_rows("the from and padding rows", lambda r: "from" in r or "padding" in r, exact=4, left=38)
+    for row in rows:
+        assert set(row) <= {"case", "sessionProtocol", "from", "padding", "expect"}, row["case"]
+        assert ("from" in row) != ("padding" in row), row["case"]
+        request_text = TF["requestV1"] if row.get("sessionProtocol") == "v1" else TF["requestV2"]
+        by_payer = tempo_built(request_text)
+        call = by_payer.funding["call"]
+        own = by_payer.complete(open_wire(by_payer.funding), VOUCHER_SIGNATURE)
+        assert MPP_SESSION_TEMPO.bound(own) == H, row["case"]
+        from_ = row.get("from", TF["payer"])
+        unsigned = tempo_built(request_text, from_)
+        assert unsigned.funding["call"]["data"] == call["data"], row["case"]
+        calls = [(call["to"], call["data"])]
+        if "padding" in row:
+            calls.append((TF["recipient"], "0x" + "00" * row["padding"]))
+        wire = tempo_signed(calls, by_payer.funding["chainId"], by_payer.funding["validBefore"])[0]
+        refused = Refusal(row["expect"])
+        assert unsigned.voucher(wire) == refused, row["case"]
+        assert unsigned.complete(wire, VOUCHER_SIGNATURE) == refused, row["case"]
+        assert MPP_SESSION_TEMPO.bound(completed_for(own, wire, from_, request_text)) == refused, row["case"]
+        if "from" in row:
+            assert MPP_SESSION_TEMPO.bound(by_payer.complete(wire, VOUCHER_SIGNATURE)) == H, row["case"]
 
 
 KEYCHAIN_VERSIONS = {"keychain-v1": 0x03, "keychain-v2": 0x04}
@@ -626,7 +686,7 @@ def test_mpp_session_tempo_rows_whose_transaction_carries_a_0x03_keychain_signat
     # transaction hashes to its expectSha256 (GNU coreutils sha256sum over the bytes ox wrote): build's voucher and
     # complete refuse it, and bound and build_within refuse the credential complete would give for it. The same
     # opening with every signature in the 0x04 form completes, gives H and a voucher built within it.
-    rows = agreed_rows("the senderSignature rows", lambda r: "senderSignature" in r, exact=4, left=34)
+    rows = agreed_rows("the senderSignature rows", lambda r: "senderSignature" in r, exact=4, left=38)
     for row in rows:
         assert set(row) <= {"case", "sessionProtocol", "senderSignature", "authorizationList", "accessKey", "expectSha256", "expect"}, row["case"]
         entries: list[dict[str, Any]] = row.get("authorizationList", [])

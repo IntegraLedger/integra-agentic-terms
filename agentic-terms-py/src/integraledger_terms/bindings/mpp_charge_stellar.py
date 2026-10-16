@@ -11,7 +11,7 @@ from .._core import AtrHash
 from .._types import Advertised, Broadcaster, Refusal
 from . import _stellar
 from ._lcp import is_object, safe_int
-from ._mpp import chosen_for, credential_of, echoed_for, expires_of, fetched_of, mpp_broadcaster, read
+from ._mpp import chosen_for, credential_of, echoed_for, expires_of, fetched_of, measured, mpp_broadcaster, read
 from ._mpp_checks import decode_object, is_fee_payer, is_stellar_recipient
 
 ID = "mpp/charge/stellar"
@@ -57,10 +57,16 @@ class StellarChargeUnsigned:
     _challenge: Mapping[str, Any]
 
     def complete(self, signature: object) -> dict[str, Any] | Refusal:
-        xdr = self._unsigned.complete(signature)
+        """The credential carrying the signed envelope, in bound's order: bound measures a credential before it reads
+        the payment, so the credential is measured (measured) before the envelope's MAX_XDR bound,
+        stellar/tx-too-large."""
+        xdr = self._unsigned.written(signature)
         if isinstance(xdr, Refusal):
             return xdr
-        return {"challenge": self._challenge, "payload": {"type": "transaction", "transaction": xdr}}
+        credential = measured({"challenge": self._challenge, "payload": {"type": "transaction", "transaction": xdr}})
+        if isinstance(credential, Refusal):
+            return credential
+        return Refusal("stellar/tx-too-large") if len(xdr) > _stellar.MAX_XDR else credential
 
 
 @dataclass(frozen=True, slots=True)

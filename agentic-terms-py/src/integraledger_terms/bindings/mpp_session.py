@@ -24,6 +24,7 @@ from ._mpp import (
     echoed_for,
     expires_of,
     is_hex_bytes,
+    measured,
     offer_for,
     params_of,
     read,
@@ -65,6 +66,8 @@ SUBSCRIPTION = "mpp/subscription/tempo"
 APPROVE_SELECTOR = "0x095ea7b3"
 MAX_SIGNATURE = 8192
 MAX_WIRE = 65_536
+# The shortest voucher signature, one byte: a voucher answers what complete gives with it.
+SHORTEST_SIGNATURE = "0x00"
 U96 = 1 << 96
 U128 = 1 << 128
 KEY_TYPES: Mapping[str, int] = {"secp256k1": 0, "p256": 1, "webAuthn": 2}
@@ -417,10 +420,18 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     challenge = dict(choice["challenge"])
     source = f"did:pkh:eip155:{chain_id}:{from_}"
 
-    def voucher(funded: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(funded, 1, MAX_WIRE):
-            return Refusal("mpp/credential-malformed")
-        return _voucher_data("EVM Payment Channel", "uint128", chain_id, escrow, channel_id)
+    def voucher_for(done: Callable[[Any, Any], dict[str, Any] | Refusal]) -> Callable[[Any], dict[str, Any] | Refusal]:
+        """The voucher of a funding: what complete gives for it with the shortest voucher signature, one byte, where
+        that is a refusal, else the typed data. So voucher measures as complete does, and refuses a funding not in
+        complete's form with complete's code."""
+
+        def voucher(funded: Any) -> dict[str, Any] | Refusal:
+            shortest = done(funded, "0x00")
+            if isinstance(shortest, Refusal):
+                return shortest
+            return _voucher_data("EVM Payment Channel", "uint128", chain_id, escrow, channel_id)
+
+        return voucher
 
     base = {"action": "open", "channelId": channel_id, "cumulativeAmount": "0", "authorizedSigner": signer, "salt": salt}
 
@@ -439,9 +450,13 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         def complete_hash(funded: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
             if normal_hash(funded) is None or not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
                 return Refusal("mpp/credential-malformed")
-            return {"challenge": challenge, "source": source, "payload": {**base, "type": "hash", "hash": funded, "signature": voucher_signature}}
+            return measured(
+                {"challenge": challenge, "source": source, "payload": {**base, "type": "hash", "hash": funded, "signature": voucher_signature}}
+            )
 
-        return SessionUnsigned({"kind": "evm-calls", "chainId": chain_id, "calls": calls, "broadcast": True}, voucher, complete_hash)
+        return SessionUnsigned(
+            {"kind": "evm-calls", "chainId": chain_id, "calls": calls, "broadcast": True}, voucher_for(complete_hash), complete_hash
+        )
 
     typed_data: dict[str, Any] | Refusal
     authorization: dict[str, Any]
@@ -503,13 +518,13 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     def complete_signed(funded: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
         if not is_hex_bytes(funded, 1, MAX_SIGNATURE) or not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
-        return {
+        return measured({
             "challenge": challenge,
             "source": source,
             "payload": {**base, "type": kind, "authorization": authorization, "signature": funded, "voucherSignature": voucher_signature},
-        }
+        })
 
-    return SessionUnsigned({"kind": "eip712", "typedData": typed_data}, voucher, complete_signed)
+    return SessionUnsigned({"kind": "eip712", "typedData": typed_data}, voucher_for(complete_signed), complete_signed)
 
 
 # ── mpp/session/tempo.
@@ -739,25 +754,17 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     challenge = dict(choice["challenge"])
     source = f"did:pkh:eip155:{p.chain_id}:{from_}"
 
-    def opened(signed_tx: Any) -> dict[str, Any] | Refusal:
-        if not is_hex_bytes(signed_tx, 0, MAX_WIRE):
-            return Refusal("mpp/credential-malformed")
-        wire = bytes.fromhex(signed_tx[2:])
-        tx = decode_tempo_tx(wire)
-        if isinstance(tx, Refusal):
-            return tx
-        if tx.chain_id != p.chain_id:
-            return Refusal("tempo/tx-malformed")
-        sender = tempo_sender(wire)
-        if isinstance(sender, Refusal):
-            return sender
-        authorizations = authorization_signatures(wire)
-        if isinstance(authorizations, Refusal):
-            return authorizations
+    def channel_for(signed_tx: Any) -> dict[str, Any] | Refusal:
+        """The channel id, and on v2 the descriptor, that complete writes for signed_tx: on v1 the channel from opens
+        with the open call's values; on v2 the descriptor of those values whose expiring nonce hash is the
+        transaction's under from, and its channel id. On v2 a transaction that is not hex bytes of at most 64 KiB, or
+        does not decode, gives neither: bound refuses it before it reads them."""
         if p.version == "v1":
             channel_id = evm_channel_id(from_, recipient, currency, salt, signer, p.escrow, p.chain_id)
             return channel_id if isinstance(channel_id, Refusal) else {"channelId": channel_id}
-        nonce_hash = expiring_nonce_hash(wire, from_)
+        if not is_hex_bytes(signed_tx, 0, MAX_WIRE):
+            return Refusal("mpp/credential-malformed")
+        nonce_hash = expiring_nonce_hash(bytes.fromhex(signed_tx[2:]), from_)
         if isinstance(nonce_hash, Refusal):
             return nonce_hash
         descriptor = {
@@ -772,32 +779,41 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         channel_id = tempo_channel_id({**descriptor, "escrow": p.escrow, "chainId": p.chain_id})
         return channel_id if isinstance(channel_id, Refusal) else {"channelId": channel_id, "descriptor": descriptor}
 
+    def held(signed_tx: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
+        """The credential for signed_tx and voucher_signature, once bound's checks (_tempo_opened) take it; else their
+        refusal, so complete returns no credential bound refuses."""
+        c = channel_for(signed_tx)
+        payload: dict[str, Any] = {"action": "open", "type": "transaction"}
+        if not isinstance(c, Refusal):
+            payload["channelId"] = c["channelId"]
+        payload["transaction"] = signed_tx
+        payload["authorizedSigner"] = signer
+        if not isinstance(c, Refusal) and "descriptor" in c:
+            payload["descriptor"] = c["descriptor"]
+        payload["cumulativeAmount"] = "0"
+        payload["signature"] = voucher_signature
+        credential = {"challenge": challenge, "source": source, "payload": payload}
+        o = _tempo_opened(credential)
+        if isinstance(o, Refusal):
+            return o
+        return c if isinstance(c, Refusal) else credential
+
     def voucher(signed_tx: Any) -> dict[str, Any] | Refusal:
-        c = opened(signed_tx)
+        c = held(signed_tx, SHORTEST_SIGNATURE)
         if isinstance(c, Refusal):
             return c
+        channel_id = c["payload"]["channelId"]
         if p.version == "v2":
-            return _voucher_data("TIP20 Channel Reserve", "uint96", p.chain_id, p.escrow, c["channelId"])
-        return _voucher_data("Tempo Stream Channel", "uint128", p.chain_id, p.escrow, c["channelId"])
+            return _voucher_data("TIP20 Channel Reserve", "uint96", p.chain_id, p.escrow, channel_id)
+        return _voucher_data("Tempo Stream Channel", "uint128", p.chain_id, p.escrow, channel_id)
 
     def complete(signed_tx: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
-        c = opened(signed_tx)
+        c = held(signed_tx, voucher_signature)
         if isinstance(c, Refusal):
             return c
         if not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
-        payload: dict[str, Any] = {
-            "action": "open",
-            "type": "transaction",
-            "channelId": c["channelId"],
-            "transaction": signed_tx,
-            "authorizedSigner": signer,
-        }
-        if "descriptor" in c:
-            payload["descriptor"] = c["descriptor"]
-        payload["cumulativeAmount"] = "0"
-        payload["signature"] = voucher_signature
-        return {"challenge": challenge, "source": source, "payload": payload}
+        return c
 
     funding = {
         "kind": "tempo-call",

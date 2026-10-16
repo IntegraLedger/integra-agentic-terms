@@ -12,7 +12,7 @@ from .._types import Advertised, Broadcaster, Refusal
 from . import _stacks
 from ._codec import b64_decode
 from ._lcp import is_object, normal_hash
-from ._mpp import by_type, chosen_for, credential_of, echoed_for, mpp_broadcaster, read
+from ._mpp import by_type, chosen_for, credential_of, echoed_for, measured, mpp_broadcaster, read
 
 ID = "mpp/charge/usdc/stacks"
 
@@ -61,12 +61,21 @@ class StacksUnsigned:
     _chain_id: int
 
     def complete(self, serialized: object) -> dict[str, Any] | Refusal:
-        """The credential of the signed transaction's bytes, read as bound reads them: a value that is not bytes is
-        mpp/credential-malformed; bytes that are empty, over 16,384 bytes or that a Stacks node does not decode are
+        """The credential of the signed transaction's bytes, read in bound's order: a value that is not bytes is
+        mpp/credential-malformed; then the credential measured (measured), as bound measures it before it reads the
+        payment; then bytes that are empty, over 16,384 bytes or that a Stacks node does not decode are
         mpp/stacks-tx-malformed; and a transaction a node of the challenge's network does not take (_on_network) is
         stacks/chain-mismatch."""
         if not isinstance(serialized, bytes):
             return Refusal("mpp/credential-malformed")
+        payload = {
+            "type": "transaction",
+            "transaction": base64.b64encode(serialized).decode("ascii"),
+            "transactionFormat": STACKS_FORMAT,
+        }
+        credential = measured({"challenge": dict(self._challenge), "source": self._source, "payload": payload})
+        if isinstance(credential, Refusal):
+            return credential
         if len(serialized) == 0 or len(serialized) > MAX_STACKS_TX:
             return Refusal("mpp/stacks-tx-malformed")
         try:
@@ -75,12 +84,7 @@ class StacksUnsigned:
             return Refusal("mpp/stacks-tx-malformed")
         if not _on_network(tx, self._chain_id):
             return Refusal("stacks/chain-mismatch")
-        payload = {
-            "type": "transaction",
-            "transaction": base64.b64encode(serialized).decode("ascii"),
-            "transactionFormat": STACKS_FORMAT,
-        }
-        return {"challenge": dict(self._challenge), "source": self._source, "payload": payload}
+        return credential
 
 
 @dataclass(frozen=True, slots=True)

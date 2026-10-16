@@ -22,6 +22,7 @@ from ._mpp import (
     echoed_for,
     expires_of,
     is_hex_bytes,
+    measured,
     mpp_broadcaster,
     read,
     same_bytes,
@@ -157,7 +158,7 @@ def _evm_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     def complete(signature: Any) -> dict[str, Any] | Refusal:
         if not is_hex_bytes(signature, 1, MAX_SIGNATURE):
             return Refusal("mpp/credential-malformed")
-        return {
+        return measured({
             "challenge": challenge,
             "source": source,
             "payload": {
@@ -170,7 +171,7 @@ def _evm_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
                 "nonce": nonce,
                 "signature": signature,
             },
-        }
+        })
 
     return MppUnsigned({"kind": "eip712", "typedData": typed_data}, complete)
 
@@ -274,7 +275,7 @@ def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         for k in ("source", "sourceNetwork", "destinationNetwork", "maxFee"):
             if not isinstance(c.get(k), str) or c[k] == "":
                 return Refusal("mpp/credential-malformed")
-        return {
+        return measured({
             "challenge": challenge,
             "source": c["source"],
             "payload": {
@@ -287,7 +288,7 @@ def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
                     "transfer": {"burnIntent": c["burnIntent"], "signature": c["signature"]},
                 },
             },
-        }
+        })
 
     return MppUnsigned({"kind": "gateway-burn-intent", "preimage": preimage}, complete)
 
