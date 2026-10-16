@@ -23,6 +23,8 @@ from ._mpp import (
     credential_of,
     echoed_for,
     fetched_of,
+    measured,
+    measuring,
     read,
     session_broadcaster,
 )
@@ -322,11 +324,13 @@ class MppSessionSolana:
             presented, _kind, lambda c: "payee", "mpp/session-action", lambda c: echoed_details(c, "solana")
         )
 
+    @measuring
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open; close, carrying voucher under a client voucher signer and authentication under an operator one; or
         within for a topUp, a voucher under a client voucher signer, or a use under an operator one."""
         return _kind(presented)
 
+    @measuring
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The network and the payload's channelId, re-encoded from its 32 bytes; on a within or close payment, read
         from the payment itself. A voucher whose challenge's voucherSigner is operator, a use whose challenge's is not,
@@ -354,6 +358,7 @@ class MppSessionSolana:
         channel = key_bytes(presented["payload"].get("channelId"))
         return Refusal("mpp/credential-malformed") if channel is None else ChannelRef(network, key_string(channel))
 
+    @measuring
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
         """A use credential echoing the opening challenge, whose bearer proof names that challenge's id, gives its H.
         A voucher or topUp signs no value holding H. A voucher whose challenge's voucherSigner is operator, a use whose
@@ -407,7 +412,8 @@ class MppSessionSolana:
             if not is_base58_signature(signature):
                 return Refusal("mpp/credential-malformed")
             voucher = {"voucher": {"channelId": channel_id, "cumulativeAmount": amount}, "signer": signer, "signature": signature, "signatureType": "ed25519"}
-            return {"challenge": challenge, "payload": {"action": action, "channelId": channel_id, "voucher": voucher}}
+            payload = {"action": action, "channelId": channel_id, "voucher": voucher}
+            return measured({"challenge": challenge, "payload": payload})
 
         return BatchUnsigned(requests=[{"kind": "ed25519-raw", "message": message, "signer": signer}], complete=complete)
 

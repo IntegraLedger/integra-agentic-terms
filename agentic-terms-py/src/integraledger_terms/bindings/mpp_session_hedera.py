@@ -13,7 +13,17 @@ from .._types import Advertised, Broadcaster, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._evm import ZERO_ADDRESS, address_of_word, address_word, bytes32_word, bytes_of, hex_of, uint_word
 from ._lcp import is_address, is_list, is_object, normal_hash
-from ._mpp import Echoed, chosen_for, credential_of, echoed_for, fetched_of, measured, read, session_broadcaster
+from ._mpp import (
+    Echoed,
+    chosen_for,
+    credential_of,
+    echoed_for,
+    fetched_of,
+    measured,
+    measuring,
+    read,
+    session_broadcaster,
+)
 from ._mpp_checks import hedera_session_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 
@@ -246,10 +256,12 @@ class MppSessionHedera:
         sends. Any other action gets mpp/session-action, as bound refuses it."""
         return session_broadcaster(presented, self.channel_kind, _broadcasts, "mpp/session-action")
 
+    @measuring
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open, close, or within for a voucher or topUp; any other action is mpp/session-action."""
         return action_kind(presented, WITHIN_ACTIONS)
 
+    @measuring
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The network and the payload's channelId, lower-case; on a within or close payment, read from the payment
         itself."""
@@ -274,6 +286,7 @@ class MppSessionHedera:
         channel = normal_hash(presented["payload"].get("channelId"))
         return Refusal("mpp/credential-malformed") if channel is None else ChannelRef(network, channel)
 
+    @measuring
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
         """A voucher names only the channel: it signs no value holding H."""
         return Refusal("mpp/not-bound-within")
@@ -304,6 +317,7 @@ class MppSessionHedera:
             data = bytes_of(signature) if isinstance(signature, str) else None
             if data is None or len(data) < 1:
                 return Refusal("mpp/credential-malformed")
-            return {"challenge": challenge, "payload": {"action": action, "channelId": channel, "cumulativeAmount": amount, "signature": signature}}
+            payload = {"action": action, "channelId": channel, "cumulativeAmount": amount, "signature": signature}
+            return measured({"challenge": challenge, "payload": payload})
 
         return BatchUnsigned(requests=[{"kind": "eip712", "typedData": typed}], complete=complete)

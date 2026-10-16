@@ -22,6 +22,7 @@ from ._mpp import (
     credential_of,
     echoed_for,
     measured,
+    measuring,
     mpp_broadcaster,
     session_broadcaster,
 )
@@ -436,6 +437,7 @@ class MppLightningSession(MppLightning):
         gets ln/no-payment-in-action, as bound refuses it."""
         return session_broadcaster(presented, self.channel_kind, _session_broadcasts, "ln/no-payment-in-action")
 
+    @measuring
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """The session action: open opens the channel, bearer and topUp are within it, close ends it."""
         c = credential_of(presented)
@@ -450,6 +452,7 @@ class MppLightningSession(MppLightning):
             return "close"
         return Refusal("mpp/session-action")
 
+    @measuring
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The session's id: the open's challenge paymentHash, else the payload's sessionId, as lowercase hex. The open
         is held as bound holds it (echoed_for), whose refusal it gives: H from the echoed challenge's id, the challenge's
@@ -472,6 +475,7 @@ class MppLightningSession(MppLightning):
             return Refusal("mpp/credential-malformed")
         return ChannelRef(_SESSION_CHANNEL_NETWORK, session_id.lower())
 
+    @measuring
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
         """A bearer proof carries no hash; a topUp is within the session and is found by channel_ref."""
         return Refusal("mpp/not-bound-within")

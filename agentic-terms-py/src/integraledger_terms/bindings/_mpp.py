@@ -3,10 +3,11 @@ issued or as placed and the pairings it offers, the buyer's reading of the chall
 pays on, the echoed challenge of a credential, the read held for a credential in Held, the challenge hash and MPP's
 attribution memo."""
 
+import functools
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
@@ -463,6 +464,23 @@ def measured(credential: dict[str, Any]) -> dict[str, Any] | Refusal:
     nested more than 16 arrays and objects deep, is mpp/credential-malformed, the code bound gives it, so no complete
     returns a credential bound refuses for its size, whatever the challenge's own size."""
     return credential if _json_within(credential, MAX_CREDENTIAL) else Refusal("mpp/credential-malformed")
+
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def measuring(read: Callable[_P, _R]) -> Callable[_P, _R | Refusal]:
+    """A session pairing's channel.kind, channel.ref or channel.bound_within, given only a payment measured takes: its
+    last argument, the payment, over the credential size bound, or nested more than 16 arrays and objects deep, is
+    mpp/credential-malformed before read reads it, as bound measures every credential before it reads it. So one rule
+    covers every credential, in the channel or opening it."""
+
+    @functools.wraps(read)
+    def member(*args: _P.args, **kwargs: _P.kwargs) -> _R | Refusal:
+        return read(*args, **kwargs) if _json_within(args[-1], MAX_CREDENTIAL) else Refusal("mpp/credential-malformed")
+
+    return member
 
 
 def credential_of(c: object) -> Mapping[str, Any] | Refusal:

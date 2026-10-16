@@ -523,3 +523,77 @@ def test_a_held_hedera_session_pays_the_sellers_own_challenge() -> None:
     assert isinstance(out, Within), out
     assert [r["kind"] for r in signer.requests] == ["batch"]
     assert (out.signed["payload"]["action"], out.signed["payload"]["channelId"]) == ("voucher", HS["HS1"]["expectChannelId"])
+
+
+# ── inChannelSize (mpp-challenge.json): build_within's complete measures the in-channel credential, and the pairing's
+# channel_kind, channel_ref and bound_within measure the payment they are given, with credentialSize's bound and code.
+# The within challenge is the opening's challenge as issued with the id seller-own-id (mpp-session-within.test.ts in
+# @integraledger/lcp 0.4.1), padded by a description so that the in-channel credential measures the row's size.
+
+IN_CHANNEL = load("mpp-challenge.json")["inChannelSize"]["rows"]
+
+
+def _in_channel_set_ups() -> dict[str, tuple[Any, dict[str, Any], dict[str, Any], int, str]]:
+    """Each session with a build_within: its binding, the opening, the within challenge, the cumulative amount and one
+    signature of the pairing's form."""
+    sig = "0x" + "11" * 65
+    hedera_opening = {
+        "challenge": HS["SS1"]["hedera"]["placed"],
+        "payload": {
+            "action": "open",
+            "channelId": HS["HS1"]["expectChannelId"],
+            "txHash": HS["HS3"]["txHash"],
+            "cumulativeAmount": "0",
+            "signature": "0x00",
+        },
+    }
+    tempo = tempo_opened().signed
+    assert tempo is not None
+    within = {
+        "evm": issued("evm", "session", EVM["fixed"]["request"]),
+        "tempo": issued("tempo", "session", TF["requestV2"]),
+        **{rail: HS["SS1"][rail]["challenge"] for rail in ("hedera", "solana", "xrpl")},
+    }
+    w = {rail: {**c, "id": "seller-own-id"} for rail, c in within.items()}
+    return {
+        "mpp/session/evm": (MPP_SESSION_EVM, b6(EVM), w["evm"], 250, sig),
+        "mpp/session/tempo": (MPP_SESSION_TEMPO, tempo, w["tempo"], 250, sig),
+        "mpp/session/hedera": (MPP_SESSION_HEDERA, hedera_opening, w["hedera"], 100, sig),
+        "mpp/session/solana": (MPP_SESSION_SOLANA, SOLANA_OPENING, w["solana"], 100, "1" * 64),
+        "mpp/session/xrpl": (MPP_SESSION_XRPL, XRPL_OPENING, w["xrpl"], 100, "C0" * 64),
+    }
+
+
+WITHIN_SESSIONS = [f"mpp/session/{rail}" for rail in ("evm", "tempo", "hedera", "solana", "xrpl")]
+
+
+@pytest.mark.parametrize("pairing", WITHIN_SESSIONS)
+def test_in_channel_size_build_within_and_the_channel_members_measure_the_in_channel_credential(pairing: str) -> None:
+    from credential_size import described, description_for, size_of
+
+    binding, opening, within, amount, signature = _in_channel_set_ups()[pairing]
+
+    def complete(challenge: dict[str, Any]) -> Any:
+        w = {"challenge": challenge, "opening": opening, "cumulativeAmount": amount, "action": "voucher"}
+        unsigned = binding.build_within(w, H)
+        assert isinstance(unsigned, BatchUnsigned), unsigned
+        return unsigned.complete([signature])
+
+    def answers(c: Any) -> list[Any]:
+        return [binding.channel_kind(c), binding.channel_ref(c), binding.bound_within(c)]
+
+    plain = complete(within)
+    assert not isinstance(plain, Refusal), plain
+    taken = answers(plain)
+    assert len(IN_CHANNEL) == 3
+    for row in IN_CHANNEL:
+        challenge = described(within, description_for(plain, row["size"]))
+        sized = {**plain, "challenge": challenge}
+        assert size_of(sized) == row["size"], row["case"]
+        made = complete(challenge)
+        if row.get("taken"):
+            assert made == sized, row["case"]
+            assert answers(sized) == taken, row["case"]
+        else:
+            assert made == Refusal(row["expect"]), row["case"]
+            assert answers(sized) == [Refusal(row["expect"])] * 3, row["case"]

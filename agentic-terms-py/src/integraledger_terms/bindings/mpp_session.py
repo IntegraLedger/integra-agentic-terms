@@ -25,6 +25,7 @@ from ._mpp import (
     expires_of,
     is_hex_bytes,
     measured,
+    measuring,
     offer_for,
     params_of,
     read,
@@ -990,7 +991,11 @@ class MppSessionEvm(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_evm_kind, ref=_ref_from(SESSION_EVM, _evm_kind), bound_within=_not_bound_within)
+        return Channel(
+            kind=measuring(_evm_kind),
+            ref=measuring(_ref_from(SESSION_EVM, _evm_kind)),
+            bound_within=measuring(_not_bound_within),
+        )
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
@@ -1021,7 +1026,11 @@ class MppSessionTempo(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_tempo_kind, ref=_ref_from(SESSION_TEMPO, _tempo_kind), bound_within=_tempo_bound_within)
+        return Channel(
+            kind=measuring(_tempo_kind),
+            ref=measuring(_ref_from(SESSION_TEMPO, _tempo_kind)),
+            bound_within=measuring(_tempo_bound_within),
+        )
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
@@ -1050,7 +1059,11 @@ class MppSubscriptionTempo(_Held):
 
     @property
     def channel(self) -> Channel:
-        return Channel(kind=_subscription_kind, ref=_subscription_ref, bound_within=_not_bound_within)
+        return Channel(
+            kind=measuring(_subscription_kind),
+            ref=measuring(_subscription_ref),
+            bound_within=measuring(_not_bound_within),
+        )
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)

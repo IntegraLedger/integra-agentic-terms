@@ -9,7 +9,7 @@ from .._core import AtrHash, hash_equals
 from .._types import Refusal
 from ._channel import BatchUnsigned, ChannelKind
 from ._lcp import is_object, normal_hash
-from ._mpp import credential_of, is_challenge_shape, is_hex_bytes
+from ._mpp import credential_of, is_challenge_shape, is_hex_bytes, measured
 from ._mpp_checks import decode_object
 
 U128 = 1 << 128
@@ -78,7 +78,7 @@ def within_unsigned(w: Mapping[str, Any], typed_data: dict[str, Any], channel_id
         payload: dict[str, Any] = {"action": action, "channelId": channel_id, "cumulativeAmount": amount, "signature": signature}
         if descriptor is not None:
             payload["descriptor"] = descriptor
-        return {"challenge": challenge, "payload": payload}
+        return measured({"challenge": challenge, "payload": payload})
 
     return BatchUnsigned(requests=[{"kind": "eip712", "typedData": typed_data}], complete=complete)
 

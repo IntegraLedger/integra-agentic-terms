@@ -1,8 +1,8 @@
 """Each MPP pairing whose build returns a complete that makes a credential, run on its vector file's B2 inputs and the
 payment its B6 row carries (credential_size.PAIRINGS), against mpp-challenge.json's rows: buildChallenge (each build
-holds the chosen challenge as bound holds the challenge a credential echoes), and a change made to the caller's
-challenge after build, which does not reach the credential. Expected values are the rows' and @integraledger/lcp
-0.4.1's (mpp-complete-size.test.ts)."""
+holds the chosen challenge as bound holds the challenge a credential echoes); a change made to the caller's challenge
+after build, which does not reach the credential; and inChannelSize on the session pairings with channel members and
+no build_within. Expected values are the rows' and @integraledger/lcp 0.4.1's (mpp-complete-size.test.ts)."""
 
 import copy
 from typing import Any
@@ -18,6 +18,8 @@ from credential_size import (
     answered,
     buyer,
     built,
+    described,
+    description_for,
     mv11_transaction,
     set_up,
     size_of,
@@ -93,3 +95,30 @@ def test_a_change_to_the_callers_challenge_after_build_does_not_reach_the_creden
     assert made["challenge"] is not mine
     assert PAIRINGS[pairing].binding.bound(made) == s.answer
     assert PAIRINGS[pairing].binding.bound(copy.deepcopy(made)) == s.answer
+
+
+IN_CHANNEL_ROWS: list[dict[str, Any]] = MC["inChannelSize"]["rows"]
+assert len(IN_CHANNEL_ROWS) == 3
+
+
+def channel_answers(binding: Any, c: Any) -> list[Any]:
+    return [binding.channel_kind(c), binding.channel_ref(c), binding.bound_within(c)]
+
+
+@pytest.mark.parametrize("pairing", ["mpp/session/lightning", "mpp/subscription/tempo"])
+@pytest.mark.parametrize("row", IN_CHANNEL_ROWS, ids=[r["case"] for r in IN_CHANNEL_ROWS])
+def test_in_channel_size_the_channel_members_of_the_sessions_without_a_build_within(
+    pairing: str, row: dict[str, Any]
+) -> None:
+    """channel_kind, channel_ref and bound_within measure the payment they are given, here the pairing's opening,
+    padded by a description to the row's size: a taken row is answered as the unpadded opening is, and the one over
+    the bound is the row's code from all three."""
+    s = set_up(pairing)
+    binding = PAIRINGS[pairing].binding
+    plain = s.complete(s.placed)
+    sized = {**plain, "challenge": described(s.placed, description_for(plain, row["size"]))}
+    assert size_of(sized) == row["size"]
+    if row.get("taken"):
+        assert channel_answers(binding, sized) == channel_answers(binding, plain)
+    else:
+        assert channel_answers(binding, sized) == [Refusal(row["expect"])] * 3

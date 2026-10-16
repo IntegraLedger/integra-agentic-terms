@@ -11,7 +11,7 @@ from .._core import AtrHash, hash_equals
 from .._types import Advertised, Broadcaster, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
-from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, read, session_broadcaster
+from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, measured, measuring, read, session_broadcaster
 from ._mpp_checks import xrpl_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 from ._xrpl import channel_id, claim_bytes, decode_presented, is_blob_hex, network_id_held
@@ -242,10 +242,12 @@ class MppSessionXrpl:
         bound refuses it."""
         return session_broadcaster(presented, self.channel_kind, lambda c: "payee", "mpp/session-action")
 
+    @measuring
     def channel_kind(self, presented: Json) -> ChannelKind | Refusal:
         """open, close, or within for a voucher."""
         return action_kind(presented, WITHIN_ACTIONS)
 
+    @measuring
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The network and the channel: on an open, its id derived from the signed blob; on a voucher or close, the
         payload's channelId in upper case, with the network read from the payment itself."""
@@ -279,6 +281,7 @@ class MppSessionXrpl:
         channel = _opening_channel(decoded.tx)
         return channel if isinstance(channel, Refusal) else ChannelRef(network, channel)
 
+    @measuring
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
         """A claim signs the channel id and an amount, no value holding H."""
         return Refusal("mpp/not-bound-within")
@@ -305,6 +308,7 @@ class MppSessionXrpl:
             signature = signatures[0] if isinstance(signatures, (list, tuple)) and len(signatures) == 1 else None
             if not is_blob_hex(signature):
                 return Refusal("mpp/credential-malformed")
-            return {"challenge": challenge, "payload": {"action": action, "channelId": channel, "amount": str(drops), "signature": signature}}
+            payload = {"action": action, "channelId": channel, "amount": str(drops), "signature": signature}
+            return measured({"challenge": challenge, "payload": payload})
 
         return BatchUnsigned(requests=[{"kind": "xrpl-claim", "channelId": channel, "drops": drops, "bytes": claim}], complete=complete)
