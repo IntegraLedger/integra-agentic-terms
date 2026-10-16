@@ -288,3 +288,33 @@ def test_mpp_session_xrpl_an_opening_carrying_network_id_on_testnet_is_refused()
             assert (network_id, MPP_SESSION_XRPL.bound(opening(blob))) == want
             assert (network_id, u.complete({"signedBlob": blob, "claimSignature": "00"})) == want
             assert (network_id, session.build_within(voucher(blob), H)) == want
+
+
+def test_mpp_session_xrpl_channel_ref_reads_an_opening_as_bound_reads_it() -> None:
+    """agreedRefusals rows 27 to 30, selected by their case: channel_ref of an xrpl opening reads it as bound reads it,
+    its NetworkID and its memos, with bound's codes, and bound gives the same. The openings are XS2's blob changed as
+    each row states (mpp-session-rails.test.ts in @integraledger/lcp 0.4.1): row 24's NetworkID blobs; no Memos, and
+    one memo whose MemoData is 00; the LCP memo with H's digits written as 11 repeated; and nine memos. XS2's opening,
+    which bound takes, gives its channel."""
+    rows = [r for r in V["agreedRefusals"]["rows"] if r["case"].startswith("channel.ref of an xrpl opening")]
+    assert len(rows) == 4
+    memos = "F9EA7D4D" + MEMO + "E1F1"
+    assert memos in S["blob"]
+    other = f"lcp:sha256:0x{'11' * 32}".encode("utf-8").hex().upper()
+    network_blobs = next(r for r in V["agreedRefusals"]["rows"] if "networkIds" in r)["blobs"]
+    blobs = {
+        "xrpl/network-mismatch": network_blobs,
+        "xrpl/no-memo": [S["blob"].replace(memos, ""), S["blob"].replace(memos, "F9EA7D0100E1F1")],
+        "mpp/carrier-not-challenge": [S["blob"].replace(MEMO, other)],
+        "xrpl/memo-count": [S["blob"].replace(memos, "F9EA7D4D" + MEMO + ("E1EA7D0100" * 8) + "E1F1")],
+    }
+    session = MPP_SESSION_XRPL
+    assert isinstance(session, MppSessionXrpl)
+    assert session.bound(opening(S["blob"])) == H
+    ref = session.channel_ref(opening(S["blob"]))
+    assert isinstance(ref, ChannelRef) and ref.channel == S["expectChannel"]
+    for row in rows:
+        assert blobs[row["expect"]], row["case"]
+        for blob in blobs[row["expect"]]:
+            assert session.bound(opening(blob)) == Refusal(row["expect"]), row["case"]
+            assert session.channel_ref(opening(blob)) == Refusal(row["expect"]), row["case"]

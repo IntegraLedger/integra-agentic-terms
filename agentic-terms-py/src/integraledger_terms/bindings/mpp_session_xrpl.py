@@ -249,8 +249,10 @@ class MppSessionXrpl:
 
     @measuring
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
-        """The network and the channel: on an open, its id derived from the signed blob; on a voucher or close, the
-        payload's channelId in upper case, with the network read from the payment itself."""
+        """The network and the channel: on an open, its id derived from the signed blob of the opening as bound reads
+        it (_opening), with bound's codes in bound's order: single-signed, its NetworkID one the challenge's network
+        takes, a PaymentChannelCreate, and one LCP memo naming H; on a voucher or close, the payload's channelId in
+        upper case, with the network read from the payment itself."""
         kind = action_kind(presented, WITHIN_ACTIONS)
         if isinstance(kind, Refusal):
             return kind
@@ -266,19 +268,13 @@ class MppSessionXrpl:
             if not isinstance(c, str) or _HASH256.fullmatch(c) is None:
                 return Refusal("mpp/credential-malformed")
             return ChannelRef(network, c.upper())
-        e = echoed_for(presented, ID)
-        if isinstance(e, Refusal):
-            return e
-        network = xrpl_network_of(e.checked.details)
+        o = _opening(presented)
+        if isinstance(o, Refusal):
+            return o
+        network = xrpl_network_of(o.checked.details)
         if isinstance(network, Refusal):
             return network
-        blob = e.payload.get("transaction")
-        if not isinstance(blob, str):
-            return Refusal("xrpl/blob-malformed")
-        decoded = decode_presented(blob)
-        if isinstance(decoded, Refusal):
-            return decoded
-        channel = _opening_channel(decoded.tx)
+        channel = _opening_channel(o.tx)
         return channel if isinstance(channel, Refusal) else ChannelRef(network, channel)
 
     @measuring
