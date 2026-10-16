@@ -13,7 +13,7 @@ from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
 from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, measured, measuring, read, session_broadcaster
 from ._mpp_checks import xrpl_network_of
-from ._session_within import action_kind, echoed_details, within_checks
+from ._session_within import action_kind, echoed_details, within_checks, within_details
 from ._xrpl import channel_id, claim_bytes, decode_presented, is_blob_hex, network_id_held
 
 ID = "mpp/session/xrpl"
@@ -287,17 +287,17 @@ class MppSessionXrpl:
         claim bytes (CLM\\0, the channel id, the drops), for the channel's key, with the channel id derived from the
         opening's signed blob. draft-xrpl-session-00 defines open, voucher and close: any other action, a topUp among
         them, is mpp/session-action."""
-        o = within_checks(w, h, "session/xrpl", _opening, U64_LIMIT, ())
-        if isinstance(o, Refusal):
-            return o
-        channel = _opening_channel(o.tx)
+        held = within_checks(w, h, "session/xrpl", lambda c: within_details(c, "xrpl"), _opening, U64_LIMIT, ())
+        if isinstance(held, Refusal):
+            return held
+        channel = _opening_channel(held.opening.tx)
         if isinstance(channel, Refusal):
             return channel
         drops = w["cumulativeAmount"]
         claim = claim_bytes(channel, drops)
         if isinstance(claim, Refusal):
             return claim
-        challenge = dict(w["challenge"])
+        challenge = held.challenge
         action = w["action"]
 
         def complete(signatures: Any) -> dict[str, Any] | Refusal:

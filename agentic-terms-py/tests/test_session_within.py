@@ -8,6 +8,7 @@ TypeScript gate's tests are channels.test.ts's."""
 
 import asyncio
 import base64
+import functools
 import json
 from typing import Any
 
@@ -29,13 +30,14 @@ from integraledger_terms import (
 )
 from integraledger_terms._types import Refusal
 from integraledger_terms.bindings._channel import BatchUnsigned
+from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._svm import PAYMENT_CHANNELS, key_bytes
 from integraledger_terms.bindings.mpp_session import MppSessionEvm, MppSessionTempo
 from integraledger_terms.bindings.mpp_session_hedera import MppSessionHedera
 from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 from breadth import ABC, H, LINK, Recording, offered, run
-from mpp_docs import issued, placed_doc
+from mpp_docs import b64u, issued, placed_doc
 from support import digest, load, serving, sign_typed
 
 EVM = load("mpp-session-evm.json")
@@ -166,6 +168,16 @@ SOLANA_OPENING = {
 XRPL_OPENING = {
     "challenge": HS["SS1"]["xrpl"]["placed"],
     "payload": {"action": "open", "transaction": HS["XS2"]["blob"], "amount": "100", "signature": "00"},
+}
+HEDERA_OPENING = {
+    "challenge": HS["SS1"]["hedera"]["placed"],
+    "payload": {
+        "action": "open",
+        "channelId": HS["HS1"]["expectChannelId"],
+        "txHash": HS["HS3"]["txHash"],
+        "cumulativeAmount": "0",
+        "signature": "0x00",
+    },
 }
 
 
@@ -537,16 +549,6 @@ def _in_channel_set_ups() -> dict[str, tuple[Any, dict[str, Any], dict[str, Any]
     """Each session with a build_within: its binding, the opening, the within challenge, the cumulative amount and one
     signature of the pairing's form."""
     sig = "0x" + "11" * 65
-    hedera_opening = {
-        "challenge": HS["SS1"]["hedera"]["placed"],
-        "payload": {
-            "action": "open",
-            "channelId": HS["HS1"]["expectChannelId"],
-            "txHash": HS["HS3"]["txHash"],
-            "cumulativeAmount": "0",
-            "signature": "0x00",
-        },
-    }
     tempo = tempo_opened().signed
     assert tempo is not None
     within = {
@@ -558,7 +560,7 @@ def _in_channel_set_ups() -> dict[str, tuple[Any, dict[str, Any], dict[str, Any]
     return {
         "mpp/session/evm": (MPP_SESSION_EVM, b6(EVM), w["evm"], 250, sig),
         "mpp/session/tempo": (MPP_SESSION_TEMPO, tempo, w["tempo"], 250, sig),
-        "mpp/session/hedera": (MPP_SESSION_HEDERA, hedera_opening, w["hedera"], 100, sig),
+        "mpp/session/hedera": (MPP_SESSION_HEDERA, HEDERA_OPENING, w["hedera"], 100, sig),
         "mpp/session/solana": (MPP_SESSION_SOLANA, SOLANA_OPENING, w["solana"], 100, "1" * 64),
         "mpp/session/xrpl": (MPP_SESSION_XRPL, XRPL_OPENING, w["xrpl"], 100, "C0" * 64),
     }
@@ -597,3 +599,203 @@ def test_in_channel_size_build_within_and_the_channel_members_measure_the_in_cha
         else:
             assert made == Refusal(row["expect"]), row["case"]
             assert answers(sized) == [Refusal(row["expect"])] * 3, row["case"]
+
+
+# ── withinChallenge (mpp-challenge.json): build_within reads the within challenge as the pairing's channel_kind,
+# channel_ref and bound_within read the payment that carries it, with their code for each fault, from the snapshot of
+# its own members that the in-channel credential carries; and it gives a reader's code where that reader refuses a
+# payment whose within challenge names channel parameters other than the opening's (mpp-session-within.test.ts in
+# @integraledger/lcp 0.4.1). The set-ups are the rows' about's: the openings are B6's on the EVM session, build's of
+# fixed.requestV2 and fixed.requestV1 on the Tempo session, and those of SS1's placed challenges (HS3, SV2, XS2) on the
+# Hedera, Solana and XRPL sessions; the within challenge is the opening's challenge as issued, with the id
+# seller-own-id.
+
+WITHIN_CHALLENGE = load("mpp-challenge.json")["withinChallenge"]["rows"]
+WITHIN_ROWS = {
+    "mpp/session/evm": 2,
+    "mpp/session/tempo": 8,
+    "mpp/session/hedera": 2,
+    "mpp/session/solana": 4,
+    "mpp/session/xrpl": 2,
+}
+
+
+def issued_of(c: dict[str, Any]) -> dict[str, Any]:
+    """A placed challenge as the seller issues it within the channel: no opaque, and the seller's own id."""
+    return {**{k: v for k, v in c.items() if k not in ("id", "opaque")}, "id": "seller-own-id"}
+
+
+@functools.cache
+def _tempo_openings() -> dict[str, dict[str, Any]]:
+    from test_mpp_session import tempo_opening
+
+    return {"v2": tempo_opening(TF["requestV2"], TF["chainId"]), "v1": tempo_opening(TF["requestV1"], TF["chainId"])}
+
+
+SetUp = tuple[Any, dict[str, Any], dict[str, Any], dict[str, Any], str]
+
+
+def _within_set_up(pairing: str, opening: str = "v2", within: str | None = None) -> SetUp:
+    """The pairing's binding, its opening, the within challenge of the opening's request (the control) and of the
+    row's (on the Tempo session, the opening of the row's within protocol), and one signature of the pairing's form."""
+    sig = "0x" + "11" * 65
+    if pairing == "mpp/session/tempo":
+        openings = _tempo_openings()
+        held = openings[opening]
+        row_within = issued_of(openings[within or opening]["challenge"])
+        return MPP_SESSION_TEMPO, held, issued_of(held["challenge"]), row_within, sig
+    binding, held, signature = {
+        "mpp/session/evm": (MPP_SESSION_EVM, b6(EVM), sig),
+        "mpp/session/hedera": (MPP_SESSION_HEDERA, HEDERA_OPENING, sig),
+        "mpp/session/solana": (MPP_SESSION_SOLANA, SOLANA_OPENING, "1" * 64),
+        "mpp/session/xrpl": (MPP_SESSION_XRPL, XRPL_OPENING, "C0" * 64),
+    }[pairing]
+    return binding, held, issued_of(held["challenge"]), issued_of(held["challenge"]), signature
+
+
+def _request_of(c: dict[str, Any]) -> dict[str, Any]:
+    text = c["request"]
+    request: dict[str, Any] = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
+    return request
+
+
+def _with_request(c: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+    return {**c, "request": b64u(json.dumps(request, separators=(",", ":")))}
+
+
+def changed(within: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
+    """The within challenge with the row's change: its request; methodDetails' members; one member dropped from
+    methodDetails; or no id."""
+    if "id" in row:
+        return {k: v for k, v in within.items() if k != "id"}
+    if "request" in row:
+        return {**within, "request": row["request"]}
+    if "methodDetails" not in row and "drop" not in row:
+        return within
+    r = _request_of(within)
+    details = {**r["methodDetails"], **row.get("methodDetails", {})}
+    details.pop(row.get("drop", ""), None)
+    return _with_request(within, {**r, "methodDetails": details})
+
+
+def _within_rows(pairing: str) -> list[dict[str, Any]]:
+    rows = [r for r in WITHIN_CHALLENGE if r["pairing"] == pairing]
+    assert len(rows) == WITHIN_ROWS[pairing], (pairing, len(rows))
+    return rows
+
+
+def test_within_challenge_rows_are_the_five_sessions() -> None:
+    assert len(WITHIN_CHALLENGE) == sum(WITHIN_ROWS.values()) == 18
+
+
+@pytest.mark.parametrize(
+    "row", [r for p in WITHIN_ROWS for r in _within_rows(p)], ids=lambda r: f"{r['pairing']}: {r['case']}"
+)
+def test_within_challenge_build_within_reads_it_as_the_channel_members_do(row: dict[str, Any]) -> None:
+    set_up = _within_set_up(row["pairing"], row.get("opening", "v2"), row.get("within"))
+    binding, opening, control, within_challenge, signature = set_up
+
+    def w(c: dict[str, Any]) -> dict[str, Any]:
+        return {"challenge": c, "opening": opening, "cumulativeAmount": 100, "action": row.get("action", "voucher")}
+
+    def answers(c: Any) -> list[Any]:
+        return [binding.channel_kind(c), binding.channel_ref(c), binding.bound_within(c)]
+
+    unsigned = binding.build_within(w(control), H)
+    assert isinstance(unsigned, BatchUnsigned), unsigned
+    plain = unsigned.complete([signature])
+    assert not isinstance(plain, Refusal), plain
+    taken = answers(plain)
+    c = changed(within_challenge, row)
+    assert c != control
+    code = Refusal(row["expect"])
+    assert binding.build_within(w(c), H) == code
+    read = answers({**plain, "challenge": c})
+    assert code in read
+    for i, answer in enumerate(read):
+        assert answer in (taken[i], code), (i, answer)
+
+
+@pytest.mark.parametrize("pairing", WITHIN_SESSIONS)
+def test_a_within_challenge_naming_the_channel_builds_as_the_channel_members_take_it(pairing: str) -> None:
+    # The seller's within challenge names the channel it resumes; the pairing's filter refuses a challenge naming a
+    # channel (mpp/channel-named), and build_within does not hold the within challenge to it.
+    binding, opening, control, _, signature = _within_set_up(pairing)
+
+    def complete(c: dict[str, Any]) -> Any:
+        w = {"challenge": c, "opening": opening, "cumulativeAmount": 100, "action": "voucher"}
+        unsigned = binding.build_within(w, H)
+        assert isinstance(unsigned, BatchUnsigned), unsigned
+        return unsigned.complete([signature])
+
+    def answers(c: Any) -> list[Any]:
+        return [binding.channel_kind(c), binding.channel_ref(c), binding.bound_within(c)]
+
+    plain = complete(control)
+    channel = plain["payload"]["channelId"]
+    r = _request_of(control)
+    if pairing == "mpp/session/xrpl":
+        named = _with_request(control, {**r, "channelId": channel})
+    else:
+        named = _with_request(control, {**r, "methodDetails": {**r["methodDetails"], "channelId": channel}})
+    made = complete(named)
+    assert made == {**plain, "challenge": named}
+    assert answers(made) == answers(plain)
+    assert pairings_of(named) == Refusal("mpp/channel-named")
+
+
+def _nested(n: int) -> Any:
+    return "x" if n == 0 else [_nested(n - 1)]
+
+
+@pytest.mark.parametrize("pairing", WITHIN_SESSIONS)
+def test_build_within_holds_the_within_challenge_s_own_members_within_the_credential_bounds(pairing: str) -> None:
+    # build_within holds the within challenge as the channel members read the payment that carries it: the least
+    # credential echoing it, {challenge, payload: {}}, within the credential size bound; one at the bound builds and its
+    # in-channel credential is over the bound, and one over it is refused. A member that is not one of MPP's challenge
+    # members is not in the snapshot, so the credential is the one without it; on the credential echoing it,
+    # channel_kind takes one 16 arrays and objects deep and refuses one 17 deep (mpp-session-within.test.ts in
+    # @integraledger/lcp 0.4.1).
+    from credential_size import described, description_for, size_of
+
+    binding, opening, control, _, signature = _within_set_up(pairing)
+
+    def w(c: dict[str, Any]) -> dict[str, Any]:
+        return {"challenge": c, "opening": opening, "cumulativeAmount": 100, "action": "voucher"}
+
+    def built(c: dict[str, Any]) -> Any:
+        unsigned = binding.build_within(w(c), H)
+        assert isinstance(unsigned, BatchUnsigned), unsigned
+        return unsigned.complete([signature])
+
+    malformed = Refusal("mpp/credential-malformed")
+    plain = built(control)
+    least = {"challenge": control, "payload": {}}
+    at = described(control, description_for(least, 65_536))
+    over = described(control, description_for(least, 65_537))
+    assert [size_of({"challenge": at, "payload": {}}), size_of({"challenge": over, "payload": {}})] == [65_536, 65_537]
+    assert built(at) == malformed
+    assert binding.build_within(w(over), H) == malformed
+    assert not isinstance(binding.channel_kind(plain), Refusal)
+    for n, depth in ((14, 16), (15, 17)):
+        deep = {**control, "deep": _nested(n)}
+        assert built(deep) == plain
+        kind = binding.channel_kind({**plain, "challenge": deep})
+        assert (kind == malformed) == (depth == 17), (depth, kind)
+
+
+@pytest.mark.parametrize("pairing", WITHIN_SESSIONS)
+def test_build_within_reads_the_within_challenge_before_h_the_amount_the_action_and_the_opening(pairing: str) -> None:
+    # @integraledger/lcp 0.4.1's withinChecks order: the within challenge's snapshot, its least credential's size, its
+    # intent and method, and the readers' read of its request, each before H, the amount, the action and the opening.
+    # Each input carries a fault of every later check too, and gives the earliest check's code.
+    binding, _, control, _, _ = _within_set_up(pairing)
+    later = {"opening": {"challenge": control, "payload": {}}, "cumulativeAmount": -1, "action": "bearer"}
+    method = {**control, "method": "lightning"}
+    read = {**control, "request": "!!"}
+    no_id = {k: v for k, v in method.items() if k != "id"}
+    assert binding.build_within({**later, "challenge": read}, "0x12") == Refusal("mpp/request-malformed")
+    not_this = {**method, "request": "!!"}
+    assert binding.build_within({**later, "challenge": not_this}, "0x12") == Refusal("mpp/not-this-pairing")
+    assert binding.build_within({**later, "challenge": no_id}, "0x12") == Refusal("mpp/credential-malformed")
+    assert binding.build_within({**later, "challenge": 5}, "0x12") == Refusal("mpp/credential-malformed")

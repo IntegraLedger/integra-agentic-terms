@@ -29,7 +29,7 @@ from ._mpp import (
     session_broadcaster,
 )
 from ._mpp_checks import solana_network_of
-from ._session_within import action_kind, echoed_details, within_checks
+from ._session_within import action_kind, echoed_details, within_checks, within_details
 from ._svm import (
     SvmTx,
     channel_voucher_message,
@@ -387,12 +387,24 @@ class MppSessionSolana:
         authorizedSigner of the opening's one open instruction, the key vouchers "MUST verify under"
         (draft-solana-session-00). The opening is read as bound reads it: for a message with address table lookups,
         through the tables held for it in Held, else svm/read-first, so the opening is the one held with its tables
-        for the life of the channel. An operator channel's vouchers are the operator's, and are not built, nor are a
-        topUp or a use; an action draft-solana-session-00 does not define, such as bearer, is mpp/session-action."""
-        o = within_checks(w, h, "session/solana", _opening, U64_LIMIT, ("topUp", "use"))
-        if isinstance(o, Refusal):
-            return o
-        if o.checked.details.get("voucherSigner") == "operator":
+        for the life of the channel. The voucher signer is read as channel_kind reads it, from the within challenge:
+        one naming operator over a client opening gives channel_kind's code for the payment this would build
+        (mpp/session-action for a voucher, mpp/credential-malformed for a close, which carries voucher). An operator
+        channel's vouchers are the operator's, and are not built, nor are a topUp or a use; an action
+        draft-solana-session-00 does not define, such as bearer, is mpp/session-action."""
+        held = within_checks(
+            w, h, "session/solana", lambda c: within_details(c, "solana"), _opening, U64_LIMIT, ("topUp", "use")
+        )
+        if isinstance(held, Refusal):
+            return held
+        o = held.opening
+        operator = held.within.details.get("voucherSigner") == "operator"
+        operator_channel = o.checked.details.get("voucherSigner") == "operator"
+        if operator and not operator_channel:
+            k = _kind({"challenge": held.challenge, "payload": {"action": w["action"], "voucher": {}}})
+            if isinstance(k, Refusal):
+                return k
+        if operator or operator_channel:
             return Refusal("mpp/within-action-not-built")
         signer = o.signer
         if signer is None:
@@ -404,7 +416,7 @@ class MppSessionSolana:
         message = channel_voucher_message(channel_id, w["cumulativeAmount"], 0)
         if message is None:
             return Refusal("svm/input-malformed")
-        challenge = dict(w["challenge"])
+        challenge = held.challenge
         action = w["action"]
         amount = str(w["cumulativeAmount"])
 

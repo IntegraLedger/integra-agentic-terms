@@ -25,7 +25,7 @@ from ._mpp import (
     session_broadcaster,
 )
 from ._mpp_checks import hedera_session_network_of
-from ._session_within import action_kind, echoed_details, within_checks
+from ._session_within import action_kind, echoed_details, within_checks, within_details
 
 ID = "mpp/session/hedera"
 ESCROW_OPEN_SELECTOR = bytes.fromhex("c79ea485")
@@ -295,9 +295,12 @@ class MppSessionHedera:
         """A voucher, or a close's final voucher, on the channel the held opening opened: the voucher with the channel
         id, the escrow and the chain from the opening, signed as EIP-712. A topUp is not built; an action
         draft-hedera-session-00 does not define is mpp/session-action."""
-        o = within_checks(w, h, "session/hedera", _opening, U128_LIMIT, ("topUp",))
-        if isinstance(o, Refusal):
-            return o
+        held = within_checks(
+            w, h, "session/hedera", lambda c: within_details(c, "hedera"), _opening, U128_LIMIT, ("topUp",)
+        )
+        if isinstance(held, Refusal):
+            return held
+        o = held.opening
         network = hedera_session_network_of(o.checked.details)
         if isinstance(network, Refusal):
             return network
@@ -308,7 +311,7 @@ class MppSessionHedera:
         if isinstance(escrow, Refusal):
             return escrow
         typed = voucher(channel, escrow, _chain(network), w["cumulativeAmount"])
-        challenge = dict(w["challenge"])
+        challenge = held.challenge
         action = w["action"]
         amount = str(w["cumulativeAmount"])
 

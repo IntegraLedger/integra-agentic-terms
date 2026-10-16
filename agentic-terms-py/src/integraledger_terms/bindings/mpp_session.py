@@ -375,14 +375,15 @@ def _evm_opened(presented: Mapping[str, Any]) -> _EvmOpened | Refusal:
 def _evm_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
     """A voucher, or a close's final voucher, on the channel the held opening opened: Voucher(bytes32 channelId,uint128
     cumulativeAmount) under "EVM Payment Channel", with the channel id, the escrow and the chain from the opening."""
-    o = within_checks(w, h, "session/evm", _evm_opened, U128, ("topUp",))
-    if isinstance(o, Refusal):
-        return o
+    held = within_checks(w, h, "session/evm", params_of, _evm_opened, U128, ("topUp",))
+    if isinstance(held, Refusal):
+        return held
+    o = held.opening
     channel = normal_hash(w["opening"]["payload"].get("channelId"))
     if channel is None:
         return Refusal("mpp/credential-malformed")
     typed = _voucher_data("EVM Payment Channel", "uint128", o.params.chain_id, o.params.escrow, channel, w["cumulativeAmount"])
-    return within_unsigned(w, typed, channel)
+    return within_unsigned(held.challenge, w, typed, channel)
 
 
 def _evm_bound(presented: Any) -> AtrHash | Refusal:
@@ -686,23 +687,35 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
 def _tempo_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
     """A voucher, or a close's final voucher, on the channel the held opening opened: under "Tempo Stream Channel"
     with uint128 on v1, and under "TIP20 Channel Reserve" with uint96 on v2, whose credential also carries the
-    opening's descriptor. The channel id, the escrow, the chain and the descriptor come from the opening."""
+    opening's descriptor. The channel id, the escrow, the chain and the descriptor come from the opening. The within
+    challenge is read as channel.bound_within reads it beside that payload: under v2, its escrow, chain and operator
+    must give the opening's channel id with the opening's descriptor (_descriptor_salt), else tempo/descriptor-mismatch
+    (so a v2 within challenge over a v1 opening, whose payment carries no descriptor, too); under v1 over a v2 opening,
+    mpp/not-bound-within."""
     opening = w.get("opening") if is_object(w) else None
     version = params_of(opening.get("challenge")) if is_object(opening) else Refusal("mpp/input-malformed")
     limit = U96 if not isinstance(version, Refusal) and version.version == "v2" else U128
-    o = within_checks(w, h, "session/tempo", _tempo_opened, limit, ("topUp",))
-    if isinstance(o, Refusal):
-        return o
+    held = within_checks(w, h, "session/tempo", params_of, _tempo_opened, limit, ("topUp",))
+    if isinstance(held, Refusal):
+        return held
     p = params_of(w["opening"]["challenge"])
     channel = normal_hash(w["opening"]["payload"].get("channelId"))
     if isinstance(p, Refusal):
         return p
     assert channel is not None
+    descriptor = w["opening"]["payload"].get("descriptor") if p.version == "v2" else None
+    if held.within.version == "v2":
+        carried = {"channelId": channel} if descriptor is None else {"channelId": channel, "descriptor": descriptor}
+        salt = _descriptor_salt(carried, held.within)
+        if isinstance(salt, Refusal):
+            return salt
+    elif p.version == "v2":
+        return Refusal("mpp/not-bound-within")
     if p.version == "v2":
         typed = _voucher_data("TIP20 Channel Reserve", "uint96", p.chain_id, p.escrow, channel, w["cumulativeAmount"])
-        return within_unsigned(w, typed, channel, w["opening"]["payload"].get("descriptor"))
+        return within_unsigned(held.challenge, w, typed, channel, descriptor)
     typed = _voucher_data("Tempo Stream Channel", "uint128", p.chain_id, p.escrow, channel, w["cumulativeAmount"])
-    return within_unsigned(w, typed, channel)
+    return within_unsigned(held.challenge, w, typed, channel)
 
 
 def _tempo_bound(presented: Any) -> AtrHash | Refusal:
