@@ -1,4 +1,4 @@
-# Security
+# Security policy
 
 The packages in this repository check, before a buyer signs, that a payment carries the hash of the record the seller
 serves. A flaw that lets a payment be signed without that match, or returned with a hash other than the one compared,
@@ -23,7 +23,11 @@ Include what you can:
 We confirm that we received the report, keep you informed while we work on it, and credit you in the advisory if you
 wish.
 
-## What is in scope
+## Supported versions
+
+Security fixes are released for the latest published version of each package.
+
+## What counts
 
 - `@integraledger/terms`, `@integraledger/terms-mcp` and `integraledger-terms`, as published from this repository.
 - The skill in `agentic-terms-mcp/skills/`, where its instructions would lead an agent to sign or send a payment the
@@ -37,7 +41,7 @@ Examples of what we treat as vulnerabilities:
 - the ATR fetch exceeds its bounds (one `https` request, no redirect, 10 seconds, 1 MiB);
 - the TypeScript and Python gates accept different payments for the same inputs.
 
-## What is not in scope
+## What does not
 
 - Anything that depends on the content of the ATR. The gate compares hashes; it does not judge terms, amounts or payees.
 - Vulnerabilities in a seller's server, a facilitator, a wallet, or a chain. Report those to their maintainers.
