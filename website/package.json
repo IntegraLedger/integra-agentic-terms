@@ -9,7 +9,7 @@
   "scripts": {
     "api": "node scripts/api.mjs",
     "browser": "node scripts/browser.mjs",
-    "build": "node scripts/api.mjs && NEXT_TELEMETRY_DISABLED=1 __NEXT_AGENT_UPGRADE= next build",
+    "build": "node scripts/api.mjs && NEXT_TELEMETRY_DISABLED=1 __NEXT_AGENT_UPGRADE= next build && node scripts/script-policy.mjs",
     "dev": "node scripts/api.mjs && next dev",
     "typecheck": "fumadocs-mdx && tsc --noEmit",
     "postinstall": "fumadocs-mdx"

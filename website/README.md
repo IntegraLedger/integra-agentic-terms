@@ -75,6 +75,24 @@ turns off the upgrade check `next build` makes of the npm registry, and the `bui
 `__NEXT_AGENT_UPGRADE`, the environment variable that turns the check on whatever the configuration says. The script
 sets `NEXT_TELEMETRY_DISABLED=1`, since Next.js has no configuration for its telemetry.
 
+After `next build`, the `build` script writes each page's script policy (`scripts/script-policy.mjs`): a `<meta
+http-equiv="Content-Security-Policy">`, the first element of the page's `<head>` after its character encoding, whose
+`script-src` names `'self'` and the SHA-256 of each inline script the page holds. A static export carries no nonce, and
+the hashes of one page run past the 2,000 characters a line of `public/_headers` may hold, so each page carries its own
+policy. The browser applies it together with the one `public/_headers` sets, so an inline script runs only when its
+page's policy names it. `node scripts/check-script-policy.mjs`, after the build, parses every page in the pinned browser
+and checks that each holds one such policy, first in its head after the character encoding, naming each inline script
+the page holds and no other, and that no page holds an event handler attribute or a `javascript:` URL, which such a
+policy refuses.
+
+Every response that is not a page takes a second header policy, `default-src 'none'; script-src 'none'`, which
+Cloudflare joins to the first with a comma: the browser enforces both, so a file opened as a document, an SVG image
+above all, runs no script. `check-script-policy.mjs` also checks that `public/_headers` keeps within Cloudflare's 100
+rules and 2,000 characters a line, that every file of `out/` that is not a page, and each page's `.md` address, takes
+that policy and no page address does, and, serving `out/` with those headers, that every page loads with no policy
+violation and refuses an inline script added to it, and that an inline script added to each SVG and XML file runs when
+the file is opened without the headers and is refused with them.
+
 The static site is in `out/`. `public/_headers` sets its response headers, and `wrangler.toml` deploys `out/` as a
 Worker's static assets with the site's 404 page. `pnpm run dev` serves it locally while you edit `docs/`; it does not
 run `worker.js`.

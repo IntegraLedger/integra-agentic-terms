@@ -4,6 +4,11 @@
 # Everything the site loads comes from its own origin: fonts, scripts, images, the search index. It loads no data: or
 # blob: URL and starts no worker, so the policy names neither. No page has a base element or a form, so neither is
 # allowed. No page is shown in a frame, on any origin.
+# Each page holds a policy of its own, which the build writes in the page's head right after its character encoding
+# declaration (scripts/script-policy.mjs): script-src 'self' and the SHA-256 of each inline script the page holds. The
+# browser applies both, so a script runs only when both allow it, and an inline script only when its page's policy
+# names it. The hashes of one page run past the 2,000 characters a line of this file may hold, so this policy's
+# 'unsafe-inline' leaves inline scripts to each page's own.
 /*
   Strict-Transport-Security: max-age=63072000; includeSubDomains
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
@@ -29,3 +34,27 @@
   Content-Type: text/markdown; charset=utf-8
 /.well-known/security.txt
   Content-Type: text/plain; charset=utf-8
+
+# Every response that is not a page takes a second policy, which loads nothing and runs no script. Cloudflare joins the
+# two policies with a comma, and the browser enforces both, so a file opened as a document, an SVG image above all, runs
+# no script. These patterns hold every file the build writes that is not a page, and each page's Markdown address; no
+# page address matches one. The file keeps within Cloudflare's 100 rules and 2,000 characters a line.
+# scripts/check-script-policy.mjs checks each of these against out/.
+/_next/static/*
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/api/search
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/*.txt
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/*.md
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/og/*
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/twoslash/*
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/icon.svg
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/sitemap.xml
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/manifest.webmanifest
+  Content-Security-Policy: default-src 'none'; script-src 'none'

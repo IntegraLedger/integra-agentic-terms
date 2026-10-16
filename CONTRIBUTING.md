@@ -154,7 +154,14 @@ imports a module that highlights code. Each line is tokenized to its end however
 (`tokenizeTimeLimit: 0`), so a busy machine colours the code as an idle one does. `node scripts/check-worker.mjs` in
 `website/` runs `website/worker.js` and checks that each kind of response it returns carries the headers
 `website/public/_headers` gives the request's path, once each, and that `scripts/check-live-headers.mjs`, the check of
-the deployed site, passes against a server of the export and fails when one header is dropped.
+the deployed site, passes against a server of the export and fails when one header is dropped. The build writes each
+page's script policy into the page (`website/scripts/script-policy.mjs`), and `node scripts/check-script-policy.mjs` in
+`website/` parses every page in that browser and checks that each holds one `<meta
+http-equiv="Content-Security-Policy">`, first in its head after the character encoding, whose `script-src` names
+`'self'` and the SHA-256 of each inline script the page holds, and no other. It also checks that every file of the
+export that is not a page takes a second header policy from `website/public/_headers`, `default-src 'none'; script-src
+'none'`, and no page does, and it serves the export with those headers and checks that every page, and each SVG and
+XML file opened as a document, refuses an inline script added to it.
 
 Two builds of one commit are byte-equal. The build ID, which every page carries and which names the folder of the
 build's manifests under `/_next/static/`, is the commit's sha (`website/next.config.ts`); with uncommitted changes it

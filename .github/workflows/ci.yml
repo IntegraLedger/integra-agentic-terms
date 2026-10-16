@@ -624,6 +624,9 @@ jobs:
       - name: Every response the Worker returns carries the headers public/_headers gives its path, once each
         working-directory: website
         run: node scripts/check-worker.mjs
+      - name: Each page's script policy names every inline script of the page, by its SHA-256, and no other
+        working-directory: website
+        run: node scripts/check-script-policy.mjs
       - name: Two builds of one commit are byte-equal
         working-directory: website
         run: |
