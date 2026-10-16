@@ -408,8 +408,8 @@ def test_agreed_refusals_an_evm_build_with_a_zero_member() -> None:
 
 
 def test_agreed_refusals_an_evm_refund_amount() -> None:
-    """The rows with refundAmounts: channel_kind of a refund that carries the opening's channelConfig and voucher, with
-    each value as its amount, gives the row's refusal. The channel contract's refund takes a uint128 and refuses 0
+    """The rows with refundAmounts: channel_kind, and channel_ref, which gives channel_kind's refusal, of a refund that
+    carries the opening's channelConfig and voucher, with each value as its amount, give the row's refusal. The channel contract's refund takes a uint128 and refuses 0
     (x402-foundation/x402 751590a2, contracts/evm/src/x402BatchSettlement.sol L399, L418 and L555): a refund with no
     amount is the close, and the amounts 1 and 2^128 - 1 are within."""
     rows = evm_rows("refundAmounts")
@@ -422,13 +422,36 @@ def test_agreed_refusals_an_evm_refund_amount() -> None:
             out["payload"]["amount"] = amount[0]
         return out
 
+    b = X402_BATCH_SETTLEMENT_EIP155
+    members = {"channel.kind": b.channel_kind, "channel.ref": b.channel_ref}
+    assert sorted(c for row in rows for c in row["calls"]) == ["channel.kind", "channel.ref"]
     for row in rows:
-        assert row["calls"] == ["channel.kind"], row["case"]
-        for amount in row["refundAmounts"]:
-            assert X402_BATCH_SETTLEMENT_EIP155.channel_kind(refund(amount)) == Refusal(row["expect"]), amount
-    assert X402_BATCH_SETTLEMENT_EIP155.channel_kind(refund()) == "close"
+        for call in row["calls"]:
+            for amount in row["refundAmounts"]:
+                assert members[call](refund(amount)) == Refusal(row["expect"]), (row["case"], call, amount)
+    opened = b.channel_ref(EVM_OPENINGS["eip3009"])
+    assert not isinstance(opened, Refusal), opened
+    assert b.channel_kind(refund()) == "close"
+    assert b.channel_ref(refund()) == opened
     for amount in ("1", str(U128 - 1)):
-        assert X402_BATCH_SETTLEMENT_EIP155.channel_kind(refund(amount)) == "within", amount
+        assert b.channel_kind(refund(amount)) == "within", amount
+        assert b.channel_ref(refund(amount)) == opened, amount
+
+
+def test_agreed_refusals_an_evm_payload_type_the_scheme_does_not_define() -> None:
+    """The EVM rows with payloadTypes: channel.kind and channel.ref of EB2 and EB3's opening whose payload type is the
+    row's give the row's refusal: channel.ref refuses a payment channel.kind refuses, with channel.kind's code."""
+    rows = evm_rows("payloadTypes")
+    assert len(rows) == 1
+    b = X402_BATCH_SETTLEMENT_EIP155
+    members = {"channel.kind": b.channel_kind, "channel.ref": b.channel_ref}
+    for row in rows:
+        assert row["calls"] == ["channel.kind", "channel.ref"], row["case"]
+        for t in row["payloadTypes"]:
+            out = copy.deepcopy(EVM_OPENINGS["eip3009"])
+            out["payload"]["type"] = t
+            for call in row["calls"]:
+                assert members[call](out) == Refusal(row["expect"]), (row["case"], call, t)
 
 
 # ── The bindings' buyer-side rows for these pairings.

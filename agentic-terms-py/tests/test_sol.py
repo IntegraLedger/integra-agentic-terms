@@ -569,6 +569,36 @@ def test_x402_batch_settlement_solana_b6_es2s_opening_and_es3s_voucher_the_signe
     assert BATCH_BINDING.channel_ref(signed) == ChannelRef(**BV["ES4"]["expectRef"])
 
 
+def test_x402_batch_settlement_solana_agreed_refusals_channel_ref_gives_channel_kinds_refusal() -> None:
+    """x402-batch-settlement.json's Solana agreedRefusals rows with payloadTypes or depositTransactions: channel.kind
+    and channel.ref of ES4's opening whose payload type is the row's, or whose deposit carries the row's transaction (none
+    for null), give the row's refusal: channel.ref refuses a payment channel.kind refuses, with channel.kind's code."""
+    signed, _ = build_and_sign(batch_pairing(), lambda request: None)
+    assert BATCH_BINDING.channel_ref(signed) == ChannelRef(**BV["ES4"]["expectRef"])
+    pairing = BATCH_BINDING.id
+    rows = [r for r in BV["agreedRefusals"]["rows"] if r.get("pairing") == pairing and ("payloadTypes" in r or "depositTransactions" in r)]
+    assert len(rows) == 2
+    members = {"channel.kind": BATCH_BINDING.channel_kind, "channel.ref": BATCH_BINDING.channel_ref}
+    for row in rows:
+        assert row["calls"] == ["channel.kind", "channel.ref"], row["case"]
+        changed: list[dict[str, Any]] = []
+        for t in row.get("payloadTypes", []):
+            out = copy.deepcopy(signed)
+            out["payload"]["type"] = t
+            changed.append(out)
+        for tx in row.get("depositTransactions", []):
+            out = copy.deepcopy(signed)
+            if tx is None:
+                del out["payload"]["deposit"]["transaction"]
+            else:
+                out["payload"]["deposit"]["transaction"] = tx
+            changed.append(out)
+        assert changed, row["case"]
+        for out in changed:
+            for call in row["calls"]:
+                assert members[call](out) == Refusal(row["expect"]), (row["case"], call)
+
+
 def test_x402_batch_settlement_solana_es2_the_opening_build_is_its_build_message_byte_for_byte() -> None:
     """build's open transaction message for ES2's choice is, byte for byte, the message whose SHA-256 is ES2's
     buildMessageSha256: ES2's instructions compiled with the account order of @solana/kit 8.4.0, the compiler of the

@@ -401,7 +401,10 @@ class X402BatchSettlementEip155:
         return channel_kind(presented)
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
-        return channel_ref(presented)
+        """channel_kind first, whose refusal it gives, then the channel of the payment's config (channel_ref). bound,
+        bound_within and reference read the config's channel without the kind."""
+        kind = channel_kind(presented)
+        return kind if isinstance(kind, Refusal) else channel_ref(presented)
 
     def bound_within(self, presented: Json) -> AtrHash | Refusal:
         return bound_within(presented)

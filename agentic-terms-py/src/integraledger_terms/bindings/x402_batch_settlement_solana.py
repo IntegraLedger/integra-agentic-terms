@@ -439,6 +439,12 @@ class X402BatchSettlementSolana:
         return _payload_kind(x[1])
 
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
+        """channel_kind first, whose refusal it gives, then the channel of the payment's config (_ref). bound and
+        reference read the config's channel without the kind."""
+        kind = self.channel_kind(presented)
+        return kind if isinstance(kind, Refusal) else self._ref(presented)
+
+    def _ref(self, presented: Json) -> ChannelRef | Refusal:
         """The channel PDA from the payment's config, which must equal its voucher's id and its channel
         instruction's account. A config that is not one, such as one whose payerAuthorizer is not a point on the
         Ed25519 curve or whose withdrawDelay is not a positive integer below 2^32, is x402/payload-malformed."""
@@ -498,7 +504,7 @@ class X402BatchSettlementSolana:
             return carrier
         if carrier.memo != accepted["extra"].get("memo"):
             return Refusal("svm/carrier-mismatch")
-        ref = self.channel_ref(presented)
+        ref = self._ref(presented)
         if isinstance(ref, Refusal):
             return ref
         return carrier.h
