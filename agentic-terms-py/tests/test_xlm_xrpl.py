@@ -196,3 +196,14 @@ def test_x402_exact_xrpl_complete_gives_a_multisigned_blob_the_refusal_bound_giv
     for row in rows:
         want = (row["case"], Refusal(row["expect"]), Refusal(row["expect"]))
         assert (row["case"], X402_EXACT_XRPL.bound(presented(row["blob"])), u.complete(row["blob"])) == want
+
+
+def test_x402_exact_xrpl_bound_reads_the_option_s_invoice_id_before_the_blob() -> None:
+    """bound reads the option's invoiceId before the blob (@integraledger/lcp 0.4.1's x402/exact/xrpl presentedOf), so
+    an option whose invoiceId is not an LCP string is xrpl/carrier-not-lcp whatever the blob holds: a blob one hex
+    digit short, which agreedRefusals refuses xrpl/blob-malformed under V2's option, included."""
+    not_lcp = {**OPTION, "extra": {**OPTION["extra"], "invoiceId": "order-1"}}
+    short = V2["blob"][:-1]
+    assert X402_EXACT_XRPL.bound(presented(short)) == Refusal("xrpl/blob-malformed")
+    assert X402_EXACT_XRPL.bound(presented(V2["blob"], not_lcp)) == Refusal("xrpl/carrier-not-lcp")
+    assert X402_EXACT_XRPL.bound(presented(short, not_lcp)) == Refusal("xrpl/carrier-not-lcp")

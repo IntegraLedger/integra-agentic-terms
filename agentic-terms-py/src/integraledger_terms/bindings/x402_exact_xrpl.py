@@ -148,9 +148,10 @@ class XrplUnsigned:
 
 
 def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | Refusal:
-    """The option, the decoded blob and the hash of a payment, or the refusal that names what is wrong. The blob's
-    NetworkID is read first, as rippled 3.4.1 reads it (network_id_held): none on a network whose id is at most 1024,
-    the network's own id above that, else xrpl/network-mismatch."""
+    """The option, the decoded blob and the hash of a payment, or the refusal that names what is wrong. The option's
+    invoiceId is read before the blob, so one that is not an LCP string is xrpl/carrier-not-lcp whatever the blob
+    holds. Of the blob, its NetworkID is read first, as rippled 3.4.1 reads it (network_id_held): none on a network
+    whose id is at most 1024, the network's own id above that, else xrpl/network-mismatch."""
     if not is_object(presented) or presented.get("x402Version") != 2 or isinstance(presented.get("x402Version"), bool):
         return Refusal("x402/not-v2")
     accepted = accepted_by(presented.get("accepted"), _THIS)
@@ -159,6 +160,10 @@ def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | R
     payload = presented.get("payload")
     if not is_object(payload):
         return Refusal("x402/payload-malformed")
+    extra = accepted.get("extra")
+    h = from_lcp_string(extra.get("invoiceId") if is_object(extra) else None)
+    if h is None:
+        return Refusal("xrpl/carrier-not-lcp")
     blob = decode_presented(payload.get("signedTxBlob"))
     if isinstance(blob, Refusal):
         return blob
@@ -169,10 +174,6 @@ def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | R
     invoice = blob.tx.get("InvoiceID")
     if not isinstance(invoice, str):
         return Refusal("xrpl/no-invoice-id")
-    extra = accepted.get("extra")
-    h = from_lcp_string(extra.get("invoiceId") if is_object(extra) else None)
-    if h is None:
-        return Refusal("xrpl/carrier-not-lcp")
     if not same_invoice(invoice, x402_invoice_id(h)):
         return Refusal("xrpl/carrier-mismatch")
     return accepted, blob, h
