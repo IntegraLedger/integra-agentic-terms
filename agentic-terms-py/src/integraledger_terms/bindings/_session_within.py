@@ -27,10 +27,11 @@ def within_checks(
     limit: int,
     not_built: Sequence[str],
 ) -> O | Refusal:
-    """The checks build_within makes on its input before any channel value is read, in the input's member order: the
-    within challenge's shape and its intent and method; the opening, by opened, bound to h; the cumulative amount below
-    limit; and the action, voucher or close. not_built lists the actions the pairing's draft defines within a channel
-    that build_within does not build: each is mpp/within-action-not-built, and an action neither built nor listed is
+    """The checks build_within makes on its input before any channel value is read, in this order: the within
+    challenge's shape and its intent and method; h, a valid ATR hash (else mpp/id-not-ours); the cumulative amount below
+    limit; the action, voucher or close; and last the opening, by opened, bound to h. Every check before the opening
+    reads only the input and h. not_built lists the actions the pairing's draft defines within a channel that
+    build_within does not build: each is mpp/within-action-not-built, and an action neither built nor listed is
     mpp/session-action, as the pairing's channel_kind answers an action its draft does not define."""
     if not is_object(w):
         return Refusal("mpp/input-malformed")
@@ -40,13 +41,7 @@ def within_checks(
     assert isinstance(c, Mapping)
     if f"{c['intent']}/{c['method']}" != intent_and_method:
         return Refusal("mpp/not-this-pairing")
-    opening = credential_of(w.get("opening"))
-    if isinstance(opening, Refusal):
-        return opening
-    o = opened(opening)
-    if isinstance(o, Refusal):
-        return o
-    if not isinstance(h, str) or normal_hash(h) is None or not hash_equals(getattr(o, "h"), h):
+    if not isinstance(h, str) or normal_hash(h) is None:
         return Refusal("mpp/id-not-ours")
     amount = w.get("cumulativeAmount")
     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0 or amount >= limit:
@@ -56,6 +51,14 @@ def within_checks(
         return Refusal("mpp/within-action-not-built")
     if action not in ("voucher", "close"):
         return Refusal("mpp/session-action")
+    opening = credential_of(w.get("opening"))
+    if isinstance(opening, Refusal):
+        return opening
+    o = opened(opening)
+    if isinstance(o, Refusal):
+        return o
+    if not hash_equals(getattr(o, "h"), h):
+        return Refusal("mpp/id-not-ours")
     return o
 
 

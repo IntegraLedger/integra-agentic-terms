@@ -294,6 +294,27 @@ def test_build_within_refuses_an_action_it_does_not_build_and_another_hash() -> 
     assert evm.build_within({**w, "action": "voucher"}, H_OTHER) == Refusal("mpp/id-not-ours")
 
 
+def test_build_within_checks_h_the_amount_and_the_action_before_the_opening() -> None:
+    """build_within checks H's form, the cumulative amount and the action before it reads the opening, and binds the
+    opening to H last (@integraledger/lcp 0.4.1's withinChecks). XS2's opening with its blob one hex digit short, which
+    the opening's read refuses xrpl/blob-malformed, is refused for H 0x12 mpp/id-not-ours, for an amount of -1
+    mpp/input-malformed, and for a bearer action mpp/session-action; an opening for another H, likewise, gives the
+    amount's and the action's codes."""
+    xrpl = MPP_SESSION_XRPL
+    assert isinstance(xrpl, MppSessionXrpl)
+    w = {"challenge": XRPL_OPENING["challenge"], "opening": XRPL_OPENING, "cumulativeAmount": 100, "action": "voucher"}
+    short = {**XRPL_OPENING, "payload": {**XRPL_OPENING["payload"], "transaction": HS["XS2"]["blob"][:-1]}}
+    broken = {**w, "opening": short}
+    assert xrpl.build_within(broken, H) == Refusal("xrpl/blob-malformed")
+    assert xrpl.build_within(broken, "0x12") == Refusal("mpp/id-not-ours")
+    assert xrpl.build_within({**broken, "cumulativeAmount": -1}, H) == Refusal("mpp/input-malformed")
+    action = agreed("an xrpl topUp, use or bearer")
+    assert xrpl.build_within({**broken, "action": "bearer"}, H) == Refusal(action)
+    assert xrpl.build_within(w, H_OTHER) == Refusal("mpp/id-not-ours")
+    assert xrpl.build_within({**w, "cumulativeAmount": -1}, H_OTHER) == Refusal("mpp/input-malformed")
+    assert xrpl.build_within({**w, "action": "bearer"}, H_OTHER) == Refusal(action)
+
+
 # draft-evm-session-00 L1213 and draft-tempo-session-00 L829 at tempoxyz/mpp-specs 08e7dd87: the payload's action is
 # one of open, topUp, voucher and close. An action the draft does not define is mpp/session-action from build_within
 # as from channel_kind; a topUp, which it defines, is within and is not built.
