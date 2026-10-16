@@ -32,7 +32,6 @@ MAX_SDA_BASE64 = 8192
 MAX_ARGS_BYTES = 4096
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
-_AMOUNT = re.compile(r"[1-9][0-9]*")
 # The keys the token contract's ft_transfer reads.
 _TRANSFER_KEYS = frozenset({"receiver_id", "amount", "memo"})
 # u128::from_str's text: an optional '+', then one or more ASCII digits.
@@ -47,11 +46,9 @@ def _decimal_below(value: object, limit: int) -> int | None:
 
 
 def _is_transfer_amount(value: object) -> bool:
-    """True for an amount ft_transfer_args writes: the canonical decimal string of a positive integer below 2^128,
-    digits only and the first not 0, so no sign, point, exponent, space or leading zero."""
-    if not isinstance(value, str) or _AMOUNT.fullmatch(value) is None:
-        return False
-    return _decimal_below(value, U128_LIMIT) is not None
+    """True for an amount the option filter serves and ft_transfer_args writes: the canonical decimal string of a
+    positive integer (is_amount) below 2^128, so no sign, point, exponent, space or leading zero."""
+    return is_amount(value) and _decimal_below(value, U128_LIMIT) is not None
 
 
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
@@ -73,7 +70,7 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("near/network-malformed")
     if not is_near_account_id(o.get("asset")) or not is_near_account_id(o.get("payTo")):
         return Refusal("near/option-malformed")
-    if not is_amount(o.get("amount")) or _decimal_below(o.get("amount"), U128_LIMIT) is None:
+    if not _is_transfer_amount(o.get("amount")):
         return Refusal("near/option-malformed")
     if timeout_seconds(o.get("maxTimeoutSeconds")) is None:
         return Refusal("near/option-malformed")
