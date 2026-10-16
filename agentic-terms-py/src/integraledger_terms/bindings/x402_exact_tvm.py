@@ -12,7 +12,7 @@ from .._core import AtrHash
 from .._types import Advertised, Broadcaster, Json, Refusal
 from ._codec import b64_decode
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
-from ._ton_cell import Builder, Cell, Malformed, merkle_depth, parse_boc, serialize_boc
+from ._ton_cell import Bag, Builder, Cell, Malformed, cells_of, layout_of, merkle_depth, serialize_boc
 from ._ton_tlb import (
     MAINNET,
     MAX_MERKLE_DEPTH,
@@ -81,23 +81,38 @@ def _cell_count(root: Cell) -> int:
     return len(seen)
 
 
-def root_of(boc: object) -> Cell | Refusal:
-    """The one root of a bag of cells written in padded standard base64, or the refusal. A text that is not that base64
-    in its canonical form (RFC 4648 §3.5) is tvm/boc-malformed before its size is read; bytes TON's deserialization
-    refuses (parse_boc) are tvm/boc-malformed; the bag holds at most 8 KiB, 512 cells and depth 32. An exotic cell TON
-    accepts is refused only where a read parses it."""
+def bag_of(boc: object) -> Bag | Refusal:
+    """A bag of cells' bytes, written in padded standard base64: a text that is not that base64 in its canonical form
+    (RFC 4648 §3.5) is tvm/boc-malformed before its size is read; more than 8 KiB is tvm/boc-too-large; and bytes whose
+    layout or CRC-32C TON refuses (layout_of) are tvm/boc-malformed."""
     data = None if boc == "" else b64_decode(boc)
     if data is None:
         return Refusal("tvm/boc-malformed")
     if len(data) > MAX_BOC_BYTES:
         return Refusal("tvm/boc-too-large")
     try:
-        root = parse_boc(data)
+        return layout_of(data)
+    except Malformed:
+        return Refusal("tvm/boc-malformed")
+
+
+def root_in(bag: Bag) -> Cell | Refusal:
+    """The bag's one root, its cells read as TON deserializes them (cells_of), at most 512 cells and depth 32: cells TON
+    refuses are tvm/boc-malformed. An exotic cell TON accepts is refused only where a read parses it."""
+    try:
+        root = cells_of(bag)
     except Malformed:
         return Refusal("tvm/boc-malformed")
     if root.depth > MAX_DEPTH or _cell_count(root) > MAX_CELLS:
         return Refusal("tvm/boc-too-large")
     return root
+
+
+def root_of(boc: object) -> Cell | Refusal:
+    """The one root of a bag of cells written in padded standard base64, or the refusal: its bytes as bag_of reads
+    them, then its cells as root_in reads them."""
+    bag = bag_of(boc)
+    return bag if isinstance(bag, Refusal) else root_in(bag)
 
 
 def _comment_hash(c: Cell) -> AtrHash | None:
@@ -180,8 +195,11 @@ def tvm_carrier(settlement_boc: object, network: object) -> tuple[AtrHash, Cell]
     if config is None:
         return Refusal("tvm/network-malformed")
     root = root_of(settlement_boc)
-    if isinstance(root, Refusal):
-        return root
+    return root if isinstance(root, Refusal) else _carrier_in(root, config)
+
+
+def _carrier_in(root: Cell, config: TonConfiguration) -> tuple[AtrHash, Cell] | Refusal:
+    """tvm_carrier of the settlement message's root at the network's configuration."""
     message = message_of(root, None, config)
     if message is None:
         return Refusal("tvm/boc-malformed")
@@ -263,13 +281,6 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     return True
 
 
-def _carries(option: Mapping[str, Any], payload: Cell) -> bool:
-    """True when the option's extra.forwardPayload is one cell whose hash is the payload's."""
-    extra = option.get("extra")
-    cell = root_of(extra.get("forwardPayload") if is_object(extra) else None)
-    return not isinstance(cell, Refusal) and cell.equals(payload)
-
-
 def _uint32(value: object) -> int | None:
     """A safe integer in [0, 2^32), or None."""
     n = safe_int(value)
@@ -318,50 +329,67 @@ class X402ExactTvm:
         ConfigParam 43's max_acc_fixed_prefix_length, 8, and a representation hash that is wallet's 256-bit address,
         except the first fixed-prefix-length bits, which may differ, since TON deploys an account only from a state
         init whose hash is its address. Else x402/option-malformed. The settlement message carries that cell as
-        given."""
+        given. Every check of the input's own form comes first: H; the form of the choice's wallets, walletId, seqno,
+        now and attachNanotons, each x402/option-malformed, and of a state init given as a bag of cells, its bytes
+        (bag_of); then its document and option; the option's forward payload's bytes (bag_of, else
+        tvm/carrier-mismatch); the wallets' workchains and now with the option's timeout, each x402/option-malformed;
+        and the attached value against the option's forward amount (tvm/value-too-low). Then the forward payload's
+        cells, which must be the hash's comment cell, and the state init's cells. A state init given as an object or
+        a list holds no bag of cells: it is tvm/boc-malformed at that step. The state init's fields and hash against
+        the wallet come last."""
+        nh = normal_hash(h)
+        if nh is None:
+            return Refusal("x402/payload-malformed")
         if not is_object(c):
             return Refusal("x402/option-malformed")
+        wallet = raw_address(c.get("wallet"))
+        jetton_wallet = raw_address(c.get("jettonWallet"))
+        if wallet is None or jetton_wallet is None:
+            return Refusal("x402/option-malformed")
+        wallet_id, seqno, now = _uint32(c.get("walletId")), _uint32(c.get("seqno")), safe_int(c.get("now"))
+        if wallet_id is None or seqno is None or now is None or now < 0:
+            return Refusal("x402/option-malformed")
+        attach = c.get("attachNanotons")
+        if not isinstance(attach, int) or isinstance(attach, bool) or attach >= COINS_LIMIT:
+            return Refusal("x402/option-malformed")
+        state_init = c.get("stateInit")
+        init_bag: Bag | None = None
+        if "stateInit" in c and not isinstance(state_init, (Mapping, list)):
+            read_bag = bag_of(state_init)
+            if isinstance(read_bag, Refusal):
+                return read_bag
+            init_bag = read_bag
         required, accepted = c.get("required"), c.get("accepted")
         ok = chosen(required, accepted, check)
         if ok is not True:
             return ok
         assert is_object(required) and is_object(accepted)
-        nh = normal_hash(h)
-        if nh is None:
-            return Refusal("x402/payload-malformed")
-        comment = lcp_comment(nh)
-        if isinstance(comment, Refusal):
-            return comment
-        if not _carries(accepted, comment):
+        extra = accepted["extra"]
+        carried = bag_of(extra.get("forwardPayload"))
+        if isinstance(carried, Refusal):
             return Refusal("tvm/carrier-mismatch")
-        wallet = raw_address(c.get("wallet"))
-        jetton_wallet = raw_address(c.get("jettonWallet"))
-        if wallet is None or jetton_wallet is None:
-            return Refusal("x402/option-malformed")
         config = _CONFIGURATIONS[accepted["network"]]
         if wallet.workchain not in config.workchains or jetton_wallet.workchain not in config.workchains:
-            return Refusal("x402/option-malformed")
-        wallet_id, seqno, now = _uint32(c.get("walletId")), _uint32(c.get("seqno")), safe_int(c.get("now"))
-        if wallet_id is None or seqno is None or now is None or now < 0:
             return Refusal("x402/option-malformed")
         timeout = safe_int(accepted.get("maxTimeoutSeconds"))
         assert timeout is not None
         valid_until = _uint32(now + timeout)
         if valid_until is None:
             return Refusal("x402/option-malformed")
+        forward_ton = int(extra["forwardTonAmount"]) if "forwardTonAmount" in extra else 0
+        if attach <= forward_ton:
+            return Refusal("tvm/value-too-low")
+        comment = lcp_comment(nh)
+        assert not isinstance(comment, Refusal)
+        held = root_in(carried)
+        if isinstance(held, Refusal) or not held.equals(comment):
+            return Refusal("tvm/carrier-mismatch")
         init_cell: Cell | None = None
         if "stateInit" in c:
-            given = root_of(c.get("stateInit"))
+            given = Refusal("tvm/boc-malformed") if init_bag is None else root_in(init_bag)
             if isinstance(given, Refusal):
                 return given
             init_cell = given
-        extra = accepted["extra"]
-        forward_ton = int(extra["forwardTonAmount"]) if "forwardTonAmount" in extra else 0
-        attach = c.get("attachNanotons")
-        if not isinstance(attach, int) or isinstance(attach, bool) or attach >= COINS_LIMIT:
-            return Refusal("x402/option-malformed")
-        if attach <= forward_ton:
-            return Refusal("tvm/value-too-low")
         response = raw_address(extra["responseDestination"]) if "responseDestination" in extra else None
         pay_to = raw_address(accepted["payTo"])
         assert pay_to is not None
@@ -404,17 +432,31 @@ class X402ExactTvm:
         """The hash in the forward payload of the transfer the payer's W5 wallet signed, which must be the option's,
         under an option the pairing's filter serves. The signature is not verified here. A state init that holds a
         libraries dictionary, has a fixed prefix longer than 8 bits, or does not hash to the settlement message's
-        destination is read, since whether TON deploys the wallet from it is chain state."""
+        destination is read, since whether TON deploys the wallet from it is chain state. The payment and its option
+        come first, then the settlement's bytes (bag_of), then the forward payload's bytes (else tvm/carrier-mismatch),
+        then the settlement's cells and the forward payload's, which must be the payment's comment cell."""
         p = presented_with(presented, check)
         if isinstance(p, Refusal):
             return p
-        boc = p[1].get("settlementBoc")
+        accepted, payload, _ = p
+        boc = payload.get("settlementBoc")
         if not isinstance(boc, str):
             return Refusal("x402/payload-malformed")
-        carried = tvm_carrier(boc, p[0]["network"])
+        settlement = bag_of(boc)
+        if isinstance(settlement, Refusal):
+            return settlement
+        extra = accepted.get("extra")
+        forward = bag_of(extra.get("forwardPayload") if is_object(extra) else None)
+        if isinstance(forward, Refusal):
+            return Refusal("tvm/carrier-mismatch")
+        root = root_in(settlement)
+        if isinstance(root, Refusal):
+            return root
+        carried = _carrier_in(root, _CONFIGURATIONS[accepted["network"]])
         if isinstance(carried, Refusal):
             return carried
-        if not _carries(p[0], carried[1]):
+        held = root_in(forward)
+        if isinstance(held, Refusal) or not held.equals(carried[1]):
             return Refusal("tvm/carrier-mismatch")
         return carried[0]
 

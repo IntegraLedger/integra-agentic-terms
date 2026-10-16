@@ -1098,3 +1098,58 @@ def test_x402_exact_tvm_v3b_a_w5_request_binds_with_what_w5_does_not_read() -> N
     assert len(rows) >= 1
     for row in rows:
         assert BINDING.bound(presented(row["settlementBoc"])) == row["expectBound"], row["case"]
+
+
+# ── the order of the checks: one fault, one code ─────────────────────────────────────────────────────────────────
+
+# A bag whose bytes TON's layout reads and whose one cell names itself as its reference, which TON's deserialization
+# refuses (crypto/vm/boc.cpp: a reference must name a later cell): the generic magic, one-byte references and offsets,
+# one cell, one root, none absent, 3 data bytes, root 0, then the cell: one reference, no data, reference 0.
+SELF_REFERENCE = base64.b64encode(bytes.fromhex("b5ee9c72" "01" "01" "01" "01" "00" "03" "00" "010000")).decode("ascii")
+
+
+def with_forward_payload(value: Any) -> dict[str, Any]:
+    """The placed option with its extra.forwardPayload set to value, or left out when value is Ellipsis."""
+    extra = {k: v for k, v in F["placed"]["extra"].items() if k != "forwardPayload"}
+    return {**F["placed"], "extra": extra if value is ... else {**extra, "forwardPayload": value}}
+
+
+def test_x402_exact_tvm_build_reads_bytes_before_cells() -> None:
+    """build checks every input's own form before a bag's cells (@integraledger/lcp 0.4.1's x402/exact/tvm build):
+    the choice's members and a state init's bytes before the document, then the forward payload's bytes, the wallets'
+    workchains, valid_until and the attached value, then the forward payload's cells and the state init's cells. Each
+    choice holds two faults and is refused with the code of the one checked first."""
+    assert parse_boc_refused(SELF_REFERENCE)
+    other = boc_of(lcp_comment("0x" + "11" * 32))  # type: ignore[arg-type]
+    workchain_1 = "1" + F["wallet"][F["wallet"].index(":") :]
+    rows: list[tuple[dict[str, Any], str]] = [
+        (tvm_choice(with_forward_payload(other)), "tvm/carrier-mismatch"),
+        (tvm_choice(with_forward_payload(other), wallet=workchain_1), "x402/option-malformed"),
+        (tvm_choice(with_forward_payload(""), stateInit="AA=A"), "tvm/boc-malformed"),
+        (tvm_choice(wallet=workchain_1, stateInit="AA=A"), "tvm/boc-malformed"),
+        (tvm_choice(stateInit=SELF_REFERENCE), "tvm/boc-malformed"),
+        (tvm_choice(stateInit=SELF_REFERENCE, attachNanotons=0), "tvm/value-too-low"),
+        (tvm_choice(with_forward_payload(other), stateInit=SELF_REFERENCE), "tvm/carrier-mismatch"),
+    ]
+    for choice, code in rows:
+        assert BINDING.build(choice, F["H"]) == Refusal(code), (code, choice)
+
+
+def parse_boc_refused(boc: str) -> bool:
+    try:
+        parse_boc(base64.b64decode(boc))
+    except Malformed:
+        return True
+    return False
+
+
+def test_x402_exact_tvm_bound_reads_bytes_before_cells() -> None:
+    """bound checks the settlement's bytes, then the forward payload's bytes, before either bag's cells
+    (@integraledger/lcp 0.4.1's x402/exact/tvm bound): under an option with no forward payload, V1's comment bag,
+    whose bytes TON reads but which is no message, is tvm/carrier-mismatch, and a settlement that is not base64
+    tvm/boc-malformed."""
+    comment_bag = V["V1"]["expectBoc"]
+    no_payload = with_forward_payload(...)
+    assert BINDING.bound(presented(comment_bag)) == Refusal("tvm/boc-malformed")
+    assert BINDING.bound(presented(comment_bag, no_payload)) == Refusal("tvm/carrier-mismatch")
+    assert BINDING.bound(presented("AA=A", no_payload)) == Refusal("tvm/boc-malformed")

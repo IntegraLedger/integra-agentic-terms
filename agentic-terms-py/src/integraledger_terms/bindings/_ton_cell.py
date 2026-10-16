@@ -407,20 +407,28 @@ def _cell_size(d1: int, d2: int, ref_size: int) -> int:
     return 2 + stored * 34 + (d2 >> 1) + (d2 & 1) + (d1 & 7) * ref_size
 
 
-def parse_boc(src: bytes) -> Cell:
-    """The one root of a bag of cells as TON deserializes it (ton-blockchain/ton crypto/vm/boc.cpp,
-    std_boc_deserialize); Malformed where TON refuses the bytes:
+@dataclass(frozen=True, slots=True)
+class Bag:
+    """A bag of cells' bytes and layout, as layout_of reads them: what cells_of builds the cells from."""
+
+    data: bytes
+    cells: int
+    root_index: int
+    ref_size: int
+    # Each cell's span in data.
+    spans: tuple[tuple[int, int], ...]
+    # Each cell's cache bit from the index, or None for a bag without cache bits.
+    cached: tuple[bool, ...] | None
+
+
+def layout_of(src: bytes) -> Bag:
+    """A bag of cells' layout as TON deserializes it (ton-blockchain/ton crypto/vm/boc.cpp, std_boc_deserialize), read
+    from its bytes alone; Malformed where TON refuses the bytes:
     - the header (parse_serialized_header): one of the three magics, cache bits only with an index, a reference size
       of 1 to 4 bytes and an offset size of 1 to 8, at least one cell, exactly one root, no more absent cells than
       cells, a data size within the cell count's bounds, and the bytes holding all of it;
-    - with a CRC-32C, the input's last four bytes are the CRC-32C of every byte before them;
-    - each cell's bytes: at most four references, each to a later cell, the bytes read exactly (the cells fill the
-      data, or each index entry bounds one cell with no unused space), a partial last data byte holding a data bit
-      before its completion tag, and with cache bits, each cell's flag set exactly when two or more references (the
-      root's counted) name it;
-    - each cell as Cell creates it, TON's CellChecker; the level mask its first byte gives equal to the one computed;
-      and where it stores hashes and depths, each one equal to the computed one;
-    - the root's level 0."""
+    - each cell's span: the cells fill the data, or each index entry bounds one cell with no unused space;
+    - with a CRC-32C, the input's last four bytes are the CRC-32C of every byte before them."""
 
     def at(offset: int, n: int) -> int:
         return int.from_bytes(src[offset : offset + n], "big")
@@ -460,6 +468,7 @@ def parse_boc(src: bytes) -> Cell:
         raise Malformed
     data = src[data_at : data_at + data_size]
     spans: list[tuple[int, int]] = []
+    cached: list[bool] | None = [] if cache_bits else None
     start = 0
     if indexed:
         for i in range(cells):
@@ -468,6 +477,8 @@ def parse_boc(src: bytes) -> Cell:
             if start > end or end > data_size:
                 raise Malformed
             spans.append((start, end))
+            if cached is not None:
+                cached.append(raw % 2 == 1)
             start = end
     else:
         for _ in range(cells):
@@ -480,12 +491,23 @@ def parse_boc(src: bytes) -> Cell:
             start += size
         if start != data_size:
             raise Malformed
+    return Bag(data, cells, root_index, ref_size, tuple(spans), None if cached is None else tuple(cached))
 
+
+def cells_of(bag: Bag) -> Cell:
+    """The one root of a bag layout_of read, its cells built as TON deserializes them; Malformed where TON refuses them:
+    - each cell's bytes: at most four references, each to a later cell, its bytes read exactly, a partial last data
+      byte holding a data bit before its completion tag, and with cache bits, each cell's flag set exactly when two or
+      more references (the root's counted) name it;
+    - each cell as Cell creates it, TON's CellChecker; the level mask its first byte gives equal to the one computed;
+      and where it stores hashes and depths, each one equal to the computed one;
+    - the root's level 0."""
+    cells, ref_size, data = bag.cells, bag.ref_size, bag.data
     built: list[Cell] = [Cell(0, 0)] * cells
     named = [0] * cells
-    named[root_index] = 1
+    named[bag.root_index] = 1
     for i in range(cells - 1, -1, -1):
-        s = data[spans[i][0] : spans[i][1]]
+        s = data[bag.spans[i][0] : bag.spans[i][1]]
         if len(s) < 2:
             raise Malformed
         d1, d2 = s[0], s[1]
@@ -520,12 +542,18 @@ def parse_boc(src: bytes) -> Cell:
             if [(cell.hashes[level], cell.depths[level]) for level in levels] != list(zip(hashes, depths)):
                 raise Malformed
         built[i] = cell
-    if cache_bits and any((named[i] > 1) != (at(index_at + i * off_size, off_size) % 2 == 1) for i in range(cells)):
+    if bag.cached is not None and any((named[i] > 1) != bag.cached[i] for i in range(cells)):
         raise Malformed
-    root = built[root_index]
+    root = built[bag.root_index]
     if root.level_mask != 0:
         raise Malformed
     return root
+
+
+def parse_boc(src: bytes) -> Cell:
+    """The one root of a bag of cells as TON deserializes it (ton-blockchain/ton crypto/vm/boc.cpp,
+    std_boc_deserialize): its bytes (layout_of), then its cells (cells_of); Malformed where TON refuses either."""
+    return cells_of(layout_of(src))
 
 
 def _topological(root: Cell) -> list[tuple[Cell, list[int]]]:
