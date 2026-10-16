@@ -506,10 +506,16 @@ passes such a link to its `fetch`.
 | `DeclineCode` | The twelve codes in the table above. |
 | `Chosen` | A dataclass: `pairing`, `choice`, `ref`, `agreement`, whose values are plain JSON; the agreement URL where the pairing needs one. |
 | `Signer` | A protocol: an `account` string (CAIP-10) and `async def sign(self, request) -> Signature`. |
-| `Binding` | A protocol: `id`, `public_proof`, `read`, `build`, `bound`. |
+| `Binding` | A protocol: `id`, `public_proof`, `read`, `build`, `bound`, `broadcaster`. |
 | `Advertised`, `Step`, `Refusal`, `Unsigned`, `BatchUnsigned`, `ChannelRef` | The values a binding and the gate exchange, for code that implements a binding. |
 | `AtrHash`, `Json`, `Inputs`, `Signature` | Aliases: `str`, `Mapping[str, Any]`, `Mapping[str, Any]`, `Any`. |
 | `MAX_ATR_BYTES` | `1048576`. |
+
+A binding's `broadcaster(presented)` names who puts the presented payment on its rail: `"payer"`, which sent it before
+presenting it, or `"payee"`, the seller, or the facilitator or processor acting for it, which sends or executes it. It
+answers only for a payment of a type and kind the pairing takes, within the shape gate `bound` applies first, and gives
+any other payment the `Refusal` `bound` gives that fault. Where a payment has a second fault that `bound` finds first,
+in H or the challenge, the two codes differ.
 
 A signer receives each request with every byte string as `0x` and lower-case hex, and answers with byte strings in
 the form the [signers guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/signers.md)

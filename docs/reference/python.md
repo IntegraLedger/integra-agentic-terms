@@ -61,7 +61,7 @@ there is a read made for the opening), `charged` and `signedMax`, as in TypeScri
 | Export | What it is |
 | --- | --- |
 | `Signer` | A protocol: an `account` property (CAIP-10) and `async def sign(self, request: Json) -> Signature`. |
-| `Binding` | A protocol: `id`, `public_proof`, `read(doc)`, `build(choice, h)`, `bound(presented)`. |
+| `Binding` | A protocol: `id`, `public_proof`, `read(doc)`, `build(choice, h)`, `bound(presented)`, `broadcaster(presented)`. |
 | `Advertised` | What a binding's `read` gives the gate: `h`, `link`, `offer`, `agreement`. |
 | `Unsigned`, `Step`, `Refusal`, `BatchUnsigned`, `ChannelRef` | The values a binding and the gate exchange, for code that implements a binding. |
 | `DeclineCode` | A `Literal` of the twelve codes in the [declines reference](./declines.md). |
@@ -69,6 +69,14 @@ there is a read made for the opening), `charged` and `signedMax`, as in TypeScri
 | `Json`, `Inputs` | `Mapping[str, Any]`. |
 | `Signature` | `Any`: the signer's answer. |
 | `MAX_ATR_BYTES` | `1048576`. |
+
+A binding's `broadcaster(presented)` names who puts the presented payment on its rail: `"payer"`, which sent it before
+presenting it, so the seller reads a landed payment, or `"payee"`, the seller, or the facilitator or processor acting
+for it, which sends or executes it. It answers only for a payment of a type and kind the pairing takes, within the
+shape gate `bound` applies first, and gives any other payment the `Refusal` `bound` gives that fault. Where a payment
+has a second fault that `bound` finds first, in H or the challenge, the two codes differ. A session's or batch
+channel's `bound` reads the opening alone, so for any other action the reader is `channel_kind`: a payment it refuses
+for its own content gets its refusal.
 
 ## Bindings
 
