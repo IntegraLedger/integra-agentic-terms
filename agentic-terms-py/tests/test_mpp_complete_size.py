@@ -2,8 +2,10 @@
 payment its B6 row carries (credential_size.PAIRINGS), against mpp-challenge.json's rows: buildChallenge (each build
 holds the chosen challenge as bound holds the challenge a credential echoes); a change made to the caller's challenge
 after build, which does not reach the credential; inChannelSize on the session pairings with channel members and no
-build_within; and completeOrder (each complete checks the credential it would return in its bound's order). Expected
-values are the rows' and @integraledger/lcp 0.4.1's (mpp-complete-size.test.ts)."""
+build_within; completeOrder (each complete checks the credential it would return in its bound's order); credentialSize
+(each complete measures its credential as bound does) and voucherSize (a session voucher measures as its complete
+does); and mpp-charge-stellar.json's completeXdr and mpp-charge-xrpl.json's completeBlob. Expected values are the
+rows' and @integraledger/lcp 0.4.1's (mpp-complete-size.test.ts)."""
 
 import base64
 import copy
@@ -21,6 +23,7 @@ from integraledger_terms import (
     MPP_SUBSCRIPTION_TEMPO,
     Refusal,
 )
+from integraledger_terms.bindings import _xrpl_codec as xrpl_codec
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list
 from integraledger_terms.bindings._tempo import encode_key_authorization
 
@@ -253,12 +256,12 @@ def _subscription_credential(challenge: Any) -> dict[str, Any]:
     return _swapped("mpp/subscription/tempo", challenge, "signature", "0x" + signed.hex())
 
 
-def _xrpl_complete(challenge: Any) -> Any:
+def _xrpl_complete(challenge: Any, blob: str = "00" * 2049) -> Any:
     b2 = _b2("mpp/charge/xrpl")
     i = b2["input"]["inputs"]
     choice = {"challenge": challenge, "account": b2["input"]["account"].split(":")[2], "fee": i["fee"]}
     choice |= {"sequence": i["sequence"], "lastLedgerSequence": i["lastLedgerSequence"]}
-    return built(MPP_CHARGE_XRPL.build(choice, b2["advertised"])).complete("00" * 2049)
+    return built(MPP_CHARGE_XRPL.build(choice, b2["advertised"])).complete(blob)
 
 
 def _evm_transaction_complete(challenge: Any) -> Any:
@@ -318,3 +321,185 @@ def test_complete_order_a_complete_checks_the_credential_in_its_bounds_order(row
     assert complete(challenge) == Refusal(row["expect"])
     expect = s.h if row.get("boundTakes") else Refusal(row.get("bound", row["expect"]))
     assert PAIRINGS[row["pairing"]].binding.bound(presented) == expect
+
+
+# ── credentialSize (mpp-challenge.json): every complete measures the credential it would return as bound measures it.
+# The pairing's credential, with a description bringing it to the row's size, is returned at a taken size, and bound
+# gives it the answer it gives the credential without one; over the bound, complete and bound refuse with the row's
+# code.
+
+SIZE_ROWS: list[dict[str, Any]] = MC["credentialSize"]["rows"]
+SIZE_TAKEN = [r for r in SIZE_ROWS if r.get("taken")]
+SIZE_OVER = [r for r in SIZE_ROWS if "expect" in r]
+
+
+def test_credential_size_rows_are_two_taken_sizes_and_one_over_the_bound() -> None:
+    assert (len(SIZE_TAKEN), len(SIZE_OVER), len(SIZE_ROWS)) == (2, 1, 3)
+
+
+@pytest.mark.parametrize("pairing", list(PAIRINGS))
+@pytest.mark.parametrize("row", SIZE_TAKEN + SIZE_OVER, ids=lambda r: r["case"])
+def test_credential_size_complete_measures_its_credential_as_bound_does(pairing: str, row: dict[str, Any]) -> None:
+    s = set_up(pairing)
+    bound = PAIRINGS[pairing].binding.bound
+    assert "description" not in s.placed
+    plain = s.complete(s.placed)
+    assert bound(plain) == s.answer
+    challenge = described(s.placed, description_for(plain, row["size"]))
+    sized = {**plain, "challenge": challenge}
+    assert size_of(sized) == row["size"]
+    made = s.complete(challenge)
+    if row.get("taken"):
+        assert made == sized
+        assert bound(made) == s.answer
+    else:
+        assert made == Refusal(row["expect"])
+        assert bound(sized) == Refusal(row["expect"])
+
+
+# ── voucherSize (mpp-challenge.json): a session build's voucher measures the credential its complete would give with a
+# one-byte voucher signature, and refuses with complete's code before the voucher is signed. The EVM session runs on
+# B2's inputs and B6's funding signature, the Tempo session on B2's inputs and B6's signed transaction.
+
+VOUCHER_ROWS: list[dict[str, Any]] = MC["voucherSize"]["rows"]
+VOUCHER_TAKEN = [r for r in VOUCHER_ROWS if r.get("taken")]
+VOUCHER_OVER = [r for r in VOUCHER_ROWS if "expect" in r]
+VOUCHER_FUNDING = {"mpp/session/evm": "signature", "mpp/session/tempo": "transaction"}
+
+
+def test_voucher_size_rows_are_one_taken_size_and_one_over_the_bound() -> None:
+    assert (len(VOUCHER_TAKEN), len(VOUCHER_OVER), len(VOUCHER_ROWS)) == (1, 1, 2)
+
+
+def _session_unsigned(pairing: str, challenge: Any) -> Any:
+    b2 = _b2(pairing)
+    i = b2["input"]["inputs"]
+    choice = {"challenge": challenge, "from": b2["input"]["account"].split(":")[2], "now": b2["input"].get("now", 0)}
+    choice["deposit"] = int(i["deposit"])
+    if pairing == "mpp/session/evm":
+        choice |= {"credentialType": i["credentialType"], "tokenDomain": i["tokenDomain"]}
+    return built(PAIRINGS[pairing].binding.build(choice, b2["advertised"]))
+
+
+@pytest.mark.parametrize("pairing", list(VOUCHER_FUNDING))
+@pytest.mark.parametrize("row", VOUCHER_TAKEN + VOUCHER_OVER, ids=lambda r: r["case"])
+def test_voucher_size_a_session_voucher_measures_as_its_complete_does(pairing: str, row: dict[str, Any]) -> None:
+    s = set_up(pairing)
+    b6 = buyer(PAIRINGS[pairing].file, pairing, "B6")
+    assert b6 is not None
+    funded = b6["input"]["presented"]["payload"][VOUCHER_FUNDING[pairing]]
+    shortest = _session_unsigned(pairing, s.placed).complete(funded, "0x00")
+    assert not isinstance(shortest, Refusal), shortest
+    challenge = described(s.placed, description_for(shortest, row["size"]))
+    sized = {**shortest, "challenge": challenge}
+    assert size_of(sized) == row["size"]
+    u = _session_unsigned(pairing, challenge)
+    if row.get("taken"):
+        voucher = u.voucher(funded)
+        assert voucher == _session_unsigned(pairing, s.placed).voucher(funded)
+        assert voucher["primaryType"] == "Voucher"
+        assert u.complete(funded, "0x00") == sized
+    else:
+        assert u.voucher(funded) == Refusal(row["expect"])
+        assert u.complete(funded, "0x00") == Refusal(row["expect"])
+
+
+# ── completeXdr (mpp-charge-stellar.json): complete writes the payer's signature into the simulated envelope, B2's
+# with the row's footprint key (footprinted), and refuses a signed envelope over 8,192 base64 characters with
+# stellar/tx-too-large, as bound refuses the credential carrying the envelope complete would have written.
+
+XDR_ROWS: list[dict[str, Any]] = load("mpp-charge-stellar.json")["completeXdr"]["rows"]
+XDR_TAKEN = [r for r in XDR_ROWS if r.get("taken")]
+XDR_OVER = [r for r in XDR_ROWS if "expect" in r]
+
+
+def test_complete_xdr_rows_are_two_taken_lengths_and_one_over_the_bound() -> None:
+    assert (len(XDR_TAKEN), len(XDR_OVER), len(XDR_ROWS)) == (2, 1, 3)
+
+
+@pytest.mark.parametrize("row", XDR_TAKEN + XDR_OVER, ids=lambda r: r["case"])
+def test_complete_xdr_complete_refuses_a_signed_envelope_bound_refuses_for_its_length(row: dict[str, Any]) -> None:
+    placed = set_up("mpp/charge/stellar").placed
+    b2 = _b2("mpp/charge/stellar")
+    assert len(footprinted(b2["input"]["inputs"]["simulatedXdr"], row["keyBytes"])) == row["simulatedLength"]
+    made = _stellar_complete(placed, row["keyBytes"])
+
+    def credential(transaction: str) -> dict[str, Any]:
+        return {"challenge": placed, "payload": {"type": "transaction", "transaction": transaction}}
+
+    if row.get("taken"):
+        transaction = made["payload"]["transaction"]
+        assert len(transaction) == row["signedLength"]
+        assert made == credential(transaction)
+        assert MPP_CHARGE_STELLAR.bound(made) == b2["advertised"]
+    else:
+        assert made == Refusal(row["expect"])
+        taken = _stellar_complete(placed, XDR_TAKEN[0]["keyBytes"])
+        over = footprinted(taken["payload"]["transaction"], row["keyBytes"])
+        assert len(over) == row["signedLength"]
+        assert MPP_CHARGE_STELLAR.bound(credential(over)) == Refusal(row["expect"])
+
+
+# ── completeBlob (mpp-charge-xrpl.json): complete reads the signed blob as bound reads the credential it makes, after
+# the credential's size. A padded row's blob is B6's transaction with its TxnSignature (Blob field 4) written as as many
+# bytes of 0x11 as bring the blob to the row's size, in the canonical serialization (xrpl.org Binary Format: fields in
+# type code then field code order, a Blob with its length prefix), which is what ripple-binary-codec's encode of the
+# decoded transaction with that TxnSignature writes; any other row's blob is that many zero bytes.
+
+BLOB_ROWS: list[dict[str, Any]] = load("mpp-charge-xrpl.json")["completeBlob"]["rows"]
+BLOB_PADDED = [r for r in BLOB_ROWS if r.get("padded")]
+BLOB_ZEROS = [r for r in BLOB_ROWS if not r.get("padded")]
+
+
+def test_complete_blob_rows_are_five_zero_blobs_and_three_that_decode() -> None:
+    assert (len(BLOB_ZEROS), len(BLOB_PADDED), len(BLOB_ROWS)) == (5, 3, 8)
+    assert [r.get("taken", False) for r in BLOB_PADDED] == [True, True, False]
+
+
+def _with_signature(blob: str, n: int) -> str:
+    """The canonical blob with its TxnSignature written as n bytes of 0x11, and the fields around it as they are."""
+    data = bytes.fromhex(blob)
+    r = xrpl_codec._Reader(data)
+    span = None
+    while not r.end():
+        start = r.at
+        type_code, nth = r.field()
+        xrpl_codec._value(r, type_code, nth, 0)
+        if (type_code, nth) == (xrpl_codec.BLOB, 4):
+            span = (start, r.at)
+    assert span is not None, "no TxnSignature"
+    signature = xrpl_codec._header(xrpl_codec.BLOB, 4) + xrpl_codec._length_prefix(n) + b"\x11" * n
+    return (data[: span[0]] + signature + data[span[1] :]).hex().upper()
+
+
+def _padded(blob: str, size: int) -> str:
+    """B6's blob with a TxnSignature of as many bytes as bring it to size bytes."""
+    n = size - (len(_with_signature(blob, 1000)) // 2 - 1000)
+    out = _with_signature(blob, n)
+    assert len(out) // 2 == size
+    assert xrpl_codec.decode(bytes.fromhex(out))["TxnSignature"].upper() == "11" * n
+    return out
+
+
+@pytest.mark.parametrize("row", BLOB_ZEROS + BLOB_PADDED, ids=lambda r: r["case"])
+def test_complete_blob_complete_reads_the_blob_as_bound_reads_it_after_its_size(row: dict[str, Any]) -> None:
+    s = set_up("mpp/charge/xrpl")
+    b6 = buyer("mpp-charge-xrpl.json", "mpp/charge/xrpl", "B6")
+    assert b6 is not None
+    size = row["blobBytes"]
+    blob = _padded(b6["input"]["presented"]["payload"]["blob"], size) if row.get("padded") else "00" * size
+    made = _xrpl_complete(s.placed, blob)
+    credential = {"challenge": s.placed, "payload": {"type": "transaction", "blob": blob}}
+    if row.get("taken"):
+        assert made == credential
+        assert MPP_CHARGE_XRPL.bound(made) == s.h
+    else:
+        assert made == Refusal(row["expect"])
+        assert MPP_CHARGE_XRPL.bound(credential) == Refusal(row["expect"])
+
+
+def test_complete_blob_the_credential_measures_65535_and_65537_at_32400_and_32401_bytes() -> None:
+    placed = set_up("mpp/charge/xrpl").placed
+    payloads = [{"type": "transaction", "blob": "00" * n} for n in (32_400, 32_401)]
+    sizes = [size_of({"challenge": placed, "payload": p}) for p in payloads]
+    assert sizes == [65_535, 65_537]
