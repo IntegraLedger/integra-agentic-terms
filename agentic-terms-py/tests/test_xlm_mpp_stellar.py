@@ -12,6 +12,7 @@ import pytest
 from integraledger_terms import MPP_CHARGE_STELLAR, X402_EXACT_STELLAR, Refusal, _gate
 from integraledger_terms.bindings import _stellar, _stellar_xdr
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode
+from integraledger_terms.bindings._mpp import Held
 
 import ed25519
 from breadth import H, LINK, Pairing, build_and_sign, plant
@@ -117,6 +118,12 @@ def credential(payload: dict[str, Any], challenge: Any = None) -> dict[str, Any]
     return {"challenge": challenge or STELLAR.doc[0], "payload": payload}
 
 
+def pushed(envelope: str, challenge: Any, tx_hash: str) -> Held:
+    """A hash credential naming tx_hash, with the envelope read by that hash held in Held, as @integraledger/lcp
+    holds it under the payment's own FETCHED member."""
+    return Held(credential({"type": "hash", "hash": tx_hash}, challenge), {"transaction": envelope})
+
+
 def test_mpp_charge_stellar_v3_bound_plant_and_refusals() -> None:
     assert F["muxed"] == muxed_for(F["request"]["recipient"], H)
     tx = {"type": "transaction", "transaction": V["V3"]["envelope"]}
@@ -152,8 +159,7 @@ def test_mpp_charge_stellar_a_landed_transaction_is_read_by_the_payer_entry_that
     ]
     assert rows, "x402-exact-stellar.json V5 holds no settled envelope with two entries of the payer"
     for row in rows:
-        pushed = {"type": "hash", "hash": X["V5"]["ref"]["transaction"], "transaction": row["envelope"]}
-        assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == F["H"], row["case"]
+        assert MPP_CHARGE_STELLAR.bound(pushed(row["envelope"], challenge, X["V5"]["ref"]["transaction"])) == F["H"], row["case"]
         sent = {"type": "transaction", "transaction": row["envelope"]}
         assert MPP_CHARGE_STELLAR.bound(credential(sent, challenge)) == Refusal("stellar/no-address-auth"), row["case"]
 
@@ -196,9 +202,8 @@ def test_mpp_charge_stellar_source_account_push_binds_h() -> None:
     challenge (feePayer false) and the same challenge with feePayer absent, binds H; read_source_transfer reads the
     transfer the section's expectReference names."""
     assert_written(SA["envelope"], SA["write"])
-    pushed = {"type": "hash", "hash": SA["hash"], "transaction": SA["envelope"]}
     for challenge in (SA["challenge"], with_fee_payer(SA["challenge"], ...)):
-        assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == SA["expectBound"]
+        assert MPP_CHARGE_STELLAR.bound(pushed(SA["envelope"], challenge, SA["hash"])) == SA["expectBound"]
     ref = SA["expectReference"]
     payment = _stellar.read_source_transfer(SA["envelope"], ref["network"])
     assert isinstance(payment, _stellar.SourcePayment), payment
@@ -210,9 +215,8 @@ def test_mpp_charge_stellar_source_account_push_binds_h() -> None:
 def test_mpp_charge_stellar_source_account_push_reads_fee_payer_as_a_boolean(fee_payer: object) -> None:
     """A source-account push under a request whose feePayer is present and not a boolean is stellar/option-malformed,
     the code the challenge's checks give it (@integraledger/lcp 0.4.0's isFeePayer: absent or a boolean)."""
-    pushed = {"type": "hash", "hash": SA["hash"], "transaction": SA["envelope"]}
     challenge = with_fee_payer(SA["challenge"], fee_payer)
-    assert MPP_CHARGE_STELLAR.bound(credential(pushed, challenge)) == Refusal("stellar/option-malformed")
+    assert MPP_CHARGE_STELLAR.bound(pushed(SA["envelope"], challenge, SA["hash"])) == Refusal("stellar/option-malformed")
 
 
 def challenge_named(name: str) -> dict[str, Any]:
@@ -222,22 +226,27 @@ def challenge_named(name: str) -> dict[str, Any]:
 
 
 def test_mpp_charge_stellar_source_account_refusals() -> None:
-    """sourceAccount.refusals: each row's credential (its type, its envelope and hash, or the section's) under the
-    challenge it names is refused with the row's code, and each row's envelope is what its write says. Under the
-    place section's challenge, whose feePayer is true, the hash credential is mpp/credential-type before any read
-    (the section's about), whatever its transaction carries and when it carries none yet. x402, whose entries must be
-    address credentials, refuses the section's envelope stellar/no-address-auth."""
+    """sourceAccount.refusals: each row's credential under the challenge it names is refused with the row's code, and
+    each row's envelope is what its write says. A transaction credential carries the row's envelope, or the section's;
+    a hash credential names the row's hash, or the section's, and holds in Held the envelope read by that hash: the
+    row's fetched transaction where it holds one, else its envelope, or the section's. Under the place section's
+    challenge, whose feePayer is true, the hash credential is mpp/credential-type before any read (the section's
+    about), whatever is held in Held and when nothing is. x402, whose entries must be address credentials, refuses
+    the section's envelope stellar/no-address-auth."""
     rows = SA["refusals"]
     assert {row["challenge"] for row in rows} == {"place", "sourceAccount"}, [row["challenge"] for row in rows]
+    assert [row for row in rows if "fetched" in row], "no row holds fetched"
     for row in rows:
         envelope = row.get("envelope", SA["envelope"])
         if "write" in row:
             assert_written(envelope, row["write"])
-        payload: dict[str, Any] = {"type": row["type"], "transaction": envelope}
-        if row["type"] == "hash":
-            payload["hash"] = row.get("hash", SA["hash"])
         challenge = challenge_named(row["challenge"])
-        assert MPP_CHARGE_STELLAR.bound(credential(payload, challenge)) == Refusal(row["expect"]), row["case"]
+        if row["type"] == "hash":
+            given = row.get("fetched", {"transaction": envelope})
+            presented: dict[str, Any] = Held(credential({"type": "hash", "hash": row.get("hash", SA["hash"])}, challenge), given)
+        else:
+            presented = credential({"type": row["type"], "transaction": envelope}, challenge)
+        assert MPP_CHARGE_STELLAR.bound(presented) == Refusal(row["expect"]), row["case"]
     unfetched = {"type": "hash", "hash": SA["hash"]}
     assert MPP_CHARGE_STELLAR.bound(credential(unfetched, challenge_named("place"))) == Refusal("mpp/credential-type")
     x402 = {"x402Version": 2, "accepted": X["V3"]["accepted"], "payload": {"transaction": SA["envelope"]}}

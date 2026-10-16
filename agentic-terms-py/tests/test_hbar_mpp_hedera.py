@@ -11,7 +11,7 @@ from integraledger_terms import MPP_CHARGE_HEDERA as BINDING
 from integraledger_terms import MPP_SESSION_HEDERA as SESSION
 from integraledger_terms import Declined, Refusal, Transacted, confirm, transact
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, js_json
-from integraledger_terms.bindings._mpp import attribution_memo, check_attribution, check_challenge
+from integraledger_terms.bindings._mpp import Held, attribution_memo, check_attribution, check_challenge
 from integraledger_terms.bindings.mpp_session_hedera import channel_id, voucher
 
 import ed25519
@@ -105,7 +105,7 @@ def test_mpp_charge_hedera_push_b6_the_hash_form_whose_landed_memo_gives_h() -> 
     assert isinstance(whole, Transacted), whole
     assert whole.landed == C["fetchPresented"]["expectLanded"]
     assert BINDING.bound(signed) == Refusal(C["push"]["expectWithout"])
-    assert BINDING.bound({**signed, "landed": whole.landed}) == H
+    assert BINDING.bound(Held(signed, whole.landed)) == H
 
 
 def test_mpp_charge_hedera_push_is_the_default_credential_type() -> None:
@@ -212,7 +212,7 @@ def test_mpp_charge_hedera_push_needs_the_landed_memo() -> None:
     push = C["push"]
     pushed = credential({"type": "hash", "transactionId": push["transactionId"]})
     assert BINDING.bound(pushed) == Refusal(push["expectWithout"])
-    landed = {**pushed, "landed": {"network": "hedera:testnet", "memo": push["expectReference"]["expectMemo"]}}
+    landed = Held(pushed, {"network": "hedera:testnet", "memo": push["expectReference"]["expectMemo"]})
     assert BINDING.bound(landed) == H
 
 
@@ -298,12 +298,12 @@ def opened(logs: list[Any], channel: str | None = None) -> dict[str, Any]:
         "cumulativeAmount": "0",
         "signature": "0x" + "11" * 65,
     }
-    return {"challenge": SESSION_DOC[0], "payload": payload, "landed": {"transaction": S["HS3"]["txHash"], "blockNumber": 1, "logs": logs}}
+    return Held({"challenge": SESSION_DOC[0], "payload": payload}, {"transaction": S["HS3"]["txHash"], "blockNumber": 1, "logs": logs})
 
 
 def test_mpp_session_hedera_hs3_bound_and_plants() -> None:
     assert SESSION.bound(opened([S["HS3"]["log"]])) == S["HS3"]["expectBound"]
-    bare = {k: v for k, v in opened([S["HS3"]["log"]]).items() if k != "landed"}
+    bare = dict(opened([S["HS3"]["log"]]))
     assert SESSION.bound(bare) == Refusal("hedera/read-first")
     plant_ = S["plants"]["hedera"]
     real = S["HS4"]["openReceipt"]["logs"]

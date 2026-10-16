@@ -22,7 +22,7 @@ from ._hedera_proto import (
     write_body,
 )
 from ._lcp import is_object, is_well_formed
-from ._mpp import attribution_memo, challenge_bound, check_attribution, checked_for, credential_of, read
+from ._mpp import attribution_memo, challenge_bound, check_attribution, checked_for, credential_of, fetched_of, read
 from ._mpp_checks import decode_object, hedera_charge_request_legs
 from .x402_exact_hedera import HederaUnsigned
 
@@ -110,8 +110,10 @@ class MppChargeHedera:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The hash from the echoed challenge, held to the pairing's filter (checked_for), once the payer's memo is this
-        challenge's attribution memo: from the signed body (type transaction), or from the landed entry's memo written
-        beside the credential (type hash). No transfer, amount, payer or signature is read."""
+        challenge's attribution memo: from the signed body (type transaction), or from the landed entry's memo read for
+        the credential and held in Held, as @integraledger/lcp holds it under the payment's own FETCHED member (type
+        hash, fetched_of; else hedera/read-first, and a landed member of the credential's own is not read). No transfer,
+        amount, payer or signature is read."""
         credential = credential_of(presented)
         if isinstance(credential, Refusal):
             return credential
@@ -136,7 +138,7 @@ class MppChargeHedera:
                 return decoded
             memo = decoded[0].memo
         else:
-            landed = credential.get("landed")
+            landed = fetched_of(credential)
             landed_memo = landed.get("memo") if is_object(landed) else None
             if not isinstance(landed_memo, str):
                 return Refusal("hedera/read-first")

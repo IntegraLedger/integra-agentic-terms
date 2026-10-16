@@ -12,10 +12,9 @@ import {
   isOtherSchemeLink,
   toBase64Url,
   type AtrHash,
-  type Json,
   type Refusal,
 } from "@integraledger/lcp/core";
-import { isRefusal, refuse } from "./pairings/common.js";
+import { fetchedOf, held, isRefusal, jsonSafe, refuse } from "./pairings/common.js";
 import { PIECES } from "./pairings/index.js";
 import {
   MAX_ATR_BYTES,
@@ -328,19 +327,8 @@ export async function finish(
       sent,
     );
   }
-  const landed = sent !== signed && isObject(signed) ? jsonSafe((signed as { landed?: unknown }).landed) : undefined;
+  const landed = sent !== signed ? jsonSafe(fetchedOf(signed)) : undefined;
   return landed === undefined ? { signed: sent, h } : { signed: sent, landed, h };
-}
-
-/** A value as JSON, each bigint as its decimal string; undefined when it is undefined or has no JSON form. */
-function jsonSafe(v: unknown): Json | undefined {
-  if (v === undefined) return undefined;
-  try {
-    const text = JSON.stringify(v, (_k, x: unknown) => (typeof x === "bigint" ? x.toString() : x));
-    return text === undefined ? undefined : (JSON.parse(text) as Json);
-  } catch {
-    return undefined;
-  }
 }
 
 /** Whether the signer, handed the build's first request, moves the payment itself. */
@@ -360,17 +348,27 @@ async function boundOf(b: Steps, presented: unknown): Promise<AtrHash | Refusal>
 }
 
 /**
- * Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes. A payment
- * from which the pairing reads no ATR hash is declined `signed-not-bound`.
+ * Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes, with the
+ * `landed` receipt `finish` or `transact` returned beside the payment, where it returned one, held under the payment's
+ * own `FETCHED` member as `bound` reads it. The caller passes as `landed` only the receipt its own reader read for the
+ * payment, as `finish` or `transact` returned it, never a value another party sent. A `landed` of `null` is no
+ * receipt: the payment is read alone, as without one. A payment from which the pairing reads no ATR hash is declined
+ * `signed-not-bound`, as is a `landed` receipt that is not a JSON object beside a payment that is one. A `landed`
+ * member of the payment's own is not read.
  */
 export async function check(
   bytes: Uint8Array,
   presented: unknown,
   binding: Binding,
+  landed?: unknown,
 ): Promise<{ h: AtrHash } | Declined> {
   if (bytes.length > MAX_ATR_BYTES) return tooLarge();
+  const read = landed === null ? undefined : landed;
+  if (read !== undefined && (!isObject(read) || !isObject(presented))) {
+    return declined("signed-not-bound", "The landed receipt is not a JSON object beside the payment.");
+  }
   const h = await hash(bytes);
-  const b = await boundOf(steps(binding), presented);
+  const b = await boundOf(steps(binding), read === undefined ? presented : held(presented as object, read));
   if (isRefusal(b) || !hashEquals(b, h)) {
     return declined("signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.");
   }

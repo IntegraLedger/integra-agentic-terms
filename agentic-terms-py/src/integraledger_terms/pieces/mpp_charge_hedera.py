@@ -3,8 +3,9 @@ challenge, read on the account's own network where the challenge names no chainI
 The node, the valid start, the maximum fee, the optional client id and the optional credentialType are the buyer's.
 - credentialType hash (push, the default when none is named): the request carries broadcast: true; the signer signs
   and broadcasts the body and answers {transactionId}, which must name the body's payer and valid start. The
-  credential is {challenge, payload: {type: "hash", transactionId}}, and landed beside it holds the network and the
-  body's memo, which bound reads. The signer moves the payment, so a decline keeps it.
+  credential is {challenge, payload: {type: "hash", transactionId}}, with its landed read held in Held, as
+  @integraledger/lcp holds it under the payment's own FETCHED member: the network and the body's memo, which bound
+  reads. The signer moves the payment, so a decline keeps it.
 - credentialType transaction (pull): the signer answers {publicKey, signature, type} with 0x hex bytes, and the
   credential is {challenge, payload: {type: "transaction", transaction}}, the signed body in base64."""
 
@@ -15,7 +16,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Advertised, Binding, Chosen, Inputs, Json, Refusal, Signature, Step
 from ..bindings._hedera_proto import ENTITY
-from ..bindings._mpp import attribution_memo
+from ..bindings._mpp import Held, attribution_memo
 from ..bindings._mpp_checks import hedera_charge_network
 from ..bindings.mpp_charge_hedera import ID, build_charge
 from ._common import account_of, bigint_of, bytes_of, choice_of, inputs_of
@@ -99,11 +100,8 @@ def _complete(unsigned: Any, signature: Signature, chosen: Chosen) -> dict[str, 
             return tx_id
         client_id = c.get("clientId") if isinstance(c.get("clientId"), str) else None
         memo = attribution_memo(str(challenge.get("realm")), str(challenge.get("id")), client_id)
-        return {
-            "challenge": challenge,
-            "payload": {"type": "hash", "transactionId": tx_id},
-            "landed": {"network": c.get("network"), "memo": memo},
-        }
+        credential = {"challenge": challenge, "payload": {"type": "hash", "transactionId": tx_id}}
+        return Held(credential, {"network": c.get("network"), "memo": memo})
     a = _answer(signature)
     if isinstance(a, Refusal):
         return a
@@ -127,7 +125,7 @@ class MppChargeHederaPiece(MppRailPiece):
         return isinstance(request, Mapping) and request.get("broadcast") is True
 
     def sent(self, signed: dict[str, Any]) -> dict[str, Any]:
-        return {k: v for k, v in signed.items() if k != "landed"}
+        return dict(signed)
 
     def build(self, binding: Binding, choice: Any, h: AtrHash) -> Any:
         """The binding's build, called with the chosen challenge's id and realm, its decoded request, and the payer's

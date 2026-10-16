@@ -11,21 +11,25 @@ from .._core import AtrHash
 from .._types import Advertised, Refusal
 from . import _stellar
 from ._lcp import is_object, safe_int
-from ._mpp import chosen_for, credential_of, echoed_for, expires_of, read
+from ._mpp import chosen_for, credential_of, echoed_for, expires_of, fetched_of, read
 from ._mpp_checks import is_fee_payer, is_stellar_recipient
 
 ID = "mpp/charge/stellar"
 _HASH = re.compile(r"[0-9a-fA-F]{64}")
 
 
-def _presented_xdr(payload: Mapping[str, Any]) -> str | Refusal:
-    """The signed transfer a credential presents: its transaction, or for type "hash" none until one is fetched."""
+def _presented_xdr(credential: Mapping[str, Any], payload: Mapping[str, Any]) -> str | Refusal:
+    """The signed transfer a credential presents: its transaction for type "transaction", or for type "hash" the
+    envelope read by that hash and held in Held, as @integraledger/lcp holds it under the payment's own FETCHED member
+    (fetched_of), else stellar/read-first. A hash credential's own transaction member is not read."""
     kind = payload.get("type")
     if kind not in ("transaction", "hash"):
         return Refusal("mpp/credential-type")
-    if "transaction" not in payload:
-        return Refusal("stellar/read-first" if kind == "hash" else "stellar/tx-malformed")
-    xdr = payload["transaction"]
+    if kind == "hash":
+        read = fetched_of(credential)
+        landed = read.get("transaction") if is_object(read) else None
+        return landed if isinstance(landed, str) else Refusal("stellar/read-first")
+    xdr = payload.get("transaction")
     return xdr if isinstance(xdr, str) else Refusal("stellar/tx-malformed")
 
 
@@ -121,7 +125,7 @@ class MppChargeStellar:
             return Refusal("stellar/option-malformed")
         if e.payload.get("type") == "hash" and e.checked.details.get("feePayer") is True:
             return Refusal("mpp/credential-type")
-        xdr = _presented_xdr(e.payload)
+        xdr = _presented_xdr(presented, e.payload)
         if isinstance(xdr, Refusal):
             return xdr
         landed = e.payload.get("type") == "hash"

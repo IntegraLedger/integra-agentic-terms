@@ -184,7 +184,9 @@ The gate returns the payment in the protocol's own form. You send it as that pro
 | MPP | The credential in the field the challenge selects, `Authorization` by default, after the `Payment` scheme name. |
 | Card, AP2, UCP, ACP, ACK | The pairing's own message: the TAP field, the mandate, the checkout completion, as its protocol defines. |
 
-Where `transact` or `finish` also returned `landed`, keep it beside the payment. `check` reads the payment with it.
+Where `transact` or `finish` also returned `landed`, keep it beside the payment. `check` reads the payment with it. The
+caller passes as `landed` only the receipt its own reader read for the payment, as `finish` or `transact` returned it,
+never a value another party sent.
 
 ## After you send it
 
@@ -224,7 +226,7 @@ The Python gate has the same functions, with Python names and dataclass results:
 | `transact(doc, binding, signer, fetch, { inputs, agreementSigner, approved, signal })` | `await transact(doc, binding, signer, client, inputs=…, agreement_signer=…, approved=…, signal=…)` |
 | `confirm(doc, binding, account, fetch, inputs)` | `await confirm(doc, binding, account, client, inputs)` |
 | `finish(bytes, chosen, signature, binding)` | `finish(atr_bytes, chosen, signature, binding)` |
-| `check(bytes, presented, binding)` | `check(atr_bytes, presented, binding)` |
+| `check(bytes, presented, binding, landed?)` | `check(atr_bytes, presented, binding, landed=None)` |
 | `{ decline: { code, detail } }` | `Declined(code, detail, moved)` |
 
 See the [Python guide](./python.md).

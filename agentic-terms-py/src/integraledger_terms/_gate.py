@@ -37,6 +37,7 @@ from ._types import (
     Transacted,
 )
 from .bindings._lcp import is_https_link, is_other_scheme_link
+from .bindings._mpp import Held, fetched_of
 from .pieces import PIECES
 
 FETCH_DEADLINE_S = 10.0
@@ -295,15 +296,24 @@ def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bind
         return keep(
             "signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.", sent
         )
-    landed = signed.get("landed") if sent is not signed and isinstance(signed, Mapping) else None
+    landed = fetched_of(signed) if sent is not signed else None
     return Finished(signed=sent, h=h, landed=landed)
 
 
-def check(atr_bytes: bytes, presented: Any, binding: Binding) -> Checked | Declined:
-    """Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes. A
-    payment from which the pairing reads no ATR hash is declined signed-not-bound."""
+def check(atr_bytes: bytes, presented: Any, binding: Binding, landed: Any = None) -> Checked | Declined:
+    """Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes, with
+    the landed receipt finish or transact returned beside the payment, where it returned one, held in Held, as
+    @integraledger/lcp holds it under the payment's own FETCHED member: an attribute no JSON decode makes, as bound
+    reads it. The caller passes as landed only the receipt its own reader read for the payment, as finish or transact
+    returned it, never a value another party sent. A payment from which the pairing reads no ATR hash is declined
+    signed-not-bound, as is a landed receipt that is not a JSON object beside a payment that is one. A landed member of
+    the payment's own is not read."""
     if len(atr_bytes) > MAX_ATR_BYTES:
         return _too_large()
+    if landed is not None:
+        if not isinstance(landed, Mapping) or not isinstance(presented, Mapping):
+            return Declined("signed-not-bound", "The landed receipt is not a JSON object beside the payment.")
+        presented = Held(presented, landed)
     h = atr_hash(atr_bytes)
     bound = _bound(binding, presented)
     if isinstance(bound, Refusal) or not hash_equals(bound, h):

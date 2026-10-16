@@ -181,9 +181,8 @@ def build_and_sign(p: Pairing, inspect: Callable[[Any], None]) -> tuple[dict[str
 
     # What the buyer holds to confirm later: the payment, with the landed receipt finish returns beside it, if any.
     assert whole.landed == done.landed
-    held = {**done.signed, "landed": done.landed} if done.landed is not None else done.signed
-    assert check(ABC, held, p.binding) == Checked(h=H)
-    assert code(check(ABD, held, p.binding)) == "signed-not-bound"
+    assert check(ABC, done.signed, p.binding, done.landed) == Checked(h=H)
+    assert code(check(ABD, done.signed, p.binding, done.landed)) == "signed-not-bound"
     return done.signed, confirmed.request
 
 

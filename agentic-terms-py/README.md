@@ -428,9 +428,11 @@ challenge that names another channel or another H, and signs one with no legal c
 
 ### Confirm a payment later: `check`
 
-`check(atr_bytes, presented, binding)` returns `Checked(h)` when the ATR hash the pairing reads from a payment you hold
-is the SHA-256 of the bytes you kept. A payment from which the pairing reads no ATR hash is declined `signed-not-bound`.
-Where `finish` or `transact` returned `landed`, put it back into the payment under `"landed"` first.
+`check(atr_bytes, presented, binding, landed=None)` returns `Checked(h)` when the ATR hash the pairing reads from a
+payment you hold is the SHA-256 of the bytes you kept. A payment from which the pairing reads no ATR hash is declined
+`signed-not-bound`. Where `finish` or `transact` returned `landed`, pass it as `landed`, beside the payment: a
+`"landed"` member written into the payment is not read. The caller passes as `landed` only the receipt its own reader
+read for the payment, as `finish` or `transact` returned it, never a value another party sent.
 
 ### Declines and `moved`
 

@@ -12,7 +12,7 @@ from typing import Any
 from .._core import AtrHash, hash_equals
 from .._types import Advertised, Json, Refusal
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
-from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, read
+from ._mpp import Checked, MppUnsigned, chosen_for, credential_of, echoed_for, fetched_of, read
 from ._mpp_checks import is_solana_external_id, usdc_profile
 from ._svm import (
     MEMO_V3,
@@ -37,7 +37,6 @@ USDC_SOLANA_ID = "mpp/charge/usdc/solana"
 MAX_BUNDLE = 8
 _MEMO_V3_KEY = key_bytes(MEMO_V3)
 _MEMO_V4_KEY = key_bytes(MEMO_V4)
-_ABSENT = object()
 
 
 def mpp_svm_carrier(tx: SvmTx) -> Carrier | Refusal:
@@ -63,9 +62,11 @@ def mpp_svm_carrier(tx: SvmTx) -> Carrier | Refusal:
     return canonical_carrier(found[0].h, found[0].memo)
 
 
-def _presented_tx(payload: Mapping[str, Any], transaction_only: bool) -> SvmTx | Refusal:
-    """The signed transaction a credential presents: the one of transaction, the last of a bundle, or a fetched one.
-    Under transaction_only, any type but transaction is mpp/credential-type."""
+def _presented_tx(credential: Mapping[str, Any], payload: Mapping[str, Any], transaction_only: bool) -> SvmTx | Refusal:
+    """The signed transaction a credential presents: the one of transaction, the last of a bundle, or for signature
+    the landed wire read for it and held in Held, as @integraledger/lcp holds it under the payment's own FETCHED member
+    (fetched_of), else svm/read-first; a signature credential's own transaction member is not read. Under
+    transaction_only, any type but transaction is mpp/credential-type."""
     kind = payload.get("type")
     text: Any
     if kind == "transaction":
@@ -80,8 +81,9 @@ def _presented_tx(payload: Mapping[str, Any], transaction_only: bool) -> SvmTx |
             return Refusal("svm/bundle-empty")
         text = items[-1]
     elif kind == "signature":
-        text = payload.get("transaction", _ABSENT)
-        if text is _ABSENT:
+        read = fetched_of(credential)
+        text = read.get("transaction") if is_object(read) else None
+        if not isinstance(text, str):
             return Refusal("svm/read-first")
     else:
         return Refusal("mpp/credential-type")
@@ -184,7 +186,7 @@ class MppChargeSolana:
             return e
         if not is_solana_external_id(e.checked.request):
             return Refusal("mpp/request-malformed")
-        tx = _presented_tx(e.payload, self.transaction_only)
+        tx = _presented_tx(credential, e.payload, self.transaction_only)
         if isinstance(tx, Refusal):
             return tx
         from_table = static_nonce(tx)

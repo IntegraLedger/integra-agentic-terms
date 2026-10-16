@@ -19,9 +19,9 @@ Keep the bytes as bytes. Re-encoding them as a parsed and re-serialised JSON doc
 
 ## Confirm a payment later: `check`
 
-`check(bytes, presented, binding)` answers one question: is the ATR hash the pairing reads from this payment the SHA-256
-of these bytes? A payment from which the pairing reads no ATR hash is declined `signed-not-bound`. It fetches nothing
-and calls no signer.
+`check(bytes, presented, binding, landed?)` answers one question: is the ATR hash the pairing reads from this payment
+the SHA-256 of these bytes? A payment from which the pairing reads no ATR hash is declined `signed-not-bound`. It
+fetches nothing and calls no signer.
 
 ```ts
 import { check, transact, type Fetch, type Signer } from "@integraledger/terms";
@@ -76,8 +76,9 @@ kept bytes    0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 altered bytes signed-not-bound
 ```
 
-Where `finish` or `transact` returned `landed`, put it back into the payment before you check it:
-`check(bytes, { ...signed, landed }, binding)`.
+Where `finish` or `transact` returned `landed`, pass it beside the payment: `check(bytes, signed, binding, landed)`. The
+caller passes as `landed` only the receipt its own reader read for the payment, as `finish` or `transact` returned it,
+never a value another party sent. A `landed` member written into the payment is not read.
 
 For a pairing whose payment is not a public proof of H, `check` reads the payment as it reads any other: it confirms
 that the hash the pairing reads from it is the SHA-256 of the kept bytes, and declines `signed-not-bound` where the

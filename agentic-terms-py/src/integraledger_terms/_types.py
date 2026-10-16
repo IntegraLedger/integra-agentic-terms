@@ -77,7 +77,8 @@ class Confirmed:
 @dataclass(frozen=True, slots=True)
 class Finished:
     """The payment and the hash of the bytes it carries. landed is the landed receipt the completion carried for bound
-    and the payment sent leaves out, where there is one, so check can later read the payment with it."""
+    and the payment sent leaves out, where there is one, as JSON, so check and open_channel can later read the payment
+    with it."""
 
     signed: dict[str, Any]
     h: AtrHash

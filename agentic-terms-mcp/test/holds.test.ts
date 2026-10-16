@@ -355,8 +355,9 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
 
 // mpp/session/hedera's opening is bound by its escrow log, which only the landed receipt carries, so `atr_transact`
 // returns `landed` beside `signed`, and the opening's `mac` covers the pairing, the opening and that receipt.
-// `atr_channel_open` takes `landed` back with them and passes it to the gate, so the session is held; an edited
-// receipt, or the opening passed without the receipt its `mac` covers, is declined `opening-unverified`. The challenge,
+// `atr_channel_open` takes `landed` back with them and passes it to the gate, so the session is held, the hold keeping
+// the opening as signed and the receipt as its own `landed` member; an edited receipt, or the opening passed without
+// the receipt its `mac` covers, is declined `opening-unverified`. The challenge,
 // opening, escrow log and channel id are mpp-session-hedera-solana-xrpl.json's SS1 and HS1 to HS3.
 describe("mpp/session/hedera is held over MCP with its landed receipt", () => {
   const V = vectors("mpp-session-hedera-solana-xrpl.json");
@@ -400,6 +401,8 @@ describe("mpp/session/hedera is held over MCP with its landed receipt", () => {
     expect(o.landed).toEqual(landed);
     expect(at(held, "result.isError")).toBeUndefined();
     expect(at(held, "result.structuredContent.hold")).toMatchObject({ pairing: session, channel: V.HS1.expectChannelId, h: H_ABC });
+    expect(at(held, "result.structuredContent.hold.opening")).toEqual(o.signed);
+    expect(at(held, "result.structuredContent.hold.landed")).toEqual(landed);
   });
 
   it("an edited receipt, or the opening without the receipt its mac covers, is declined opening-unverified", async () => {

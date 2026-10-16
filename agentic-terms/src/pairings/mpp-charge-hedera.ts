@@ -5,15 +5,28 @@
  * network.
  * - `credentialType` `hash` (push, the default when none is named): the build's request carries `broadcast: true`; the
  *   signer signs and broadcasts the body and answers `{transactionId}`, which must name the body's payer and valid
- *   start. The credential is `{challenge, payload: {type: "hash", transactionId}}`, and `landed` beside it holds the
- *   network and the body's memo, which `bound` reads. The signer moves the payment, so a decline keeps it.
+ *   start. The credential is `{challenge, payload: {type: "hash", transactionId}}`, with its landed read held under
+ *   the payment's own `FETCHED` member: the network and the body's memo, which `bound` reads. The signer moves the
+ *   payment, so a decline keeps it.
  * - `credentialType` `transaction` (pull): the signer answers `{publicKey, signature, type}`, and the credential is
  *   `{challenge, payload: {type: "transaction", transaction}}`, the signed body in base64.
  */
 import type { AtrHash, Json, Refusal } from "@integraledger/lcp/core";
 import { attributionMemo, chargeHedera, type MppChallenge, type MppCredential } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Choose, Chosen, Inputs, Presented, Signature } from "../types.js";
-import { accountOf, bigintOf, broadcasts, bytesOf, choiceOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";
+import {
+  accountOf,
+  bigintOf,
+  broadcasts,
+  bytesOf,
+  choiceOf,
+  held,
+  inputsOf,
+  isObject,
+  isRefusal,
+  refuse,
+  withoutFetched,
+} from "./common.js";
 import { requestOf } from "./mpp.js";
 import { mppRailPiece, railChoose, type MppRail } from "./mpp-rails.js";
 import { HEDERA_ENTITY } from "./x402-exact-hedera.js";
@@ -87,7 +100,7 @@ async function complete(unsigned: unknown, signature: Signature, chosen: Chosen)
     if (isRefusal(transactionId)) return transactionId;
     const clientId = typeof c["clientId"] === "string" ? c["clientId"] : undefined;
     const memo = attributionMemo(String(challenge["realm"]), String(challenge["id"]), clientId);
-    return { challenge: echoed, payload: { type: "hash", transactionId }, landed: { network: c["network"], memo } } as MppCredential;
+    return held({ challenge: echoed, payload: { type: "hash", transactionId } } satisfies MppCredential, { network: c["network"], memo });
   }
   const a = answer(signature);
   if (isRefusal(a)) return a;
@@ -131,7 +144,9 @@ const spec: MppRail = {
 const rail = mppRailPiece(spec);
 const railChosen = railChoose(spec);
 
-/** The choice, with the account's network, which the challenge's network equals, for a push credential's `landed`. */
+/**
+ * The choice, with the account's network, which the challenge's network equals, for a push credential's landed read.
+ */
 function choose(...args: Parameters<Choose>): Chosen | Refusal {
   const chosen = railChosen(...args);
   if (isRefusal(chosen)) return chosen;
@@ -145,7 +160,6 @@ export const mppChargeHedera: BuyerPiece & { build(choice: unknown, h: AtrHash):
   build: buildHederaCharge,
   moves: broadcasts,
   sent(signed: Presented): Presented {
-    const { landed: _landed, ...credential } = signed as MppCredential & { landed?: unknown };
-    return credential;
+    return withoutFetched(signed as object) as Presented;
   },
 });

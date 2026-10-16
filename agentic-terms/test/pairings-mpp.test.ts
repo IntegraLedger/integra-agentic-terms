@@ -10,6 +10,7 @@ import {
   evmHash,
   evmPermit2,
   evmTransaction,
+  FETCHED,
   pairingsOf,
   place,
   tempoMemo,
@@ -367,12 +368,13 @@ describe("mpp/charge/tempo/push", () => {
       expect(done.signed).not.toHaveProperty("landed");
       expect((done.signed as MppCredential).payload).toEqual({ type: "hash", hash: T.MV13.T_P });
       // The landed receipt comes back beside the payment as JSON, MV13's receipt as the vector writes it (its block
-      // number a decimal string), and `check` reads the payment with it.
+      // number a decimal string), and `check` reads the payment with it beside the payment, never written into it.
       const landed = { transaction: T.MV13.T_P, blockNumber: T.MV13.receipt.blockNumber, logs: T.MV13.receipt.logs };
       expect(done.landed).toEqual(landed);
-      expect(await check(ABC, { ...(done.signed as MppCredential), landed: done.landed }, p.binding)).toEqual({ h: H });
-      expect(code(await check(ABD, { ...(done.signed as MppCredential), landed: done.landed }, p.binding))).toBe("signed-not-bound");
+      expect(await check(ABC, done.signed, p.binding, done.landed)).toEqual({ h: H });
+      expect(code(await check(ABD, done.signed, p.binding, done.landed))).toBe("signed-not-bound");
       expect(code(await check(ABC, done.signed, p.binding))).toBe("signed-not-bound");
+      expect(code(await check(ABC, { ...(done.signed as MppCredential), landed: done.landed }, p.binding))).toBe("signed-not-bound");
       const signer = counting(p.account, p.answer);
       const whole = await transact(p.doc, p.binding, signer, serving(ABC));
       if (isDeclined(whole)) throw new Error(whole.decline.code);
@@ -380,6 +382,32 @@ describe("mpp/charge/tempo/push", () => {
       expect(signer.requests.length).toBe(1);
       expect(whole.signed).toEqual(done.signed);
       expect(whole.landed).toEqual(landed);
+    }));
+  // finish returns as `landed` only the read held under the signed credential's own `FETCHED` member. The binding here
+  // completes the credential with MV13's receipt as a string-keyed `landed` member and nothing under `FETCHED`, and
+  // its `bound` reads H with MV13's receipt held under `FETCHED`, as the protocol package's `bound` reads it, so
+  // finish completes the payment: no `landed` is returned beside it.
+  it("finish returns no landed for a credential with a string-keyed landed member and nothing under FETCHED", () =>
+    at(T.fixed.now, async () => {
+      const r = T.MV13.receipt;
+      const receipt = { transaction: T.MV13.T_P, blockNumber: BigInt(r.blockNumber), logs: r.logs };
+      const build = tempoPush.build as unknown as (choice: unknown, h: string) => Promise<{ complete(s: Hex): object }>;
+      const binding = {
+        ...tempoPush,
+        async build(choice: unknown, h: string) {
+          const unsigned = await build(choice, h);
+          return { ...unsigned, complete: (s: Hex) => ({ ...unsigned.complete(s), landed: receipt }) };
+        },
+        bound: (c: object) => tempoPush.bound({ ...c, [FETCHED]: receipt } as never),
+      } as unknown as Binding;
+      const confirmed = await confirm(p.doc, binding, p.account, serving(ABC));
+      if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
+      const done = await finish(ABC, confirmed.chosen, { hash: T.MV13.T_P }, binding);
+      if (isDeclined(done)) throw new Error(`${done.decline.code}: ${done.decline.detail}`);
+      if (!("signed" in done)) throw new Error("next");
+      expect(done.h).toBe(H);
+      expect((done.signed as { landed?: unknown }).landed).toEqual(receipt);
+      expect(done).not.toHaveProperty("landed");
     }));
 });
 

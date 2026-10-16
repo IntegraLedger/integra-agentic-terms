@@ -20,6 +20,7 @@ from ._mpp import (
     credential_of,
     echoed_for,
     expires_of,
+    fetched_of,
     is_hex_bytes,
     offer_for,
     read,
@@ -135,15 +136,16 @@ def _signed_memo_call(presented: Any) -> Echoed | Refusal:
 
 
 def _landed_memo_log(presented: Any) -> Echoed | Refusal:
-    """The echoed challenge, when the landed receipt holds exactly one TransferWithMemo log from currency whose memo
-    topic is this challenge's attribution memo. A credential with no landed logs, which have not been read, is
-    tempo/read-first."""
+    """The echoed challenge, when the landed receipt read for the credential and held in Held, as @integraledger/lcp
+    holds it under the payment's own FETCHED member (fetched_of), holds exactly one TransferWithMemo log from currency
+    whose memo topic is this challenge's attribution memo. A credential with no landed logs held in Held, which have
+    not been read, is tempo/read-first; a landed member of the credential's own is not read."""
     e = echoed_for(presented, PUSH)
     if isinstance(e, Refusal):
         return e
     if e.payload.get("type") != "hash":
         return Refusal("mpp/credential-type")
-    landed = presented.get("landed")
+    landed = fetched_of(presented)
     if not is_object(landed) or not is_list(landed.get("logs")):
         return Refusal("tempo/read-first")
     currency = request_address(e.checked, "currency")

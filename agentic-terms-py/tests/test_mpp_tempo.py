@@ -27,7 +27,7 @@ from integraledger_terms import (
 )
 from integraledger_terms import _gate
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode
-from integraledger_terms.bindings._mpp import pairings_of
+from integraledger_terms.bindings._mpp import Held, pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
 
 from breadth import ABC, ABD, H, LINK, Pairing, Recording, build_and_sign, code, plant, run
@@ -293,9 +293,12 @@ def test_mpp_charge_tempo_push_b6_the_landed_memo_binds_it_and_the_payment_sent_
     assert done.h == H
     assert "landed" not in done.signed
     assert done.signed["payload"] == {"type": "hash", "hash": MV13["T_P"]}
-    landed = answer["landed"]
-    assert check(ABC, {**done.signed, "landed": landed}, p.binding) == Checked(h=H)
-    assert code(check(ABD, {**done.signed, "landed": landed}, p.binding)) == "signed-not-bound"
+    landed = done.landed
+    assert landed == answer["landed"]
+    assert check(ABC, done.signed, p.binding, landed) == Checked(h=H)
+    assert code(check(ABD, done.signed, p.binding, landed)) == "signed-not-bound"
+    # The landed receipt as a member of the payment's own is not read.
+    assert code(check(ABC, {**done.signed, "landed": landed}, p.binding)) == "signed-not-bound"
     signer = Recording(p.account, p.answer)
     whole = run(lambda c: transact(p.doc, p.binding, signer, c), serving(ABC))
     assert isinstance(whole, Transacted), whole
@@ -303,13 +306,12 @@ def test_mpp_charge_tempo_push_b6_the_landed_memo_binds_it_and_the_payment_sent_
     assert whole.signed == done.signed
 
 
-# A push credential that carries no landed receipt has not been read yet: the protocol package's push bound answers
-# tempo/read-first for no landed member, a landed of None and landed logs that are not a list, and H with the receipt
-# its B6 row presents.
+# A push credential with no landed receipt held in Held has not been read yet: the protocol package's push bound
+# answers tempo/read-first with nothing held, a held read of None and held logs that are not a list, and H with the
+# receipt its B6 row holds as fetched beside the payment.
 def test_mpp_charge_tempo_push_bound_without_a_landed_receipt_is_read_first() -> None:
-    presented = next(r for r in PUSH["buyer"]["rows"] if r["name"] == "B6")["input"]["presented"]
-    landed = presented["landed"]
-    bare = {k: v for k, v in presented.items() if k != "landed"}
-    for c in (bare, {**bare, "landed": None}, {**bare, "landed": {**landed, "logs": {}}}):
-        assert MPP_CHARGE_TEMPO_PUSH.bound(copy.deepcopy(c)) == Refusal("tempo/read-first")
-    assert MPP_CHARGE_TEMPO_PUSH.bound(copy.deepcopy(presented)) == H
+    row = next(r for r in PUSH["buyer"]["rows"] if r["name"] == "B6")["input"]
+    presented, landed = row["presented"], row["fetched"]
+    for c in (presented, Held(presented, None), Held(presented, {**landed, "logs": {}})):
+        assert MPP_CHARGE_TEMPO_PUSH.bound(c) == Refusal("tempo/read-first")
+    assert MPP_CHARGE_TEMPO_PUSH.bound(Held(copy.deepcopy(presented), landed)) == H

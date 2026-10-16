@@ -216,7 +216,7 @@ fetches and signs nothing.
 | --- | --- | --- | --- |
 | `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
 | `atr_finish` | `pairing`, `atr` (base64), `chosen` (exactly as returned), `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash` and `next` for a pairing signed in steps | read-only |
-| `atr_check` | `pairing`, `atr` (base64), `presented` | `atrHash` when the payment carries the hash of those bytes | read-only |
+| `atr_check` | `pairing`, `atr` (base64), `presented`, `landed?` (exactly as returned beside the payment) | `atrHash` when the payment carries the hash of those bytes | read-only |
 | `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening), `landed?` and `mac`, exactly as returned | `atrHash` and `hold`, with its `mac` | read-only |
 | `atr_channel_record_charge` | `hold` (exactly as returned), `charged` (decimal) | `atrHash` and the updated `hold` | read-only |
 

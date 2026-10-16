@@ -15,7 +15,10 @@ The gate follows that shape:
    reads the hash of the bytes from it and that it names its channel, and returns a **hold**: the bytes, the opening and
    the channel, as JSON you keep. `landed` is the landed receipt `transact` returned beside the opening, where it
    returned one. Pass it: a pairing such as `mpp/session/hedera` binds its opening by a log only that receipt carries,
-   and the hold keeps it with the opening.
+   and the hold keeps it as its own `landed` member, beside the opening as signed. The caller passes as `landed` only
+   the receipt its own reader read for the opening, as `transact` returned it, never a value another party sent. An
+   opening that holds its read under its own `FETCHED` member, as `@integraledger/lcp`'s `fetchPresented` returns it,
+   is read with that read without `landed`, and the hold keeps it the same way.
 3. **Pay within.** For each later request, `within(doc, hold, binding, signer)` signs one voucher from the hold. It
    takes the bytes, the hash and the channel from the hold, and the amount from the seller's new challenge. On x402's
    batch channels it signs only when that challenge advertises the held H and the payment it builds names the held
@@ -144,7 +147,8 @@ client rule sets it: `1000` before any charge is recorded, `2000` after the sell
 | `network`, `channel` | The channel, as the pairing names it. |
 | `h` | H. |
 | `atr` | Padded standard base64 of the ATR's bytes the opening compared, in its canonical form (RFC 4648 sections 3.5 and 4). `within` reads no other spelling. |
-| `opening` | The signed opening as the gate returned it, written as plain JSON, with the `landed` receipt given beside it as its `landed` member, where one is given (abridged above). `openChannel` declines an opening holding a number JSON does not carry (NaN, an infinity), or arrays and objects nested more than 64 levels deep, with `signed-not-bound`. |
+| `opening` | The signed opening as the gate returned it, written as plain JSON, its own members as signed (abridged above). A member of its own, `landed` or any other, is never read as the read made for the opening. `openChannel` declines an opening holding a number JSON does not carry (NaN, an infinity), or arrays and objects nested more than 64 levels deep, with `signed-not-bound`. |
+| `landed` | The read made for the opening, where there is one: the `landed` receipt `openChannel` took, else the read the opening held under its own `FETCHED` member, as a JSON object. `within` holds it under the opening's `FETCHED` member, as `bound` reads it. |
 | `charged` | The seller's cumulative charge last recorded, decimal; `"0"` at the opening. |
 | `signedMax` | The largest cumulative amount signed in the channel, decimal. |
 

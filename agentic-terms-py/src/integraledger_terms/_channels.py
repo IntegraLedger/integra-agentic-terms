@@ -23,6 +23,7 @@ from .bindings._channel import BatchUnsigned, ChannelRef
 from .bindings._codec import b64_decode
 from .bindings._jose import json_bytes, within_depth
 from .bindings._lcp import from_lcp_string
+from .bindings._mpp import Held, fetched_of
 from .bindings._mpp import network as mpp_network
 from .bindings._mpp_checks import decode_string_map
 from .bindings.mpp_session import session_resume
@@ -32,9 +33,12 @@ from .pieces.x402_batch_settlement_solana import KEY
 
 # A channel the buyer opened for an ATR it compared, as JSON the caller keeps and hands back: pairing, network,
 # channel, h, atr (padded standard base64, in its canonical form, of the ATR bytes the opening compared), opening (the
-# signed opening as the gate returned it, written as plain JSON, with the landed receipt given beside it as its landed
-# member, where one is given), charged (the server's cumulative charge last recorded, decimal, "0" at the opening) and
-# signedMax (the largest maxClaimableAmount signed in the channel, decimal).
+# signed opening as the gate returned it, written as plain JSON: its own members, as signed, none of them, landed or any
+# other, ever read as the read made for the opening), landed (the read made for the opening, a JSON object: the landed
+# receipt open_channel took, else the read the opening held in Held, as @integraledger/lcp holds it under the
+# payment's own FETCHED member: an attribute no JSON decode makes; absent when there is neither; within holds it in
+# Held with the opening, as bound reads it), charged (the server's cumulative charge last recorded, decimal, "0" at the
+# opening) and signedMax (the largest maxClaimableAmount signed in the channel, decimal).
 ChannelHold = dict[str, Any]
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
@@ -104,6 +108,7 @@ def _is_hold(value: object) -> bool:
         and _DECIMAL.fullmatch(value["charged"]) is not None
         and _DECIMAL.fullmatch(value["signedMax"]) is not None
         and isinstance(value.get("opening"), Mapping)
+        and ("landed" not in value or isinstance(value["landed"], Mapping))
     )
 
 
@@ -121,16 +126,27 @@ def _atr_of(hold: Mapping[str, Any]) -> bytes | None:
     return b64_decode(hold["atr"])
 
 
+def _held_opening(hold: Mapping[str, Any]) -> Any:
+    """A hold's opening as the binding reads it: the opening as signed, with the hold's landed, where it has one, in
+    Held, as @integraledger/lcp holds it under the payment's own FETCHED member. A member of the opening's own, landed
+    or any other, is not read."""
+    return Held(hold["opening"], hold["landed"]) if "landed" in hold else hold["opening"]
+
+
 def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | None = None) -> ChannelHold | Declined:
     """Takes a channel pairing's signed opening and the ATR bytes the gate compared for it, with the landed receipt
-    transact returned beside the opening, where it returned one. The opening, with that receipt, must be of kind open,
-    the pairing must read the hash of these bytes from it, and it must name its channel; the hold keeps all three
-    together."""
+    transact returned beside the opening, where it returned one. The caller passes as landed only the receipt its own
+    reader read for the opening, as transact returned it, never a value another party sent. The opening, with that
+    receipt in Held, must be of kind open, the pairing must read the hash of these bytes from it, and it must name its
+    channel; the hold keeps all three together. Without landed, an opening that holds its read in Held, as
+    @integraledger/lcp holds it under the payment's own FETCHED member, is read with that read, and the hold keeps it.
+    The hold keeps the opening as signed, and the read as its own landed member; a member of the opening's own, landed
+    or any other, is never read as the read."""
     if not _has_channel(binding):
         return _declined("pairing-not-supported", "The pairing has no channel.")
     if landed is not None and (not isinstance(landed, Mapping) or not isinstance(opened, Mapping)):
         return _declined("signed-not-bound", "The landed receipt is not a JSON object beside the opening.")
-    signed = opened if landed is None else {**opened, "landed": landed}
+    signed = opened if landed is None else Held(opened, landed)
     if not isinstance(atr_bytes, bytes):
         return _declined("signed-not-bound", "The ATR bytes are missing.")
     if len(atr_bytes) > MAX_ATR_BYTES:
@@ -148,9 +164,13 @@ def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | No
         return _declined("signed-not-bound", ref.code)
     if not isinstance(ref, ChannelRef):
         return _declined("signed-not-bound", "The opening names no channel.")
-    opening = _as_json(signed)
+    opening = _as_json(opened)
     if not isinstance(opening, dict):
         return _declined("signed-not-bound", "The opening is not plain JSON.")
+    held = landed if landed is not None else fetched_of(opened)
+    read = None if held is None else _as_json(held)
+    if held is not None and not isinstance(read, dict):
+        return _declined("signed-not-bound", "The read held for the opening is not plain JSON.")
     return {
         "pairing": binding.id,
         "network": ref.network,
@@ -158,6 +178,7 @@ def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | No
         "h": h,
         "atr": base64.b64encode(atr_bytes).decode("ascii"),
         "opening": opening,
+        **({} if read is None else {"landed": read}),
         "charged": "0",
         "signedMax": _opening_max(signed),
     }
@@ -285,10 +306,11 @@ async def within(
     h = atr_hash(atr)
     if not hash_equals(hold["h"], h):
         return _declined("hash-mismatch", "The held ATR does not hash to the held hash.")
-    opened = _guarded(lambda: binding.bound(hold["opening"]))
+    held = _held_opening(hold)
+    opened = _guarded(lambda: binding.bound(held))
     if not isinstance(opened, str) or not hash_equals(opened, h):
         return _declined("signed-not-bound", "The pairing does not read the held ATR's hash from the held opening.")
-    if not _same_channel(_guarded(lambda: binding.channel_ref(hold["opening"])), hold):
+    if not _same_channel(_guarded(lambda: binding.channel_ref(held)), hold):
         return _declined("signed-not-bound", "The held opening does not name the held channel.")
 
     if ns == "mpp":
@@ -422,7 +444,7 @@ async def _session_within(
     action = "close" if refund is not None else "voucher"
     cumulative = int(hold["charged"]) if action == "close" else int(hold["charged"]) + int(amount)
 
-    w = {"challenge": challenge, "opening": hold["opening"], "cumulativeAmount": cumulative, "action": action}
+    w = {"challenge": challenge, "opening": _held_opening(hold), "cumulativeAmount": cumulative, "action": action}
     unsigned = _guarded(lambda: binding.build_within(w, h))
     if isinstance(unsigned, Refusal):
         code: DeclineCode = "pairing-not-supported" if unsigned.code.endswith("/within-action-not-built") else "offer-unreadable"

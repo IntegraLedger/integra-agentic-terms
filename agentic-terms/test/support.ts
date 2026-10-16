@@ -173,8 +173,7 @@ export async function buildAndSign(
 
   // What the buyer holds to confirm later: the payment, with the landed receipt `finish` returns beside it, if any.
   expect(whole.landed).toEqual(done.landed);
-  const held = done.landed !== undefined ? ({ ...(done.signed as object), landed: done.landed } as Presented) : done.signed;
-  expect(await check(ABC, held, p.binding)).toEqual({ h: H });
-  expect(code(await check(ABD, held, p.binding))).toBe("signed-not-bound");
+  expect(await check(ABC, done.signed, p.binding, done.landed)).toEqual({ h: H });
+  expect(code(await check(ABD, done.signed, p.binding, done.landed))).toBe("signed-not-bound");
   return { signed: done.signed, request: confirmed.request };
 }

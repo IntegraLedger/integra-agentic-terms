@@ -397,9 +397,11 @@ names another channel or another H, and signs one with no legal context under th
 
 ### Confirm a payment later: `check`
 
-`check(bytes, presented, binding)` confirms that the ATR hash the pairing reads from a payment you hold is the SHA-256
-of the bytes you kept. A payment from which the pairing reads no ATR hash is declined `signed-not-bound`. Where `finish`
-or `transact` returned `landed`, put it back into the payment as `landed` first.
+`check(bytes, presented, binding, landed?)` confirms that the ATR hash the pairing reads from a payment you hold is the
+SHA-256 of the bytes you kept. A payment from which the pairing reads no ATR hash is declined `signed-not-bound`. Where
+`finish` or `transact` returned `landed`, pass it as `landed`, beside the payment: a `landed` member written into the
+payment is not read. The caller passes as `landed` only the receipt its own reader read for the payment, as `finish` or
+`transact` returned it, never a value another party sent.
 
 ### Declines and `moved`
 
@@ -458,7 +460,7 @@ Everything below is exported from `@integraledger/terms`.
 | `AgreementPayment` | The agreement payment to approve: `{ url, option, required }`. |
 | `ToApprove` | `{ approve: AgreementPayment; bytes; h }`. |
 | `AgreementReceipt` | `{ atrHash, agreed: true, network, transaction }`. |
-| `ChannelHold` | `{ pairing, network, channel, h, atr, opening, charged, signedMax }`, all JSON. |
+| `ChannelHold` | `{ pairing, network, channel, h, atr, opening, landed?, charged, signedMax }`, all JSON. |
 | `Declined` | `{ decline: Reason; moved?: { signed, bytes, h } }`. |
 | `Reason` | `{ code: DeclineCode; detail: string }`. |
 | `DeclineCode` | The twelve codes in the table above. |

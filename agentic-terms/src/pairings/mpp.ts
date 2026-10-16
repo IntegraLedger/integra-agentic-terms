@@ -7,7 +7,7 @@ import { base64UrlBytes, canonicalJson, parseJson } from "@integraledger/lcp/cor
 import type { Hex } from "@integraledger/lcp/evm";
 import { network, pairingsOfPlaced, type MppChallenge, type MppCredential, type MppUnsigned } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Choose, Chosen, Inputs, Presented, Read, Signature, SigningRequest } from "../types.js";
-import { accountOf, bigintOf, broadcasts, choiceOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";
+import { accountOf, bigintOf, broadcasts, choiceOf, held, inputsOf, isObject, isRefusal, refuse } from "./common.js";
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const MAX_DECODED = 8192;
@@ -102,7 +102,8 @@ export function mppChargePiece(pairing: string, spec: Spec): BuyerPiece {
 
 /**
  * The credential for a pushed Tempo transfer: the answer is `{hash, landed?: {transaction, blockNumber, logs}}`, the
- * hash the signer broadcast and, where the signer gives it, its landed receipt, which carries the memo `bound` reads.
+ * hash the signer broadcast and, where the signer gives it, its landed receipt, which carries the memo `bound` reads,
+ * held under the payment's own `FETCHED` member (`@integraledger/lcp`'s symbol, which no wire form carries).
  */
 export async function pushComplete(unsigned: unknown, signature: Signature): Promise<Presented | Refusal> {
   if (!isObject(signature) || typeof signature["hash"] !== "string") return refuse("mpp/credential-malformed");
@@ -115,8 +116,5 @@ export async function pushComplete(unsigned: unknown, signature: Signature): Pro
   }
   const blockNumber = bigintOf(landed["blockNumber"]);
   if (blockNumber === undefined) return refuse("mpp/credential-malformed");
-  return {
-    ...credential,
-    landed: { transaction: landed["transaction"] as Hex, blockNumber, logs: landed["logs"] as never },
-  } as MppCredential;
+  return held(credential, { transaction: landed["transaction"] as Hex, blockNumber, logs: landed["logs"] });
 }

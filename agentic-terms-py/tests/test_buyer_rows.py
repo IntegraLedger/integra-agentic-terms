@@ -67,10 +67,12 @@ def test_b2_the_plant(file: str, row: dict[str, Any], monkeypatch: pytest.Monkey
 
 @pytest.mark.parametrize(("file", "row"), B6, ids=[f"{f} {r['pairing']}" for f, r in B6])
 def test_b6_check(file: str, row: dict[str, Any]) -> None:
+    """check of each B6 row's presented payment; an input that holds fetched, the read of a push payment, is checked
+    with it as the landed receipt beside the payment, as the row's file says the seller holds it."""
     binding = BINDINGS[row["pairing"]]
     got: list[dict[str, str]] = []
     for c in row["input"]["check"]:
-        out = check(bytes.fromhex(c["bytesHex"]), copy.deepcopy(row["input"]["presented"]), binding)
+        out = check(bytes.fromhex(c["bytesHex"]), copy.deepcopy(row["input"]["presented"]), binding, row["input"].get("fetched"))
         got.append({"h": out.h} if isinstance(out, Checked) else {"decline": out.code})
     assert got == row["expect"]
 

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { hashTypedData, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  FETCHED,
   chargeHedera,
   chargeNearIntents,
   chargeSolana,
@@ -224,7 +225,7 @@ describe("mpp/charge/hedera", () => {
     if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(whole.landed).toEqual(V.fetchPresented.expectLanded);
     expect(await chargeHedera.bound(signed)).toEqual({ refused: true, code: V.push.expectWithout });
-    expect(await chargeHedera.reference({ ...(signed as object), landed: whole.landed })).toEqual(V.push.expectReference);
+    expect(await chargeHedera.reference({ ...(signed as object), [FETCHED]: whole.landed })).toEqual(V.push.expectReference);
   });
   it("push: the build itself is the protocol package's push request, the vector's body with broadcast true", async () => {
     const choice = {

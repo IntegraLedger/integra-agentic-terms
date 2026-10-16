@@ -13,7 +13,7 @@ from .._types import Advertised, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._evm import ZERO_ADDRESS, address_of_word, address_word, bytes32_word, bytes_of, hex_of, uint_word
 from ._lcp import is_address, is_list, is_object, normal_hash
-from ._mpp import Echoed, chosen_for, credential_of, echoed_for, read
+from ._mpp import Echoed, chosen_for, credential_of, echoed_for, fetched_of, read
 from ._mpp_checks import hedera_session_network_of
 from ._session_within import action_kind, echoed_details, within_checks
 
@@ -175,7 +175,9 @@ class MppSessionHedera:
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """H from the echoed challenge, once exactly one landed ChannelOpened from the escrow names payload.channelId,
         its salt is H, and the channel id recomputed from the event (payer, payee, token, signer, salt, escrow, chain)
-        is that id."""
+        is that id. The logs are those of the opening's landed receipt, read for it and held in Held, as
+        @integraledger/lcp holds it under the payment's own FETCHED member (fetched_of): an opening without them is
+        hedera/read-first, and a landed member of the opening's own is not read."""
         credential = credential_of(presented)
         if isinstance(credential, Refusal):
             return credential
@@ -184,7 +186,7 @@ class MppSessionHedera:
             return e
         if e.payload.get("action") != "open":
             return Refusal("mpp/session-action")
-        landed = credential.get("landed")
+        landed = fetched_of(credential)
         logs = landed.get("logs") if is_object(landed) else None
         if not is_list(logs):
             return Refusal("hedera/read-first")

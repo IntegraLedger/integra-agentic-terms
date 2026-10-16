@@ -108,12 +108,21 @@ receipt the completion carried and the payment leaves out, as JSON, each integer
 import type { AtrHash } from "@integraledger/lcp";
 import type { Binding, Declined } from "@integraledger/terms";
 
-declare function check(bytes: Uint8Array, presented: unknown, binding: Binding): Promise<{ h: AtrHash } | Declined>;
+declare function check(
+  bytes: Uint8Array,
+  presented: unknown,
+  binding: Binding,
+  landed?: unknown,
+): Promise<{ h: AtrHash } | Declined>;
 ```
 
 Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes. A payment from
-which the pairing reads no ATR hash is declined `signed-not-bound`. Put `landed` back into the payment first, where one
-was returned.
+which the pairing reads no ATR hash is declined `signed-not-bound`. Pass the `landed` receipt `finish` or `transact`
+returned beside the payment, where there is one, as `landed`: `check` holds it under the payment's own `FETCHED`
+member as `bound` reads it, and a `landed` member written into the payment is not read. The caller passes as `landed`
+only the receipt its own reader read for the payment, as `finish` or `transact` returned it, never a value another
+party sent. A `landed` of `null` is no receipt: the payment is read alone. A `landed` that is not a JSON object, or a
+payment that is not one, is declined `signed-not-bound`.
 
 ### `agree`
 
@@ -164,8 +173,11 @@ declare function openChannel(
 ```
 
 Takes a channel pairing's signed opening and the ATR bytes the gate compared for it, with the `landed` receipt
-`transact` returned beside it, where there is one. The opening must be of kind `open`, the pairing must read the hash of
-these bytes from it, and it must name its channel.
+`transact` returned beside it, where there is one. The caller passes as `landed` only the receipt its own reader read
+for the opening, as `transact` returned it, never a value another party sent. The opening must be of kind `open`, the
+pairing must read the hash of these bytes from it, and it must name its channel. The hold keeps the opening as signed
+and the read as its own `landed` member: the `landed` receipt, else the read the opening holds under its own `FETCHED`
+member.
 
 ### `within`
 
@@ -220,7 +232,7 @@ amount signed in the channel.
 | `AgreementPayment` | `{ url: string; option: PaymentRequirements; required: PaymentRequired }`: the agreement payment to approve. `option` is the x402 option paid, with its `amount`, `asset`, `payTo` and `network`; `required` is the agreement URL's payment request as served. |
 | `ToApprove` | `{ approve: AgreementPayment; bytes: Uint8Array; h: AtrHash }`. |
 | `AgreementReceipt` | `{ atrHash: AtrHash; agreed: true; network: string; transaction: string }`. |
-| `ChannelHold` | `{ pairing; network; channel; h; atr; opening; charged; signedMax }`. See [the hold](../guides/channels-and-sessions.md#the-hold). |
+| `ChannelHold` | `{ pairing; network; channel; h; atr; opening; landed?; charged; signedMax }`. See [the hold](../guides/channels-and-sessions.md#the-hold). |
 | `Declined` | `{ decline: Reason; moved?: { signed: unknown; bytes: Uint8Array; h: AtrHash } }`. |
 | `Reason` | `{ code: DeclineCode; detail: string }`. |
 | `DeclineCode` | One of the twelve codes in the [declines reference](./declines.md). |

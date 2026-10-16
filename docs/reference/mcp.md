@@ -136,7 +136,8 @@ pairing reads no H is declined `signed-not-bound`.
 | --- | --- | --- |
 | `pairing` | string | The pairing. |
 | `atr` | base64 | The ATR's bytes. |
-| `presented` | JSON | The payment, with `landed` put back where one was returned. |
+| `presented` | JSON | The payment, as returned. |
+| `landed` | JSON, optional | The `landed` receipt returned beside the payment, exactly as returned, where there is one. The caller passes as `landed` only the receipt its own reader read for the payment, as `atr_finish` or `atr_transact` returned it, never a value another party sent. A `landed` of null is no receipt. A `landed` member written into the payment is not read. |
 
 Returns `atrHash`. Annotations: read-only, closed-world.
 
@@ -149,7 +150,7 @@ Keeps a channel you opened.
 | `pairing` | string | The channel's pairing. |
 | `atr` | base64 | The ATR's bytes the opening was confirmed against. |
 | `signed` | JSON | The signed opening, exactly as returned. |
-| `landed` | JSON, optional | The `landed` receipt returned beside the opening, exactly as returned, where one was. `mpp/session/hedera`'s opening is bound by the escrow log only that receipt carries. |
+| `landed` | JSON, optional | The `landed` receipt returned beside the opening, exactly as returned, where one was. The caller passes as `landed` only the receipt its own reader read for the opening, as `atr_finish` or `atr_transact` returned it, never a value another party sent. `mpp/session/hedera`'s opening is bound by the escrow log only that receipt carries. |
 | `mac` | string | The `mac` returned beside the opening. |
 
 Returns `atrHash` and `hold`, with its `mac`. An opening whose `mac` does not verify, with the `landed` receipt it was

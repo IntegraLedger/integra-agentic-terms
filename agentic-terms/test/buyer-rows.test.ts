@@ -1,7 +1,9 @@
 // Every vector file's `buyer` group, run through the gate. B2, the plant: `transact` with a counting signer over the
 // row's document, account, inputs and clock, the link serving the planted ATR, declines hash-mismatch and never calls
 // the signer; `confirm` declines the same and returns no request. B6: `check` over the file's signed payment gives H
-// for the ATR and declines signed-not-bound for the planted ATR. Every expected value, and every input, is the row's.
+// for the ATR and declines signed-not-bound for the planted ATR; an input that holds `fetched`, the read of a push
+// payment, is checked with it as the landed receipt beside the payment, as the row's file says the seller holds it.
+// Every expected value, and every input, is the row's.
 //
 // buyer.json's rows that call one gate function (B19 to B22) and its within rows (BW1 to BW4), each found by its name:
 // the documents, holds and signers are those the rows name, and a row's cases share its input and expect except where
@@ -36,6 +38,7 @@ interface Row {
     inputs?: Inputs;
     now?: number;
     presented?: unknown;
+    fetched?: unknown;
     check?: { bytesHex: string }[];
   };
   expect: unknown;
@@ -106,7 +109,7 @@ describe("every vector file's buyer rows, through the gate", () => {
       const binding = bindingOf(row.pairing);
       const got = [];
       for (const c of row.input.check!) {
-        const out = await check(fromHex(c.bytesHex), structuredClone(row.input.presented), binding);
+        const out = await check(fromHex(c.bytesHex), structuredClone(row.input.presented), binding, row.input.fetched);
         got.push("decline" in out ? { decline: out.decline.code } : out);
       }
       expect(got).toEqual(row.expect);

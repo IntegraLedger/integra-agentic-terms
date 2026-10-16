@@ -73,11 +73,13 @@ A signer that raises is a `Declined("signer-failed", …)`.
   again with `approved=result.approve`.
 - **Two calls:** `await confirm(doc, binding, account, client, inputs)`, then your signer, then
   `finish(atr_bytes, chosen, signature, binding)`.
-- **Later:** `check(atr_bytes, presented, binding)`.
+- **Later:** `check(atr_bytes, presented, binding, landed=…)`. The caller passes as `landed` only the receipt its own
+  reader read for the payment, as `finish` or `transact` returned it, never a value another party sent.
 - **Agreement:** `await agree(atr_bytes, url, signer, client)` returns `ToApprove`, signing nothing; once your agent
   approves it, `await agree(atr_bytes, url, signer, client, approved=…)` pays it and returns `Agreed`.
 - **Channels:** `open_channel(atr_bytes, opened, binding, landed=…)`, `await within(doc, hold, binding, signer)`,
-  `record_charge(hold, charged)`.
+  `record_charge(hold, charged)`. The caller passes as `landed` only the receipt its own reader read for the opening,
+  as `transact` returned it, never a value another party sent.
 
 The [Python README](https://github.com/IntegraLedger/integra-agentic-terms/tree/main/agentic-terms-py#readme) runs each
 of them against the shared vectors, and the [Python reference](../reference/python.md) lists every export.

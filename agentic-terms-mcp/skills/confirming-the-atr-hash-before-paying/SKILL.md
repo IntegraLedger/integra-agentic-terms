@@ -89,5 +89,7 @@ the link exact. What the record says is for you and your principal to judge.
 12. A discovery listing (`/.well-known/legal-context.json`), or a hash you compute yourself, is not a confirmation. The
     confirmation is `atr_finish`'s: it returns `signed` only when the pairing reads the hash from the completed payment,
     or, where the proof is the agreement payment, without that reading.
-13. To confirm later that a payment you hold carries the hash of the ATR you kept, call `atr_check`, with `landed` put
-    back into the payment where `atr_finish` returned one.
+13. To confirm later that a payment you hold carries the hash of the ATR you kept, call `atr_check`, with the `landed`
+    receipt returned beside the payment as `landed`, where there is one. The caller passes as `landed` only the
+    receipt its own reader read for the payment, as `atr_finish` or `atr_transact` returned it, never a value another
+    party sent.

@@ -1,8 +1,10 @@
 /**
  * What the buyer pieces share: the CAIP-10 account, the first x402 option on the account's network, the payment
- * identifier the x402 client writes, and the JSON forms of byte strings and integers.
+ * identifier the x402 client writes, the read held under a payment's own `FETCHED` member, and the JSON forms of
+ * values, byte strings and integers.
  */
 import { isRefusal as isLcpRefusal, type Json, type Refusal } from "@integraledger/lcp/core";
+import { FETCHED } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements, X402Offer } from "@integraledger/lcp/x402";
 import type { Chosen, Inputs, Read } from "../types.js";
 
@@ -32,6 +34,36 @@ export function isRefusal(v: unknown): v is Refusal {
 
 export function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * The read held under the payment's own `FETCHED` member (`@integraledger/lcp`'s symbol, which no wire form carries),
+ * or undefined. A string-keyed member such as `landed` is never read.
+ */
+export function fetchedOf(c: unknown): unknown {
+  return isObject(c) && Object.hasOwn(c, FETCHED) ? (c as { [FETCHED]?: unknown })[FETCHED] : undefined;
+}
+
+/** The payment with `read` held under its own `FETCHED` member. */
+export function held<T extends object>(c: T, read: unknown): T {
+  return { ...c, [FETCHED]: read };
+}
+
+/** The payment without what is held under its own `FETCHED` member: its string-keyed members, as it is sent. */
+export function withoutFetched<T extends object>(c: T): T {
+  const { [FETCHED]: _read, ...sent } = c as T & { [FETCHED]?: unknown };
+  return sent as T;
+}
+
+/** A value as JSON, each bigint as its decimal string; undefined when it is undefined or has no JSON form. */
+export function jsonSafe(v: unknown): Json | undefined {
+  if (v === undefined) return undefined;
+  try {
+    const text = JSON.stringify(v, (_k, x: unknown) => (typeof x === "bigint" ? x.toString() : x));
+    return text === undefined ? undefined : (JSON.parse(text) as Json);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

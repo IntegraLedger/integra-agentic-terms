@@ -50,8 +50,11 @@ const DESCRIPTIONS = {
     "without that reading. For a pairing with a channel, pass `chosen` exactly as atr_confirm returned it, `mac` " +
     "included: a changed `chosen` is declined. Send only the `signed` payment it returns.",
   atr_check:
-    "Confirms that the ATR hash the pairing reads from a payment is the SHA-256 of the given ATR bytes. A payment " +
-    "from which the pairing reads no ATR hash is declined.",
+    "Confirms that the ATR hash the pairing reads from a payment is the SHA-256 of the given ATR bytes, with the " +
+    "`landed` receipt returned beside the payment, exactly as returned, where there is one. The caller passes as " +
+    "`landed` only the receipt its own reader read for the payment, as `atr_finish` or `atr_transact` returned it, " +
+    "never a value another party sent. A `landed` of null is no receipt. A payment from which the pairing reads no " +
+    "ATR hash is declined.",
   atr_transact:
     "Confirms the ATR hash and, only on a match, signs the payment carrying it with this host's signer. Returns the " +
     "payment to send and the ATR's exact bytes to keep. Where the pairing needs an agreement payment first, returns it " +
@@ -67,8 +70,9 @@ const DESCRIPTIONS = {
   atr_channel_open:
     "Keeps a channel you opened: takes the signed opening payment, the `landed` receipt where one was returned beside " +
     "it, and the `mac` returned beside it, all exactly as returned, and the ATR bytes it was confirmed against; " +
-    "returns the channel `hold` to keep and pass to the other channel tools. The hold is opaque: pass it back exactly " +
-    "as returned.",
+    "returns the channel `hold` to keep and pass to the other channel tools. The caller passes as `landed` only the " +
+    "receipt its own reader read for the opening, as `atr_finish` or `atr_transact` returned it, never a value " +
+    "another party sent. The hold is opaque: pass it back exactly as returned.",
   atr_channel_within:
     "Signs one later payment in a held channel with this host's signer. The ATR, its hash and the channel come from " +
     "the `hold`, and the amount from the seller's new document, with no limit applied. On an x402 channel the " +
@@ -294,11 +298,11 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
     "atr_check",
     {
       description: DESCRIPTIONS.atr_check,
-      inputSchema: z.object({ pairing, atr, presented: JSON_VALUE }),
+      inputSchema: z.object({ pairing, atr, presented: JSON_VALUE, landed: JSON_VALUE.optional() }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
-      const out = await check(a.atr, a.presented, bindingOf(a.pairing));
+      const out = await check(a.atr, a.presented, bindingOf(a.pairing), a.landed);
       if ("decline" in out) return declinedResult(out);
       return result({ atrHash: out.h });
     },

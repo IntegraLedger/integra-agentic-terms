@@ -308,6 +308,19 @@ describe("x402/batch-settlement/cloudflare over MCP, whose build is the payment"
     expect(at(signed, "extensions.legalContext.info.value")).toBe(H);
     expect(at(checked, "result.structuredContent")).toEqual({ atrHash: H });
   });
+
+  it("atr_check with landed null reads the payment alone, as with no landed", async () => {
+    const c = connect({ fetch: seller() });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receipt });
+    const atr = at(confirmed, "result.structuredContent.atr.base64");
+    const chosen = at(confirmed, "result.structuredContent.chosen");
+    const m = await call(c, "atr_finish", { pairing, atr, chosen, signature: null });
+    const presented = at(m, "result.structuredContent.signed");
+    const checked = await call(c, "atr_check", { pairing, atr, presented, landed: null });
+    await c.close();
+    expect(at(checked, "result.isError")).toBeUndefined();
+    expect(at(checked, "result.structuredContent")).toEqual({ atrHash: H });
+  });
 });
 
 describe("a channel over MCP: x402/batch-settlement/eip155", () => {

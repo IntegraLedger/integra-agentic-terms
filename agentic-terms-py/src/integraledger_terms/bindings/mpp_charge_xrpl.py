@@ -9,7 +9,7 @@ from typing import Any
 from .._core import AtrHash, hash_equals
 from .._types import Advertised, Refusal
 from ._lcp import is_object
-from ._mpp import chosen_for, credential_of, echoed_for, read
+from ._mpp import chosen_for, credential_of, echoed_for, fetched_of, read
 from ._mpp_checks import is_xrpl_invoice_id, xrpl_network_of
 from ._xrpl import decode_presented, is_blob_hex, mpp_invoice_id, network_id_held, same_invoice
 
@@ -27,14 +27,18 @@ def _u32(value: object) -> bool:
     return 0 <= value <= 0xFFFFFFFF
 
 
-def _presented_blob(payload: Mapping[str, Any]) -> str | Refusal:
-    """The signed blob a credential presents: its blob, or for type "hash" none until one is fetched by that hash."""
+def _presented_blob(credential: Mapping[str, Any], payload: Mapping[str, Any]) -> str | Refusal:
+    """The signed blob a credential presents: its blob for type "transaction", or for type "hash" the blob read by
+    that hash and held in Held, as @integraledger/lcp holds it under the payment's own FETCHED member (fetched_of),
+    else xrpl/read-first. A hash credential's own blob member is not read."""
     kind = payload.get("type")
     if kind not in ("transaction", "hash"):
         return Refusal("mpp/credential-type")
-    if "blob" not in payload:
-        return Refusal("xrpl/read-first" if kind == "hash" else "xrpl/blob-malformed")
-    blob = payload["blob"]
+    if kind == "hash":
+        read = fetched_of(credential)
+        landed = read.get("blob") if is_object(read) else None
+        return landed if isinstance(landed, str) else Refusal("xrpl/read-first")
+    blob = payload.get("blob")
     return blob if isinstance(blob, str) else Refusal("xrpl/blob-malformed")
 
 
@@ -135,7 +139,7 @@ class MppChargeXrpl:
             return e
         if not is_xrpl_invoice_id(e.checked.details):
             return Refusal("mpp/request-malformed")
-        blob = _presented_blob(e.payload)
+        blob = _presented_blob(presented, e.payload)
         if isinstance(blob, Refusal):
             return blob
         decoded = decode_presented(blob)

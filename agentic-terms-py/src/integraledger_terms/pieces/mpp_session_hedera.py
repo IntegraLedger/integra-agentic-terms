@@ -1,14 +1,16 @@
 """The buyer piece for mpp/session/hedera: the opening handed to the signer as the build's hedera-session-open request,
 exactly as built. The signer broadcasts the two calls in order, signs the zero voucher, and answers {openTx,
 signature}, the opening's hash and the voucher signature, with, where it has it, landed: {transaction, blockNumber,
-logs}, the opening's landed receipt, whose escrow log carries the channel's salt that bound reads. The payment sent is
-the credential without the landed receipt. The signer moves the deposit, so a decline keeps it."""
+logs}, the opening's landed receipt, whose escrow log carries the channel's salt that bound reads, held in Held, as
+@integraledger/lcp holds it under the payment's own FETCHED member. The payment sent is the credential without it.
+The signer moves the deposit, so a decline keeps it."""
 
 import re
 from collections.abc import Mapping
 from typing import Any
 
 from .._types import Chosen, Inputs, Json, Refusal, Signature, Step
+from ..bindings._mpp import Held
 from ..bindings.mpp_session_hedera import ID
 from ._common import bigint_of, inputs_of
 from ._mpp import MppRail, MppRailPiece, session_revive
@@ -34,7 +36,7 @@ def _complete(unsigned: Any, signature: Signature, chosen: Chosen) -> dict[str, 
     block_number = bigint_of(landed.get("blockNumber"))
     if block_number is None:
         return Refusal("mpp/credential-malformed")
-    return {**credential, "landed": {"transaction": landed["transaction"], "blockNumber": str(block_number), "logs": landed["logs"]}}
+    return Held(credential, {"transaction": landed["transaction"], "blockNumber": str(block_number), "logs": landed["logs"]})
 
 
 def _inputs(request: Mapping[str, Any], given: Inputs) -> dict[str, Any] | Refusal:
@@ -46,7 +48,7 @@ class MppSessionHederaPiece(MppRailPiece):
         return True
 
     def sent(self, signed: dict[str, Any]) -> dict[str, Any]:
-        return {k: v for k, v in signed.items() if k != "landed"}
+        return dict(signed)
 
 
 PIECE = MppSessionHederaPiece(

@@ -2,13 +2,14 @@
  * The buyer piece for `mpp/session/hedera`: the opening handed to the signer as the build's `hedera-session-open`
  * request, exactly as built. The signer broadcasts the two calls in order, signs the zero voucher, and answers
  * `{openTx, signature}`, the opening's hash and the voucher signature, with, where it has it, `landed: {transaction,
- * blockNumber, logs}`, the opening's landed receipt, whose escrow log carries the channel's salt that `bound` reads. The
- * payment sent is the credential without the landed receipt. The signer moves the deposit, so a decline keeps it.
+ * blockNumber, logs}`, the opening's landed receipt, whose escrow log carries the channel's salt that `bound` reads,
+ * held under the payment's own `FETCHED` member. The payment sent is the credential without it. The signer moves the
+ * deposit, so a decline keeps it.
  */
 import type { Refusal } from "@integraledger/lcp/core";
 import type { MppCredential } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Chosen, Inputs, Presented, Signature } from "../types.js";
-import { bigintOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";
+import { bigintOf, held, inputsOf, isObject, isRefusal, refuse, withoutFetched } from "./common.js";
 import { HEDERA_EVM_ADDRESS, mppRailPiece, sessionRevive } from "./mpp-rails.js";
 
 const PAIRING = "mpp/session/hedera";
@@ -29,7 +30,7 @@ async function complete(unsigned: unknown, signature: Signature, _chosen: Chosen
   }
   const blockNumber = bigintOf(landed["blockNumber"]);
   if (blockNumber === undefined) return refuse("mpp/credential-malformed");
-  return { ...credential, landed: { transaction: landed["transaction"], blockNumber, logs: landed["logs"] } } as unknown as Presented;
+  return held(credential, { transaction: landed["transaction"], blockNumber, logs: landed["logs"] }) as unknown as Presented;
 }
 
 export const mppSessionHedera: BuyerPiece = Object.freeze({
@@ -45,7 +46,6 @@ export const mppSessionHedera: BuyerPiece = Object.freeze({
   }),
   moves: () => true,
   sent(signed: Presented): Presented {
-    const { landed: _landed, ...credential } = signed as MppCredential & { landed?: unknown };
-    return credential;
+    return withoutFetched(signed as object) as Presented;
   },
 });

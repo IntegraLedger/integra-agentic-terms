@@ -16,7 +16,7 @@ import pytest
 import integraledger_terms as terms
 from integraledger_terms import ChannelRef, Refusal
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, canonical_json
-from integraledger_terms.bindings._mpp import pairings_of
+from integraledger_terms.bindings._mpp import Held, pairings_of
 from integraledger_terms.bindings._mpp_checks import hedera_charge_network
 from integraledger_terms.bindings.mpp_charge_usdc import gateway_account, usdc_gateway_salt, usdc_request_hash
 from integraledger_terms.pieces._mpp import pairings_of_placed
@@ -68,12 +68,15 @@ def no_edit(r: dict[str, Any], c: dict[str, Any]) -> None:
 
 
 def presented(pairing: str, edit: Edit = no_edit) -> dict[str, Any]:
-    """The pairing's B6 credential, with edit applied to its decoded request and its challenge."""
-    c: dict[str, Any] = copy.deepcopy(b6(pairing)["input"]["presented"])
+    """The pairing's B6 credential, with edit applied to its decoded request and its challenge, and the B6 input's
+    fetched read held in Held, as @integraledger/lcp holds it under the payment's own FETCHED member, where the input
+    holds one."""
+    given = b6(pairing)["input"]
+    c: dict[str, Any] = copy.deepcopy(given["presented"])
     request = request_of(c)
     edit(request, c["challenge"])
     c["challenge"]["request"] = b64u_encode(canonical_json(request).encode("utf-8"))
-    return c
+    return Held(c, copy.deepcopy(given["fetched"])) if "fetched" in given else c
 
 
 def request_of(c: dict[str, Any]) -> dict[str, Any]:

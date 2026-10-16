@@ -270,6 +270,15 @@ describe("buyer rows", () => {
     expect(code(await check(C, whole.signed, binding))).toBe(r.expect[1].decline);
   });
 
+  it("B7 with landed null: check reads the payment alone, as with no landed", async () => {
+    const r = row("B7");
+    const whole = await transact(D, binding, counting(), serving(A));
+    if (isDeclined(whole)) throw new Error(whole.decline.code);
+    if ("approve" in whole) throw new Error("an agreement payment to approve");
+    expect(await check(A, whole.signed, binding, null)).toEqual({ h: r.expect[0].h });
+    expect(code(await check(C, whole.signed, binding, null))).toBe(r.expect[1].decline);
+  });
+
   it("B8: an advertised payment-identifier gains a fresh 32-character id; none is added unadvertised", async () => {
     const r = row("B8");
     const doc = withExtension(D, "payment-identifier", { info: {}, schema: {} });

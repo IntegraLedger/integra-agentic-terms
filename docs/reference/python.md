@@ -13,7 +13,7 @@ outcome: each returns its result or a `Declined`.
 | `transact` | `async transact(doc, binding, signer, fetch, *, inputs=None, agreement_signer=None, approved=None, signal=None)` | `Transacted \| ToApprove \| Declined` |
 | `confirm` | `async confirm(doc, binding, account, fetch, inputs=None)` | `Confirmed \| Declined` |
 | `finish` | `finish(atr_bytes, chosen, signature, binding)` | `Finished \| Next \| Declined` |
-| `check` | `check(atr_bytes, presented, binding)` | `Checked \| Declined` |
+| `check` | `check(atr_bytes, presented, binding, landed=None)` | `Checked \| Declined` |
 | `agree` | `async agree(atr_bytes, url, signer, fetch, *, approved=None, inputs=None, signal=None)` | `ToApprove \| Agreed \| Declined` |
 | `open_channel` | `open_channel(atr_bytes, opened, binding, landed=None)` | `ChannelHold \| Declined` |
 | `within` | `async within(doc, hold, binding, signer, refund=None, inputs=None)` | `Within \| Declined` |
@@ -53,8 +53,8 @@ after, it declines `agreement-pending` with the payment as `moved`. Cancelling t
 | `Declined` | `code: DeclineCode`, `detail: str`, `moved: Moved \| None` |
 | `Moved` | `signed: Any`, `atr_bytes: bytes`, `h: AtrHash`: the payment the signer moved before a decline, to keep and present again |
 
-`ChannelHold` is a `dict` with the members `pairing`, `network`, `channel`, `h`, `atr`, `opening`, `charged` and
-`signedMax`, as in TypeScript.
+`ChannelHold` is a `dict` with the members `pairing`, `network`, `channel`, `h`, `atr`, `opening`, `landed` (where
+there is a read made for the opening), `charged` and `signedMax`, as in TypeScript.
 
 ## Protocols and types
 

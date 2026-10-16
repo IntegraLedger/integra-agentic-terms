@@ -21,7 +21,7 @@ import {
 } from "@integraledger/lcp/core";
 import { network as mppNetwork, sessionResume, type MppChallenge } from "@integraledger/lcp/mpp";
 import { decodeObject, offers, requestOf } from "./pairings/mpp.js";
-import { isRefusal, refuse, withPaymentIdentifier } from "./pairings/common.js";
+import { fetchedOf, held, isRefusal, jsonSafe, refuse, withPaymentIdentifier } from "./pairings/common.js";
 import { KEY } from "./pairings/x402-batch-settlement-solana.js";
 import {
   MAX_ATR_BYTES,
@@ -45,10 +45,17 @@ export interface ChannelHold {
   /** Padded standard base64 of the ATR bytes the opening compared, in its canonical form (RFC 4648 sections 3.5, 4). */
   atr: string;
   /**
-   * The signed opening payment as the gate returned it, written as plain JSON, with the landed receipt given beside it
-   * as its `landed` member, where one is given.
+   * The signed opening payment as the gate returned it, written as plain JSON: its own members, as signed. A member of
+   * its own, `landed` or any other, is never read as the read made for the opening.
    */
   opening: Json;
+  /**
+   * The read made for the opening, as a JSON object: the `landed` receipt `openChannel` took, else the read the opening
+   * held under its own `FETCHED` member (`@integraledger/lcp`'s symbol, which no wire form carries), each bigint as its
+   * decimal string. Absent when there is neither. `within` holds it under the opening's own `FETCHED` member, as
+   * `bound` reads it.
+   */
+  landed?: Json;
   /** The server's cumulative charge last recorded, decimal; "0" at the opening. */
   charged: string;
   /** The largest `maxClaimableAmount` signed in this channel, decimal. */
@@ -145,7 +152,8 @@ function isHold(v: unknown): v is ChannelHold {
     HOLD_KEYS.every((k) => typeof v[k] === "string") &&
     DECIMAL.test(v["charged"] as string) &&
     DECIMAL.test(v["signedMax"] as string) &&
-    isObject(v["opening"])
+    isObject(v["opening"]) &&
+    (!Object.hasOwn(v, "landed") || isObject(v["landed"]))
   );
 }
 
@@ -228,10 +236,22 @@ function openingMax(signed: unknown): string {
 }
 
 /**
+ * A hold's opening as the binding reads it: the opening as signed, with the hold's `landed`, where it has one, held
+ * under the opening's own `FETCHED` member. A member of the opening's own, `landed` or any other, is not read.
+ */
+function heldOpening(hold: ChannelHold): Presented {
+  return (hold.landed === undefined ? hold.opening : held(hold.opening as object, hold.landed)) as Presented;
+}
+
+/**
  * Takes a channel pairing's signed opening and the ATR bytes the gate compared for it, with the landed receipt
- * `transact` returned beside the opening, where it returned one. The opening, with that receipt, must be of kind `open`,
- * the pairing must read the hash of these bytes from it, and it must name its channel; the hold keeps all three
- * together.
+ * `transact` returned beside the opening, where it returned one. The caller passes as `landed` only the receipt its own
+ * reader read for the opening, as `transact` returned it, never a value another party sent. The opening, with that
+ * receipt held under its own `FETCHED` member, must be of kind `open`, the pairing must read the hash of these bytes
+ * from it, and it must name its channel; the hold keeps all three together. Without `landed`, an opening that holds its
+ * read under its own `FETCHED` member, as `@integraledger/lcp`'s `fetchPresented` returns it, is read with that read,
+ * and the hold keeps it. The hold keeps the opening as signed, and the read as its own `landed` member; a member of the
+ * opening's own, `landed` or any other, is never read as the read.
  */
 export async function openChannel(
   bytes: Uint8Array,
@@ -246,7 +266,7 @@ export async function openChannel(
   if (landed !== undefined && (!isObject(landed) || !isObject(opened))) {
     return declined("signed-not-bound", "The landed receipt is not a JSON object beside the opening.");
   }
-  const signed = (landed === undefined ? opened : { ...(opened as object), landed }) as Presented;
+  const signed = (landed === undefined ? opened : held(opened as object, landed)) as Presented;
   if (!(bytes instanceof Uint8Array)) return declined("signed-not-bound", "The ATR bytes are missing.");
   if (bytes.length > MAX_ATR_BYTES) return declined("atr-too-large", `The ATR is larger than ${MAX_ATR_BYTES} bytes.`);
   const channel = b.channel;
@@ -259,8 +279,13 @@ export async function openChannel(
   }
   const ref = await guarded(() => channel.ref(signed));
   if (isRefusal(ref)) return declined("signed-not-bound", ref.code);
-  const opening = asJson(signed);
+  const opening = asJson(opened);
   if (!isObject(opening)) return declined("signed-not-bound", "The opening is not plain JSON.");
+  const fetched = landed === undefined ? fetchedOf(opened) : undefined;
+  const read = landed !== undefined ? asJson(landed) : fetched !== undefined ? asJson(jsonSafe(fetched)) : undefined;
+  if ((landed !== undefined || fetched !== undefined) && !isObject(read)) {
+    return declined("signed-not-bound", "The read held for the opening is not plain JSON.");
+  }
   return {
     pairing: b.id,
     network: ref.network,
@@ -268,6 +293,7 @@ export async function openChannel(
     h,
     atr: toBase64(bytes),
     opening,
+    ...(read === undefined ? {} : { landed: read }),
     charged: "0",
     signedMax: openingMax(signed),
   };
@@ -327,11 +353,12 @@ export async function within(
   if (bytes === null || bytes.length > MAX_ATR_BYTES) return declined("signed-not-bound", "The held ATR is unreadable.");
   const h = await hash(bytes);
   if (!hashEquals(hold.h, h)) return declined("hash-mismatch", "The held ATR does not hash to the held hash.");
-  const opened = await guarded(() => b.bound(hold.opening));
+  const opening = heldOpening(hold);
+  const opened = await guarded(() => b.bound(opening));
   if (isRefusal(opened) || !hashEquals(opened, h)) {
     return declined("signed-not-bound", "The pairing does not read the held ATR's hash from the held opening.");
   }
-  const openedRef = await guarded(() => channel.ref(hold.opening));
+  const openedRef = await guarded(() => channel.ref(opening));
   if (isRefusal(openedRef) || openedRef.network !== hold.network || openedRef.channel !== hold.channel) {
     return declined("signed-not-bound", "The held opening does not name the held channel.");
   }
@@ -466,7 +493,8 @@ async function sessionWithin(
   const action = refund !== undefined ? "close" : "voucher";
   const cumulativeAmount = action === "close" ? BigInt(hold.charged) : BigInt(hold.charged) + BigInt(amount);
 
-  const unsigned = await guarded(() => b.buildWithin!({ challenge, opening: hold.opening, cumulativeAmount, action }, h));
+  const opening = heldOpening(hold);
+  const unsigned = await guarded(() => b.buildWithin!({ challenge, opening, cumulativeAmount, action }, h));
   if (isRefusal(unsigned)) {
     const code = unsigned.code.endsWith("/within-action-not-built") ? "pairing-not-supported" : "offer-unreadable";
     return declined(code, unsigned.code);

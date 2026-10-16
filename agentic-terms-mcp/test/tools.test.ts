@@ -151,7 +151,7 @@ describe("the MCP server over stdio", () => {
   // The tools return what the gate returns, and a decline of a payment the signer moved carries `moved`. x402/exact/lnbtc's node pays before the gate reads its answer; an answer that is not a
   // preimage is declined with the answer kept, beside the ATR's bytes and hash. The offer is the vector file's, placed
   // with the agreement URL its pairing needs.
-  it("atr_finish of MPP Hedera's push credential returns the landed memo beside the payment, and atr_check reads it", async () => {
+  it("atr_finish of MPP Hedera's push credential returns the landed memo beside the payment, and atr_check reads it beside the payment", async () => {
     const V = vectors("mpp-charge-hedera.json");
     const f = V.fixed;
     const issued = {
@@ -176,10 +176,14 @@ describe("the MCP server over stdio", () => {
     });
     expect(at(m, "result.structuredContent.signed.payload")).toEqual({ type: "hash", transactionId: V.push.transactionId });
     expect(at(m, "result.structuredContent.landed")).toEqual(V.fetchPresented.expectLanded);
-    const presented = { ...(at(m, "result.structuredContent.signed") as object), landed: at(m, "result.structuredContent.landed") };
-    const checked = await call(c, "atr_check", { pairing: "mpp/charge/hedera", atr: base64, presented });
+    const presented = at(m, "result.structuredContent.signed");
+    const landed = at(m, "result.structuredContent.landed");
+    const checked = await call(c, "atr_check", { pairing: "mpp/charge/hedera", atr: base64, presented, landed });
+    // The landed receipt written into the payment is not read: atr_check takes it beside the payment.
+    const inside = await call(c, "atr_check", { pairing: "mpp/charge/hedera", atr: base64, presented: { ...(presented as object), landed } });
     await c.close();
     expect(at(checked, "result.structuredContent")).toEqual({ atrHash: H_ABC });
+    expect(at(inside, "result.structuredContent.decline.code")).toBe("signed-not-bound");
   });
 
   it("atr_finish of a Lightning payment the node moved, answered with no preimage, keeps the answer as moved", async () => {
