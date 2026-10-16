@@ -77,25 +77,34 @@ class MppChargeStellar:
         the invocation the payer's entry signs, and the operation must invoke exactly that. That invocation's token
         contract must then be the request's currency, its amount the request's amount exactly, and its from the
         choice's payer. Nothing reaches the signer unless every one holds. With feePayer true the source is the
-        all-zeros account."""
+        all-zeros account. After the choice and its challenge, every check of the input's own form comes before the
+        recipient's carrier and the transaction: the current ledger and the clock (stellar/tx-malformed), the payer,
+        which must be a G, C or M strkey (stellar/payer-mismatch, as no other value can equal a transfer's from), the
+        expiration ledger, and the simulated transaction's form (signing_input)."""
         if not is_object(choice):
             return Refusal("stellar/tx-malformed")
         checked = chosen_for(choice.get("challenge"), h, ID)
         if isinstance(checked, Refusal):
             return checked
+        ledger, now = safe_int(choice.get("currentLedger")), safe_int(choice.get("now"))
+        if ledger is None or ledger < 0 or now is None:
+            return Refusal("stellar/tx-malformed")
+        if not _stellar.is_payer(choice.get("payer")):
+            return Refusal("stellar/payer-mismatch")
+        expires = expires_of(checked)
+        if isinstance(expires, Refusal):
+            return expires
+        network = checked.details.get("network")
+        expiration = ledger + max(0, -(-(expires - now) // 5))
+        given = _stellar.signing_input(choice.get("simulatedXdr"), network, expiration)
+        if isinstance(given, Refusal):
+            return given
         recipient = checked.request.get("recipient")
         m = _stellar.unmux(recipient)
         if m is None or m.id != _stellar.muxed_id(h):
             return Refusal("stellar/carrier-mismatch")
-        ledger, now = safe_int(choice.get("currentLedger")), safe_int(choice.get("now"))
-        if ledger is None or ledger < 0 or now is None:
-            return Refusal("stellar/tx-malformed")
-        expires = expires_of(checked)
-        if isinstance(expires, Refusal):
-            return expires
-        expiration = ledger + max(0, -(-(expires - now) // 5))
         fee_payer = checked.details.get("feePayer") is True
-        s = _stellar.signing_for(choice.get("simulatedXdr"), checked.details.get("network"), expiration, fee_payer)
+        s = _stellar.signing_for(choice.get("simulatedXdr"), network, expiration, fee_payer)
         if isinstance(s, Refusal):
             return s
         if s.payment.to != recipient:
@@ -125,8 +134,9 @@ class MppChargeStellar:
         transaction, to included. That transaction is the instrument, so the credential's hash must name it: 64 hex
         digits, else mpp/credential-malformed. There feePayer is read as pairings_of reads it: one that is present and
         not a boolean is stellar/option-malformed. For a transaction credential such a payment is
-        stellar/no-address-auth. The authorization's signature is not verified here; the network verifies it when the
-        entry is used."""
+        stellar/no-address-auth. Every check that reads no transaction comes before the transaction is read: the
+        recipient must be a muxed address whose id is H's first 8 bytes, else stellar/carrier-mismatch, as build checks
+        it. The authorization's signature is not verified here; the network verifies it when the entry is used."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
             return shaped
@@ -143,6 +153,9 @@ class MppChargeStellar:
         xdr = _presented_xdr(presented, e.payload)
         if isinstance(xdr, Refusal):
             return xdr
+        m = _stellar.unmux(e.checked.request.get("recipient"))
+        if m is None or m.id != _stellar.muxed_id(e.h):
+            return Refusal("stellar/carrier-mismatch")
         landed = e.payload.get("type") == "hash"
         signed = _stellar.read_signed_transfer(xdr, network, landed)
         read: tuple[_stellar.Payment | _stellar.SourcePayment, bool] | Refusal

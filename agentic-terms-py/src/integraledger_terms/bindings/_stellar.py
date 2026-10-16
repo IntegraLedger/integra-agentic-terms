@@ -398,23 +398,34 @@ def is_payer(value: object) -> bool:
     return is_account(value) or is_contract(value) or is_muxed(value)
 
 
-def signing_for(text: object, network: object, expiration: object, zero_source: bool) -> Signing | Refusal:
-    """The from entry's preimage with its expiration ledger set, the payment that entry signs, whether the operation
-    invokes exactly that, and the completion that writes the payer's signature."""
+def signing_input(text: object, network: object, expiration: object) -> bytes | Refusal:
+    """signing_for's checks of the input's form, made before the envelope is parsed: _bytes_of's, then an envelope
+    that is not a v1 transaction (a fee bump, which is not a simulated transaction, included), and an expiration that is
+    not a ledger sequence (an integer from 0 to 2^32 - 1), each stellar/tx-malformed. A build makes them before it
+    reads its recipient, as signing_for does before it parses the envelope."""
     data = _bytes_of(text, network)
     if isinstance(data, Refusal):
         return data
-    assert isinstance(network, str)
+    if data[:4] != b"\x00\x00\x00\x02":
+        return Refusal("stellar/tx-malformed")
+    if isinstance(expiration, bool) or not isinstance(expiration, int) or not 0 <= expiration <= 0xFFFFFFFF:
+        return Refusal("stellar/tx-malformed")
+    return data
+
+
+def signing_for(text: object, network: object, expiration: object, zero_source: bool) -> Signing | Refusal:
+    """The from entry's preimage with its expiration ledger set, the payment that entry signs, whether the operation
+    invokes exactly that, and the completion that writes the payer's signature. signing_input's checks come first."""
+    data = signing_input(text, network, expiration)
+    if isinstance(data, Refusal):
+        return data
+    assert isinstance(network, str) and isinstance(expiration, int)
     parsed = _parse(data, network, False)
     if isinstance(parsed, Refusal):
         return parsed
-    if isinstance(expiration, bool) or not isinstance(expiration, int) or not 0 <= expiration <= 0xFFFFFFFF:
-        return Refusal("stellar/tx-malformed")
     key = decode_strkey(_ACCOUNT, parsed.payment.source)
     if key is None:
         return Refusal("stellar/no-address-auth")
-    if parsed.envelope.fee_bump:
-        return Refusal("stellar/tx-malformed")
     preimage = preimage_of(network, parsed.entry, parsed.credentials, expiration)
     unsigned = StellarUnsigned(
         request={"kind": "stellar-auth", "preimage": preimage},

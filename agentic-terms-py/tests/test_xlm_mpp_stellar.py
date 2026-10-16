@@ -275,3 +275,46 @@ def test_mpp_charge_stellar_occupied_and_option_malformed() -> None:
     assert doc_of(issued("stellar", "charge", json.dumps(not_g), F["realm"], F["expires"])) == Refusal(
         "stellar/option-malformed"
     )
+
+
+# ── the order of the checks: one fault, one code ─────────────────────────────────────────────────────────────────
+
+
+def plain() -> dict[str, Any]:
+    """The vectors' challenge placed for H with its recipient left the seller's plain G, which carries no muxed id."""
+    placed = place_carrier([V["challenge"]], H, LINK, V["challenge"], lambda value: value)
+    assert isinstance(placed, list)
+    challenge: dict[str, Any] = placed[0]
+    return challenge
+
+
+def test_mpp_charge_stellar_build_checks_the_choice_before_the_recipient() -> None:
+    """After the challenge, build checks the current ledger and the clock, the payer's strkey, the expiration ledger and
+    the simulated transaction's form before the recipient's muxed id (@integraledger/lcp 0.4.1's mpp/charge/stellar
+    build). Under a challenge whose recipient carries no muxed id, each of those is refused with its own code."""
+    choice = {
+        "challenge": plain(),
+        "simulatedXdr": X["V2"]["simulatedXdr"],
+        "currentLedger": X["V2"]["currentLedger"],
+        "now": NOW,
+        "payer": X["fixed"]["payer"],
+    }
+    assert MPP_CHARGE_STELLAR.build(choice, H) == Refusal("stellar/carrier-mismatch")
+    assert MPP_CHARGE_STELLAR.build({**choice, "currentLedger": -1}, H) == Refusal("stellar/tx-malformed")
+    assert MPP_CHARGE_STELLAR.build({**choice, "now": None}, H) == Refusal("stellar/tx-malformed")
+    assert MPP_CHARGE_STELLAR.build({**choice, "payer": "x"}, H) == Refusal("stellar/payer-mismatch")
+    assert MPP_CHARGE_STELLAR.build({**choice, "simulatedXdr": "x"}, H) == Refusal("stellar/tx-malformed")
+    last = {**choice, "currentLedger": 0xFFFFFFFF}
+    assert MPP_CHARGE_STELLAR.build(last, H) == Refusal("stellar/tx-malformed")
+
+
+def test_mpp_charge_stellar_bound_reads_the_recipient_before_the_transaction() -> None:
+    """bound checks the recipient against H's muxed id before it reads the transaction, as build does
+    (@integraledger/lcp 0.4.1's mpp/charge/stellar bindingOf). Under a challenge whose recipient is the plain G, the
+    plant's envelope, which pays that G, is stellar/carrier-mismatch, as is a transaction that is not base64."""
+    challenge = plain()
+    plant_tx = {"type": "transaction", "transaction": V["plant"]["envelope"]}
+    assert MPP_CHARGE_STELLAR.bound(credential(plant_tx, challenge)) == Refusal("stellar/carrier-mismatch")
+    not_base64 = {"type": "transaction", "transaction": "x"}
+    assert MPP_CHARGE_STELLAR.bound(credential(not_base64, challenge)) == Refusal("stellar/carrier-mismatch")
+    assert MPP_CHARGE_STELLAR.bound(credential(not_base64)) == Refusal("stellar/tx-malformed")

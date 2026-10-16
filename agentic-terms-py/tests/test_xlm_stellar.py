@@ -251,6 +251,53 @@ def test_x402_exact_stellar_agreed_refusals() -> None:
     assert X402_EXACT_STELLAR.build(choice, other_h) == Refusal("stellar/carrier-mismatch")
 
 
+def test_x402_exact_stellar_agreed_refusals_with_accepts() -> None:
+    """agreedRefusals rows that carry an accepts: read of V3's challenge with those options gives the row's code,
+    with @stellar/stellar-sdk and without it (the rows' case)."""
+    rows = [row for row in T["agreedRefusals"]["rows"] if "accepts" in row]
+    assert rows, "x402-exact-stellar.json agreedRefusals holds no row with an accepts"
+    for row in rows:
+        doc = {"x402Version": 2, "resource": F["resource"], "accepts": row["accepts"], "extensions": V3["extensions"]}
+        assert X402_EXACT_STELLAR.read(doc) == Refusal(row["expect"]), row["case"]
+
+
+def plain_option() -> dict[str, Any]:
+    """V4's option whose payTo is the seller's plain G, which carries no muxed id."""
+    rows = [row for row in T["V4"] if "accepted" in row and _stellar.unmux(row["accepted"]["payTo"]) is None]
+    assert rows, "x402-exact-stellar.json V4 holds no row under an option whose payTo is a plain G"
+    option: dict[str, Any] = rows[0]["accepted"]
+    return option
+
+
+def test_x402_exact_stellar_bound_reads_the_carrier_before_the_transaction() -> None:
+    """bound checks the option's payTo against the echoed hash's muxed id before it reads the transaction, as build
+    does (@integraledger/lcp 0.4.1's x402/exact/stellar): under V4's option whose payTo is the plain G, a transaction
+    that is not base64 is stellar/carrier-mismatch, the code V4's row gives the option."""
+    option = plain_option()
+    assert X402_EXACT_STELLAR.bound(presented("x", option, V3["extensions"])) == Refusal("stellar/carrier-mismatch")
+    assert X402_EXACT_STELLAR.bound(presented("x", V3["accepted"], V3["extensions"])) == Refusal("stellar/tx-malformed")
+
+
+def test_x402_exact_stellar_build_checks_the_simulated_transaction_form_before_reading_it() -> None:
+    """build checks the expiration ledger before it reads the simulated transaction (@integraledger/lcp 0.4.1's
+    signingInput): with V5's envelope that carries two entries of the payer, which a read before landing refuses
+    stellar/no-address-auth (agreedRefusals), a current ledger whose expiration passes 2^32 - 1 is
+    stellar/tx-malformed."""
+    network = T["V5"]["ref"]["network"]
+    two = [
+        envelope_of(row)
+        for row in T["V5"]["rows"]
+        if "envelope" in row
+        and _stellar.read_signed_transfer(envelope_of(row), network, False) == Refusal("stellar/no-address-auth")
+    ]
+    assert two, "x402-exact-stellar.json V5 holds no envelope carrying two entries of the payer"
+    doc = STELLAR.doc
+    choice = {"required": doc, "accepted": doc["accepts"][0], "simulatedXdr": two[0], "payer": F["payer"]}
+    assert X402_EXACT_STELLAR.build({**choice, "currentLedger": 988}, H) == Refusal("stellar/no-address-auth")
+    last = 0xFFFFFFFF
+    assert X402_EXACT_STELLAR.build({**choice, "currentLedger": last}, H) == Refusal("stellar/tx-malformed")
+
+
 def test_x402_exact_stellar_agreed_refusals_with_a_transaction() -> None:
     """agreedRefusals rows that carry a transaction: that envelope string as the payment's payload.transaction is
     refused with the row's code, its length counted in UTF-16 code units (the rows' about)."""

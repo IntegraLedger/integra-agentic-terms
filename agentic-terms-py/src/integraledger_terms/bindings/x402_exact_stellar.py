@@ -85,7 +85,8 @@ class X402ExactStellar:
         from the choice's payer. Nothing reaches the signer unless every one holds. H is checked first, then the choice
         members whose form needs no document: the current ledger (stellar/tx-malformed) and the payer, which must be a
         G, C or M strkey (stellar/payer-mismatch, as no other value can equal a transfer's from). Then the document and
-        the option, then the payTo carrier, then the simulated transaction."""
+        the option, then the payTo carrier, then the simulated transaction's form (signing_input), then the
+        transaction."""
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
@@ -123,8 +124,10 @@ class X402ExactStellar:
 
     def bound(self, presented: Json) -> AtrHash | Refusal:
         """The echoed challenge's hash, when the to of the invocation the payer's entry signs is the option's muxed
-        payTo whose id is the hash's first 8 bytes, and the operation invokes exactly that. The authorization's
-        signature is not verified here."""
+        payTo whose id is the hash's first 8 bytes, and the operation invokes exactly that. Every check that reads no
+        transaction comes before the transaction is read: the option, the legal context, the payload, and the option's
+        payTo carrying the echoed hash's muxed id, else stellar/carrier-mismatch, as build checks it. The
+        authorization's signature is not verified here."""
         if not is_object(presented) or presented.get("x402Version") != 2 or isinstance(presented.get("x402Version"), bool):
             return Refusal("x402/not-v2")
         accepted = accepted_by(presented.get("accepted"), _THIS)
@@ -136,6 +139,9 @@ class X402ExactStellar:
         payload = presented.get("payload")
         if not is_object(payload):
             return Refusal("x402/payload-malformed")
+        m = _stellar.unmux(accepted["payTo"])
+        if m is None or m.id != _stellar.muxed_id(lc[0]):
+            return Refusal("stellar/carrier-mismatch")
         signed = _stellar.read_signed_transfer(payload.get("transaction"), accepted["network"], False)
         if isinstance(signed, Refusal):
             return signed
