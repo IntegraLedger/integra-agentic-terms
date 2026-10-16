@@ -84,8 +84,15 @@ run `worker.js`.
   page address that ends in a slash redirects to the address without it, for Markdown as for HTML. Every response for
   a page address carries `Vary: Accept`, and a conditional request for a Markdown copy can be answered 304.
 - Every other file is served directly, without the Worker: the Markdown copies, the scripts, the search index and
-  every `.txt` file, the RSC payload each page fetches among them. Every response the Worker returns is a static
-  assets response, so the rules in `public/_headers` apply to all of them.
+  every `.txt` file, the RSC payload each page fetches among them.
+
+Cloudflare applies `public/_headers` to the files it serves directly, but not to a response a Worker returns
+([Headers](https://developers.cloudflare.com/workers/static-assets/headers/)). So `worker.js` sets, on every response
+it returns, the headers `public/_headers` gives the request's path, each replacing any value the response holds:
+`headers.mjs` reads them from the file, which `wrangler.toml` bundles into the Worker as a text module.
+`public/_headers` is their one source. `node scripts/check-worker.mjs`, after the build, runs `worker.js` against
+static assets that answer with no header and against ones that answer with their own, and checks that each kind of
+response it returns carries those headers, once each.
 
 Each page names `/llms.txt` with `<link rel="describedby">` and its Markdown with `<link rel="alternate"
 type="text/markdown">`.
@@ -101,3 +108,13 @@ npx wrangler deploy -c website/wrangler.toml
 ```
 
 `/.well-known/security.txt` expires 180 days after that commit, so each release's deploy renews it.
+
+Then, in this folder, check the headers the deployed site answers with:
+
+```sh
+node scripts/check-live-headers.mjs https://agenticterms.integraledger.com
+```
+
+It requests a page, that page's `.md` address, `/icon.svg` and an address no file has, and checks each status and that
+each response carries every header `public/_headers` gives its path, with that value. It names each header that
+differs and exits 1. `scripts/check-worker.mjs` runs it against a server of `out/` that answers as Cloudflare does.

@@ -151,7 +151,10 @@ options `website/source.config.ts` gives the code highlighter, once with the clo
 moves 600 ms at every read while a sample is tokenized and its Twoslash popups are highlighted. It checks that both give
 the same HTML, that `const` and `True` take github-light-default's colours, and that no other source under `website/`
 imports a module that highlights code. Each line is tokenized to its end however long that takes
-(`tokenizeTimeLimit: 0`), so a busy machine colours the code as an idle one does.
+(`tokenizeTimeLimit: 0`), so a busy machine colours the code as an idle one does. `node scripts/check-worker.mjs` in
+`website/` runs `website/worker.js` and checks that each kind of response it returns carries the headers
+`website/public/_headers` gives the request's path, once each, and that `scripts/check-live-headers.mjs`, the check of
+the deployed site, passes against a server of the export and fails when one header is dropped.
 
 Two builds of one commit are byte-equal. The build ID, which every page carries and which names the folder of the
 build's manifests under `/_next/static/`, is the commit's sha (`website/next.config.ts`); with uncommitted changes it

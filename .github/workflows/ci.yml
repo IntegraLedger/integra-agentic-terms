@@ -621,6 +621,9 @@ jobs:
       - name: The diagrams are drawn in the pinned browser and font alone, and the site serves that font
         working-directory: website
         run: node scripts/check-diagrams.mjs
+      - name: Every response the Worker returns carries the headers public/_headers gives its path, once each
+        working-directory: website
+        run: node scripts/check-worker.mjs
       - name: Two builds of one commit are byte-equal
         working-directory: website
         run: |

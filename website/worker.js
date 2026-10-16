@@ -9,10 +9,20 @@
 //     least as high as text/html, text/* and */*
 //
 // Every other request is answered by the static assets, which redirect a page address that ends in a slash to the
-// address without it, whatever the Accept header asks for. Each response here is an asset response, so the rules in
-// _headers apply to it; a request carrying If-None-Match or another conditional header can be answered 304; and a
-// page address's response carries `Vary: Accept`.
+// address without it, whatever the Accept header asks for. A request carrying If-None-Match or another conditional
+// header can be answered 304, and a page address's response carries `Vary: Accept`.
+//
+// Cloudflare applies public/_headers to the files it serves directly, but not to a response a Worker returns
+// (https://developers.cloudflare.com/workers/static-assets/headers/). So this script sets, on every response it
+// returns, the headers public/_headers gives the request's path, read from that file by headers.mjs: wrangler.toml
+// bundles the file as a text module. Each header replaces any value the response holds, so a response the static
+// assets have given those headers carries each once.
 import { isMarkdownPreferred } from "fumadocs-core/negotiation";
+import headersFile from "./public/_headers";
+import { headersFor, parseHeaders } from "./headers.mjs";
+
+/** The rules of public/_headers. */
+const RULES = parseHeaders(headersFile);
 
 /** The media types that ask for Markdown. `text/plain` is not one of them: it asks for any text. */
 const MARKDOWN_TYPES = ["text/markdown", "text/x-markdown"];
@@ -42,28 +52,32 @@ async function markdown(env, request, page) {
   return response.status === 200 || response.status === 304 ? response : undefined;
 }
 
-function varyOnAccept(response) {
+/**
+ * The response with the headers public/_headers gives `pathname` set on it, and, for a page address, `Vary: Accept`.
+ */
+function respond(response, pathname, varyOnAccept) {
   const out = new Response(response.body, response);
-  out.headers.append("Vary", "Accept");
+  for (const [name, value] of headersFor(RULES, pathname)) out.headers.set(name, value);
+  if (varyOnAccept) out.headers.append("Vary", "Accept");
   return out;
 }
 
 export default {
   async fetch(request, env) {
+    const { pathname } = new URL(request.url);
     if (request.method === "GET" || request.method === "HEAD") {
-      const { pathname } = new URL(request.url);
       if (pathname.endsWith(".md")) {
         const page = pageOf(pathname);
         const found = page === undefined ? undefined : await markdown(env, request, page);
-        if (found !== undefined) return found;
+        if (found !== undefined) return respond(found, pathname, false);
       } else if (
         (pathname === "/" || !pathname.endsWith("/")) &&
         isMarkdownPreferred(request, { markdownMediaTypes: MARKDOWN_TYPES })
       ) {
         const found = await markdown(env, request, pathname);
-        if (found !== undefined) return varyOnAccept(found);
+        if (found !== undefined) return respond(found, pathname, true);
       }
     }
-    return varyOnAccept(await env.ASSETS.fetch(request));
+    return respond(await env.ASSETS.fetch(request), pathname, true);
   },
 };
