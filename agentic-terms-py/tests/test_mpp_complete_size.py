@@ -91,7 +91,7 @@ def test_build_challenge_on_the_evm_transaction_charge_whatever_the_transaction(
 def test_a_change_to_the_callers_challenge_after_build_does_not_reach_the_credential(pairing: str) -> None:
     """Each build holds a snapshot of the chosen challenge's members, which its complete's credential carries, never
     the caller's object: removing opaque from the caller's challenge and changing its realm between build and complete
-    leaves the credential as the unchanged run makes it, and bound's answer with it."""
+    leaves the credential as the run on the placed challenge makes it, and bound's answer with it."""
     s = set_up(pairing)
     plain = s.complete(s.placed)
     mine = dict(s.placed)
