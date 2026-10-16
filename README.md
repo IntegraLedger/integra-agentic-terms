@@ -93,9 +93,11 @@ node scripts/docs.mjs check
 
 - The TypeScript tests, and the Python tests, run the shared vectors. The Python tests read them from
   `agentic-terms/node_modules/@integraledger/lcp/vectors`, so run `pnpm install` first.
-- `node scripts/docs.mjs check` compiles and runs every code sample in the READMEs and `docs/` against the packages you
-  just built, compares each sample's printed output with the output shown after it, and checks the generated pairing
-  tables against the code's registries. After you change a pairing, run `node scripts/docs.mjs generate`.
+- `node scripts/docs.mjs check` checks the samples in the READMEs, the skill and `docs/` against the packages you just
+  built. It type-checks each TypeScript sample and compiles each Python one, runs every sample not marked `no-run`, and
+  compares a run's printed output with the output shown after it. It parses each JSON sample, and checks the generated
+  pairing tables against the code's registries. Shell blocks are not run. After you change a pairing, run
+  `node scripts/docs.mjs generate`.
 - The documentation site in `website/` has its own lockfile and is built separately; see its README.
 
 ## Contributing
