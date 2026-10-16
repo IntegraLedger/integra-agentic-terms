@@ -209,13 +209,13 @@ Pass the Worker's own `fetch`. The gate asks with `redirect: "manual"`: the Work
 `redirect: "error"` with a `TypeError`, and under `"manual"` it answers a redirect with the `3xx` itself.
 
 Measured on Cloudflare's runtime (`wrangler dev --remote`, wrangler 4.141.0, compatibility date 2026-09-01), with this
-package, `@integraledger/lcp` and all ten of lcp's optional peer dependencies installed:
+package, `@integraledger/lcp` and every optional peer dependency of lcp installed:
 
 - With and without the `nodejs_compat` flag, `confirm` fetched a link that answered `200`, hashed the bytes and
   compared them with the advertised hash.
 - A link that answered `301` or `302` was declined `atr-unfetchable`, and the fetch did not throw.
-- Without the optional peer dependencies, wrangler's build stopped at `Could not resolve` for `@mysten/sui/bcs`,
-  `@mysten/sui/utils`, `@near-js/crypto`, `@near-js/transactions` and `borsh`.
+- Without the optional peer dependencies, wrangler's build stopped at `Could not resolve` for each one the bundle
+  imports.
 
 ## In Python
 
