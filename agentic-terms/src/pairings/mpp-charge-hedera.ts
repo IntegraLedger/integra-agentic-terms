@@ -110,24 +110,27 @@ async function complete(unsigned: unknown, signature: Signature, chosen: Chosen)
 }
 
 /**
- * The binding's build, called with the chosen challenge's id and realm, its decoded request, and the payer's values,
- * `credentialType` among them. The body carries no hash of its own: the challenge's id derives from it, and `bound`
- * reads it from there.
+ * The binding's build, called with the chosen challenge, the payer's values, `credentialType` among them, and H. The
+ * binding holds the challenge as `bound` holds an echoed one, with `bound`'s code for each fault, and refuses one whose
+ * id does not derive from H with `mpp/id-not-ours`. The body carries no hash of its own: the challenge's id derives
+ * from it, and `bound` reads it from there.
  */
-export async function buildHederaCharge(choice: unknown, _h: AtrHash): Promise<unknown> {
+export async function buildHederaCharge(choice: unknown, h: AtrHash): Promise<unknown> {
   if (isRefusal(choice)) return choice;
-  const c = choice as { challenge: MppChallenge & { id: string }; payer: string; node: string;
-    validStart: { seconds: bigint; nanos: number }; maxFee: bigint; clientId?: string; credentialType?: "hash" | "transaction" };
-  const request = requestOf(c.challenge);
-  if (request === undefined || typeof c.challenge.id !== "string") return refuse("mpp/choice-malformed");
-  return chargeHedera.build({ id: c.challenge.id, realm: c.challenge.realm }, request as never, {
-    payer: c.payer,
-    node: c.node,
-    validStart: c.validStart,
-    maxFee: c.maxFee,
-    ...(c.clientId !== undefined ? { clientId: c.clientId } : {}),
-    ...(c.credentialType !== undefined ? { credentialType: c.credentialType } : {}),
-  });
+  const c = choice as Parameters<typeof chargeHedera.build>[0];
+  if (requestOf(c.challenge) === undefined || typeof c.challenge.id !== "string") return refuse("mpp/choice-malformed");
+  return chargeHedera.build(
+    {
+      challenge: c.challenge,
+      payer: c.payer,
+      node: c.node,
+      validStart: c.validStart,
+      maxFee: c.maxFee,
+      ...(c.clientId !== undefined ? { clientId: c.clientId } : {}),
+      ...(c.credentialType !== undefined ? { credentialType: c.credentialType } : {}),
+    },
+    h,
+  );
 }
 
 const spec: MppRail = {

@@ -569,7 +569,7 @@ describe("mpp/session/tempo", () => {
       const left = all.length - rows.length;
       const name = "mpp-session-tempo.json agreedRefusals.rows, the transactionChainId and senderSignature rows";
       console.log(`${name}: ${rows.length} run, ${left} left to the binding's runners`);
-      expect([rows.length, left]).toEqual([6, 32]);
+      expect([rows.length, left]).toEqual([6, 36]);
       const MEMBERS = ["case", "sessionProtocol", "transactionChainId", "senderSignature", "authorizationList", "accessKey", "expectSha256", "expect"];
       const Sig = TempoTransaction.z_SignatureEnvelope;
       const VERSION: Record<string, "v1" | "v2" | undefined> = { "keychain-v1": "v1", "keychain-v2": "v2" };

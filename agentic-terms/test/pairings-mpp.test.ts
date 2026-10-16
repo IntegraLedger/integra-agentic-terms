@@ -125,16 +125,21 @@ describe("mpp/charge/evm/permit2", () => {
     }));
 });
 
-/** A Tempo signer's `0x76` transaction around the request's call, as MV7's wire: the vectors' fields and signature. */
-function tempoWire(r: SigningRequest): Hex {
+/**
+ * A Tempo signer's `0x76` transaction around the request's call, as MV7's wire: the vectors' fields and signature. With
+ * `padding`, a second call to the call's currency with value 0 and `padding` zero bytes as its input follows it.
+ */
+function tempoWire(r: SigningRequest, padding?: number): Hex {
   if (r.kind !== "tempo-call") throw new Error(`not tempo-call: ${r.kind}`);
   const n = (v: number): Hex => (v === 0 ? "0x" : viemHex(v));
+  const calls: Hex[][] = [[r.call.to, n(0), r.call.data]];
+  if (padding !== undefined) calls.push([r.call.to, n(0), `0x${"00".repeat(padding)}`]);
   const body = toRlp([
     n(r.chainId),
     n(1),
     n(2),
     n(100000),
-    [[r.call.to, n(0), r.call.data]],
+    calls,
     [],
     n(0),
     n(0),
@@ -149,11 +154,14 @@ function tempoWire(r: SigningRequest): Hex {
 }
 const sha256 = (h: Hex) => `0x${createHash("sha256").update(toBytes(h)).digest("hex")}`;
 
+/** A row of mpp-charge-tempo-memo.json's agreedRefusals: MV7's wire T with the one change its member names. */
+type MemoRow = { case: string; expect: string; transactionChainId?: number; padding?: number; calldata?: Hex };
+
 describe("mpp/charge/tempo/memo", () => {
   const M = vectors<{
     fixed: Fixed;
     MV7: { expectCalldata: string; expectWireSha256: string };
-    agreedRefusals: { rows: { case: string; transactionChainId: number; expect: string }[] };
+    agreedRefusals: { rows: MemoRow[] };
   }>("mpp-charge-tempo-memo.json");
   const p: Pairing = {
     binding: tempoMemo,
@@ -170,10 +178,13 @@ describe("mpp/charge/tempo/memo", () => {
         expect(sha256(tempoWire(r))).toBe(M.MV7.expectWireSha256);
       });
     }));
-  // mpp-charge-tempo-memo.json's agreedRefusals rows: MV7's wire T with its chain id, its first field, the row's
-  // transactionChainId (draft-tempo-charge-00 binds the transaction to the challenge's chainId). The gate's buyer piece
-  // gives the signer's transaction to the build's complete, whose refusal is finish's signed-not-bound detail; so is
-  // its refusal of "0x76" and "0x", which decode as no Tempo transaction (tempo/tx-malformed).
+  // mpp-charge-tempo-memo.json's agreedRefusals rows, each MV7's wire T with one change, selected by the member that
+  // names it: its chain id, its first field, the row's transactionChainId (draft-tempo-charge-00 binds the transaction
+  // to the challenge's chainId); a second call after its transferWithMemo whose input is the row's padding zero bytes,
+  // so the credential complete would give is over the credential size bound; or the row's calldata as its call's input,
+  // a memo of another challenge. The gate's buyer piece gives the signer's transaction to the build's complete, whose
+  // refusal, the code bound gives the credential it would give, is finish's signed-not-bound detail; so is its refusal
+  // of "0x76" and "0x", which decode as no Tempo transaction (tempo/tx-malformed).
   it("agreedRefusals: the gate declines a transaction signed for another chain with the row's code", () =>
     at(M.fixed.now, async () => {
       const rows = M.agreedRefusals.rows;
@@ -185,9 +196,12 @@ describe("mpp/charge/tempo/memo", () => {
       const chosen = JSON.parse(JSON.stringify(confirmed.chosen));
       expect(sha256(tempoWire(r))).toBe(M.MV7.expectWireSha256);
       expect(await finish(ABC, chosen, tempoWire(r), tempoMemo)).toHaveProperty("signed");
+      const by = (member: keyof MemoRow) => rows.filter((row) => row[member] !== undefined);
+      expect([by("transactionChainId").length, by("padding").length, by("calldata").length, rows.length]).toEqual([1, 1, 1, 3]);
       for (const row of rows) {
-        expect(Object.keys(row).sort(), row.case).toEqual(["case", "expect", "transactionChainId"]);
-        const other = tempoWire({ ...r, chainId: row.transactionChainId });
+        expect(Object.keys(row).filter((k) => k !== "case" && k !== "expect"), row.case).toHaveLength(1);
+        const call = { ...r.call, data: row.calldata ?? r.call.data };
+        const other = tempoWire({ ...r, chainId: row.transactionChainId ?? r.chainId, call }, row.padding);
         expect(await finish(ABC, chosen, other, tempoMemo), row.case).toMatchObject({ decline: { code: "signed-not-bound", detail: row.expect } });
       }
       for (const undecodable of ["0x76", "0x"]) {
