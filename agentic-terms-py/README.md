@@ -10,8 +10,9 @@ pip install integraledger-terms
 ## What it is
 
 A seller that follows the Legal Context Protocol publishes the agreement's record, an **Agentic Transaction Record
-(ATR)**, at an `https` link, and advertises its hash beside the payment request. The payment your agent signs carries
-that hash, so paying is agreeing to that exact record.
+(ATR)**, at an `https` link, and advertises its hash beside the payment request. Where the payment your agent approves
+carries that hash, that approval is the buyer's acceptance of that exact record; where it does not, the pairing's
+statement of what it proves says so.
 
 That only holds if the hash in the payment is the hash of the record you can read. This package is the check that makes
 sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, and only on a
@@ -30,8 +31,9 @@ record says is for you and your principal to judge.
   `@integraledger/lcp` writes them as one JSON object.
 - **ATR hash (H):** SHA-256 over the ATR's exact bytes, `0x` and 64 hex digits. It is computed over the bytes as
   received, never over a parsed and re-serialised copy.
-- **Legal Context Protocol (LCP):** the pattern this package implements: the payment carries H, so paying is agreeing
-  to that exact record.
+- **Legal Context Protocol (LCP):** the pattern this package implements: where the payment the buyer approves carries
+  H, that approval is the buyer's acceptance of that exact record; where it does not, the pairing's statement of what
+  it proves says so.
 - **Pairing:** a payment protocol, scheme and rail combination, such as `x402/exact/eip155/eip3009`.
 - **Binding:** how H rides in a pairing's payment, the field its specification defines. This package exports one
   binding per pairing, named after its id: `X402_EXACT_EIP155_EIP3009`.

@@ -30,8 +30,9 @@ tools return.
 - **Agentic Transaction Record (ATR):** the agreement's record: the exact bytes the seller serves; `assemble` in
   `@integraledger/lcp` writes them as one JSON object.
 - **ATR hash (H):** SHA-256 over the ATR's exact bytes.
-- **Legal Context Protocol (LCP):** the pattern these tools implement: the payment carries H, so paying is agreeing to
-  that exact record.
+- **Legal Context Protocol (LCP):** the pattern these tools implement: where the payment the buyer approves carries H,
+  that approval is the buyer's acceptance of that exact record; where it does not, the pairing's statement of what it
+  proves says so.
 - **Pairing:** a payment protocol, scheme and rail combination, such as `x402/exact/eip155/eip3009`. Every tool takes
   the pairing's id as its `pairing` argument.
 - **Binding:** how H rides in a pairing's payment, the field its specification defines.

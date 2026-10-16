@@ -5,8 +5,8 @@ description: The buyer gate confirms that the record a seller serves hashes to t
 
 An agent that pays a seller should know what it is agreeing to. Under the Legal Context Protocol (LCP), the seller
 publishes the agreement's record, an **Agentic Transaction Record (ATR)**, and advertises its SHA-256, the
-**ATR hash (H)**, beside the payment request. The payment the agent approves carries H, so paying is agreeing to that
-exact record.
+**ATR hash (H)**, beside the payment request. Where the payment the agent approves carries H, that approval is the
+buyer's acceptance of that exact record; where it does not, the pairing's statement of what it proves says so.
 
 The packages documented here are the buyer's side of that pattern. Their centre is the **buyer gate**, which, before your
 wallet signs anything:

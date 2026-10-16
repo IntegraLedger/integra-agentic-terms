@@ -17,9 +17,10 @@ parties chose. The seller publishes it at an `https` link before it asks for pay
 copy. Two documents that mean the same JSON but differ in their bytes (`1.0` and `1`, `"café"` and `"caf\u00e9"`, a
 space after a colon) have different hashes. The gate never parses the ATR: it hashes the bytes it received and compares.
 
-**Legal Context Protocol (LCP).** The pattern these packages implement: the payment carries H, so paying is agreeing to
-that exact record. The seller advertises H and the link beside its payment request. The buyer confirms that the link
-serves bytes whose SHA-256 is H. The payment the buyer approves carries H.
+**Legal Context Protocol (LCP).** The pattern these packages implement: where the payment the buyer approves carries H,
+that approval is the buyer's acceptance of that exact record; where it does not, the pairing's statement of what it
+proves says so. The seller advertises H and the link beside its payment request. The buyer confirms that the link
+serves bytes whose SHA-256 is H. On most pairings, the payment the buyer approves carries H.
 
 ## Pairings and bindings
 

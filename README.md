@@ -6,8 +6,9 @@ signs carries the hash of the exact record the seller serves.
 ## What this repository is
 
 A seller that follows the Legal Context Protocol (LCP) publishes the agreement's record, an **Agentic Transaction
-Record (ATR)**, at an `https` link, and advertises its SHA-256, the **ATR hash (H)**, beside its payment request. The
-payment the buyer approves carries H, so paying is agreeing to that exact record.
+Record (ATR)**, at an `https` link, and advertises its SHA-256, the **ATR hash (H)**, beside its payment request. Where
+the payment the buyer approves carries H, that approval is the buyer's acceptance of that exact record; where it does
+not, the pairing's statement of what it proves says so.
 
 The packages here are the buyer's half of that pattern. Their centre is the **buyer gate**: it fetches the ATR, compares
 the SHA-256 of the served bytes with H, and only on a match builds the payment with that hash for the buyer's own
