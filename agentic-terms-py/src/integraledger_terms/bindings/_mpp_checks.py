@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._types import Refusal
+from . import _stellar
 from ._bolt11 import FIELD
 from ._bolt11 import decode as decode_invoice
 from ._codec import b58_decode, b64u_decode, b64u_encode, canonical_or_none, utf16_key
@@ -42,9 +43,6 @@ _XRPL_ADDRESS = re.compile(r"r[1-9A-HJ-NP-Za-km-z]{24,34}")
 _XRPL_CURRENCY = re.compile(r"(?:[A-Za-z0-9?!@#$%^&*<>(){}\[\]|]{3}|[0-9A-Fa-f]{40})")
 _XRPL_MPT = re.compile(r"[0-9A-Fa-f]{48}")
 _HEX64 = re.compile(r"[0-9A-Fa-f]{64}")
-_STELLAR_ACCOUNT = re.compile(r"G[A-Z2-7]{55}")
-_STELLAR_MUXED = re.compile(r"M[A-Z2-7]{68}")
-_STELLAR_CONTRACT = re.compile(r"C[A-Z2-7]{55}")
 _STACKS_CHAIN = re.compile(r"(?:0|[1-9][0-9]{0,9})")
 _STACKS_NAME = re.compile(r"[a-zA-Z](?:[a-zA-Z0-9]|[-_])*")
 _C32_PRINCIPAL = re.compile(r"S[0-9A-HJKMNP-TV-Z]{38,40}")
@@ -586,10 +584,9 @@ def is_fee_payer(d: Obj) -> bool:
 
 
 def is_stellar_recipient(value: object) -> bool:
-    """A Stellar account (G...) or its muxed form (M...), as a charge challenge's recipient is."""
-    if not isinstance(value, str):
-        return False
-    return _STELLAR_ACCOUNT.fullmatch(value) is not None or _STELLAR_MUXED.fullmatch(value) is not None
+    """A Stellar account (G...) or its muxed form (M...), as a charge challenge's recipient is: a strkey whose version
+    byte, length and CRC16 checksum hold."""
+    return _stellar.is_account(value) or _stellar.is_muxed(value)
 
 
 def solana_charge_pairings(r: Obj, d: Obj, c: Obj | None = None) -> list[str] | Refusal:
@@ -634,15 +631,16 @@ _I128_LIMIT = 2**127
 def stellar_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     """charge on stellar: methodDetails.network stellar:pubnet or stellar:testnet, amount a decimal below 2^127 (the
     token contract's SEP-41 transfer takes an i128, which build writes and the payer signs), currency a contract, and
-    recipient an account, or its muxed form once placed."""
+    recipient an account, or its muxed form once placed. currency and recipient are read whole, as strkeys whose
+    version byte, length and checksum hold: one whose checksum does not match is stellar/option-malformed, as one of
+    another form is."""
     if d.get("network") not in ("stellar:pubnet", "stellar:testnet") or not isinstance(d.get("network"), str):
         return Refusal("stellar/option-malformed")
     to, currency = r.get("recipient"), r.get("currency")
     if (
         not is_decimal(r.get("amount"))
         or int(r["amount"]) >= _I128_LIMIT
-        or not isinstance(currency, str)
-        or _STELLAR_CONTRACT.fullmatch(currency) is None
+        or not _stellar.is_contract(currency)
         or not is_stellar_recipient(to)
     ):
         return Refusal("stellar/option-malformed")

@@ -12,7 +12,7 @@ import pytest
 from integraledger_terms import MPP_CHARGE_STELLAR, X402_EXACT_STELLAR, Refusal, _gate
 from integraledger_terms.bindings import _stellar, _stellar_xdr
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode
-from integraledger_terms.bindings._mpp import Held
+from integraledger_terms.bindings._mpp import Held, pairings_of
 
 import ed25519
 from breadth import H, LINK, Pairing, build_and_sign, plant
@@ -318,3 +318,41 @@ def test_mpp_charge_stellar_bound_reads_the_recipient_before_the_transaction() -
     not_base64 = {"type": "transaction", "transaction": "x"}
     assert MPP_CHARGE_STELLAR.bound(credential(not_base64, challenge)) == Refusal("stellar/carrier-mismatch")
     assert MPP_CHARGE_STELLAR.bound(credential(not_base64)) == Refusal("stellar/tx-malformed")
+
+
+def checksum_changed(strkey: str) -> str:
+    """The strkey with its CRC16 checksum's last byte changed: its version byte, length and alphabet hold."""
+    raw = bytearray(base64.b32decode(strkey + "=" * (-len(strkey) % 8)))
+    raw[-1] ^= 1
+    return base64.b32encode(bytes(raw)).decode("ascii").rstrip("=")
+
+
+def test_mpp_charge_stellar_reads_recipient_and_currency_strkeys_whole() -> None:
+    """agreedRefusals: pairingsOf, advertise, build and bound with a G or M recipient, or a C currency, whose strkey
+    checksum does not match are stellar/option-malformed (SEP-23: the CRC16-XModem of the version byte and the
+    payload)."""
+    rows = [r for r in V["agreedRefusals"]["rows"] if "checksum" in r["case"]]
+    assert len(rows) == 1, "mpp-charge-stellar.json agreedRefusals holds no row for a strkey checksum"
+    refused = Refusal(rows[0]["expect"])
+    request = F["request"]
+    for member in ("recipient", "currency"):
+        changed = {**request, member: checksum_changed(request[member])}
+        assert _stellar.decode_strkey(6 << 3 if member == "recipient" else 2 << 3, changed[member]) is None
+        challenge = issued("stellar", "charge", json.dumps(changed), F["realm"], F["expires"])
+        assert pairings_of(challenge) == refused, member
+    placed = STELLAR.doc[0]
+    muxed = checksum_changed(F["muxed"])
+    assert _stellar.unmux(muxed) is None
+    raw = b64u_decode(placed["request"])
+    assert raw is not None
+    bad = {**placed, "request": b64u_encode(json.dumps({**json.loads(raw), "recipient": muxed}).encode("utf-8"))}
+    tx = {"type": "transaction", "transaction": V["V3"]["envelope"]}
+    assert MPP_CHARGE_STELLAR.bound(credential(tx, bad)) == refused
+    choice = {
+        "challenge": bad,
+        "simulatedXdr": X["V2"]["simulatedXdr"],
+        "currentLedger": X["V2"]["currentLedger"],
+        "now": NOW,
+        "payer": X["fixed"]["payer"],
+    }
+    assert MPP_CHARGE_STELLAR.build(choice, H) == refused
