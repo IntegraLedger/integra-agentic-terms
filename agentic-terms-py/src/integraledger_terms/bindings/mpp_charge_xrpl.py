@@ -128,7 +128,7 @@ class MppChargeXrpl:
         tx["Sequence"] = sequence
         tx["LastLedgerSequence"] = last
         return XrplChargeUnsigned(
-            request={"kind": "xrpl-tx", "txJson": tx}, _challenge=choice["challenge"], _network=network
+            request={"kind": "xrpl-tx", "txJson": tx}, _challenge=dict(checked.challenge), _network=network
         )
 
     def bound(self, presented: Any) -> AtrHash | Refusal:

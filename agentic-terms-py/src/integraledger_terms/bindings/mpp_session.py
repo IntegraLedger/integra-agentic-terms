@@ -417,7 +417,7 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     deadline = expires_of(o)
     if isinstance(deadline, Refusal):
         return deadline
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     source = f"did:pkh:eip155:{chain_id}:{from_}"
 
     def voucher_for(done: Callable[[Any, Any], dict[str, Any] | Refusal]) -> Callable[[Any], dict[str, Any] | Refusal]:
@@ -724,7 +724,7 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     valid_before = expires_of(o)
     if isinstance(valid_before, Refusal):
         return valid_before
-    p = params_of(choice["challenge"])
+    p = params_of(o.challenge)
     if isinstance(p, Refusal):
         return p
     deposit = _deposit_of(choice, U96 if p.version == "v2" else U128)
@@ -749,7 +749,7 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
             OPEN_V1_SELECTOR,
             [address_word(recipient), address_word(currency), uint_word(deposit), salt_word, address_word(signer)],
         )
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     source = f"did:pkh:eip155:{p.chain_id}:{from_}"
 
     def channel_for(signed_tx: Any) -> dict[str, Any] | Refusal:
@@ -945,7 +945,7 @@ def _subscription_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     unsigned = encode_key_authorization(authorization)
     if isinstance(unsigned, Refusal):
         return unsigned
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     source = f"did:pkh:eip155:{chain_id}:{choice['from']}"
 
     def complete(root_signature: Any) -> dict[str, Any] | Refusal:

@@ -68,7 +68,7 @@ def _authorization_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     ):
         return Refusal("mpp/input-malformed")
     chain_id = chain_of(o)
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     nonce = challenge_hash(challenge["id"], challenge["realm"])
     valid_before = expires_of(o)
     if isinstance(valid_before, Refusal):
@@ -169,7 +169,7 @@ def _permit2_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         [{"to": s["recipient"], "amount": int(s["amount"])} for s in raw_splits] if is_list(raw_splits) else None
     )
     primary = amount - sum(s["amount"] for s in splits or [])
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     challenge_hash_value = challenge_hash(challenge["id"], challenge["realm"])
     external_id = text(o.request.get("externalId"))
     deadline = expires_of(o)
@@ -299,7 +299,7 @@ def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         return o
     chain_id = chain_of(o)
     data = transfer_calldata(text(o.request.get("recipient")), int(text(o.request.get("amount"))))
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     source = did(chain_id, choice["from"])
     broadcast = pairing == HASH
 

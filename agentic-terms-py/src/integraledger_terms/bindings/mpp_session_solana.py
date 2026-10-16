@@ -277,7 +277,7 @@ class MppSessionSolana:
             return Refusal("svm/network-undeclared")
         if isinstance(network, Refusal):
             return network
-        challenge = choice["challenge"]
+        challenge = dict(checked.challenge)
         d = checked.details
 
         def complete(open_payload: Any) -> dict[str, Any] | Refusal:

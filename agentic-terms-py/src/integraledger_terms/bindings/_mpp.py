@@ -620,9 +620,9 @@ def echoed_of(challenge: Mapping[str, Any], request: dict[str, Any]) -> EchoedCh
     return EchoedChallenge(challenge, request, details, expires)
 
 
-def echoed_for(c: object, pairing: str) -> Echoed | Refusal:
-    """The echoed challenge of a credential for pairing: H from challenge_bound, the challenge's intent and method,
-    which must be pairing's, and the challenge held to pairing's filter (checked_for), whose refusal it gives."""
+def held_for(c: object, pairing: str) -> tuple[Bound, Checked] | Refusal:
+    """challenge_bound's checks, then the challenge's intent and method, which must be pairing's, and the challenge
+    held to pairing's filter (checked_for), whose refusal it gives."""
     b = challenge_bound(c)
     if isinstance(b, Refusal):
         return b
@@ -631,13 +631,23 @@ def echoed_for(c: object, pairing: str) -> Echoed | Refusal:
     _, intent, method = pairing.split("/")[:3]
     if challenge["intent"] != intent or challenge["method"] != method:
         return Refusal("mpp/not-this-pairing")
-    held = checked_for(challenge, pairing)
+    checked = checked_for(challenge, pairing)
+    if isinstance(checked, Refusal):
+        return checked
+    return b, checked
+
+
+def echoed_for(c: object, pairing: str) -> Echoed | Refusal:
+    """The echoed challenge of a credential for pairing: H from challenge_bound, the challenge's intent and method,
+    which must be pairing's, and the challenge held to pairing's filter (checked_for), whose refusal it gives."""
+    held = held_for(c, pairing)
     if isinstance(held, Refusal):
         return held
-    echoed = echoed_of(challenge, b.request)
+    assert is_object(c)
+    echoed = echoed_of(c["challenge"], held[0].request)
     if isinstance(echoed, Refusal):
         return echoed
-    return Echoed(b.h, echoed, c["payload"])
+    return Echoed(held[0].h, echoed, c["payload"])
 
 
 def request_address(e: EchoedChallenge, key: str) -> str | Refusal:
@@ -646,31 +656,71 @@ def request_address(e: EchoedChallenge, key: str) -> str | Refusal:
     return v if isinstance(v, str) and is_address(v) else Refusal("mpp/request-malformed")
 
 
+# MPP's challenge members, which is_challenge_shape reads.
+CHALLENGE_MEMBERS = (
+    "realm",
+    "method",
+    "intent",
+    "request",
+    "id",
+    "expires",
+    "digest",
+    "description",
+    "header",
+    "opaque",
+)
+
+
+def challenge_snapshot(c: object) -> dict[str, Any] | None:
+    """A plain copy of a challenge as its JSON form carries it: each of its members among MPP's challenge members
+    (realm, method, intent, request, id, expires, digest, description, header and opaque), in the challenge's own
+    order, and no other member. None for a value that is not an object."""
+    if not is_object(c):
+        return None
+    return {k: v for k, v in c.items() if k in CHALLENGE_MEMBERS}
+
+
+def chosen_held(challenge: object, pairing: str) -> tuple[AtrHash, Checked] | Refusal:
+    """A chosen challenge, held for pairing as bound holds the challenge a credential echoes (echoed_for): the
+    snapshot challenge_snapshot takes of it, held with bound's code for each fault, in bound's order. A value that is
+    not an object, its shape, with a string id, and its size as the least credential echoing it, {challenge, payload:
+    {}}, has it (mpp/credential-malformed); its realm; its id, which must derive from an H in the form its intent and
+    method take (mpp/id-not-ours); its opaque, which must be present and carry a legalContext naming that H
+    (mpp/opaque-not-this-hash, or mpp/opaque-malformed for one that is not a map of strings); its request; its intent
+    and method, which must be pairing's; and pairing's filter (checked_for). It returns H and the checked snapshot. Each
+    MPP build that takes a chosen challenge holds it through this one step before it builds anything, reads the
+    challenge only from the snapshot, and puts the snapshot in the credential its complete returns: so no complete is
+    handed a challenge bound refuses, and a change made to the caller's challenge after build does not reach the
+    credential."""
+    own = challenge_snapshot(challenge)
+    if own is None:
+        return Refusal("mpp/credential-malformed")
+    held = held_for({"challenge": own, "payload": {}}, pairing)
+    return held if isinstance(held, Refusal) else (held[0].h, held[1])
+
+
 def chosen_for(challenge: object, h: object, pairing: str) -> Checked | Refusal:
-    """The buyer's chosen challenge for pairing, held to its filter (checked_for), whose id derives from h."""
-    if not is_challenge_shape(challenge) or not isinstance(challenge.get("id") if is_object(challenge) else None, str):
-        return Refusal("mpp/input-malformed")
-    checked = checked_for(challenge, pairing)
-    if isinstance(checked, Refusal):
-        return checked
-    assert is_object(challenge)
-    from_id = challenge_id_h(challenge)
-    if isinstance(from_id, Refusal) or not isinstance(h, str) or not hash_equals(from_id, h):
+    """The buyer's chosen challenge for pairing (chosen_held), whose id derives from h, else mpp/id-not-ours. Every
+    fault in the challenge, a value that is not a challenge with a string id included, gives bound's code. The checked
+    challenge is the snapshot chosen_held holds."""
+    held = chosen_held(challenge, pairing)
+    if isinstance(held, Refusal):
+        return held
+    if not isinstance(h, str) or not hash_equals(held[0], h):
         return Refusal("mpp/id-not-ours")
-    return checked
+    return held[1]
 
 
 def offer_for(choice: object, h: object, pairing: str) -> Checked | Refusal:
-    """The checked challenge a build answers: it is held to pairing's filter (checked_for), its id carries h, and from
-    is an address."""
-    if not is_object(choice) or not is_object(choice.get("challenge")):
+    """The checked challenge a build answers: a choice that is an object (else mpp/input-malformed), whose challenge is
+    held as bound holds an echoed one (chosen_for), with bound's code for each fault in it, and whose id carries h;
+    then from an address. The build reads the challenge from the snapshot the checked challenge holds, and its
+    credential carries that snapshot."""
+    if not is_object(choice):
         return Refusal("mpp/input-malformed")
-    checked = checked_for(choice["challenge"], pairing)
+    checked = chosen_for(choice.get("challenge"), h, pairing)
     if isinstance(checked, Refusal):
         return checked
-    from_id = challenge_id_h(choice["challenge"])
-    if isinstance(from_id, Refusal) or not isinstance(h, str) or not hash_equals(from_id, h):
-        return Refusal("mpp/id-not-ours")
     if not is_address(choice.get("from")):
         return Refusal("mpp/input-malformed")
     return checked

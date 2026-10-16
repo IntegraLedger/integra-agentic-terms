@@ -126,7 +126,7 @@ class MppChargeUsdcStacks:
             "anchorMode": "onChainOnly",
         }
         source = f"stacks:{_text(p.get('chainId'))}:{sender}"
-        return StacksUnsigned(request=request, _challenge=choice["challenge"], _source=source, _chain_id=chain_id)
+        return StacksUnsigned(request=request, _challenge=dict(checked.challenge), _source=source, _chain_id=chain_id)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """H from the echoed challenge, once its transaction is one a Stacks node decodes and serializes back to the

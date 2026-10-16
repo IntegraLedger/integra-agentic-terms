@@ -179,7 +179,7 @@ class MppChargeSolana:
         if isinstance(message, Refusal):
             return message
         signed_message = message
-        challenge = choice["challenge"]
+        challenge = dict(checked.challenge)
 
         def complete(signature: Any) -> dict[str, Any] | Refusal:
             wire = signed_wire(signed_message, payer, signature)

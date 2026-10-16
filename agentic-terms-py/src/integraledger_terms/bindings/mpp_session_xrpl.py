@@ -219,7 +219,7 @@ class MppSessionXrpl:
         tx["LastLedgerSequence"] = x["lastLedgerSequence"]
         return XrplSessionUnsigned(
             request={"kind": "xrpl-session-open", "txJson": tx, "claim": {"channelId": channel, "drops": drops, "bytes": claim}},
-            _challenge=choice["challenge"],
+            _challenge=dict(checked.challenge),
             _source=f"did:pkh:xrpl:{network[len('xrpl:'):]}:{source_account}",
             _amount=checked.request.get("amount"),
         )

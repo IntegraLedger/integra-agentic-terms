@@ -127,7 +127,7 @@ def _evm_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     from_ = choice.get("from")
     if not is_address(from_):
         return Refusal("mpp/input-malformed")
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     request_hash = usdc_request_hash(challenge["request"])
     if isinstance(request_hash, Refusal):
         return request_hash
@@ -258,7 +258,7 @@ def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     o = chosen_for(choice.get("challenge"), h, GATEWAY)
     if isinstance(o, Refusal):
         return o
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     request_hash = usdc_request_hash(challenge["request"])
     if isinstance(request_hash, Refusal):
         return request_hash

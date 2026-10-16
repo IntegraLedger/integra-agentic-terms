@@ -123,7 +123,8 @@ class MppChargeStellar:
             return Refusal("stellar/amount-mismatch")
         if s.payment.source != choice.get("payer"):
             return Refusal("stellar/payer-mismatch")
-        return StellarChargeUnsigned(request=s.unsigned.request, _unsigned=s.unsigned, _challenge=choice["challenge"])
+        challenge = dict(checked.challenge)
+        return StellarChargeUnsigned(request=s.unsigned.request, _unsigned=s.unsigned, _challenge=challenge)
 
     def bound(self, presented: Any) -> AtrHash | Refusal:
         """H from the echoed challenge, once the to of the invocation the payer's entry signs is the request's muxed

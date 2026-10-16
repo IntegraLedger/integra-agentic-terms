@@ -152,17 +152,17 @@ class MppSessionHedera:
         signer), and the zero voucher on the channel that opening creates."""
         if not is_object(choice):
             return Refusal("mpp/input-malformed")
-        challenge = choice.get("challenge")
-        checked = chosen_for(challenge, h, ID)
+        checked = chosen_for(choice.get("challenge"), h, ID)
         if isinstance(checked, Refusal):
             return checked
+        challenge = dict(checked.challenge)
         payer, deposit = choice.get("from"), choice.get("deposit")
         if not is_address(payer) or not isinstance(deposit, int) or isinstance(deposit, bool) or not 0 < deposit < U128_LIMIT:
             return Refusal("mpp/input-malformed")
         network = hedera_session_network_of(checked.details)
         if isinstance(network, Refusal):
             return network
-        assert is_object(challenge) and isinstance(h, str)
+        assert isinstance(h, str)
         chain_id = _chain(network)
         escrow = str(checked.details["escrowContract"]).lower()
         currency = str(checked.request["currency"]).lower()

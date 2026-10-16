@@ -11,12 +11,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .._core import MAX_ATR_BYTES, AtrHash
+from .._core import AtrHash, MAX_ATR_BYTES, hash_equals
 from .._types import Advertised, Broadcaster, Json, Refusal
-from ._bolt11 import FIELD, Bolt11, Currency, decode, invoice_h
+from ._bolt11 import Bolt11, Currency, FIELD, decode, invoice_h
 from ._channel import ChannelKind, ChannelRef
 from ._jose import member_names, parse_json
-from ._mpp import check_challenge, credential_of, echoed_for, measured, mpp_broadcaster, session_broadcaster
+from ._mpp import (
+    check_challenge,
+    chosen_held,
+    credential_of,
+    echoed_for,
+    measured,
+    mpp_broadcaster,
+    session_broadcaster,
+)
 from ._mpp import read as mpp_read
 from ._mpp_checks import decode_object
 from ._lcp import is_object, legal_context_info, normal_hash
@@ -352,19 +360,27 @@ class MppLightning:
         return mpp_read(doc)
 
     def build(self, choice: Json, h: AtrHash) -> LnMppUnsigned | Refusal:
-        """The invoice to pay, after the checks of what the seller's node wrote."""
-        challenge = choice.get("challenge") if is_object(choice) else None
-        if not is_object(challenge) or not isinstance(challenge.get("id"), str):
+        """The payment of the chosen challenge's invoice. A choice that is not an object is mpp/credential-malformed.
+        The challenge is held as bound holds an echoed one, with bound's code for each fault, in bound's order
+        (chosen_held), then its invoice as bound reads it (_ln_challenge_checks), whose h must be the hash the
+        challenge's id derives from (mpp/carrier-not-challenge); an id that derives from a hash other than h is then
+        mpp/id-not-ours. The challenge is read from the snapshot chosen_held returns, which the credential carries."""
+        if not is_object(choice):
             return Refusal("mpp/credential-malformed")
-        b = _ln_challenge_checks(self.id, challenge, h, True)
+        held = chosen_held(choice.get("challenge"), self.id)
+        if isinstance(held, Refusal):
+            return held
+        held_h, checked = held
+        challenge = dict(checked.challenge)
+        b = _ln_challenge_checks(self.id, challenge, held_h, True)
         if isinstance(b, Refusal):
             return b
+        if not isinstance(h, str) or not hash_equals(held_h, h):
+            return Refusal("mpp/id-not-ours")
         return_invoice = choice.get("returnInvoice")
         if self.id == MPP_SESSION and not _amountless(return_invoice):
             return Refusal("ln/return-invoice-malformed")
-        request = decode_object(challenge["request"])
-        assert request is not None
-        invoice = _ln_invoice(self.id, request)
+        invoice = _ln_invoice(self.id, checked.request)
         return LnMppUnsigned(
             {"kind": "bolt11-pay", "invoice": invoice}, self.id, challenge, return_invoice
         )

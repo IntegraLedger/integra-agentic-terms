@@ -66,7 +66,7 @@ def _build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
     splits = tempo_splits(o.details)
     if isinstance(splits, Refusal):
         return splits
-    challenge = dict(choice["challenge"])
+    challenge = dict(o.challenge)
     memo = attribution_memo(challenge["realm"], challenge["id"], client_id)
     primary = int(text(o.request.get("amount"))) - sum(s.amount for s in splits or [])
     data = memo_calldata(text(o.request.get("recipient")), primary, memo)
