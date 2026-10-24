@@ -1,5 +1,5 @@
 """The buyer half of MPP's EVM charges: mpp/charge/evm/authorization (the signed EIP-3009 nonce is keccak256 of the
-challenge's id and realm), mpp/charge/evm/permit2 (the signed witness carries that value), and
+JSON array [id, realm] of the challenge), mpp/charge/evm/permit2 (the signed witness carries that value), and
 mpp/charge/evm/transaction and mpp/charge/evm/hash (the ERC-20 transfer the buyer signs or broadcasts carries nothing
 of H, so bound refuses mpp/no-signed-place)."""
 

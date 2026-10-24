@@ -12,7 +12,7 @@ from typing import Any, ParamSpec, TypeVar
 from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
 from .._types import Advertised, Broadcaster, Refusal
-from ._codec import b64u_decode, b64u_encode, to_hex
+from ._codec import b64u_decode, b64u_encode, js_json, to_hex
 from ._evm import ZERO_ADDRESS
 from ._jose import js_length, within_depth
 from ._lcp import (
@@ -96,8 +96,9 @@ def challenge_id_h(c: object) -> AtrHash | Refusal:
 
 
 def challenge_hash(challenge_id: str, realm: str) -> str:
-    """keccak256(UTF-8(id) ‖ UTF-8(realm)), lower-case: Solidity's abi.encodePacked(string, string)."""
-    return to_hex(keccak256((str(challenge_id) + str(realm)).encode("utf-8")))
+    """keccak256 of the UTF-8 of JSON.stringify([id, realm]), lower-case: the id and realm framed as a JSON array of two
+    strings, as mppx computes MPP's EVM challenge hash from 0.13.1, so that no two pairs give one preimage."""
+    return to_hex(keccak256(js_json([str(challenge_id), str(realm)]).encode("utf-8")))
 
 
 # ── The id.
