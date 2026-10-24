@@ -58,7 +58,7 @@ Add the server to your MCP client. Most clients take a configuration like this:
 }
 ```
 
-The server speaks MCP over stdio and needs Node.js `>=26.11.1`. Its `serverInfo` name is `integraledger-terms`.
+The server speaks MCP over stdio and needs Node.js `>=24`. Its `serverInfo` name is `integraledger-terms`.
 
 Then give your agent the skill. The package ships it at
 `skills/confirming-the-atr-hash-before-paying/SKILL.md`. Copy that folder into your agent's skills directory (for
@@ -427,7 +427,7 @@ expect the gate's own results.
 
 ## Requirements
 
-- Node.js `>=26.11.1`.
+- Node.js `>=24`.
 - An MCP client that speaks stdio.
 
 ## Contributing

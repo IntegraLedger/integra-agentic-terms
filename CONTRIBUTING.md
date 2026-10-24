@@ -55,8 +55,10 @@ builds a setting's name at run time, is code, like a step that deletes this chec
 
 CI's Node.js step reads every workflow in `.github/workflows`, `.yml` and `.yaml`. Every job that runs a step fetches
 the Node.js `.node-version` names, checked against one SHA-256, in one step, byte for byte the same in every job, before
-its first other step that runs, and no workflow names another Node.js download; the step runs under that Node.js and
-fails under another. Every download in a workflow is
+its first other step that runs, and no workflow names another Node.js download but the one `.node-version-floor`
+names; the step runs under that Node.js and fails under another. The `floor` job fetches that one in a step of its
+own, checked against one SHA-256 and adding nothing to `PATH`, and runs both TypeScript packages' tests on it; its
+major is the one each package's `engines.node` allows. Every download in a workflow is
 `curl -fsSL --retry 5 --retry-all-errors -o "$RUNNER_TEMP/<file>" https://<address>`, which retries a failed transfer
 five times whatever the error, and writes one file. No workflow uses `setup-node`, `continue-on-error`, `if:`,
 `container:`, `shell:` or a `PATH:` key, or writes `$GITHUB_ENV`, and only the Node.js and pnpm fetches write

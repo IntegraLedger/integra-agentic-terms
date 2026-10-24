@@ -9,7 +9,7 @@ they run offline and print the same values every time.
 
 ## Requirements
 
-- **TypeScript:** Node.js `>=26.11.1`. The package is ESM only.
+- **TypeScript:** Node.js `>=24`. The package is ESM only.
 - **Python:** Python `>=3.11`.
 
 ## Install
