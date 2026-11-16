@@ -227,8 +227,9 @@ def _decode_v1(data: bytes) -> SvmTx | Refusal:
     lookups. svm/tx-malformed where SIMD-0385's sanitization refuses the message: no signer, or a read-only signer
     count not below the signer count; fewer addresses than the signers and read-only unsigned accounts, or more than 64;
     more than 12 signers or 64 instructions; an address listed twice; a program or account index not below the address
-    count; only one of the priority fee's two mask bits set; a mask bit SIMD-0385 assigns no field; or a requested heap
-    size that is not a multiple of 1,024 from 32,768 to 262,144. Over 4,096 bytes is svm/tx-too-large."""
+    count; only one of the priority fee's two mask bits set; or a requested heap size that is not a multiple of 1,024
+    from 32,768 to 262,144. A set mask bit SIMD-0385 assigns no field, for which it states no rule, is svm/tx-malformed
+    too, since the 4 bytes it stands for have no meaning this package can read. Over 4,096 bytes is svm/tx-too-large."""
     if len(data) > MAX_WIRE_V1:
         return Refusal("svm/tx-too-large")
     try:
