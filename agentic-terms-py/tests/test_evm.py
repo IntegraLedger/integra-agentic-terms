@@ -250,10 +250,13 @@ def test_ev2_upto_permit2_build_complete_and_bound() -> None:
     presented = completed(X402_UPTO_EIP155_PERMIT2, fixed)
     authorization = presented["payload"]["permit2Authorization"]
     assert authorization["spender"] == ev2["expectSpender"]
-    assert authorization["nonce"] == ev2["expectNonceHex"]
+    assert authorization["nonce"] == ev2["expectNonceDecimal"]
     assert authorization["deadline"] == ev2["expectDeadline"]
     assert authorization["witness"]["facilitator"] == fixed["option"]["extra"]["facilitatorAddress"]
     assert X402_UPTO_EIP155_PERMIT2.bound(presented) == ev2["expectBound"]
+    hex_spelling = copy.deepcopy(presented)
+    hex_spelling["payload"]["permit2Authorization"]["nonce"] = fixed["H"]
+    assert X402_UPTO_EIP155_PERMIT2.bound(hex_spelling) == ev2["boundOfHexNonce"]
 
 
 def test_ev2_upto_without_facilitator_is_refused() -> None:

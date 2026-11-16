@@ -372,7 +372,7 @@ def _permit2_build(pairing: str, choice: Json, h: AtrHash) -> Unsigned | Refusal
         "permitted": {"token": accepted["asset"], "amount": accepted["amount"]},
         "from": c.payer,
         "spender": spender,
-        "nonce": c.h if upto else str(as_hash(c.h)),
+        "nonce": str(as_hash(c.h)),
         "deadline": str(c.deadline),
         "witness": witness,
     }
