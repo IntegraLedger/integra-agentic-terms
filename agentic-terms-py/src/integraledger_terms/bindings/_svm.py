@@ -323,6 +323,23 @@ def canonical_carrier(h: AtrHash, memo: str) -> Carrier | Refusal:
     return Carrier(h, memo) if memo == to_lcp_string(h) else Refusal("svm/carrier-not-canonical")
 
 
+def unbuilt_version(extra: object) -> Refusal | None:
+    """svm/version-not-built when an x402 Solana option's extra holds transactionVersions and it does not admit version
+    0, the one message version these builders write: the field is the set of versions the sponsor accepts, the JSON
+    integers 0 and 1, and a field holding any other entry is invalid (scheme_exact_svm.md §1.5 at x402-foundation/x402
+    88b66dd4). Absent, the accepted set is [0]. Else None. A number is compared as JavaScript's === compares it, so a
+    boolean is no version."""
+    if not is_object(extra) or "transactionVersions" not in extra:
+        return None
+    versions = extra["transactionVersions"]
+
+    def is_version(v: object) -> bool:
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and v in (0, 1)
+
+    admits_v0 = is_list(versions) and all(is_version(v) for v in versions) and any(v == 0 for v in versions)
+    return None if admits_v0 else Refusal("svm/version-not-built")
+
+
 def static_nonce(tx: SvmTx) -> Refusal | None:
     """svm/nonce-account-not-static when the message's first instruction is the System program's AdvanceNonceAccount
     (data 04000000) and its nonce account is an address lookup table entry, past the static keys: a durable message

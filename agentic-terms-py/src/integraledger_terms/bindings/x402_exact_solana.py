@@ -27,6 +27,7 @@ from ._svm import (
     static_nonce,
     svm_carrier,
     to_base64,
+    unbuilt_version,
     wire_of,
 )
 from ._x402 import (
@@ -108,7 +109,8 @@ class X402ExactSolana:
     def build(self, choice: Json, h: AtrHash) -> SvmUnsigned | Refusal:
         """The v0 message the payer signs for the chosen option, whose one memo is the option's extra.memo. H is
         checked first, then the form of the choice's payer, token program, decimals, blockhash and compute budget
-        (is_payer_input), then its document and option, then the option's memo against H."""
+        (is_payer_input), then its document and option, then the option's extra.transactionVersions (unbuilt_version),
+        then the option's memo against H."""
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
@@ -123,6 +125,9 @@ class X402ExactSolana:
             return ok
         assert is_object(required) and is_object(accepted)
         extra = accepted["extra"]
+        version = unbuilt_version(extra)
+        if version is not None:
+            return version
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")

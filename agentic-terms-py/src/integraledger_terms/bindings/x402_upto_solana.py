@@ -33,6 +33,7 @@ from ._svm import (
     static_nonce,
     svm_carrier,
     to_base64,
+    unbuilt_version,
     wire_of,
 )
 from ._x402 import (
@@ -107,8 +108,9 @@ class X402UptoSolana:
         """The open message the payer signs: the channel escrows the option's amount, and its one memo is
         extra.memo. The payload carries openSlot as a JSON number, so an openSlot above 2^53 - 1 is
         svm/input-malformed. H is checked first, then the form of the choice's payer, token program, blockhash and
-        compute budget (is_payer_input), nonce, openSlot and now, then its document and option, then the option's memo
-        against H and its token program against the choice's."""
+        compute budget (is_payer_input), nonce, openSlot and now, then its document and option, then the option's
+        extra.transactionVersions (unbuilt_version), then the option's memo against H and its token program against the
+        choice's."""
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
@@ -131,6 +133,9 @@ class X402UptoSolana:
             return ok
         assert is_object(required) and is_object(accepted)
         extra = accepted["extra"]
+        version = unbuilt_version(extra)
+        if version is not None:
+            return version
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")

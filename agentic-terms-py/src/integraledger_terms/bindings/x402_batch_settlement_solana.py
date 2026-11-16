@@ -45,6 +45,7 @@ from ._svm import (
     signed_wire,
     static_nonce,
     to_base64,
+    unbuilt_version,
     wire_of,
 )
 from ._x402 import chosen, filter_of, payment_with, read_for
@@ -213,8 +214,8 @@ class X402BatchSettlementSolana:
         extra.receiverAuthorizer. A payerAuthorizer that is not a point on the Ed25519 curve, which the program's open
         refuses as the authorized signer, is svm/input-malformed. H is checked first, then the form of the choice's
         payer, token program, blockhash and compute budget (is_payer_input), deposit, payerAuthorizer, salt and
-        openSlot, then its document and option, then the option's memo against H and its token program against the
-        choice's."""
+        openSlot, then its document and option, then the option's extra.transactionVersions (unbuilt_version), then the
+        option's memo against H and its token program against the choice's."""
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
@@ -240,6 +241,9 @@ class X402BatchSettlementSolana:
             return ok
         assert is_object(required) and is_object(accepted)
         extra = accepted["extra"]
+        version = unbuilt_version(extra)
+        if version is not None:
+            return version
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")
@@ -331,7 +335,8 @@ class X402BatchSettlementSolana:
         maxClaimableAmount, signed by the payer authorizer, with expiresAt 0. A refund carries no amount; with
         w's recentBlockhash it also carries a request_close message for the payer, signed first: the Compute Budget
         prefix, request_close with the payer (read-only signer) and the channel (writable), then one Memo v3 with
-        extra.memo when the option carries one."""
+        extra.memo when the option carries one. That message is v0, so a refund with recentBlockhash under an option
+        whose extra.transactionVersions does not admit version 0 is svm/version-not-built (unbuilt_version)."""
         if not is_object(w):
             return Refusal("x402/not-v2")
         required, accepted = w.get("required"), w.get("accepted")
@@ -379,6 +384,9 @@ class X402BatchSettlementSolana:
 
                 return BatchUnsigned([voucher_request], cooperative)
             extra = accepted["extra"]
+            version = unbuilt_version(extra)
+            if version is not None:
+                return version
             memo = extra.get("memo")
             limit, price = w.get("computeUnitLimit"), w.get("computeUnitPrice")
             refund_tx = build_channel_message(
