@@ -20,13 +20,13 @@ from integraledger_terms.bindings import _svm
 from integraledger_terms.bindings._codec import b58_encode
 
 PAYER = load("x402-exact-solana.json")["fixed"]["payer"]
-# The wire bound lcp's wireOf holds a text to before it decodes: ceil(1232 / 3) * 4 + 4 characters.
-WIRE_TEXT_BOUND = 1648
+# The wire bound lcp's wireOf holds a text to before it decodes, a v1 transaction's: ceil(4096 / 3) * 4 + 4 characters.
+WIRE_TEXT_BOUND = 5468
 
 
 def test_the_wire_text_is_measured_in_utf_16_code_units() -> None:
-    """lcp's wireOf compares String.prototype.length with the bound, so an astral character counts two: 825 of them
-    are 1650 units, past the bound, and svm/tx-too-large; 824 are 1648 units, within it, and svm/tx-malformed."""
+    """lcp's wireOf compares String.prototype.length with the bound, so an astral character counts two: 2735 of them
+    are 5470 units, past the bound, and svm/tx-too-large; 2734 are 5468 units, within it, and svm/tx-malformed."""
     assert _svm.wire_of("\U0001f600" * (WIRE_TEXT_BOUND // 2 + 1)) == Refusal("svm/tx-too-large")
     assert _svm.wire_of("\U0001f600" * (WIRE_TEXT_BOUND // 2)) == Refusal("svm/tx-malformed")
     assert _svm.wire_of(chr(0xE9) * WIRE_TEXT_BOUND) == Refusal("svm/tx-malformed")

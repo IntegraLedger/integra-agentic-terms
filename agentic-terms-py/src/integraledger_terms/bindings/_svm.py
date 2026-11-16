@@ -1,6 +1,6 @@
-"""Solana rail pieces for the buyer half: the legacy and v0 wire transaction, its one Memo instruction carrying the ATR
-hash in LCP string form, the partially signed wire, program-derived and associated token addresses, and v0 message
-compilation with the account order of @solana/kit 8.4.0.
+"""Solana rail pieces for the buyer half: the legacy, v0 and v1 wire transaction, its one Memo instruction carrying
+the ATR hash in LCP string form, the partially signed wire, program-derived and associated token addresses, and v0
+message compilation with the account order of @solana/kit 8.4.0.
 
 Nothing here fetches, hashes an ATR or signs.
 """
@@ -29,7 +29,21 @@ ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
 PAYMENT_CHANNELS = "CHNLxYvVA28MJP9PrFuDXccuoGXAx7jBacfLEkahyGsX"
 RENT_SYSVAR = "SysvarRent111111111111111111111111111111111"
 
+# The serialized size bound of a legacy or v0 transaction.
 MAX_WIRE = 1232
+# The serialized size bound of a v1 transaction (SIMD-0385, Transaction Constraints).
+MAX_WIRE_V1 = 4096
+# The first byte of a v1 wire transaction, its message's version byte (SIMD-0385, VersionByte).
+_V1_VERSION_BYTE = 0x81
+# SIMD-0385's bounds on a v1 message: signatures, account addresses and instructions.
+_V1_MAX_SIGNATURES = 12
+_V1_MAX_ADDRESSES = 64
+_V1_MAX_INSTRUCTIONS = 64
+# The TransactionConfigMask bits SIMD-0385 assigns: 0 and 1 the priority fee (a u64, both bits set together), 2 the
+# compute unit limit, 3 the loaded accounts data size limit, 4 the requested heap size (each a u32).
+_V1_CONFIG_BITS = 0b11111
+_V1_PRIORITY_FEE_BITS = 0b11
+_V1_HEAP_SIZE_BIT = 0b10000
 MAX_SEEDS = 16
 MAX_SEED = 32
 U64_LIMIT = 1 << 64
@@ -144,11 +158,15 @@ class _Cursor:
 
 
 def decode_svm_tx(wire: object) -> SvmTx | Refusal:
-    """A legacy or v0 wire transaction of at most 1,232 bytes, decoded. Bytes that are not one well-formed transaction
-    are svm/tx-malformed, as is a v0 message with an address table lookup that names no index, which the runtime
-    refuses ("each lookup table must be used to load at least one account")."""
+    """A legacy or v0 wire transaction of at most 1,232 bytes, or a v1 wire transaction (SIMD-0385) of at most 4,096
+    bytes, decoded; a longer one is svm/tx-too-large. Bytes that are not one well-formed transaction are
+    svm/tx-malformed, as is a v0 message with an address table lookup that names no index, which the runtime refuses
+    ("each lookup table must be used to load at least one account"), and a v1 message that SIMD-0385's sanitization
+    refuses (_decode_v1)."""
     if not isinstance(wire, (bytes, bytearray)) or len(wire) == 0:
         return Refusal("svm/tx-malformed")
+    if wire[0] == _V1_VERSION_BYTE:
+        return _decode_v1(bytes(wire))
     if len(wire) > MAX_WIRE:
         return Refusal("svm/tx-too-large")
     data = bytes(wire)
@@ -197,6 +215,68 @@ def decode_svm_tx(wire: object) -> SvmTx | Refusal:
     except (IndexError, ValueError):
         return Refusal("svm/tx-malformed")
     return SvmTx(signatures, data[start:], keys, tuple(instructions), blockhash, required, tuple(lookups))
+
+
+def _decode_v1(data: bytes) -> SvmTx | Refusal:
+    """A v1 wire transaction, laid out as SIMD-0385's Transaction V1 Specification states: the version byte 129, the
+    legacy header, the TransactionConfigMask (u32 little-endian), the lifetime specifier (the recent blockhash or
+    durable nonce), the instruction count and address count (one byte each), the addresses, one 4-byte config value per
+    mask bit, one 4-byte header per instruction (program index, account count, data length as a u16 little-endian),
+    each instruction's account indexes and data, then one 64-byte signature per required signer. The message every
+    signer signs is every byte before the signatures, and no byte follows them. A v1 message has no address table
+    lookups. svm/tx-malformed where SIMD-0385's sanitization refuses the message: no signer, or a read-only signer
+    count not below the signer count; fewer addresses than the signers and read-only unsigned accounts, or more than 64;
+    more than 12 signers or 64 instructions; an address listed twice; a program or account index not below the address
+    count; only one of the priority fee's two mask bits set; a mask bit SIMD-0385 assigns no field; or a requested heap
+    size that is not a multiple of 1,024 from 32,768 to 262,144. Over 4,096 bytes is svm/tx-too-large."""
+    if len(data) > MAX_WIRE_V1:
+        return Refusal("svm/tx-too-large")
+    try:
+        c = _Cursor(data)
+        c.byte()
+        required = c.byte()
+        readonly_signed = c.byte()
+        readonly_unsigned = c.byte()
+        mask = int.from_bytes(c.take(4), "little")
+        blockhash = c.take(32)
+        n_ix = c.byte()
+        n_keys = c.byte()
+        if required == 0 or readonly_signed >= required:
+            return Refusal("svm/tx-malformed")
+        if n_keys < required + readonly_unsigned or n_keys > _V1_MAX_ADDRESSES:
+            return Refusal("svm/tx-malformed")
+        if required > _V1_MAX_SIGNATURES or n_ix > _V1_MAX_INSTRUCTIONS:
+            return Refusal("svm/tx-malformed")
+        if mask & ~_V1_CONFIG_BITS:
+            return Refusal("svm/tx-malformed")
+        fee = mask & _V1_PRIORITY_FEE_BITS
+        if fee not in (0, _V1_PRIORITY_FEE_BITS):
+            return Refusal("svm/tx-malformed")
+        keys = tuple(c.take(32) for _ in range(n_keys))
+        if len(set(keys)) != len(keys):
+            return Refusal("svm/tx-malformed")
+        values = c.take(4 * bin(mask).count("1"))
+        if mask & _V1_HEAP_SIZE_BIT:
+            heap = int.from_bytes(values[-4:], "little")
+            if heap % 1024 != 0 or heap < 32 * 1024 or heap > 256 * 1024:
+                return Refusal("svm/tx-malformed")
+        headers = []
+        for _ in range(n_ix):
+            h = c.take(4)
+            headers.append((h[0], h[1], h[2] | (h[3] << 8)))
+        instructions = []
+        for program, n_acc, n_data in headers:
+            accounts = tuple(c.take(n_acc))
+            if program >= n_keys or any(a >= n_keys for a in accounts):
+                return Refusal("svm/tx-malformed")
+            instructions.append(SvmInstruction(program, accounts, c.take(n_data)))
+        message_end = c.at
+        signatures = tuple(c.take(64) for _ in range(required))
+        if c.at != len(data):
+            return Refusal("svm/tx-malformed")
+    except (IndexError, ValueError):
+        return Refusal("svm/tx-malformed")
+    return SvmTx(signatures, data[:message_end], keys, tuple(instructions), blockhash, required, ())
 
 
 def _program_is(tx: SvmTx, ix: SvmInstruction, program: bytes | None) -> bool:
@@ -299,12 +379,12 @@ def wire_of(text: object) -> bytes | Refusal:
     counts it."""
     if not isinstance(text, str) or text == "":
         return Refusal("svm/tx-malformed")
-    if js_length(text) > -(-MAX_WIRE // 3) * 4 + 4:
+    if js_length(text) > -(-MAX_WIRE_V1 // 3) * 4 + 4:
         return Refusal("svm/tx-too-large")
     data = b64_decode(text)
     if data is None:
         return Refusal("svm/tx-malformed")
-    if len(data) > MAX_WIRE:
+    if len(data) > (MAX_WIRE_V1 if data[:1] == bytes([_V1_VERSION_BYTE]) else MAX_WIRE):
         return Refusal("svm/tx-too-large")
     return data
 
