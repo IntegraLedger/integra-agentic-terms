@@ -323,15 +323,17 @@ def canonical_carrier(h: AtrHash, memo: str) -> Carrier | Refusal:
     return Carrier(h, memo) if memo == to_lcp_string(h) else Refusal("svm/carrier-not-canonical")
 
 
-def unbuilt_version(extra: object) -> Refusal | None:
-    """svm/version-not-built when an x402 Solana option's extra holds transactionVersions and it does not admit version
-    0, the one message version these builders write: the field is the set of versions the sponsor accepts, the JSON
-    integers 0 and 1, and a field holding any other entry is invalid (scheme_exact_svm.md §1.5 at x402-foundation/x402
-    88b66dd4). Absent, the accepted set is [0]. Else None. A number is compared as JavaScript's === compares it, so a
-    boolean is no version."""
-    if not is_object(extra) or "transactionVersions" not in extra:
+def unbuilt_version(fields: object) -> Refusal | None:
+    """svm/version-not-built when fields, an x402 Solana option's extra or an MPP Solana charge challenge's Solana
+    details, holds transactionVersions and it does not admit version 0, the one message version these builders write:
+    the field is the set of versions the sponsor or server accepts, the JSON integers 0 and 1, and a field holding any
+    other entry is invalid (x402: scheme_exact_svm.md §1.5 at x402-foundation/x402 88b66dd4; MPP: the draft
+    methodDetails.transactionVersions of tempoxyz/mpp-specs pull request 355, as solana-foundation/pay-kit 86400da reads
+    it in typescript/packages/mpp/src/Methods.ts and src/utils/transaction-versions.ts). Absent, the accepted set is
+    [0]. Else None. A number is compared as JavaScript's === compares it, so a boolean is no version."""
+    if not is_object(fields) or "transactionVersions" not in fields:
         return None
-    versions = extra["transactionVersions"]
+    versions = fields["transactionVersions"]
 
     def is_version(v: object) -> bool:
         return isinstance(v, (int, float)) and not isinstance(v, bool) and v in (0, 1)

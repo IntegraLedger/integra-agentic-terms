@@ -40,6 +40,7 @@ from ._svm import (
     signed_wire,
     static_nonce,
     to_base64,
+    unbuilt_version,
     wire_of,
 )
 
@@ -124,7 +125,10 @@ class MppChargeSolana:
         """The message for the payer to sign: the request's transfer (a token TransferChecked, or a System transfer
         for sol) with the memo the request's externalId carries, which must be this H's LCP string. Splits and
         confidential transfers are not built: the pairing's filter refuses a challenge that asks for them
-        (svm/input-malformed)."""
+        (svm/input-malformed). The checks run in order: the choice, then the challenge, then the Solana details'
+        transactionVersions (unbuilt_version: a list that is present and does not admit version 0, the one version
+        this builds, is svm/version-not-built, with no message to sign), then the request's externalId against H,
+        then the inputs."""
         if not is_object(choice):
             return Refusal("svm/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, self.id)
@@ -132,6 +136,9 @@ class MppChargeSolana:
             return checked
         r = checked.request
         d = self.details(checked)
+        version = unbuilt_version(d)
+        if version is not None:
+            return version
         memo = to_lcp_string(h)
         if r.get("externalId") != memo:
             return Refusal("svm/carrier-mismatch")
