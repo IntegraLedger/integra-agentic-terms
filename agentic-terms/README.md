@@ -4,7 +4,7 @@ The buyer gate for agents that pay: before your wallet signs anything, it confir
 hashes to the value the payment will carry, and builds the payment with that hash.
 
 ```sh
-npm install @integraledger/terms@0.4.0 @integraledger/lcp@0.5.0
+npm install @integraledger/terms@0.4.1 @integraledger/lcp@0.5.1
 ```
 
 ## What it is
@@ -47,7 +47,7 @@ agent approved, to the agreement URL.
 ## Install
 
 ```sh
-npm install @integraledger/terms@0.4.0 @integraledger/lcp@0.5.0
+npm install @integraledger/terms@0.4.1 @integraledger/lcp@0.5.1
 ```
 
 - Node.js `>=24`. ESM only.

@@ -15,7 +15,7 @@ they run offline and print the same values every time.
 ## Install
 
 ```sh
-npm install @integraledger/terms@0.4.0 @integraledger/lcp@0.5.0
+npm install @integraledger/terms@0.4.1 @integraledger/lcp@0.5.1
 ```
 
 `@integraledger/terms` is the gate. `@integraledger/lcp` exports the bindings you pass to it, one per pairing.
