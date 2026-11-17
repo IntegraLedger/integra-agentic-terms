@@ -1,8 +1,11 @@
-"""The buyer half of the pairings mpp/charge/solana and mpp/charge/usdc/solana: read, build with complete, and bound.
+"""The buyer half of the pairings mpp/charge/solana, mpp/charge/solana/unsponsored and mpp/charge/usdc/solana: read,
+build with complete, and bound.
 
 The ATR hash in LCP string form is the request's externalId, which the payer signs as the one Memo instruction of the
-transaction whose data parses as an LCP string. Other Memo instructions, such as split labels, are not read. Nothing
-here fetches, hashes an ATR or signs.
+transaction whose data parses as an LCP string. Other Memo instructions, such as split labels, are not read. A solana
+method challenge whose methodDetails.feePayer is true is mpp/charge/solana, its fee payer the key feePayerKey names; any
+other is mpp/charge/solana/unsponsored, whose payer is its own fee payer and is never an agreement option. Nothing here
+fetches, hashes an ATR or signs.
 """
 
 from collections.abc import Callable, Mapping
@@ -46,6 +49,7 @@ from ._svm import (
 )
 
 SOLANA_ID = "mpp/charge/solana"
+UNSPONSORED_ID = "mpp/charge/solana/unsponsored"
 USDC_SOLANA_ID = "mpp/charge/usdc/solana"
 MAX_BUNDLE = 8
 # Who broadcasts a Solana charge credential, by type, as draft-solana-charge-00 has it: a transaction or a bundle, the
@@ -255,6 +259,12 @@ MPP_CHARGE_SOLANA = MppChargeSolana(
     lambda d: d,
     transaction_only=False,
     agreement=AgreementData(floor="1"),
+)
+MPP_CHARGE_SOLANA_UNSPONSORED = MppChargeSolana(
+    UNSPONSORED_ID,
+    lambda d: d,
+    transaction_only=False,
+    agreement=None,
 )
 MPP_CHARGE_USDC_SOLANA = MppChargeSolana(
     USDC_SOLANA_ID,

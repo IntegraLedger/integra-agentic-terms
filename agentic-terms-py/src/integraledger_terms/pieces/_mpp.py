@@ -226,8 +226,9 @@ def session_revive(c: dict[str, Any]) -> Any:
 
 class MppConfirmOnlyPiece(BasePiece):
     """The buyer piece for a pairing whose build has nothing for the buyer to sign: the first challenge, in document
-    order, that offers the pairing. The pairing's payment carries no public proof of the hash: the proof is the
-    agreement payment the offer's agreement URL asks for."""
+    order, that offers the pairing. Where the pairing's payment carries no public proof of the hash, the proof is the
+    agreement payment the offer's agreement URL asks for; on mpp/subscription/solana it is the activation the buyer's
+    stock client signs with H as its memo."""
 
     def __init__(self, pairing: str) -> None:
         self.pairing = pairing

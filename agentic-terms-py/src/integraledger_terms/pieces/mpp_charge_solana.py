@@ -1,13 +1,15 @@
-"""The buyer pieces for mpp/charge/solana and mpp/charge/usdc/solana: the v0 message whose one LCP memo is the
-request's externalId, signed by the payer as solana-message; the credential is the build's own. The request's
-decimals, tokenProgram and recentBlockhash are taken first (from methodDetails, or methodDetails.solana for usdc), and
-the buyer's reads fill what the request leaves out."""
+"""The buyer pieces for mpp/charge/solana, mpp/charge/solana/unsponsored and mpp/charge/usdc/solana: the v0 message
+whose one LCP memo is the request's externalId, signed by the payer as solana-message; the credential is the build's
+own. The request's decimals, tokenProgram and recentBlockhash are taken first (from methodDetails, or
+methodDetails.solana for usdc), and the buyer's reads fill what the request leaves out. Under the unsponsored charge the
+payer is the message's fee payer; the signer moves nothing, and the credential is a transaction the seller's server
+broadcasts."""
 
 from collections.abc import Mapping
 from typing import Any
 
 from .._types import Inputs, Refusal
-from ..bindings.mpp_charge_solana import SOLANA_ID, USDC_SOLANA_ID
+from ..bindings.mpp_charge_solana import SOLANA_ID, UNSPONSORED_ID, USDC_SOLANA_ID
 from ._common import InputKind, inputs_of
 from ._mpp import MppRail, MppRailPiece, complete_with, signature64
 from ._sol_rail import SOLANA_ADDRESS
@@ -60,4 +62,5 @@ def _rail(pairing: str, inputs: Any) -> MppRailPiece:
 
 
 SOLANA_PIECE = _rail(SOLANA_ID, _solana_inputs)
+UNSPONSORED_PIECE = _rail(UNSPONSORED_ID, _solana_inputs)
 USDC_SOLANA_PIECE = _rail(USDC_SOLANA_ID, _usdc_inputs)

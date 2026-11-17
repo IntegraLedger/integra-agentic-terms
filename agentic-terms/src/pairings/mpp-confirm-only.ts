@@ -2,7 +2,8 @@
  * The buyer piece for MPP's `card` and `stripe` pairings and its stock sessions: the first challenge, in document order,
  * that offers the pairing. Nothing in the card or Stripe payment, or in a stock session's opening, carries the hash, and
  * nothing is built for the buyer to sign: the proof of the hash is the agreement payment the offer's agreement URL asks
- * for, whose signed payload carries it.
+ * for, whose signed payload carries it. It is also the piece of `mpp/subscription/solana`, whose activation the buyer's
+ * stock client composes and signs with H as its memo, so the activation itself is the proof.
  */
 import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { MppChallenge } from "@integraledger/lcp/mpp";

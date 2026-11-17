@@ -24,6 +24,8 @@ import { mppChargeUsdcSolana } from "./mpp-charge-usdc-solana.js";
 import { mppChargeUsdcStacks } from "./mpp-charge-usdc-stacks.js";
 import { mppSubscriptionStripe } from "./mpp-subscription-stripe.js";
 import { mppChargeSolana } from "./mpp-charge-solana.js";
+import { mppChargeSolanaUnsponsored } from "./mpp-charge-solana-unsponsored.js";
+import { mppSubscriptionSolana } from "./mpp-subscription-solana.js";
 import { mppChargeXrpl } from "./mpp-charge-xrpl.js";
 import { mppSessionXrpl } from "./mpp-session-xrpl.js";
 import { mppSessionXrplStock } from "./mpp-session-xrpl-stock.js";
@@ -129,4 +131,6 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["mpp/session/xrpl/stock", mppSessionXrplStock],
   ["x402/upto/xrpl", x402UptoXrpl],
   ["mpp/charge/lcp/hedera", mppChargeLcpHedera],
+  ["mpp/charge/solana/unsponsored", mppChargeSolanaUnsponsored],
+  ["mpp/subscription/solana", mppSubscriptionSolana],
 ]);

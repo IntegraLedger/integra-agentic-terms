@@ -388,7 +388,7 @@ def network(challenge: object) -> str | Refusal:
         return f"eip155:{chain_of(c)}"
     if key in ("session/evm", "session/tempo", "subscription/tempo"):
         return session_network(challenge)
-    if key in ("charge/solana", "session/solana"):
+    if key in ("charge/solana", "subscription/solana", "session/solana"):
         n = solana_network_of(d, c.intent == "session")
         return Refusal("svm/network-undeclared") if n is None else n
     if key in ("charge/xrpl", "session/xrpl"):

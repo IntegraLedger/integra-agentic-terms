@@ -38,7 +38,7 @@ CARRIER: Mapping[str, Mapping[str, tuple[str, ...] | None]] = {
         "nearintents": ("externalId",),
     },
     "session": {"lightning": ("depositInvoice",), "hedera": None, "solana": None, "xrpl": None, "evm": None, "tempo": None},
-    "subscription": {"tempo": None, "stripe": ("methodDetails", "metadata", "legal_context")},
+    "subscription": {"tempo": None, "stripe": ("methodDetails", "metadata", "legal_context"), "solana": ("externalId",)},
 }
 
 # The request member usdc writes H into, by methodDetails.type; None where no request member carries it.

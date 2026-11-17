@@ -11,7 +11,11 @@ import { SOLANA_ADDRESS, withUnitPrice } from "./x402-exact-solana.js";
 
 const PAIRING = "mpp/charge/solana";
 
-function inputs(request: Record<string, unknown>, given: Inputs): Record<string, Json> | Refusal {
+/**
+ * The buyer's own inputs a charge of MPP's `solana` method takes beside the challenge: what the request's
+ * `methodDetails` leaves out of `decimals`, `tokenProgram` and `recentBlockhash`, and the optional compute budget.
+ */
+export function solanaChargeInputs(request: Record<string, unknown>, given: Inputs): Record<string, Json> | Refusal {
   const d = isObject(request["methodDetails"]) ? request["methodDetails"] : {};
   const native = request["currency"] === "sol";
   return inputsOf(given, PAIRING, {
@@ -29,7 +33,7 @@ export const mppChargeSolana = mppRailPiece({
   address: SOLANA_ADDRESS,
   payer: "payer",
   now: false,
-  inputs,
+  inputs: solanaChargeInputs,
   revive: withUnitPrice,
   complete: completeWith(signature64),
 });

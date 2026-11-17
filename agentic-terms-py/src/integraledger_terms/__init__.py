@@ -80,7 +80,8 @@ from .bindings.x402_evm import (
     X402_UPTO_EIP155_PERMIT2,
 )
 from .bindings.x402_exact_eip155_eip3009 import X402ExactEip155Eip3009
-from .bindings.mpp_charge_solana import MPP_CHARGE_SOLANA, MPP_CHARGE_USDC_SOLANA
+from .bindings.mpp_charge_solana import MPP_CHARGE_SOLANA, MPP_CHARGE_SOLANA_UNSPONSORED, MPP_CHARGE_USDC_SOLANA
+from .bindings.mpp_subscription_solana import MppSubscriptionSolana
 from .bindings.x402_batch_settlement_solana import X402BatchSettlementSolana
 from .bindings.x402_exact_solana import X402ExactSolana
 from .bindings.x402_upto_solana import X402UptoSolana
@@ -146,6 +147,7 @@ MPP_CHARGE_USDC_GATEWAY: Binding = MppChargeUsdcGateway()
 MPP_SESSION_EVM: Binding = MppSessionEvm()
 MPP_SESSION_TEMPO: Binding = MppSessionTempo()
 MPP_SUBSCRIPTION_TEMPO: Binding = MppSubscriptionTempo()
+MPP_SUBSCRIPTION_SOLANA: Binding = MppSubscriptionSolana()
 X402_EXACT_STARKNET: Binding = X402ExactStarknet()
 X402_EXACT_CASPER: Binding = X402ExactCasper()
 X402_EXACT_APTOS: Binding = X402ExactAptos()
@@ -184,6 +186,7 @@ __all__ = [
     "MPP_CHARGE_LIGHTNING",
     "MPP_CHARGE_NEARINTENTS",
     "MPP_CHARGE_SOLANA",
+    "MPP_CHARGE_SOLANA_UNSPONSORED",
     "MPP_CHARGE_STRIPE",
     "MPP_CHARGE_USDC_EVM",
     "MPP_CHARGE_USDC_GATEWAY",
@@ -191,6 +194,7 @@ __all__ = [
     "MPP_SESSION_EVM",
     "MPP_SESSION_LIGHTNING",
     "MPP_SESSION_TEMPO",
+    "MPP_SUBSCRIPTION_SOLANA",
     "MPP_SUBSCRIPTION_STRIPE",
     "MPP_SUBSCRIPTION_TEMPO",
     "UCP_BOOKING_AP2_MANDATE",
