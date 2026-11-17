@@ -75,6 +75,10 @@ class SummaryEntry:
 
     show: Callable[[Mapping[str, Any], str | None, Opened | None], Summary | None]
     start: Callable[[Inputs], int | None] | None = None
+    # An entry that reads the signer's CAIP-10 account, for a request that commits to its payer only by a hash (a
+    # channel id derived from the payer's address), gives with_account, which the gate calls in place of show with the
+    # account, where it knows it, as a fourth argument.
+    with_account: Callable[[Mapping[str, Any], str | None, Opened | None, str | None], Summary | None] | None = None
 
 
 def _decimal(v: object) -> str | None:
@@ -194,17 +198,23 @@ SUMMARIES: dict[str, SummaryEntry] = {
 
 
 def summary_of(
-    pairing: str, request: Mapping[str, Any], atr: bytes, network: str | None = None, opened: Opened | None = None
+    pairing: str,
+    request: Mapping[str, Any],
+    atr: bytes,
+    network: str | None = None,
+    opened: Opened | None = None,
+    account: str | None = None,
 ) -> Summary | None:
     """The summary of request, a request of pairing handed to the signer, with atr, the ATR's bytes, network, the
     signing account's CAIP-2 network where the gate knows it, and opened, for a later step, the step that opened its
-    channel, each given to the entry as it is given here; or None where the pairing has no summary or its entry cannot
+    channel, and account, the signer's CAIP-10 account where the gate knows it, to an entry that gives with_account,
+    each given to the entry as it is given here; or None where the pairing has no summary or its entry cannot
     read the request. An entry that raises gives none."""
     entry = SUMMARIES.get(pairing)
     if entry is None:
         return None
     try:
-        shown = entry.show(request, network, opened)
+        shown = entry.show(request, network, opened) if entry.with_account is None else entry.with_account(request, network, opened, account)
     except Exception:
         return None
     return None if shown is None else replace(shown, atr=bytes(atr))

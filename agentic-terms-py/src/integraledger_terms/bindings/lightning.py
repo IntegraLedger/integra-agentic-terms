@@ -501,6 +501,19 @@ def _lnbtc_filter(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
 _LNBTC_FILTER: OptionFilter = _lnbtc_filter
 
 
+def offer_before_carrier(o: object) -> Literal[True] | Refusal | None:
+    """lcp's filter of the offer before its invoice, which its advertiseBeforeCarrier holds an option to: None for an
+    option not on an lnbtc network; an option that carries extra.invoice is ln/invoice-in-offer; then the option's own
+    members (_option_members); else True."""
+    if not is_object(o) or not _is_lnbtc(o):
+        return None
+    extra = o.get("extra")
+    if is_object(extra) and "invoice" in extra:
+        return Refusal("ln/invoice-in-offer")
+    members = _option_members(o)
+    return True if members is None else members
+
+
 def check_preimage(preimage: object, payment_hash: object) -> Literal[True] | Refusal:
     """True where preimage is 64 lowercase hex digits whose SHA-256 is payment_hash, itself 64 lowercase hex digits;
     else ln/preimage-malformed, ln/payment-hash-required or ln/preimage-mismatch, in that order."""
@@ -556,6 +569,11 @@ class X402ExactLnbtcPaymentHash:
 
     def unplaced(self, option: object) -> object:
         return without_invoice(option)
+
+    def before_carrier(self, option: object) -> Literal[True] | Refusal | None:
+        """The checks of the offer before its invoice, which the seller's node writes after the agreement
+        (offer_before_carrier, lcp's advertiseBeforeCarrier's filter)."""
+        return offer_before_carrier(option)
 
     def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> LnbtcUnsigned | Refusal:
         """What the buyer's node pays, after the scheme's client checks: H is a valid ATR hash (x402/payload-malformed);

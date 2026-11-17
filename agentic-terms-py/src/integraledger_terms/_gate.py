@@ -20,6 +20,7 @@ from ._deadline import held_to_deadline, with_deadline
 from ._parse import parse_atr
 from ._summary import Opened, summary_of
 from ._types import (
+    AgreementChallenges,
     AgreementPayment,
     Approver,
     Binding,
@@ -366,7 +367,7 @@ def _built(
     kept = _kept(piece, chosen, unsigned)
     if formed is None:
         return Confirmed(chosen=kept, request=None, atr_bytes=fetched, h=computed), 0
-    summary = shown(binding, formed, fetched, inputs, ceilings, network_of(account))
+    summary = shown(binding, formed, fetched, inputs, ceilings, network_of(account), None, account)
     if isinstance(summary, Declined):
         return summary
     return Confirmed(chosen=kept, request=formed, atr_bytes=fetched, h=computed, summary=summary), steps_of(unsigned)
@@ -504,6 +505,12 @@ async def pay(
     return await _sign_steps(binding, kept, first, signer, atr_bytes, h, approval, steps_of(unsigned))
 
 
+def _agreement_only(binding: Binding) -> bool:
+    """Whether the pairing's agreement is never a charge (agreement.only): its every payment is the sale's agreement,
+    and is shown to the approver as the act agreement."""
+    return getattr(getattr(binding, "agreement", None), "only", False) is True
+
+
 async def _sign_steps(
     binding: Binding,
     chosen: Chosen,
@@ -535,13 +542,14 @@ async def _sign_steps(
         if approval is not None:
             approved = await approves(
                 binding,
-                chosen.act,
+                "agreement" if _agreement_only(binding) else chosen.act,
                 request,
                 atr_bytes,
                 SigningStep(index=step, count=max(count, step + 1)),
                 approval,
                 network_of(_account(signer)),
                 opened,
+                _account(signer),
             )
             if isinstance(approved, Declined):
                 kept = Moved(answers[0] if len(answers) == 1 else list(answers), atr_bytes, h) if moves and answers else None
@@ -576,7 +584,7 @@ async def transact(
     agreement_signer: Signer | None = None,
     approved: AgreementPayment | None = None,
     signal: asyncio.Event | None = None,
-) -> Transacted | ToApprove | ToReturn | Declined:
+) -> Transacted | ToApprove | AgreementChallenges | ToReturn | Declined:
     """The gate's checks, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer,
     then finish. Every signing, the agreement payment's among them, is first held to its summary and its ceiling and
     asked of approver, and the signer is called only for what it approves (terms' profile buyer-gate.md, checks 1 to
@@ -626,8 +634,9 @@ async def transact(
     if floor is not None:
         return floor
 
-    if _namespace(binding) == "x402" and not _full(binding):
-        offers = _return.agreement_options(doc)
+    ns = _namespace(binding)
+    if ns in ("x402", "mpp") and not _full(binding):
+        offers = _return.agreement_options(doc) if ns == "x402" else _return.mpp_agreement_options(doc)
         if isinstance(offers, Refusal):
             return Declined("offer-unreadable", offers.code)
         if offers is not None:
@@ -642,6 +651,7 @@ async def transact(
                 (returned, return_value) if returned is not None else None,
                 approval,
                 signal,
+                ns,
             )
 
     gated = await _gate(doc, binding, _account(signer), fetch, resource_request, given, ceilings)
@@ -666,7 +676,7 @@ async def transact(
             chosen=chosen,
             charge=binding,
         )
-        if isinstance(agreed, (Declined, ToApprove)):
+        if isinstance(agreed, (Declined, ToApprove, AgreementChallenges)):
             return agreed
         receipt = agreed.receipt
 

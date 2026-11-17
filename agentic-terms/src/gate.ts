@@ -110,6 +110,16 @@ export function isFullCoverage(binding: Binding): boolean {
   return isObject(data) && data["coverage"] === "full";
 }
 
+/**
+ * Whether the pairing's data holds an agreement that is never a charge (`agreement.only`): its every payment is the
+ * sale's agreement, and is shown to the approver as the act `agreement`.
+ */
+export function isAgreementOnly(binding: Binding): boolean {
+  const data: unknown = isObject(binding) ? (binding as { data?: unknown }).data : undefined;
+  const agreement = isObject(data) ? data["agreement"] : undefined;
+  return isObject(agreement) && agreement["only"] === true;
+}
+
 export function pieceOf(binding: Binding): BuyerPiece | undefined {
   const id: unknown = isObject(binding) ? binding.id : undefined;
   return typeof id === "string" ? PIECES.get(id) : undefined;
@@ -384,7 +394,7 @@ export async function charged(
   const { request } = bounded;
   const kept = keptWith(piece, bounded.chosen, unsigned);
   if (request === null) return { chosen: kept, request, count: 0, bytes, h };
-  const summary = await shown(binding, request, bytes, inputs, ceilings, networkOfAccount(account));
+  const summary = await shown(binding, request, bytes, inputs, ceilings, networkOfAccount(account), undefined, account);
   if ("decline" in summary) return summary;
   return { chosen: kept, request, summary, count: stepsOf(unsigned), bytes, h };
 }
@@ -644,7 +654,8 @@ export async function signSteps(
     let summary: Summary | undefined;
     if (approval !== undefined) {
       const at = { index: step, count: Math.max(count, step + 1) };
-      const approved = await approves(binding, act, request, bytes, at, approval, networkOfAccount(signer.account), opened);
+      const shownAs = isAgreementOnly(binding) ? "agreement" : act;
+      const approved = await approves(binding, shownAs, request, bytes, at, approval, networkOfAccount(signer.account), opened, signer.account);
       if ("decline" in approved) {
         return moves && answers.length > 0 ? { ...approved, moved: { signed: answers.length === 1 ? answers[0] : answers, bytes, h } } : approved;
       }

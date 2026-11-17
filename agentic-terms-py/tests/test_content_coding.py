@@ -18,7 +18,7 @@ import pytest
 
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from support import confirm, transact
-from integraledger_terms import Agreed, Confirmed, Declined, ToApprove, _gate, agree
+from integraledger_terms import AgreementChallenges, Agreed, Confirmed, Declined, ToApprove, _gate, agree
 
 from support import A, ACCOUNT, BUYER, D, HASH_A, NOW, Chunks, CountingSigner, EthAccountSigner, Link
 
@@ -129,7 +129,7 @@ def test_gzip_bytes_served_with_no_coding_are_hashed_as_sent() -> None:
     assert isinstance(out, Declined) and out.code == "hash-mismatch"
 
 
-async def approved(client: httpx.AsyncClient) -> ToApprove | Agreed | Declined:
+async def approved(client: httpx.AsyncClient) -> ToApprove | AgreementChallenges | Agreed | Declined:
     """agree in its two calls: the agreement payment to approve, then that payment, approved unchanged."""
     signer = EthAccountSigner()
     first = await agree(A, URL, signer, client)

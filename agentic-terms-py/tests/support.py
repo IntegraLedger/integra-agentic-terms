@@ -25,6 +25,7 @@ from integraledger_terms import (
     Json,
     Next,
     Refusal,
+    AgreementChallenges,
     ToApprove,
     ToReturn,
     ToSign,
@@ -469,7 +470,7 @@ def _counted(signer: Any) -> Any:
 
 async def transact(
     doc: Any, binding: Any, signer: Any, fetch: httpx.AsyncClient, **options: Any
-) -> Transacted | ToApprove | ToReturn | Declined:
+) -> Transacted | ToApprove | AgreementChallenges | ToReturn | Declined:
     """The gate's transact with an approver approving every signing and RESOURCE_REQUEST where the test gives none,
     and SUMMARY_PENDING's decline asserted (_pending)."""
     given = {"approver": approve_all, "resource_request": RESOURCE_REQUEST, **options}

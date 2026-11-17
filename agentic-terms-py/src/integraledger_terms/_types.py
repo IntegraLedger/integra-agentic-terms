@@ -175,6 +175,17 @@ class ToApprove:
 
 
 @dataclass(frozen=True, slots=True)
+class AgreementChallenges:
+    """The agreement resource's MPP agreement challenges, where its one 402 offers no x402 agreement option and one or
+    more WWW-Authenticate: Payment challenges for the ATR's H: each in the seller's order, for the caller's own MPP
+    client to pay at the agreement URL, with the ATR bytes the gate compared and their hash. terms signs none of them."""
+
+    agreement_challenges: tuple[dict[str, Any], ...]
+    atr_bytes: bytes
+    h: AtrHash
+
+
+@dataclass(frozen=True, slots=True)
 class AgreementReceipt:
     """The agreement resource's answer once the agreement payment carrying the ATR hash is recorded."""
 
@@ -415,12 +426,16 @@ Approver = Callable[[ToSign], bool | Awaitable[bool]]
 
 @dataclass(frozen=True, slots=True)
 class ToReturn:
-    """What transact returns once it has paid the agreement of a pairing paid after its agreement: the agreement's
-    receipt; the Legal-Context value the caller sends when it repeats its request; the charge chosen, <slot>/<i>; the
-    ATR's bytes the gate compared; and H, their SHA-256. No charge is signed before the return."""
+    """What transact returns once the agreement of a pairing paid after its agreement is paid, or is left to the
+    caller's own MPP client: the agreement's receipt, where transact paid an x402 agreement option, else None; the
+    Legal-Context value the caller sends when it repeats its request; the charge chosen, <slot>/<i>; the ATR's bytes the
+    gate compared; H, their SHA-256; and, where the agreement resource offers only MPP agreement challenges, those
+    challenges in the seller's order, which transact signs none of, else None. Exactly one of agreement and
+    agreement_challenges is not None. No charge is signed before the return."""
 
-    agreement: AgreementReceipt
+    agreement: AgreementReceipt | None
     legal_context: str
     charge: str
     atr_bytes: bytes
     h: AtrHash
+    agreement_challenges: tuple[dict[str, Any], ...] | None = None

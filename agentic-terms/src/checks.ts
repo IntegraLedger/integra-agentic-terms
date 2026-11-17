@@ -635,7 +635,8 @@ export function networkOfAccount(account: unknown): string | undefined {
 /**
  * Checks 10 and 11 on a request handed to the signer: its summary, or the decline. `network` is the signing account's
  * CAIP-2 network where the caller knows it, which the summary names where the request names none; `opened`, for a later
- * step of a payment signed in steps, the step that opened its channel.
+ * step of a payment signed in steps, the step that opened its channel; `account` the signer's CAIP-10 account, where the
+ * caller knows it.
  */
 export async function shown(
   binding: Binding,
@@ -645,8 +646,9 @@ export async function shown(
   ceilings: Ceilings | undefined,
   network?: string,
   opened?: Opened,
+  account?: string,
 ): Promise<Summary | Declined> {
-  const summary = await summaryOf(String(binding.id), request, bytes, network, opened);
+  const summary = await summaryOf(String(binding.id), request, bytes, network, opened, account);
   if (summary === undefined) {
     return declined("summary-missing", `The gate has no summary of the ${String((request as { kind?: unknown }).kind)} request of ${String(binding.id)}.`);
   }
@@ -667,8 +669,9 @@ export async function approves(
   approval: Approval,
   network?: string,
   opened?: Opened,
+  account?: string,
 ): Promise<Summary | Declined> {
-  const summary = await shown(binding, request, bytes, approval.inputs, approval.ceilings, network, opened);
+  const summary = await shown(binding, request, bytes, approval.inputs, approval.ceilings, network, opened, account);
   if ("decline" in summary) return summary;
   const toSign: ToSign = { act, pairing: String(binding.id), request: copyOf(request), summary, step: { ...step } };
   let answer: unknown;

@@ -2,7 +2,9 @@
  * The agreement payment, in two calls. Called without an approved payment, `agree` asks the agreement URL for its
  * challenge and returns the agreement payment for the buyer's agent to approve, signing nothing: the challenge's first
  * option, in document order, that the signer can pay with a pairing whose payment can itself be an agreement (its data
- * holds `agreement`) and that the charge's `agreementOn` admits, where the charge is given. Called with the payment the agent approved, it builds and signs exactly that payment as the act
+ * holds `agreement`) and that the charge's `agreementOn` admits, where the charge is given; where the agreement URL's 402
+ * offers no x402 option and MPP agreement challenges, it returns those, which terms builds no credential for, for the
+ * caller's own MPP client. Called with the payment the agent approved, it builds and signs exactly that payment as the act
  * `agreement`, sends it, and returns the resource's receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is
  * sent unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again
  * after each 202, 5xx or timeout, each paid request bounded by min(`maxTimeoutSeconds`, 120) + 60 + 10 seconds and the
@@ -23,13 +25,14 @@ import {
   type AtrHash,
   type Refusal,
 } from "@integraledger/lcp";
-import { network as mppNetwork, type MppChallenge } from "@integraledger/lcp/mpp";
+import { network as mppNetwork, parseChallenges, read as mppRead, type MppChallenge } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Approval } from "./checks.js";
 import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected, trimHttpWhitespace } from "./gate.js";
 import { isRefusal } from "./pairings/common.js";
 import type {
   AgreeOptions,
+  AgreementChallenges,
   AgreementPayment,
   AgreementReceipt,
   Binding,
@@ -61,6 +64,8 @@ const DECIMAL = /^[0-9]{1,9}$/;
 interface Answer {
   status: number;
   paymentRequired: string | null;
+  /** The `WWW-Authenticate` field's value, its lines joined with ", " as Fetch joins them. */
+  wwwAuthenticate: string | null;
   retryAfter: string | null;
   body: Uint8Array | null;
 }
@@ -180,6 +185,7 @@ async function get(
     const answer: Answer = {
       status: response.status,
       paymentRequired: response.headers.get("payment-required"),
+      wwwAuthenticate: response.headers.get("www-authenticate"),
       retryAfter: response.headers.get("retry-after"),
       body: null,
     };
@@ -481,6 +487,27 @@ export function agreementOptions(
   return out;
 }
 
+/**
+ * The agreement challenges of an MPP first response that offers the agreement and no charge challenge (the protocol
+ * package's profile `legal-context-return.md`): each challenge, in the seller's order, with the charges it names as
+ * those it serves (`servesOf`, its `opaque` member `legalContextServes`) and the protocol package's MPP `read` of the
+ * response. Undefined unless the response is a list of 1 to 32 challenges each of which names the charges it serves and
+ * all of which `read` finds placed for one H. A response none of whose challenges lacks the member, and one of whose
+ * challenges `servesOf` refuses, is declined `offer-unreadable` with that refusal's code.
+ */
+export function mppAgreementOptions(
+  challenges: unknown,
+): { option: MppChallenge; read: Read; serves: readonly string[] }[] | Declined | undefined {
+  if (!Array.isArray(challenges) || challenges.length === 0 || challenges.length > MAX_OPTIONS) return undefined;
+  const served = challenges.map((c) => servesOf(c));
+  if (served.some((s) => s === undefined)) return undefined;
+  const malformed = served.find((s) => isRefusal(s));
+  if (malformed !== undefined && isRefusal(malformed)) return declined("offer-unreadable", malformed.code);
+  const read = mppRead(challenges as MppChallenge[]);
+  if (isRefusal(read) || read.offer.challenges.length !== challenges.length) return undefined;
+  return challenges.map((c, i) => ({ option: c as MppChallenge, read: read as Read, serves: served[i] as readonly string[] }));
+}
+
 /** Whether `v` has the form of an agreement payment: an agreement URL, an option and a payment request. */
 function isAgreementPayment(v: unknown): v is AgreementPayment {
   return isObject(v) && typeof v["url"] === "string" && isObject(v["option"]) && isObject(v["required"]);
@@ -509,7 +536,7 @@ export function agree(
   signer: Signer,
   fetch: Fetch,
   options?: AgreeOptions,
-): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
+): Promise<ToApprove | AgreementChallenges | { receipt: AgreementReceipt } | Declined> {
   return exchange(bytes, url, signer, fetch, options === undefined ? {} : options, undefined);
 }
 
@@ -548,7 +575,7 @@ export async function exchange(
   ns: string | undefined,
   charge?: Binding,
   approval?: Approval,
-): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
+): Promise<ToApprove | AgreementChallenges | { receipt: AgreementReceipt } | Declined> {
   if (!isHttpsLink(url)) {
     const fault = isOtherSchemeLink(url) ? "link-not-https" : "legal-context-malformed";
     return declined("link-not-https", `${ns ?? "x402"}/${fault}`);
@@ -606,6 +633,24 @@ export async function exchange(
   }
 }
 
+/**
+ * The agreement resource's MPP agreement challenges, where its 402 carries no `PAYMENT-REQUIRED`: its
+ * `WWW-Authenticate` field read by the protocol package's `parseChallenges`, and the `Payment` challenges its MPP `read`
+ * finds placed for one H, in the seller's order, returned for the caller's own MPP client to pay; terms builds no MPP
+ * credential, so it signs none of them. A field `parseChallenges` refuses, or challenges `read` refuses, is
+ * `offer-unreadable` with that code; challenges placed for another H are `hash-mismatch`; a field with no `Payment`
+ * challenge is read as a 402 with no payment request.
+ */
+function mppOnly(field: string, bytes: Uint8Array, h: AtrHash): AgreementChallenges | Declined {
+  const parsed = parseChallenges([field]);
+  if (isRefusal(parsed)) return declined("offer-unreadable", parsed.code);
+  if (parsed.length === 0) return failed("The agreement URL answered 402 without a readable PAYMENT-REQUIRED.");
+  const read = mppRead(parsed);
+  if (isRefusal(read)) return declined("offer-unreadable", read.code);
+  if (!hashEquals(read.h, h)) return declined("hash-mismatch", "The agreement challenge advertises another ATR hash.");
+  return { agreementChallenges: read.offer.challenges, bytes, h };
+}
+
 /** The unpaid request: the agreement payment to approve, the receipt of an agreement already recorded, or a decline. */
 async function offer(
   bytes: Uint8Array,
@@ -616,7 +661,7 @@ async function offer(
   inputs: Inputs,
   admits: Admits,
   signal: AbortSignal | undefined,
-): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
+): Promise<ToApprove | AgreementChallenges | { receipt: AgreementReceipt } | Declined> {
   const unpaid = await get(fetch, url, undefined, UNPAID_DEADLINE_MS, signal);
   if (isEnded(signal)) return ended();
   if ("decline" in unpaid) return unpaid;
@@ -626,6 +671,7 @@ async function offer(
     return declined("agreement-pending", "An agreement payment for this ATR is already settling.");
   }
   if (unpaid.status !== 402) return failed(`The agreement URL answered status ${unpaid.status}.`);
+  if (unpaid.paymentRequired === null && unpaid.wwwAuthenticate !== null) return mppOnly(unpaid.wwwAuthenticate, bytes, h);
 
   const required = unpaid.paymentRequired === null ? undefined : fromBase64Json(unpaid.paymentRequired);
   if (!isObject(required)) return failed("The agreement URL answered 402 without a readable PAYMENT-REQUIRED.");

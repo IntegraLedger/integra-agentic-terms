@@ -244,6 +244,170 @@ def checked_for(c: object, pairing: str) -> Checked | Refusal:
 # ── The buyer's reading.
 
 
+# The WWW-Authenticate field, as the protocol package's parseChallenges reads it.
+MAX_FIELD = 8192
+_PARAMS = ("id", "realm", "method", "intent", "request", "expires", "digest", "description", "header", "opaque")
+_REQUIRED = ("id", "realm", "method", "intent", "request")
+_TCHAR = frozenset("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&'*+-.^_`|~")
+_TOKEN68 = frozenset("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._~+/")
+
+
+def _qdtext(c: int, escaped: bool) -> bool:
+    if escaped:
+        return c in (0x09, 0x20) or 0x21 <= c <= 0x7E or 0x80 <= c <= 0xFF
+    return c in (0x09, 0x20, 0x21) or 0x23 <= c <= 0x7E or 0x80 <= c <= 0xFF
+
+
+def _parse_field(s: str) -> list[tuple[str, dict[str, str], bool]] | None:
+    """One field value as a list of challenges, each its scheme, its known parameters and whether one repeats; None
+    when it does not follow RFC 9110's challenge grammar (section 11.6.1)."""
+    out: list[tuple[str, dict[str, str], list[bool]]] = []
+    n = len(s)
+    i = 0
+
+    def at(j: int) -> str:
+        return s[j] if j < n else ""
+
+    def ows() -> None:
+        nonlocal i
+        while i < n and s[i] in " \t":
+            i += 1
+
+    def token() -> str | None:
+        nonlocal i
+        start = i
+        while i < n and s[i] in _TCHAR:
+            i += 1
+        return s[start:i] if i > start else None
+
+    def quoted() -> str | None:
+        nonlocal i
+        i += 1
+        v: list[str] = []
+        while i < n:
+            c = ord(s[i])
+            if c == 0x22:
+                i += 1
+                return "".join(v)
+            if c == 0x5C:
+                if i + 1 >= n or not _qdtext(ord(s[i + 1]), True):
+                    return None
+                v.append(s[i + 1])
+                i += 2
+                continue
+            if not _qdtext(c, False):
+                return None
+            v.append(s[i])
+            i += 1
+        return None
+
+    def value() -> str | None:
+        ows()
+        return quoted() if at(i) == '"' else token()
+
+    def param_follows() -> bool:
+        j = i
+        while j < n and s[j] in " \t":
+            j += 1
+        if at(j) != "=":
+            return False
+        j += 1
+        while j < n and s[j] in " \t":
+            j += 1
+        return j < n and (s[j] == '"' or s[j] in _TCHAR)
+
+    def add(c: tuple[str, dict[str, str], list[bool]], name: str, v: str) -> None:
+        k = name.lower()
+        if k not in _PARAMS:
+            return
+        if k in c[1]:
+            c[2][0] = True
+        else:
+            c[1][k] = v
+
+    def element_end() -> bool:
+        ows()
+        return i == n or s[i] == ","
+
+    current: tuple[str, dict[str, str], list[bool]] | None = None
+    while True:
+        while i < n and s[i] in " \t,":
+            i += 1
+        if i == n:
+            return [(scheme, params, dup[0]) for scheme, params, dup in out]
+        t = token()
+        if t is None:
+            return None
+        if param_follows():
+            if current is None:
+                return None
+            ows()
+            i += 1
+            v = value()
+            if v is None:
+                return None
+            add(current, t, v)
+            if not element_end():
+                return None
+            continue
+        current = (t, {}, [False])
+        out.append(current)
+        if i == n or s[i] == ",":
+            continue
+        if s[i] != " ":
+            return None
+        while i < n and s[i] == " ":
+            i += 1
+        if i == n or s[i] == ",":
+            continue
+        start = i
+        first = token()
+        if first is not None and param_follows():
+            ows()
+            i += 1
+            v = value()
+            if v is None:
+                return None
+            add(current, first, v)
+            if not element_end():
+                return None
+            continue
+        i = start
+        while i < n and s[i] in _TOKEN68:
+            i += 1
+        while i < n and s[i] == "=":
+            i += 1
+        if i == start or not element_end():
+            return None
+
+
+def parse_challenges(field_values: object) -> list[dict[str, str]] | Refusal:
+    """lcp's parseChallenges: WWW-Authenticate field values read by RFC 9110's challenge grammar, keeping the Payment
+    challenges with their quoted-strings unescaped and their unknown parameters dropped; at most 8 KiB per value and 32
+    Payment challenges (mpp/header-malformed); a Payment challenge that repeats a parameter or lacks a required one is
+    mpp/challenge-malformed."""
+    if not isinstance(field_values, (list, tuple)):
+        return Refusal("mpp/header-malformed")
+    out: list[dict[str, str]] = []
+    for value in field_values:
+        if not isinstance(value, str) or js_length(value) > MAX_FIELD:
+            return Refusal("mpp/header-malformed")
+        parsed = _parse_field(value)
+        if parsed is None:
+            return Refusal("mpp/header-malformed")
+        for scheme, params, duplicate in parsed:
+            if scheme.lower() != "payment":
+                continue
+            if duplicate:
+                return Refusal("mpp/challenge-malformed")
+            if any(params.get(k) in (None, "") for k in _REQUIRED):
+                return Refusal("mpp/challenge-malformed")
+            out.append(params)
+            if len(out) > MAX_CHALLENGES:
+                return Refusal("mpp/header-malformed")
+    return out
+
+
 def is_link(value: object) -> bool:
     """True for an https link of at most 2048 UTF-16 code units."""
     return isinstance(value, str) and js_length(value) <= MAX_LINK and is_https_link(value)

@@ -53,10 +53,17 @@ export interface Opened {
  * in steps, which names only the channel, is the step that opened that channel: the later step is shown with its
  * payees, asset and network, and one whose channel is not the one it opened has no summary. `start`, for a deadline
  * signed as a height where the request signs no start, reads the height the caller gave the build from its inputs.
- * `show` may answer a promise, for a request read with an asynchronous decoder; the gate awaits it.
+ * `show` may answer a promise, for a request read with an asynchronous decoder; the gate awaits it. `account`, where the
+ * gate knows it, is the signer's CAIP-10 account, for a request that commits to its payer only by a hash, such as a
+ * channel id derived from the payer's address.
  */
 export interface SummaryEntry {
-  readonly show: (request: SigningRequest, network?: string, opened?: Opened) => Shown | undefined | Promise<Shown | undefined>;
+  readonly show: (
+    request: SigningRequest,
+    network?: string,
+    opened?: Opened,
+    account?: string,
+  ) => Shown | undefined | Promise<Shown | undefined>;
   readonly start?: (inputs: Inputs) => bigint | undefined;
 }
 
@@ -188,7 +195,8 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
  * undefined where the pairing has no summary or its entry cannot read the request. An entry that throws, or whose
  * promise rejects, gives none.
  * `network` is the signing account's CAIP-2 network where the gate knows it, and `opened`, for a later step, the step
- * that opened its channel, each given to the entry as it is given here.
+ * that opened its channel, and `account` the signer's CAIP-10 account where the gate knows it, each given to the entry as
+ * it is given here.
  */
 export async function summaryOf(
   pairing: string,
@@ -196,12 +204,13 @@ export async function summaryOf(
   atr: Uint8Array,
   network?: string,
   opened?: Opened,
+  account?: string,
 ): Promise<Summary | undefined> {
   const entry = SUMMARIES.get(pairing);
   if (entry === undefined) return undefined;
   let shown: Shown | undefined;
   try {
-    shown = await entry.show(request, network, opened);
+    shown = await entry.show(request, network, opened, account);
   } catch {
     return undefined;
   }

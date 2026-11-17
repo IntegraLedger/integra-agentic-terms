@@ -21,6 +21,7 @@ import {
   confirm,
   transact,
   type AgreeOptions,
+  type AgreementChallenges,
   type AgreementReceipt,
   type Binding,
   type Declined,
@@ -148,7 +149,7 @@ async function approveAndAgree(
   signer: Signer,
   fetch: Fetch,
   options: AgreeOptions = {},
-): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
+): Promise<ToApprove | AgreementChallenges | { receipt: AgreementReceipt } | Declined> {
   const first = await agree(A, AGREEMENT_URL, signer, fetch, options);
   if (!("approve" in first)) return first;
   return agree(A, AGREEMENT_URL, signer, fetch, { ...options, approved: first.approve });

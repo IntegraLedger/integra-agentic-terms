@@ -483,9 +483,16 @@ export function createBuyerServer(options: {
           return result({ atrHash: out.h, atr: atrOf(out.bytes), approve: { agreement: jsonOf(out.approve), signings: [] } });
         }
         if ("legalContext" in out) {
-          // The agreement is paid and no charge is signed: the value the buyer's repeated request carries.
-          const { agreement, legalContext, charge } = out;
-          return result({ atrHash: out.h, atr: atrOf(out.bytes), agreement: jsonOf(agreement), legalContext, charge });
+          // The agreement is paid, or its MPP agreement challenges are the agent's own MPP client's to pay, and no charge
+          // is signed: the value the buyer's repeated request carries.
+          const { agreement, agreementChallenges, legalContext, charge } = out;
+          const agreed = agreement === undefined ? {} : { agreement: jsonOf(agreement) };
+          const challenges = agreementChallenges === undefined ? {} : { agreementChallenges: jsonOf(agreementChallenges) };
+          return result({ atrHash: out.h, atr: atrOf(out.bytes), ...agreed, ...challenges, legalContext, charge });
+        }
+        if ("agreementChallenges" in out) {
+          // The agreement resource offers only MPP agreement challenges: nothing is signed; the agent's MPP client pays one.
+          return result({ atrHash: out.h, atr: atrOf(out.bytes), agreementChallenges: jsonOf(out.agreementChallenges) });
         }
         const agreement = out.agreement === undefined ? {} : { agreement: jsonOf(out.agreement) };
         return result({ atrHash: out.h, atr: atrOf(out.bytes), ...(await signedOf(out, bindingOf(a.pairing))), ...agreement });
@@ -518,6 +525,7 @@ export function createBuyerServer(options: {
         });
         if ("decline" in out) return declinedResult(out);
         if ("approve" in out) return result({ atrHash: out.h, approve: jsonOf(out.approve) });
+        if ("agreementChallenges" in out) return result({ atrHash: out.h, agreementChallenges: jsonOf(out.agreementChallenges) });
         return result({ atrHash: out.receipt.atrHash, receipt: jsonOf(out.receipt) });
       },
     );

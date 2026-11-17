@@ -10,8 +10,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { encodeSpendPermissionHeader, spendPermissionsEip155, type SpendPermissionOfferInput } from "@integraledger/lcp/spend-permissions";
 import type { AtrHash } from "@integraledger/lcp";
 import { summaryOf } from "../src/summary.js";
-import type { Binding, SigningRequest } from "../src/index.js";
-import { ABC, buildAndSign, vectors, type Pairing } from "./support.js";
+import { transact, type Binding, type SigningRequest, type ToSign } from "../src/index.js";
+import { A, ABC, HA, RESOURCE_REQUEST, buildAndSign, counting, serving, vectors, type Pairing } from "./support.js";
 
 type Permission = Record<"account" | "spender" | "token" | "allowance" | "period" | "start" | "end" | "salt" | "extraData", string>;
 interface File {
@@ -109,5 +109,21 @@ describe("spend-permissions/eip155: the route transaction, where the offer accep
       expect(signed).toEqual(V.header.transaction.return);
       expect(encodeSpendPermissionHeader(signed as never)).toBe(V.header.transaction.value);
       expect(await summaryOf(binding.id, request, ABC)).toEqual(SHOWN);
+    }));
+});
+
+// The Spend Permission is the sale's agreement and never a charge (the pairing's data holds agreement.only): through
+// transact the approver is asked about it as the act "agreement". The offer is the file's, placed for buyer.json's ATR A.
+describe("spend-permissions/eip155 through transact", () => {
+  it("asks the approver about the permission as the act agreement", () =>
+    at(async () => {
+      const asked: ToSign[] = [];
+      const signer = counting(ACCOUNT, async (r) => signTyped(r));
+      const out = await transact(bodyFor(HA, ["signature"]), binding, signer, serving(A), {
+        approver: (t) => (asked.push(t), false),
+        resourceRequest: RESOURCE_REQUEST,
+        ceilings: CEILINGS,
+      });
+      expect(["decline" in out && out.decline.code, asked.map((a) => a.act), signer.requests.length]).toEqual(["not-approved", ["agreement"], 0]);
     }));
 });

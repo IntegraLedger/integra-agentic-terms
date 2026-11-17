@@ -19,6 +19,7 @@ from integraledger_terms._core import agreement_value
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from support import confirm, transact
 from integraledger_terms import (
+    AgreementChallenges,
     Advertised,
     Agreed,
     AgreementPayment,
@@ -132,7 +133,7 @@ def run(link: Link, go: Any) -> Any:
     return asyncio.run(main())
 
 
-async def approve_and_agree(signer: Any, client: httpx.AsyncClient, **options: Any) -> ToApprove | Agreed | Declined:
+async def approve_and_agree(signer: Any, client: httpx.AsyncClient, **options: Any) -> ToApprove | AgreementChallenges | Agreed | Declined:
     """agree in its two calls: the agreement payment to approve, then that payment, approved unchanged."""
     first = await agree(A, URL, signer, client, **options)
     if not isinstance(first, ToApprove):
@@ -142,7 +143,7 @@ async def approve_and_agree(signer: Any, client: httpx.AsyncClient, **options: A
 
 async def approve_and_transact(
     doc: Any, binding: Any, signer: Any, client: httpx.AsyncClient, **options: Any
-) -> Transacted | ToApprove | ToReturn | Declined:
+) -> Transacted | ToApprove | AgreementChallenges | ToReturn | Declined:
     """transact in its two calls: the agreement payment to approve, then the call with that payment approved
     unchanged."""
     first = await transact(doc, binding, signer, client, **options)

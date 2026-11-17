@@ -5,6 +5,7 @@ the agreement and no charge option: it pays the agreement, chosen by the charge 
 
 import asyncio
 import base64
+import functools
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -19,8 +20,11 @@ from ._parse import parse_atr
 from ._types import (
     Advertised,
     Agreed,
+    AgreementChallenges,
     AgreementPayment,
+    AgreementReceipt,
     Binding,
+    Chosen,
     Declined,
     Refusal,
     ResourceRequest,
@@ -29,6 +33,8 @@ from ._types import (
     ToReturn,
 )
 from .bindings._lcp import from_lcp_string, is_https_link, is_other_scheme_link, normal_hash, to_lcp_string
+from .bindings._mpp import pairings_of
+from .bindings._mpp import read as mpp_read
 from .bindings._mpp_checks import decode_string_map
 from .bindings._x402 import MAX_OPTIONS
 
@@ -303,6 +309,30 @@ def agreement_options(required: object) -> list[Offered] | Refusal | None:
     return out
 
 
+def mpp_agreement_options(challenges: object) -> list[Offered] | Refusal | None:
+    """The agreement challenges of an MPP first response that offers the agreement and no charge challenge: each
+    challenge, in the seller's order, with the charges it names as served (its opaque member legalContextServes) and the
+    protocol package's MPP read of the response. None unless the response is a list of 1 to 32 challenges each of which
+    names the charges it serves and all of which read finds placed for one H; the refusal of the first challenge whose
+    serves lcp refuses (return/serves-malformed), which the gate declines rather than reading the response as a charge."""
+    if not isinstance(challenges, list) or not 0 < len(challenges) <= MAX_OPTIONS:
+        return None
+    served = [serves_of(c) for c in challenges]
+    if any(serves is None for serves in served):
+        return None
+    refused = next((serves for serves in served if isinstance(serves, Refusal)), None)
+    if refused is not None:
+        return refused
+    read = mpp_read(challenges)
+    listed = read.offer.get("challenges") if isinstance(read, Advertised) else None
+    if not isinstance(read, Advertised) or not isinstance(listed, list) or len(listed) != len(challenges):
+        return None
+    return [Offered(option=c, read=read, serves=serves) for c, serves in zip(challenges, served) if isinstance(serves, tuple)]
+
+
+_SLOT_LISTING = {"x402": "accepts", "mpp": "challenges"}
+
+
 async def to_return(
     doc: Any,
     binding: Binding,
@@ -314,22 +344,27 @@ async def to_return(
     returned: tuple[AtrHash, bytes | None] | None,
     approval: Approval,
     signal: asyncio.Event | None,
+    ns: str = "x402",
 ) -> ToReturn | Declined:
     """The return after an agreement: the ATR fetched from the response's link, compared with its H and with the return
-    value's, parsed, and its request commitment held to the buyer's request; then, for each agreement option in document
-    order and each charge it names as served, x402/<i>, the option at index i of the ATR's x402 slot, the first such
-    charge the pairing reads, the account can pay and checks 9 to 11 pass on (its build with H, its summary and its
-    ceiling) is chosen, and that agreement option, where the charge's agreementOn admits it, is paid, asked of the
-    approver as the act agreement, and its receipt awaited. No charge is signed, and no agreement is paid for a charge
-    those checks decline: the next served charge is tried, and where every one is declined there, the first decline is
-    returned. A pairing whose agreement is never a charge, or a response with no such charge, is no-payable-option."""
+    value's, parsed, and its request commitment held to the buyer's request; then, for each agreement option in the
+    seller's order and each charge it names as served, <slot>/<i>, the option at index i of the list the ATR's binding
+    slot of the pairing's protocol holds (accepts in x402, challenges in mpp), the first such charge the account can pay
+    is chosen (_choice), and its agreement paid. On x402 the agreement option is paid at the agreement URL as offered.
+    On MPP, whose first response offers MPP agreement challenges, which terms builds no credential for, the agreement
+    URL is followed: an x402 agreement option its 402 offers is paid as on x402, and where it offers only MPP agreement
+    challenges they are returned in agreement_challenges for the caller's own MPP client, nothing signed. Each agreement
+    payment, where the charge's agreementOn admits it, is asked of the approver as the act agreement. No charge is
+    signed, and no agreement is paid for a charge checks 9 to 11 decline: the next served charge is tried, and where
+    every one is declined there, the first decline is returned. A pairing whose agreement is never a charge, or a
+    response with no such charge, is no-payable-option."""
     read = offers[0].read
     url = read.agreement
     if not isinstance(url, str):
         return Declined("agreement-not-offered", "The first response names no agreement URL.")
     if not is_https_link(read.link):
         fault = "link-not-https" if is_other_scheme_link(read.link) else "legal-context-malformed"
-        return Declined("link-not-https", f"x402/{fault}")
+        return Declined("link-not-https", f"{ns}/{fault}")
     atr_bytes = await _gate._fetch(fetch, read.link)
     if isinstance(atr_bytes, Declined):
         return atr_bytes
@@ -344,52 +379,105 @@ async def to_return(
         return other_request
     own = getattr(binding, "agreement", None)
     if getattr(own, "only", False) is True:
-        return Declined("no-payable-option", "x402/no-payable-option")
-    slot = parsed.value.get("x402") if isinstance(parsed.value, Mapping) else None
-    listed = slot.get("accepts") if isinstance(slot, Mapping) else None
+        return Declined("no-payable-option", f"{ns}/no-payable-option")
+    slot = parsed.value.get(ns) if isinstance(parsed.value, Mapping) else None
+    listed = slot.get(_SLOT_LISTING[ns]) if isinstance(slot, Mapping) else None
     charges: list[Any] = listed if isinstance(listed, list) else []
-    piece = _gate._piece(binding)
-    assert piece is not None
+    header = to_legal_context_header(h, returned[1] if returned is not None else None)
+    if isinstance(header, Refusal):
+        return Declined("offer-unreadable", header.code)
+    placed = Advertised(h=h, link=read.link, offer={}, agreement=url)
     first: Declined | None = None
     for offered in offers:
         for name in offered.serves:
-            at = re.fullmatch(r"x402/([0-9]+)", name)
+            at = re.fullmatch(ns + r"/([0-9]+)", name)
             charge = charges[int(at.group(1))] if at is not None and int(at.group(1)) < len(charges) else None
             if not isinstance(charge, Mapping):
                 continue
-            only = {**doc, "accepts": [charge]}
-            charge_read = binding.read(only)
-            if isinstance(charge_read, Refusal):
+            chosen = _choice(binding, ns, doc, charge, placed, atr_bytes, account, approval)
+            if chosen is None:
                 continue
-            chosen = piece.choose(charge_read, account, approval.inputs, _gate._now(), _gate._ref(), only)
-            if isinstance(chosen, Refusal):
+            if isinstance(chosen, Declined):
+                first = first if first is not None else chosen
                 continue
-            built = _gate._built(
-                piece, binding, replace(chosen, agreement=url), atr_bytes, h, account, approval.inputs, approval.ceilings
-            )
-            if isinstance(built, Declined):
-                first = first if first is not None else built
-                continue
-            approved = AgreementPayment(url=url, option=offered.option, required=dict(doc))
-            agreed = await _agreement.exchange(
+
+            def back(receipt: AgreementReceipt | None, challenges: tuple[dict[str, Any], ...] | None = None) -> ToReturn:
+                return ToReturn(receipt, header, name, atr_bytes, h, challenges)
+
+            pay = functools.partial(
+                _agreement.exchange,
                 atr_bytes,
                 url,
                 signer,
                 fetch,
-                approved=approved,
                 inputs=approval.inputs,
                 signal=signal,
-                ns="x402",
+                ns=ns,
                 approval=approval,
                 chosen=chosen,
                 charge=binding,
             )
+            if ns == "x402":
+                agreed = await pay(approved=AgreementPayment(url=url, option=dict(offered.option), required=dict(doc)))
+            else:
+                asked = await pay(approved=None)
+                if isinstance(asked, (Declined, Agreed)):
+                    agreed = asked
+                elif isinstance(asked, AgreementChallenges):
+                    return back(None, asked.agreement_challenges)
+                else:
+                    agreed = await pay(approved=asked.approve)
             if isinstance(agreed, Declined):
                 return agreed
             if not isinstance(agreed, Agreed):
                 return Declined("agreement-failed", "The agreement was not paid.")
-            header = to_legal_context_header(h, returned[1] if returned is not None else None)
-            if isinstance(header, Refusal):
-                return Declined("offer-unreadable", header.code)
-            return ToReturn(agreement=agreed.receipt, legal_context=header, charge=name, atr_bytes=atr_bytes, h=h)
-    return first if first is not None else Declined("no-payable-option", "x402/no-payable-option")
+            return back(agreed.receipt)
+    return first if first is not None else Declined("no-payable-option", f"{ns}/no-payable-option")
+
+
+def _choice(
+    binding: Binding,
+    ns: str,
+    doc: Any,
+    charge: Mapping[str, Any],
+    placed: Advertised,
+    atr_bytes: bytes,
+    account: str,
+    approval: Approval,
+) -> Chosen | Declined | None:
+    """The charge, an option of the ATR's binding slot, chosen for the account; None where the pairing does not offer
+    it or the account cannot pay it, and the decline of checks 9 to 11 where they decline it. Where the pairing reads
+    the slot's option in the first response's form, the choice is made from that read and checks 9 to 11 (its build
+    with H, its summary and its ceiling) are made on it before its agreement is paid. Where the slot holds the option
+    without what its read needs and the seller writes only once it serves the charge, the choice is made by the
+    option's own checks and checks 9 to 11 are left to the call that pays the charge: an x402 option whose carrier the
+    seller writes after the agreement, held to the pairing's before_carrier, the protocol package's checks of the offer
+    before that carrier (an x402/exact/lnbtc/payment-hash option, whose invoice is issued after the agreement); and
+    every MPP challenge, which the slot holds as issued, without the id and the members the seller places when it
+    serves it, held to the pairing's own checks of a challenge (pairings_of)."""
+    piece = _gate._piece(binding)
+    assert piece is not None
+
+    def choose(read: Advertised, only: Any) -> Chosen | None:
+        chosen = piece.choose(read, account, approval.inputs, _gate._now(), _gate._ref(), only)
+        return None if isinstance(chosen, Refusal) else chosen
+
+    if ns == "mpp":
+        pairings = pairings_of(charge)
+        if isinstance(pairings, Refusal) or binding.id not in pairings:
+            return None
+        return choose(replace(placed, offer={"challenges": [dict(charge)]}), [dict(charge)])
+    only = {**doc, "accepts": [charge]}
+    charge_read = binding.read(only)
+    if isinstance(charge_read, Refusal):
+        before = getattr(binding, "before_carrier", None)
+        if before is None or before(charge) is not True:
+            return None
+        return choose(replace(placed, offer={"required": only, "options": [dict(charge)]}), only)
+    chosen = choose(charge_read, only)
+    if chosen is None:
+        return None
+    built = _gate._built(
+        piece, binding, replace(chosen, agreement=placed.agreement), atr_bytes, placed.h, account, approval.inputs, approval.ceilings
+    )
+    return built if isinstance(built, Declined) else chosen

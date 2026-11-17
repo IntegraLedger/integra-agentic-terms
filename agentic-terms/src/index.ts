@@ -27,6 +27,7 @@ export type {
   SigningRequest,
   SigningStep,
   Summary,
+  AgreementChallenges,
   ToApprove,
   ToReturn,
   ToSign,

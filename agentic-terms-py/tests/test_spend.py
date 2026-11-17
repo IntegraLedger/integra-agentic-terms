@@ -7,6 +7,7 @@ request is the file's build, the published key #0's eth-account signature is the
 the file's return, whose base64url JSON is the file's Spend-Permission header; each summary member is the file's
 permission member it names. The B2 and B6 rows run in test_buyer_rows.py."""
 
+import asyncio
 import base64
 import copy
 from typing import Any
@@ -15,9 +16,9 @@ import pytest
 from breadth import ABC, Pairing, build_and_sign
 from eth_account import Account
 from eth_account.messages import encode_typed_data
-from support import ACCOUNT, KEY, load, sign_typed
+from support import A, ACCOUNT, HASH_A, KEY, RESOURCE_REQUEST, CountingSigner, load, serving, sign_typed
 
-from integraledger_terms import SPEND_PERMISSIONS_EIP155, Advertised, Payee, Refusal, Summary, Validity, _gate
+from integraledger_terms import SPEND_PERMISSIONS_EIP155, Advertised, Declined, Payee, Refusal, Summary, ToSign, Validity, _gate, transact
 from integraledger_terms._summary import summary_of
 from integraledger_terms.bindings._codec import js_json
 
@@ -183,3 +184,25 @@ def test_the_route_transaction_where_the_offer_accepts_it_alone(monkeypatch: pyt
     assert signed == V["header"]["transaction"]["return"]
     assert header(signed) == V["header"]["transaction"]["value"]
     assert summary_of(binding.id, request, ABC) == SHOWN
+
+
+# The Spend Permission is the sale's agreement and never a charge (the pairing's data holds agreement.only): through
+# transact the approver is asked about it as the act "agreement". The offer is the file's, placed for buyer.json's ATR A.
+def test_transact_asks_the_approver_about_the_permission_as_the_agreement(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_gate, "_now", lambda: F["now"])
+    asked: list[ToSign] = []
+
+    def approver(t: ToSign) -> bool:
+        asked.append(t)
+        return False
+
+    async def go() -> Any:
+        async with serving(A).client() as client:
+            return await transact(
+                body_for(HASH_A, ["signature"]), binding, CountingSigner(), client,
+                approver=approver, resource_request=RESOURCE_REQUEST, ceilings=CEILINGS,
+            )
+
+    out = asyncio.run(go())
+    assert isinstance(out, Declined) and out.code == "not-approved", out
+    assert [a.act for a in asked] == ["agreement"]

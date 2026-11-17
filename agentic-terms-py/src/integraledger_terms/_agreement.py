@@ -28,10 +28,13 @@ from .bindings._codec import b64_decode, js_json
 from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
 from .bindings._mpp import network as mpp_network
+from .bindings._mpp import parse_challenges
+from .bindings._mpp import read as mpp_read
 from .bindings._x402 import MAX_OPTIONS, is_offered, timeout_seconds
 from ._types import (
     agreement_of,
     Advertised,
+    AgreementChallenges,
     AgreementPayment,
     AgreementReceipt,
     Agreed,
@@ -73,6 +76,7 @@ async def _sleep(seconds: float) -> None:
 class _Answer:
     status: int
     payment_required: str | None
+    www_authenticate: tuple[str, ...]
     retry_after: str | None
     body: bytes | None
 
@@ -174,6 +178,7 @@ async def _get(
                 answer = _Answer(
                     status=response.status_code,
                     payment_required=response.headers.get("payment-required"),
+                    www_authenticate=tuple(response.headers.get_list("www-authenticate")),
                     retry_after=response.headers.get("retry-after"),
                     body=None,
                 )
@@ -466,7 +471,7 @@ async def agree(
     inputs: Inputs | None = None,
     signal: asyncio.Event | None = None,
     chosen: Chosen | None = None,
-) -> ToApprove | Agreed | Declined:
+) -> ToApprove | AgreementChallenges | Agreed | Declined:
     """Without approved: ask the agreement URL for its challenge and return the agreement payment to approve, signing
     nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
     signer, send it to url, and return the receipt once recorded; a payment whose challenge the protocol package's read
@@ -513,7 +518,7 @@ async def exchange(
     approval: Approval | None = None,
     chosen: Chosen | None = None,
     charge: Binding | None = None,
-) -> ToApprove | Agreed | Declined:
+) -> ToApprove | AgreementChallenges | Agreed | Declined:
     """agree, where ns is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
     declines link-not-https, its detail the protocol package's code in that namespace, link-not-https for an absolute
     URL of another scheme and legal-context-malformed for any other value. With approval, transact's, the agreement
@@ -587,6 +592,27 @@ async def exchange(
             return stopped
 
 
+def _mpp_only(fields: tuple[str, ...], atr_bytes: bytes, h: AtrHash) -> AgreementChallenges | Declined:
+    """The agreement resource's MPP agreement challenges, where its 402 carries no PAYMENT-REQUIRED: its WWW-Authenticate
+    field values read by parse_challenges, the protocol package's parseChallenges, and the Payment challenges its MPP
+    read finds placed for one H, in the seller's order, returned for the caller's own MPP client to pay; terms builds no
+    MPP credential, so it signs none of them. Values parse_challenges refuses, or challenges read refuses, are
+    offer-unreadable with that code; challenges placed for another H are hash-mismatch; values with no Payment
+    challenge are read as a 402 with no payment request."""
+    parsed = parse_challenges(list(fields))
+    if isinstance(parsed, Refusal):
+        return Declined("offer-unreadable", parsed.code)
+    if not parsed:
+        return _failed("The agreement URL answered 402 without a readable PAYMENT-REQUIRED.")
+    read = mpp_read(parsed)
+    if isinstance(read, Refusal):
+        return Declined("offer-unreadable", read.code)
+    if not hash_equals(read.h, h):
+        return Declined("hash-mismatch", "The agreement challenge advertises another ATR hash.")
+    challenges = read.offer.get("challenges") if isinstance(read.offer, Mapping) else None
+    return AgreementChallenges(tuple(challenges if isinstance(challenges, list) else []), atr_bytes, h)
+
+
 async def _offer(
     atr_bytes: bytes,
     h: AtrHash,
@@ -596,7 +622,7 @@ async def _offer(
     inputs: Inputs,
     signal: asyncio.Event | None,
     admits: _Admits = _any,
-) -> ToApprove | Agreed | Declined:
+) -> ToApprove | AgreementChallenges | Agreed | Declined:
     """The unpaid request: the agreement payment to approve, the receipt of an agreement already recorded, or a
     decline."""
     unpaid = await _until(signal, _get(fetch, url, None, UNPAID_DEADLINE_S))
@@ -612,6 +638,8 @@ async def _offer(
         return Declined("agreement-pending", "An agreement payment for this ATR is already settling.")
     if unpaid.status != 402:
         return _failed(f"The agreement URL answered status {unpaid.status}.")
+    if unpaid.payment_required is None and unpaid.www_authenticate:
+        return _mpp_only(unpaid.www_authenticate, atr_bytes, h)
 
     required = None if unpaid.payment_required is None else _from_base64_json(unpaid.payment_required)
     if not isinstance(required, Mapping):

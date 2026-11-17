@@ -8,7 +8,8 @@
  */
 import { fromLegalContextHeader, toLegalContextHeader, type LegalContextReturn } from "@integraledger/lcp";
 import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash } from "@integraledger/lcp/core";
-import { agreementOptions, exchange } from "./agreement.js";
+import { pairingsOf, type MppChallenge } from "@integraledger/lcp/mpp";
+import { agreementOptions, exchange, mppAgreementOptions } from "./agreement.js";
 import { floorMissing, isCeilings, parseAtr, requestHeld, type Approval } from "./checks.js";
 import {
   charged,
@@ -16,6 +17,7 @@ import {
   fetchAtr,
   gate,
   hasAccount,
+  isAgreementOnly,
   isFullCoverage,
   isObject,
   namespaceOf,
@@ -26,13 +28,16 @@ import {
 } from "./gate.js";
 import { isRefusal } from "./pairings/common.js";
 import type {
+  AgreementChallenges,
   AgreementReceipt,
   Binding,
   BuyerPiece,
+  Chosen,
   Declined,
   Fetch,
   Inputs,
   Presented,
+  Read,
   ResourceRequest,
   Signer,
   ToApprove,
@@ -70,6 +75,7 @@ export async function transact(
 ): Promise<
   | { signed: Presented | null; landed?: unknown; bytes: Uint8Array; h: AtrHash; agreement?: AgreementReceipt }
   | ToApprove
+  | AgreementChallenges
   | ToReturn
   | Declined
 > {
@@ -87,10 +93,12 @@ export async function transact(
   }
   const approval = { approver, ceilings, inputs };
 
-  const offers = ns === "x402" && !isFullCoverage(binding) ? agreementOptions(doc) : undefined;
+  const full = isFullCoverage(binding);
+  const offers = full ? undefined : ns === "x402" ? agreementOptions(doc) : ns === "mpp" ? mppAgreementOptions(doc) : undefined;
   if (offers !== undefined && !Array.isArray(offers)) return offers;
   if (offers !== undefined) {
-    return toReturn(doc, binding, offers, { signer: agreementSigner ?? signer, account: signer.account, fetch, resourceRequest, returned, approval, signal });
+    const o = { signer: agreementSigner ?? signer, account: signer.account, fetch, resourceRequest, returned, approval, signal };
+    return toReturn(doc, binding, offers as Offered[], ns as "x402" | "mpp", o);
   }
 
   const confirmed = await gate(doc, binding, signer.account, fetch, { resourceRequest, inputs, ceilings, chosen: given });
@@ -122,43 +130,53 @@ export async function transact(
   return { signed: done.signed, ...landed, bytes, h: done.h, ...receipt };
 }
 
-/** Whether the pairing's data holds an agreement that is never a charge (`agreement.only`). */
-function isAgreementOnly(binding: Binding): boolean {
-  const data: unknown = (binding as { data?: unknown }).data;
-  const agreement = isObject(data) ? data["agreement"] : undefined;
-  return isObject(agreement) && agreement["only"] === true;
+/** An agreement option of a first response, x402's or MPP's, the read of the response holding it, and what it serves. */
+interface Offered {
+  readonly option: unknown;
+  readonly read: Read;
+  readonly serves: readonly string[];
 }
+
+/** What the return path reads beside the first response: the agreement signer, the account, and the call's members. */
+interface ReturnArgs {
+  signer: Signer;
+  account: string;
+  fetch: Fetch;
+  resourceRequest: ResourceRequest;
+  returned: LegalContextReturn | undefined;
+  approval: Approval;
+  signal: AbortSignal | undefined;
+}
+
+/** The member of each protocol's binding slot that lists the options offered, where the return path reads it. */
+const SLOT_LISTING = { x402: "accepts", mpp: "challenges" } as const;
 
 /**
  * The return after an agreement (the protocol package's profile `legal-context-return.md`): the ATR fetched from the
  * response's link, compared with its H and with the return value's, parsed, and its request commitment held to the
- * buyer's request; then, for each agreement option in document order and each charge it names as served, `x402/<i>`,
- * the option at index `i` of the ATR's `x402` slot, the first such charge the pairing reads, the account can pay and
- * checks 9 to 11 pass on (its build with H, its summary and its ceiling) is chosen, and that agreement option is paid,
- * asked of the approver as the act `agreement`, and its receipt awaited. No charge is signed, and no agreement is paid
- * for a charge those checks decline: the next served charge is tried, and where every one is declined there, the first
- * decline is returned. A pairing whose agreement is never a charge, or a response with no such charge, is
- * `no-payable-option`.
+ * buyer's request; then, for each agreement option in the seller's order and each charge it names as served,
+ * `<slot>/<i>`, the option at index `i` of the list the ATR's binding slot of the pairing's protocol holds (`accepts` in
+ * `x402`, `challenges` in `mpp`), the first such charge the account can pay is chosen (`choice`), and its agreement
+ * paid. On x402 the agreement option is paid at the agreement URL as offered. On MPP, whose first response offers MPP
+ * agreement challenges, which terms builds no credential for, the agreement URL is followed: an x402 agreement option
+ * its 402 offers is paid as on x402, and where it offers only MPP agreement challenges, they are returned in
+ * `agreementChallenges` for the caller's own MPP client, nothing signed. Each agreement payment is asked of the approver
+ * as the act `agreement`. No charge is signed, and no agreement is paid for a charge checks 9 to 11 decline: the next
+ * served charge is tried, and where every one is declined there, the first decline is returned. A pairing whose
+ * agreement is never a charge, or a response with no such charge, is `no-payable-option`.
  */
 async function toReturn(
   doc: unknown,
   binding: Binding,
-  offers: Extract<ReturnType<typeof agreementOptions>, readonly unknown[]>,
-  o: {
-    signer: Signer;
-    account: string;
-    fetch: Fetch;
-    resourceRequest: ResourceRequest;
-    returned: LegalContextReturn | undefined;
-    approval: Approval;
-    signal: AbortSignal | undefined;
-  },
+  offers: readonly Offered[],
+  ns: "x402" | "mpp",
+  o: ReturnArgs,
 ): Promise<ToReturn | Declined> {
   const { read } = offers[0]!;
   const url = (read as { agreement?: unknown }).agreement;
   if (typeof url !== "string") return declined("agreement-not-offered", "The first response names no agreement URL.");
   if (!isHttpsLink(read.link)) {
-    return declined("link-not-https", `x402/${isOtherSchemeLink(read.link) ? "link-not-https" : "legal-context-malformed"}`);
+    return declined("link-not-https", `${ns}/${isOtherSchemeLink(read.link) ? "link-not-https" : "legal-context-malformed"}`);
   }
   const bytes = await fetchAtr(o.fetch, read.link);
   if (!(bytes instanceof Uint8Array)) return bytes;
@@ -170,38 +188,89 @@ async function toReturn(
   if ("decline" in parsed) return parsed;
   const otherRequest = await requestHeld(binding, parsed.value, o.resourceRequest);
   if (otherRequest !== undefined) return otherRequest;
-  if (isAgreementOnly(binding)) return declined("no-payable-option", "x402/no-payable-option");
+  if (isAgreementOnly(binding)) return declined("no-payable-option", `${ns}/no-payable-option`);
 
-  const slot = isObject(parsed.value) ? parsed.value["x402"] : undefined;
-  const listed = isObject(slot) && Array.isArray(slot["accepts"]) ? (slot["accepts"] as unknown[]) : [];
-  const piece = pieceOf(binding) as BuyerPiece;
-  const reader = binding as unknown as { read(d: unknown): unknown };
-  const inputs: Inputs = o.approval.inputs;
+  const slot = isObject(parsed.value) ? parsed.value[ns] : undefined;
+  const list = isObject(slot) ? slot[SLOT_LISTING[ns]] : undefined;
+  const listed: readonly unknown[] = Array.isArray(list) ? list : [];
+  const named = new RegExp(`^${ns}/([0-9]+)$`);
+  const header = toLegalContextHeader(h, o.returned?.returnValue);
+  if (isRefusal(header)) return declined("offer-unreadable", header.code);
   let first: Declined | undefined;
   for (const { option, serves } of offers) {
     for (const name of serves) {
-      const at = /^x402\/([0-9]+)$/.exec(name);
+      const at = named.exec(name);
       const charge = at === null ? undefined : listed[Number(at[1])];
       if (!isObject(charge)) continue;
-      const only = { ...(doc as object), accepts: [charge] };
-      const chargeRead = reader.read(only);
-      if (isRefusal(chargeRead)) continue;
-      const chosen = await piece.choose(chargeRead as never, o.account, inputs, Math.floor(Date.now() / 1000), newRef(), only);
-      if (isRefusal(chosen)) continue;
-      const checked = await charged(binding, { ...chosen, agreement: url }, o.account, bytes, h, inputs, o.approval.ceilings);
-      if ("decline" in checked) {
-        first ??= checked;
+      const chosen = await choice(binding, ns, doc, charge, { h, link: read.link, agreement: url }, bytes, o);
+      if (chosen === undefined) continue;
+      if ("decline" in chosen) {
+        first ??= chosen;
         continue;
       }
-      const approved = { url, option, required: doc as never };
-      const agreed = await exchange(bytes, url, o.signer, o.fetch, { approved, inputs, signal: o.signal, chosen }, "x402", binding, o.approval);
+      const returned = { legalContext: header, charge: name, bytes, h };
+      if (ns === "x402") {
+        const approved = { url, option: option as never, required: doc as never };
+        const agreed = await exchange(bytes, url, o.signer, o.fetch, { approved, inputs: o.approval.inputs, signal: o.signal, chosen }, "x402", binding, o.approval);
+        if (!("receipt" in agreed)) return "decline" in agreed ? agreed : declined("agreement-failed", "The agreement was not paid.");
+        return { agreement: agreed.receipt, ...returned };
+      }
+      const given = { inputs: o.approval.inputs, signal: o.signal, chosen };
+      const offered = await exchange(bytes, url, o.signer, o.fetch, given, "mpp", binding, o.approval);
+      if ("decline" in offered) return offered;
+      if ("receipt" in offered) return { agreement: offered.receipt, ...returned };
+      if ("agreementChallenges" in offered) return { agreementChallenges: offered.agreementChallenges, ...returned };
+      const agreed = await exchange(bytes, url, o.signer, o.fetch, { ...given, approved: offered.approve }, "mpp", binding, o.approval);
       if (!("receipt" in agreed)) return "decline" in agreed ? agreed : declined("agreement-failed", "The agreement was not paid.");
-      const header = toLegalContextHeader(h, o.returned?.returnValue);
-      if (isRefusal(header)) return declined("offer-unreadable", header.code);
-      return { agreement: agreed.receipt, legalContext: header, charge: name, bytes, h };
+      return { agreement: agreed.receipt, ...returned };
     }
   }
-  return first ?? declined("no-payable-option", "x402/no-payable-option");
+  return first ?? declined("no-payable-option", `${ns}/no-payable-option`);
+}
+
+/**
+ * The charge `charge`, an option of the ATR's binding slot, chosen for the account; undefined where the pairing does
+ * not offer it or the account cannot pay it, and the decline of checks 9 to 11 where they decline it. Where the
+ * pairing reads the slot's option in the first response's form, the choice is made from that read and checks 9 to 11
+ * (its build with H, its summary and its ceiling) are made on it before its agreement is paid. Where the slot holds the
+ * option without what its read needs and the seller writes only once it serves the charge, the choice is made by the
+ * option's own checks and checks 9 to 11 are left to the call that pays the charge: an x402 option whose carrier the
+ * seller writes after the agreement, held to the pairing's `advertiseBeforeCarrier`, the protocol package's checks of
+ * the offer before that carrier (an `x402/exact/lnbtc/payment-hash` option, whose invoice is issued after the
+ * agreement); and every MPP challenge, which the slot holds as issued, without the id and the members the seller
+ * places when it serves it, held to the pairing's own checks of a challenge (`pairingsOf`).
+ */
+async function choice(
+  binding: Binding,
+  ns: "x402" | "mpp",
+  doc: unknown,
+  charge: Record<string, unknown>,
+  placed: { h: AtrHash; link: string; agreement: string },
+  bytes: Uint8Array,
+  o: ReturnArgs,
+): Promise<Chosen | Declined | undefined> {
+  const piece = pieceOf(binding) as BuyerPiece;
+  const inputs: Inputs = o.approval.inputs;
+  const choose = async (read: unknown, only: unknown): Promise<Chosen | undefined> => {
+    const chosen = await piece.choose(read as never, o.account, inputs, Math.floor(Date.now() / 1000), newRef(), only);
+    return isRefusal(chosen) ? undefined : chosen;
+  };
+  if (ns === "mpp") {
+    const pairings = pairingsOf(charge as unknown as MppChallenge);
+    if (isRefusal(pairings) || !pairings.some((p) => p === binding.id)) return undefined;
+    return choose({ ...placed, offer: { challenges: [charge] } }, [charge]);
+  }
+  const only = { ...(doc as object), accepts: [charge] };
+  const read = (binding as unknown as { read(d: unknown): unknown }).read(only);
+  if (isRefusal(read)) {
+    const before = (binding as { advertiseBeforeCarrier?: (...a: unknown[]) => unknown }).advertiseBeforeCarrier;
+    if (typeof before !== "function" || isRefusal(before(only, placed.h, placed.link, charge, placed.agreement))) return undefined;
+    return choose({ ...placed, offer: { required: only, options: [charge] } }, only);
+  }
+  const chosen = await choose(read, only);
+  if (chosen === undefined) return undefined;
+  const checked = await charged(binding, { ...chosen, agreement: placed.agreement }, o.account, bytes, placed.h, inputs, o.approval.ceilings);
+  return "decline" in checked ? checked : chosen;
 }
 
 const OPTION_KEYS: readonly string[] = [

@@ -9,6 +9,7 @@ import type { LnMppUnsigned } from "@integraledger/lcp/lightning";
 import type { exactHederaExecutor, HederaUnsigned } from "@integraledger/lcp/hedera";
 import type {
   MPP_BINDINGS,
+  MppChallenge,
   MppCredential,
   MppUnsigned,
   RailSessionUnsigned,
@@ -289,12 +290,16 @@ export interface FinishOptions {
 }
 
 /**
- * What `transact` returns once it has paid the agreement of a pairing paid after its agreement: the agreement's receipt;
- * the `Legal-Context` value the caller sends when it repeats its request; the charge chosen, `<slot>/<i>`; the ATR's
- * bytes the gate compared; and H, their SHA-256.
+ * What `transact` returns once the agreement of a pairing paid after its agreement is paid, or is left to the caller's
+ * own MPP client: the agreement's receipt, where `transact` paid an x402 agreement option; else the agreement
+ * resource's MPP agreement challenges, `agreementChallenges`, which it signs none of; the `Legal-Context` value the
+ * caller sends when it repeats its request; the charge chosen, `<slot>/<i>`; the ATR's bytes the gate compared; and H,
+ * their SHA-256. Exactly one of `agreement` and `agreementChallenges` is present.
  */
 export interface ToReturn {
-  readonly agreement: AgreementReceipt;
+  readonly agreement?: AgreementReceipt;
+  /** The agreement resource's MPP agreement challenges, in the seller's order, where it offers no x402 option. */
+  readonly agreementChallenges?: readonly MppChallenge[];
   readonly legalContext: string;
   readonly charge: string;
   readonly bytes: Uint8Array;
@@ -345,6 +350,23 @@ export interface ToApprove {
   readonly approve: AgreementPayment;
   readonly bytes: Uint8Array;
   readonly h: AtrHash;
+}
+
+/**
+ * The agreement resource's MPP agreement challenges, where its one 402 offers no x402 agreement option and one or more
+ * `WWW-Authenticate: Payment` challenges for the ATR's H: each in the seller's order, for the caller's own MPP client to
+ * pay at the agreement URL, with the ATR bytes the gate compared and their hash. terms signs none of them.
+ */
+export interface AgreementChallenges {
+  readonly agreementChallenges: readonly MppChallenge[];
+  readonly bytes: Uint8Array;
+  readonly h: AtrHash;
+  /** Never present: nothing is signed or paid. */
+  readonly signed?: never;
+  /** Never present. */
+  readonly landed?: never;
+  /** Never present: the agreement is not yet recorded. */
+  readonly agreement?: never;
 }
 
 /** The agreement resource's answer once the agreement payment carrying the ATR hash is recorded. */

@@ -436,12 +436,13 @@ def shown(
     ceilings: Ceilings | None,
     network: str | None = None,
     opened: Opened | None = None,
+    account: str | None = None,
 ) -> Summary | Declined:
     """Checks 10 and 11 on a request handed to the signer: its summary, read with network, the signing account's
-    CAIP-2 network where the gate knows the account, and opened, for a later step of a payment signed in steps, the
-    step that opened its channel; or the decline."""
+    CAIP-2 network where the gate knows the account, opened, for a later step of a payment signed in steps, the step
+    that opened its channel, and account, the signer's CAIP-10 account where the gate knows it; or the decline."""
     pairing = str(binding.id)
-    summary = summary_of(pairing, request, atr_bytes, network, opened)
+    summary = summary_of(pairing, request, atr_bytes, network, opened, account)
     if summary is None:
         return _declined("summary-missing", f"The gate has no summary of the {request.get('kind')} request of {pairing}.")
     ceiling = within_ceiling(pairing, summary, inputs, ceilings, _now())
@@ -457,12 +458,13 @@ async def approves(
     approval: Approval,
     network: str | None = None,
     opened: Opened | None = None,
+    account: str | None = None,
 ) -> Summary | Declined:
     """Checks 10 to 12 on one signing: the summary, read with network, the signing account's CAIP-2 network, and
     opened, for a later step, the step that opened its channel; the ceiling; then the approver, asked once with ToSign;
     any answer but True, a raise or a failed awaitable is not-approved. The summary the approver approved, or the
     decline."""
-    summary = shown(binding, request, atr_bytes, approval.inputs, approval.ceilings, network, opened)
+    summary = shown(binding, request, atr_bytes, approval.inputs, approval.ceilings, network, opened, account)
     if isinstance(summary, Declined):
         return summary
     to_sign = ToSign(act=act, pairing=str(binding.id), request=copy.deepcopy(request), summary=summary, step=step)
