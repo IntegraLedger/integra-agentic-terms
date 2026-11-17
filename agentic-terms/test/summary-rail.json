@@ -1,0 +1,152 @@
+{
+  "about": "The approval summary (profile buyer-gate.md, rule 13) of the Casper, Starknet, Concordium, Polkadot, Aptos, Cardano and Sui requests whose rows the profile's table fills, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors: the file's buyer row B2 for that pairing gives the document, the account and the time, from which the pairing's buyer piece builds the request the signer is handed, over the ATR abc (616263, whose SHA-256 is the H the document advertises); expect is the summary of that request without the ATR's bytes, which are abc. Every value in expect is read from the rows of the same file that `from` names, the payment as the file signs it where it has one: x402-exact-casper.json buyer B6's authorization (built with @casper-ecosystem/casper-eip-712 1.2.1, as the file's about states) and its accepted option; x402-exact-starknet.json buyer B6's outside execution (starknet 10.7.6) and its accepted option; x402-exact-ccd.json buyer B6's signed transaction (@concordium/web-sdk 12.0.2) and its accepted option, and its stockOptions rows' expected request for the expiry the build writes at the file's time; x402-exact-polkadot-lcp-assets-remark.json V2's call and destination (@polkadot/api 16.5.6) and buyer B6's accepted option; and, for the requests that carry the option the wallet builds its transaction from, x402-exact-cardano.json's and x402-exact-sui.json's buyer B6 accepted option and x402-exact-aptos.json's buyer B2 offer, whose payment carries no hash and so has no B6. A request that names no expiry has the validity none to none, in the unit of the deadline its chain signs. Nothing here is terms' output.",
+  "rows": [
+    {
+      "pairing": "x402/exact/casper",
+      "file": "x402-exact-casper.json",
+      "from": "buyer B6 input.presented: payload.authorization's to, value, validAfter and validBefore; accepted's asset and network",
+      "expect": {
+        "amount": "7500000000",
+        "payees": [
+          {
+            "account": "007a9f9948cb7b258d18f3c5e85780372971b5b40096e724c9e596c284a01445fa",
+            "amount": "7500000000"
+          }
+        ],
+        "asset": "17be3c3dc67ddf193b8f64bfc2421826407470f88b3dab68184ebffebdd57f59",
+        "network": "casper:casper-test",
+        "validity": {
+          "notBefore": "0",
+          "notAfter": "1790000060",
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/starknet",
+      "file": "x402-exact-starknet.json",
+      "from": "buyer B6 input.presented: payload.outsideExecution.typedData.message's Calls[0].To and Calls[0].Calldata[0], Execute After and Execute Before; accepted's amount and network",
+      "expect": {
+        "amount": "10000",
+        "payees": [
+          {
+            "account": "0x2dd1b492765c064eac4039e3841aa5f382773b598097a40073bd8b48170ab57",
+            "amount": "10000"
+          }
+        ],
+        "asset": "0x512feac6339ff7889822cb5aa2a86c848e9d392bb0e3e237c008674feed8343",
+        "network": "starknet:SN_SEPOLIA",
+        "validity": {
+          "notBefore": "1",
+          "notAfter": "1790000300",
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/ccd",
+      "file": "x402-exact-ccd.json",
+      "from": "buyer B6 input.presented: payload.signedTransaction.payload's toAddress and amount; accepted's asset and network; stockOptions rows' expectRequest.expiresBy",
+      "expect": {
+        "amount": "1000000",
+        "payees": [
+          {
+            "account": "4PnJd77jiMZB3HheYkrynfUGzZtpSERjpzy954eDD3krRf1Wpx",
+            "amount": "1000000"
+          }
+        ],
+        "asset": "CCD",
+        "network": "ccd:4221332d34e1694168c2a0c0b3fd0f27",
+        "validity": {
+          "notBefore": null,
+          "notAfter": "1790000055",
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/polkadot/lcp-assets-remark",
+      "file": "x402-exact-polkadot-lcp-assets-remark.json",
+      "from": "V2's expectDest and expectCall; buyer B6 input.presented.accepted's amount, asset and network",
+      "expect": {
+        "amount": "10000",
+        "payees": [
+          {
+            "account": "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
+            "amount": "10000"
+          }
+        ],
+        "asset": "1337",
+        "network": "polkadot:68d56f15f85d3136970ec16946040bc1",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "block"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/aptos",
+      "file": "x402-exact-aptos.json",
+      "from": "buyer B2 input.doc.accepts[0]",
+      "expect": {
+        "amount": "99900000",
+        "payees": [
+          {
+            "account": "0xe8ca094fec460329aaccc2a644dc73c5e39f1a2ad6e97f82b6cbdc1a5949b9ea",
+            "amount": "99900000"
+          }
+        ],
+        "asset": "0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b",
+        "network": "aptos:1",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/cardano",
+      "file": "x402-exact-cardano.json",
+      "from": "buyer B6 input.presented.accepted",
+      "expect": {
+        "amount": "2000000",
+        "payees": [
+          {
+            "account": "addr_test1vqxk54m7j3q6mrkevcunryrwf4p7e68c93cjk8gzxkhlkpsffv7s0",
+            "amount": "2000000"
+          }
+        ],
+        "asset": "lovelace",
+        "network": "cardano:preprod",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "slot"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/sui",
+      "file": "x402-exact-sui.json",
+      "from": "buyer B6 input.presented.accepted",
+      "expect": {
+        "amount": "10000",
+        "payees": [
+          {
+            "account": "0x209693bc6afc0c5328ba36faf03c514ef312287c209693bc6afc0c5328ba36fa",
+            "amount": "10000"
+          }
+        ],
+        "asset": "0x2::sui::SUI",
+        "network": "sui:testnet",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "epoch"
+        }
+      }
+    }
+  ]
+}

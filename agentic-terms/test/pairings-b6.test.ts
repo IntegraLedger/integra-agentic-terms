@@ -74,7 +74,8 @@ describe("x402/exact/ccd", () => {
   const p: Pairing = {
     binding: exactCcd,
     doc: x402Doc(exactCcd, f.resource, f.O),
-    placed: (h) => x402Doc(exactCcd, f.resource, f.O, h),
+    // No `placed`: the answer is D3's signed transaction, bound to H, which no signer here makes for another H, so the
+    // gate's half over A cannot be signed; the steps by themselves hold the pairing.
     account: `${f.O.network}:${f.payer}`,
     answer: async () => V.D3.ccd.payment.payload.signedTransaction as never,
   };

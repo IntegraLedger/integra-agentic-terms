@@ -69,11 +69,7 @@ function fromHexBytes(h: string): Uint8Array {
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["acp-allowance", ["acp/checkout/delegated"]],
   ["ap2-checkout-mandate", ["ap2/checkout-mandate"]],
-  ["aptos-transaction", ["x402/exact/aptos"]],
   ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
-  ["cardano-transaction", ["x402/exact/cardano"]],
-  ["casper-eip712", ["x402/exact/casper"]],
-  ["ccd-transfer", ["x402/exact/ccd"]],
   [
     "eip712",
     ["mpp/charge/evm/permit2", "mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"],
@@ -82,9 +78,6 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
   ["hedera-body", ["x402/exact/hedera"]],
   ["near-delegate", ["x402/exact/near"]],
   ["solana-message", ["mpp/charge/solana", "mpp/charge/usdc/solana", "x402/exact/solana", "x402/upto/solana"]],
-  ["starknet-snip12", ["x402/exact/starknet"]],
-  ["substrate-call", ["x402/exact/polkadot/lcp-assets-remark"]],
-  ["sui-transaction", ["x402/exact/sui"]],
   ["tempo-call", ["mpp/session/tempo"]],
   ["ton-w5", ["x402/exact/tvm"]],
   ["tron-txid", ["x402/exact/tron/lcp-trc20-memo"]],

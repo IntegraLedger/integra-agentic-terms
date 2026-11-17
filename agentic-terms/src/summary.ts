@@ -14,6 +14,11 @@ import { hederaExecutor, hederaTransfer } from "./summary/hedera-body.js";
 import { solanaSessionOpen, solanaTransfer, solanaUptoOpen } from "./summary/solana-message.js";
 import { stacksTransfer } from "./summary/stacks-contract-call.js";
 import { xrplPayment, xrplSessionOpen } from "./summary/xrpl-tx.js";
+import { casperTransferWithAuthorization } from "./summary/casper-eip712.js";
+import { ccdTransfer } from "./summary/ccd-transfer.js";
+import { starknetTransfer } from "./summary/starknet-snip12.js";
+import { substrateTransfer } from "./summary/substrate-call.js";
+import { aptosTransaction, cardanoTransaction, suiTransaction } from "./summary/x402-wallet.js";
 
 /** A summary without the ATR's bytes, which the gate adds. */
 export type Shown = Omit<Summary, "atr">;
@@ -116,6 +121,13 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/hedera", { show: hederaTransfer }],
   ["mpp/charge/lcp/hedera", { show: hederaTransfer }],
   ["x402/exact/hedera/transfer-executor", { show: hederaExecutor }],
+  ["x402/exact/casper", { show: casperTransferWithAuthorization }],
+  ["x402/exact/starknet", { show: starknetTransfer }],
+  ["x402/exact/ccd", { show: ccdTransfer }],
+  ["x402/exact/polkadot/lcp-assets-remark", { show: substrateTransfer }],
+  ["x402/exact/aptos", { show: aptosTransaction }],
+  ["x402/exact/cardano", { show: cardanoTransaction }],
+  ["x402/exact/sui", { show: suiTransaction }],
 ]);
 
 /**

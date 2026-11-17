@@ -155,6 +155,13 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `eip712`, `TransferWithAuthorization` (EIP-3009): `mpp/charge/evm/authorization`, `mpp/charge/usdc/evm` | `amount`: `m.value` | `m.to`, with `m.value` | `d.verifyingContract` | `eip155:` and `d.chainId` | `m.validAfter` to `m.validBefore`, seconds | none |
     | `evm-call` whose `call` holds `to` and `data` alone, `data` an ERC-20 `transfer(address,uint256)`: `mpp/charge/evm/hash`, `mpp/charge/evm/transaction` | `amount`: the transfer's amount, `data`'s second word | the transfer's recipient, `data`'s first word, in lowercase hex, with the amount | `call.to` | `eip155:` and `chainId` | none to none: a transaction signs no end | none |
     | `tempo-key-authorization`, `a` its `authorization`, whose RLP's keccak-256 is the `digest` the root key signs, with one limit and every allowed call to that limit's token under the selector `transferWithMemo` (`0x95777d59`) with recipients: `mpp/subscription/tempo` | none | every recipient of `a.allowedCalls`' selector rules, each with `a.limits[0].limit` | `a.limits[0].token` | `eip155:` and `a.chainId` | none to `a.expiry`, seconds; none to none where `a.expiry` is 0, which signs no expiry | `period`: `a.limits[0].period`; `limitPerPeriod`: `a.limits[0].limit`; `end`: `a.expiry`, absent where it is 0; `grant`: `{keyId, limits, allowedCalls}` of `a` |
+    | `casper-eip712`, CEP-3009's `TransferWithAuthorization` under CEP-3009's types: `x402/exact/casper` | `amount`: `m.value` | `m.to`, with `m.value` | `d.contract_package_hash` | `d.chain_name`, the network's CAIP-2 id | `m.validAfter` to `m.validBefore`, seconds | none |
+    | `starknet-snip12`, SNIP-9's `OutsideExecution` under SNIP-12 revision 1, whose `m.Calls` is one call `c` of the selector `transfer` with three calldata felts: `x402/exact/starknet` | `amount`: `c.Calldata[1]` plus `c.Calldata[2]` times 2^128, the `u256`'s low and high halves | `c.Calldata[0]`, with the amount | `c.To` | `starknet:` and `d.chainId`'s short string | `m["Execute After"]` to `m["Execute Before"]`, seconds | none |
+    | `ccd-transfer`: `x402/exact/ccd` | `amount`: `amount` | `toAddress`, with `amount` | `asset` | `network` | none to `expiresBy`, seconds | none |
+    | `substrate-call` whose `call` is `batch_all([transfer_keep_alive(assetId, Id(dest), amount), remark_with_event(remark)])` as lcp's `decodeProfileCall` reads it: `x402/exact/polkadot/lcp-assets-remark` | `amount`: `amount` | `dest`, the 32-byte account as `0x` and lowercase hex, with `amount` | `assetId`, in decimal | `network` | none to none, blocks: the call signs no era, which the signer's extrinsic adds | none |
+    | `aptos-transaction`, whose transaction the wallet builds from `accepted`, an `exact` option: `x402/exact/aptos` | `amount`: `accepted.amount` | `accepted.payTo`, with `accepted.amount` | `accepted.asset` | `accepted.network` | none to none, seconds: the request names no expiry, which the wallet sets | none |
+    | `cardano-transaction`, whose transaction the wallet builds from `accepted`, an `exact` option: `x402/exact/cardano` | `amount`: `accepted.amount` | `accepted.payTo`, with `accepted.amount` | `accepted.asset` | `accepted.network` | none to none, slots: the request names no TTL, which the wallet sets | none |
+    | `sui-transaction` whose `expiration` is `"epoch-bounded"`, whose transaction the wallet builds from `accepted`, an `exact` option: `x402/exact/sui` | `amount`: `accepted.amount` | `accepted.payTo`, with `accepted.amount` | `accepted.asset` | `accepted.network` | none to none, epochs: the request names no epoch, which the wallet sets | none |
     | `ack/payment-request` | | | | | | |
     | `acp/checkout/delegated` | | | | | | |
     | `acp/checkout/undelegated` | | | | | | |
@@ -192,16 +199,9 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `x402/batch-settlement/cloudflare` | | | | | | |
     | `x402/batch-settlement/eip155` | | | | | | |
     | `x402/batch-settlement/solana` | | | | | | |
-    | `x402/exact/aptos` | | | | | | |
-    | `x402/exact/cardano` | | | | | | |
     | `x402/exact/cardano/lock` | | | | | | |
-    | `x402/exact/casper` | | | | | | |
-    | `x402/exact/ccd` | | | | | | |
     | `x402/exact/eip155/gateway-batched` | | | | | | |
     | `x402/exact/near` | | | | | | |
-    | `x402/exact/polkadot/lcp-assets-remark` | | | | | | |
-    | `x402/exact/starknet` | | | | | | |
-    | `x402/exact/sui` | | | | | | |
     | `x402/exact/tron/lcp-trc20-memo` | | | | | | |
     | `x402/exact/tvm` | | | | | | |
     | `solana-message`, token or SOL transfers: `x402/exact/solana`, `mpp/charge/solana`, `mpp/charge/solana/unsponsored`, `mpp/charge/usdc/solana` | `amount`: the sum of the transfers | each `TransferChecked`'s destination token account, or each System `transfer`'s recipient, with its amount | the `TransferChecked`'s mint, or `sol` for a System `transfer`; one asset | the signer's account's network: the request names none | none to none, `block`: the blockhash bounds it for the pairing's `read.life` | none. The message holds only Compute Budget and Memo instructions and these transfers, read with the protocol package's decoder; any other instruction, a durable nonce's `AdvanceNonceAccount` among them, or an account loaded from an address table, gives no summary |

@@ -340,7 +340,8 @@ const starknetRow: Row = (() => {
     p: {
       binding: exactStarknet,
       doc: docOf(exactStarknet, f.O, f.resource),
-      placed: (h) => docFor(h, exactStarknet, f.O, f.resource),
+      // No `placed`: the answer is the vectors' payment, bound to H, which no signer here makes for another H, so the
+      // gate's half over A cannot be signed; the steps by themselves hold the pairing.
       account: `${f.O.network}:${f.from}`,
       // No Stark-curve signer is available to these tests: the signer checks the request is the vectors' and answers
       // with the vector file's signature.
@@ -380,7 +381,8 @@ const polkadotRow: Row = (() => {
     p: {
       binding: exactPolkadotRemark,
       doc: docOf(exactPolkadotRemark, f.O, f.resource),
-      placed: (h) => docFor(h, exactPolkadotRemark, f.O, f.resource),
+      // No `placed`: the answer is the vectors' payment, bound to H, which no signer here makes for another H, so the
+      // gate's half over A cannot be signed; the steps by themselves hold the pairing.
       account: `${f.O.network}:${DOT_PAYER}`,
       // The signing payload's era and genesis hashes are chain data: the wallet checks the call is the vectors' and
       // answers with V3, the extrinsic the chain accepted.
@@ -484,7 +486,8 @@ const suiRow: Row = (() => {
     p: {
       binding: exactSui,
       doc: docOf(exactSui, f.O, f.resource),
-      placed: (h) => docFor(h, exactSui, f.O, f.resource),
+      // No `placed`: the answer is the vectors' payment, bound to H, which no signer here makes for another H, so the
+      // gate's half over A cannot be signed; the steps by themselves hold the pairing.
       account: `${f.O.network}:${f.sender}`,
       // The wallet answers V2, the vectors' transaction carrying H as its one unused Pure input. The pairing reads the
       // carrier from the transaction and never verifies the signature, so the signature is 97 zero bytes.
@@ -608,6 +611,9 @@ const aptosRow: Row = (() => {
       binding: exactAptos,
       doc: docOf(exactAptos, f.O, f.resource),
       placed: (h) => docFor(h, exactAptos, f.O, f.resource),
+      // The request names no expiry, the wallet's to set, so the payment signs no end (profile buyer-gate.md, rule 8): the
+      // caller raises the pairing's ceiling to pay it.
+      ceilings: { "x402/exact/aptos": "no-end" },
       account: `${f.O.network}:${f.fixtureF.sender}`,
       answer: async (r) => {
         checkRequest(r);
@@ -668,7 +674,8 @@ const cardanoRow: Row = (() => {
       binding: exactCardano,
       // The offer's floor reads the ledger's coinsPerUtxoByte, V8's published 4,310 lovelace a byte.
       doc: docOf(exactCardano, f.O, f.resource, BigInt(ADA.V8.coinsPerUtxoByte)),
-      placed: (h) => docFor(h, exactCardano, f.O, f.resource, BigInt(ADA.V8.coinsPerUtxoByte)),
+      // No `placed`: the answer is the vectors' payment, bound to H, which no signer here makes for another H, so the
+      // gate's half over A cannot be signed; the steps by themselves hold the pairing.
       account: `${f.O.network}:${address}`,
       // The wallet answers V2, the vectors' transaction whose body commits to V1's auxiliary data.
       answer: async (r) => {
