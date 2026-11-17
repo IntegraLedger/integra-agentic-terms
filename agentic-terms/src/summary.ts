@@ -6,7 +6,7 @@
  */
 import type { Json } from "@integraledger/lcp/core";
 import type { Inputs, Signature, SigningRequest, Summary } from "./types.js";
-import { exactPermit2, uptoPermit2 } from "./summary/eip712.js";
+import { exactPermit2, mppPermit2, uptoPermit2 } from "./summary/eip712.js";
 import { erc20Transfer } from "./summary/evm-call.js";
 import { keyAuthorization } from "./summary/tempo-key-authorization.js";
 import { algorandTransfer } from "./summary/algorand-txn.js";
@@ -124,6 +124,7 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["mpp/charge/usdc/evm", { show: transferWithAuthorization }],
   ["mpp/charge/evm/hash", { show: erc20Transfer }],
   ["mpp/charge/evm/transaction", { show: erc20Transfer }],
+  ["mpp/charge/evm/permit2", { show: mppPermit2 }],
   ["mpp/subscription/tempo", { show: keyAuthorization }],
   ["x402/exact/solana", { show: solanaTransfer }],
   ["mpp/charge/solana", { show: solanaTransfer }],

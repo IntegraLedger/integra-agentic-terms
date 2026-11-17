@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
+from ._summary_evm import erc20_transfer, exact_permit2, key_authorization, mpp_permit2, upto_permit2
 from ._types import Inputs, Payee, Summary, Validity
 from ._summary_card import tap_field, vi_checkout_mandate, vi_immediate, vic_reference
 from ._summary_checkout import acp_allowance, ap2_checkout_mandate, ucp_checkout, ucp_legal_context
@@ -128,6 +129,14 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "card/visa-vic": SummaryEntry(show=vic_reference),
     "card/mastercard-vi/immediate": SummaryEntry(show=vi_immediate),
     "card/mastercard-vi/autonomous": SummaryEntry(show=vi_checkout_mandate),
+    "x402/exact/eip155/permit2": SummaryEntry(show=exact_permit2),
+    "x402/upto/eip155/permit2": SummaryEntry(show=upto_permit2),
+    "mpp/charge/evm/authorization": SummaryEntry(show=_transfer_with_authorization),
+    "mpp/charge/usdc/evm": SummaryEntry(show=_transfer_with_authorization),
+    "mpp/charge/evm/permit2": SummaryEntry(show=mpp_permit2),
+    "mpp/charge/evm/hash": SummaryEntry(show=erc20_transfer),
+    "mpp/charge/evm/transaction": SummaryEntry(show=erc20_transfer),
+    "mpp/subscription/tempo": SummaryEntry(show=key_authorization),
 }
 
 

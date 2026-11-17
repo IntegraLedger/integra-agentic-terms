@@ -430,8 +430,6 @@ SUMMARY_PENDING: Mapping[str, frozenset[str]] = {
             "mpp/session/tempo",
             "x402/auth-capture/eip155/eip3009",
             "x402/auth-capture/eip155/permit2",
-            "x402/exact/eip155/permit2",
-            "x402/upto/eip155/permit2",
         }
     ),
     "xrpl-session-open": frozenset({"mpp/session/xrpl"}),

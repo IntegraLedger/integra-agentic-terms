@@ -1,5 +1,5 @@
 {
-  "about": "The approval summary (profile buyer-gate.md, rule 13) of the EVM requests whose rows the profile's table fills, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors: the file's buyer row B2 for that pairing gives the document, the account, the inputs and the time, from which the pairing's buyer piece builds the request the signer is handed, over the ATR abc (616263, whose SHA-256 is the H the document advertises); expect is the summary of that request without the ATR's bytes, which are abc. Every value in expect is read from the row of the same file that `from` names, the payment as the file signs it, or, where the file signs none, its offer: x402-exact-eip155-permit2.json and x402-upto-eip155-permit2.json buyer B6's permit2Authorization, mpp-charge-evm-authorization.json and mpp-charge-usdc-evm.json buyer B6's credential payload, mpp-charge-evm-hash.json and mpp-charge-evm-transaction.json buyer B2's challenge request (amount, currency, recipient and methodDetails.chainId; the recipient as an ERC-20 transfer's call data writes it, in lowercase hex), and mpp-subscription-tempo.json SUB1's authorization, the key authorization whose digest SUB1 holds. Nothing here is terms' output.",
+  "about": "The approval summary (profile buyer-gate.md, rule 13) of the EVM requests whose rows the profile's table fills, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors: the file's buyer row B2 for that pairing gives the document, the account, the inputs and the time, from which the pairing's buyer piece builds the request the signer is handed, over the ATR abc (616263, whose SHA-256 is the H the document advertises); expect is the summary of that request without the ATR's bytes, which are abc. Every value in expect is read from the row of the same file that `from` names, the payment as the file signs it, or, where the file signs none, its offer: x402-exact-eip155-permit2.json and x402-upto-eip155-permit2.json buyer B6's permit2Authorization (the upto witness's facilitator as the operator), mpp-charge-evm-permit2.json buyer B6's credential permit (its token, amount and deadline), buyer B2's input spender as the one payee, the permit signing no recipient, and buyer B2's challenge request for the chain, mpp-charge-evm-authorization.json and mpp-charge-usdc-evm.json buyer B6's credential payload, mpp-charge-evm-hash.json and mpp-charge-evm-transaction.json buyer B2's challenge request (amount, currency, recipient and methodDetails.chainId; the recipient as an ERC-20 transfer's call data writes it, in lowercase hex), and mpp-subscription-tempo.json SUB1's authorization, the key authorization whose digest SUB1 holds, which the request's digest is. Nothing here is terms' output.",
   "rows": [
     {
       "pairing": "x402/exact/eip155/permit2",
@@ -20,6 +20,7 @@
       "expect": {
         "maximum": "5000000",
         "payees": [{ "account": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C", "amount": "5000000" }],
+        "operator": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
         "network": "eip155:84532",
         "validity": { "notBefore": "0", "notAfter": "1790000300", "unit": "seconds" }
@@ -71,6 +72,18 @@
         "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
         "network": "eip155:84532",
         "validity": { "notBefore": null, "notAfter": null, "unit": "seconds" }
+      }
+    },
+    {
+      "pairing": "mpp/charge/evm/permit2",
+      "file": "mpp-charge-evm-permit2.json",
+      "from": "buyer B6 input.presented.payload.permit, buyer B2 input.inputs.spender, and buyer B2's challenge request for the chain",
+      "expect": {
+        "amount": "10000",
+        "payees": [{ "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", "amount": "10000" }],
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "network": "eip155:84532",
+        "validity": { "notBefore": null, "notAfter": "1790000060", "unit": "seconds" }
       }
     },
     {

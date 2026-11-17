@@ -1,11 +1,11 @@
 /**
  * `tempo-key-authorization` requests (profile `buyer-gate.md`, rule 13): the account's root key signs `digest`, the
  * keccak-256 of the RLP of `authorization`, which lets the key `keyId` spend under its limits and call only its allowed
- * calls until its expiry. The summary is read from `authorization` only where the key may spend one token, and may call
- * only that token's `transferWithMemo` to named recipients, the authorization lcp's build writes; any other has no
- * summary.
+ * calls until its expiry. The summary is read from `authorization` only where `digest` is that hash, recomputed with the
+ * protocol package's `keyAuthorizationDigest`, and the key may spend one token and may call only that token's
+ * `transferWithMemo` to named recipients, the authorization lcp's build writes; any other has no summary.
  */
-import { TRANSFER_WITH_MEMO_SELECTOR } from "@integraledger/lcp/tempo";
+import { keyAuthorizationDigest, TRANSFER_WITH_MEMO_SELECTOR, type TempoKeyAuthorization } from "@integraledger/lcp/tempo";
 import type { Json } from "@integraledger/lcp/core";
 import type { Shown } from "../summary.js";
 import type { SigningRequest } from "../types.js";
@@ -18,9 +18,11 @@ import { address, decimal, isObject, sameAddress } from "./evm-fields.js";
  * key and what it may do, `{keyId, limits, allowedCalls}`.
  */
 export function keyAuthorization(request: SigningRequest): Shown | undefined {
-  const r = request as { kind?: unknown; authorization?: unknown };
-  if (r.kind !== "tempo-key-authorization" || !isObject(r.authorization)) return undefined;
+  const r = request as { kind?: unknown; authorization?: unknown; digest?: unknown };
+  if (r.kind !== "tempo-key-authorization" || !isObject(r.authorization) || typeof r.digest !== "string") return undefined;
   const a = r.authorization;
+  const digest = keyAuthorizationDigest(a as unknown as TempoKeyAuthorization);
+  if (typeof digest !== "string" || digest.toLowerCase() !== r.digest.toLowerCase()) return undefined;
   const chain = decimal(a["chainId"]);
   const keyId = address(a["keyId"]);
   const expiry = decimal(a["expiry"]);

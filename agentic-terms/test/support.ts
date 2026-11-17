@@ -69,10 +69,7 @@ function fromHexBytes(h: string): Uint8Array {
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
   ["cardano-transaction", ["x402/exact/cardano/lock"]],
-  [
-    "eip712",
-    ["mpp/charge/evm/permit2", "mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"],
-  ],
+  ["eip712", ["mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"]],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
   ["near-delegate", ["x402/exact/near"]],
   ["tempo-call", ["mpp/session/tempo"]],
