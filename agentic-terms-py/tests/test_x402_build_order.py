@@ -223,20 +223,16 @@ ROWS: dict[str, tuple[dict[str, Any], str, list[tuple[str, Any, str]]]] = {
     "x402/exact/aptos": ({}, "x402/payload-malformed", []),
     "x402/exact/cardano": ({}, "x402/payload-malformed", []),
     "x402/exact/polkadot/lcp-assets-remark": ({}, "x402/payload-malformed", []),
-    "x402/exact/lnbtc": ({}, "ln/no-metadata", []),
 }
 
-# The one x402 build that reads no H: its option's invoice is held to the ATR's own slot.
-NO_H = {"x402/exact/lnbtc/invoice-named"}
-
-H_ROWS = [(pairing, h) for pairing in ROWS for h in (BAD_H, *(["any"] if pairing == "x402/exact/lnbtc" else []))]
+H_ROWS = [(pairing, BAD_H) for pairing in ROWS]
 MEMBER_ROWS = [
     (pairing, member, bad, code) for pairing, (_, _, bad_rows) in ROWS.items() for member, bad, code in bad_rows
 ]
 
 
 def test_every_x402_build_has_a_row() -> None:
-    assert sorted([*ROWS, *NO_H]) == sorted(BINDINGS)
+    assert sorted(ROWS) == sorted(BINDINGS)
 
 
 @pytest.mark.parametrize(("pairing", "h"), H_ROWS, ids=[f"{p} {h}" for p, h in H_ROWS])

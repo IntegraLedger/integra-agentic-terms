@@ -1,8 +1,10 @@
-"""The core vectors' hash half: the hashes of V1-V3's expected bytes, V4 (equality) and V6 (the one-byte plant)."""
+"""The core vectors' hash half: the hashes of V1-V3's expected bytes, V4 (equality), V6 (the one-byte plant) and the
+agreement's own value (agreementValue)."""
 
 from integraledger_terms import atr_hash, hash_equals
+from integraledger_terms._core import AGREEMENT_TAG, agreement_value
 
-from support import core_vector
+from support import core_vector, load
 
 
 def test_v1_to_v3_hash_the_expected_bytes() -> None:
@@ -25,3 +27,10 @@ def test_v6_one_byte_plant_differs_from_v1() -> None:
     computed = atr_hash(bytes.fromhex(plant["bytesHex"]))
     assert computed == plant["expectHash"]
     assert not hash_equals(computed, v1["expectHash"])
+
+
+def test_agreement_value_rows() -> None:
+    """core-vectors.json agreementValue: SHA-256 over lcp-agreement-v1 and H's 32 bytes, written in lowercase."""
+    for r in load("core-vectors.json")["agreementValue"]["rows"]:
+        assert (AGREEMENT_TAG + bytes.fromhex(r["h"][2:])).hex() == r["preimageHex"], r["name"]
+        assert agreement_value(r["h"]) == r["expect"], r["name"]

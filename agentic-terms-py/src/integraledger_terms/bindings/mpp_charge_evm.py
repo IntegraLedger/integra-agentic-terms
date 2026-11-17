@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from ._evm import PERMIT2, Witness, permit2_typed_data
 from ._lcp import is_address, is_list, is_object, normal_hash
 from ._mpp import (
@@ -131,15 +131,16 @@ def _authorization_bound(presented: Any) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class MppChargeEvmAuthorization:
     id: str = AUTHORIZATION
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="0")
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return _read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         return _authorization_build(choice, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _authorization_bound(presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
@@ -237,15 +238,16 @@ def _permit2_bound(presented: Any) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class MppChargeEvmPermit2:
     id: str = PERMIT2_ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="1")
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return _read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         return _permit2_build(choice, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _permit2_bound(presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
@@ -342,15 +344,16 @@ def _no_signed_place(presented: Any, pairing: str) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class MppChargeEvmTransaction:
     id: str = TRANSACTION
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return _read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         return _call_build(TRANSACTION, choice, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _no_signed_place(presented, TRANSACTION)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
@@ -363,15 +366,16 @@ class MppChargeEvmTransaction:
 @dataclass(frozen=True, slots=True)
 class MppChargeEvmHash:
     id: str = HASH
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return _read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         return _call_build(HASH, choice, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _no_signed_place(presented, HASH)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:

@@ -13,7 +13,6 @@ from eth_account import Account
 
 import integraledger_terms as terms
 from integraledger_terms import Refusal
-from integraledger_terms.bindings import _stellar_xdr as xdr
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode
 from integraledger_terms.bindings._jose import js_length
 
@@ -184,18 +183,6 @@ def _solana(binding: Any, own: Callable[[Mapping[str, Any]], Mapping[str, Any]])
     return run
 
 
-def _stellar(challenge: Any, b2: Mapping[str, Any], b6: Mapping[str, Any]) -> Any:
-    i = _inputs(b2)
-    choice = {
-        "challenge": challenge,
-        "payer": _account(b2),
-        "now": b2["input"].get("now", 0),
-        "simulatedXdr": i["simulatedXdr"],
-        "currentLedger": i["currentLedger"],
-    }
-    return built(terms.MPP_CHARGE_STELLAR.build(choice, b2["advertised"])).complete(bytes([0x11]) * 64)
-
-
 def _xrpl(challenge: Any, b2: Mapping[str, Any], b6: Mapping[str, Any]) -> Any:
     i = _inputs(b2)
     choice = {"challenge": challenge, "account": _account(b2), "fee": i["fee"], "sequence": i["sequence"]}
@@ -253,18 +240,6 @@ def _subscription(challenge: Any, b2: Mapping[str, Any], b6: Mapping[str, Any]) 
     return u.complete(_sig65(u.request["digest"], _A["fixed"]["payerKey"]))
 
 
-def _session_hedera(challenge: Any, b2: Mapping[str, Any], b6: Mapping[str, Any]) -> Any:
-    choice = {"challenge": challenge, "from": _account(b2), "deposit": int(_inputs(b2)["deposit"])}
-    u = built(terms.MPP_SESSION_HEDERA.build(choice, b2["advertised"]))
-    return u.complete({"openTx": b6["payload"]["txHash"], "signature": b6["payload"]["signature"]})
-
-
-def _session_solana(challenge: Any, b2: Mapping[str, Any], b6: Mapping[str, Any]) -> Any:
-    """The Solana session's build reads no deposit: the channel client composes the open payload."""
-    u = built(terms.MPP_SESSION_SOLANA.build({"challenge": challenge, "from": _account(b2)}, b2["advertised"]))
-    return u.complete(b6["payload"])
-
-
 def _session_xrpl(challenge: Any, b2: Mapping[str, Any], b6: Mapping[str, Any]) -> Any:
     i = _inputs(b2)
     xrpl = {**i["xrpl"], "publicKey": i["xrpl"]["publicKey"].removeprefix("0x")}
@@ -314,18 +289,6 @@ PAIRINGS: dict[str, Pairing] = {
         lambda c, b2, b6: _evm(terms.MPP_CHARGE_EVM_HASH, _no_inputs, lambda _: b2["advertised"])(c, b2, b6),
         "mpp/no-signed-place",
     ),
-    "mpp/charge/tempo/memo": Pairing(
-        "mpp-charge-tempo-memo.json",
-        terms.MPP_CHARGE_TEMPO_MEMO,
-        _evm(terms.MPP_CHARGE_TEMPO_MEMO, _no_inputs, _signature),
-    ),
-    # bound reads the push payment once its landed read is held.
-    "mpp/charge/tempo/push": Pairing(
-        "mpp-charge-tempo-push.json",
-        terms.MPP_CHARGE_TEMPO_PUSH,
-        _evm(terms.MPP_CHARGE_TEMPO_PUSH, _no_inputs, lambda b6: b6["payload"]["hash"]),
-        "tempo/read-first",
-    ),
     "mpp/charge/lightning": Pairing(
         "mpp-charge-lightning.json", terms.MPP_CHARGE_LIGHTNING, _lightning(terms.MPP_CHARGE_LIGHTNING)
     ),
@@ -341,7 +304,6 @@ PAIRINGS: dict[str, Pairing] = {
         _solana(terms.MPP_CHARGE_USDC_SOLANA, lambda d: d["solana"]),
     ),
     # complete takes the payer's 64-byte signature, which it does not verify.
-    "mpp/charge/stellar": Pairing("mpp-charge-stellar.json", terms.MPP_CHARGE_STELLAR, _stellar),
     "mpp/charge/xrpl": Pairing("mpp-charge-xrpl.json", terms.MPP_CHARGE_XRPL, _xrpl),
     "mpp/charge/usdc/evm": Pairing(
         "mpp-charge-usdc-evm.json",
@@ -357,14 +319,8 @@ PAIRINGS: dict[str, Pairing] = {
     "mpp/session/evm": Pairing("mpp-session-evm.json", terms.MPP_SESSION_EVM, _session_evm),
     "mpp/session/tempo": Pairing("mpp-session-tempo.json", terms.MPP_SESSION_TEMPO, _session_tempo),
     "mpp/subscription/tempo": Pairing("mpp-subscription-tempo.json", terms.MPP_SUBSCRIPTION_TEMPO, _subscription),
-    # bound reads the opening once its landed read is held.
-    "mpp/session/hedera": Pairing(
-        "mpp-session-hedera-solana-xrpl.json", terms.MPP_SESSION_HEDERA, _session_hedera, "hedera/read-first"
-    ),
-    "mpp/session/solana": Pairing("mpp-session-hedera-solana-xrpl.json", terms.MPP_SESSION_SOLANA, _session_solana),
     "mpp/session/xrpl": Pairing("mpp-session-hedera-solana-xrpl.json", terms.MPP_SESSION_XRPL, _session_xrpl),
 }
-assert len(PAIRINGS) == 21
 
 
 def buyer(file: str, pairing: str, name: str) -> dict[str, Any] | None:
@@ -395,39 +351,3 @@ def set_up(pairing: str) -> SetUp:
         payment["source"] = presented["source"]
     answer = b2["advertised"] if p.answer is None else Refusal(p.answer)
     return SetUp(placed, b2["advertised"], lambda c: p.run(c, b2, payment), answer)
-
-
-def _u32(n: int) -> bytes:
-    return n.to_bytes(4, "big")
-
-
-def footprinted(envelope: str, key_bytes: int) -> str:
-    """The envelope with its v1 transaction's ext set to Soroban transaction data, as mpp-charge-stellar.json's
-    completeXdr about states it: a footprint of one read-only contract-data key, whose contract is the contract id of
-    32 bytes of 0x07, whose key is an ScVal of bytes holding key_bytes zero bytes, and whose durability is persistent,
-    no read-write key, and zero instructions, read bytes, write bytes and resource fee. The transaction is read up to
-    its ext with the package's XDR reader; what follows the ext, the signatures, is kept."""
-    data = base64.b64decode(envelope)
-    r = xdr.Reader(data)
-    assert r.u32() == 2, "not a v1 envelope"
-    xdr.muxed_account(r)
-    r.u32()
-    r.i64()
-    xdr._preconditions(r)
-    xdr._memo(r)
-    for _ in range(r.count(100)):
-        if r.flag():
-            xdr.muxed_account(r)
-        kind = r.enum(range(0, 27))
-        if kind == 24:
-            xdr._invoke(r)
-        else:
-            xdr._operation(r, kind)
-    start = r.at
-    xdr._transaction_ext(r)
-    end = r.at
-    key_val = _u32(13) + _u32(key_bytes) + bytes(key_bytes) + bytes(-key_bytes % 4)
-    key = _u32(6) + _u32(1) + bytes([7]) * 32 + key_val + _u32(1)
-    resources = _u32(1) + key + _u32(0) + _u32(0) * 3
-    ext = _u32(1) + _u32(0) + resources + bytes(8)
-    return base64.b64encode(data[:start] + ext + data[end:]).decode("ascii")

@@ -4,9 +4,8 @@ from a member of the payment's own. For each rail the buyer half reads such a re
 the payment as sent, the same read as a member of the payment's own under the rail's member and under the names
 fetched, tables and landed, and a JSON round trip or a dict() of the held payment give the rail's read-first code; and
 held with another read as a member of its own, the held read alone is read. Each
-payment, read and code is its vector file's: the B6 rows and push sections of the mpp-charge-*.json files, their
-refusals rows that carry such a member, and the session file's agreedRefusals row that carries a landed member, each
-selected by its members."""
+payment, read and code is its vector file's: the refusals rows of the mpp-charge-*.json files that carry such a member,
+each selected by its members."""
 
 import copy
 import json
@@ -17,30 +16,19 @@ from typing import Any
 import pytest
 
 from integraledger_terms import (
-    MPP_CHARGE_HEDERA,
     MPP_CHARGE_SOLANA,
-    MPP_CHARGE_STELLAR,
-    MPP_CHARGE_TEMPO_PUSH,
     MPP_CHARGE_XRPL,
-    MPP_SESSION_HEDERA,
     Checked,
     Declined,
     Refusal,
     check,
-    open_channel,
 )
-from integraledger_terms.bindings._codec import js_json
 from integraledger_terms.bindings._mpp import Held
 
 from breadth import ABC, H, LINK
-from mpp_docs import issued, placed_doc
 from support import load
 
-TP = load("mpp-charge-tempo-push.json")
-HC = load("mpp-charge-hedera.json")
-HS = load("mpp-session-hedera-solana-xrpl.json")
 SC = load("mpp-charge-solana.json")
-ST = load("mpp-charge-stellar.json")
 XC = load("mpp-charge-xrpl.json")
 
 Own = Callable[[dict[str, Any], Any], dict[str, Any]]
@@ -77,29 +65,6 @@ class Rail:
     read_first: str
 
 
-def tempo_push() -> Rail:
-    row = one([r for r in TP["buyer"]["rows"] if r["pairing"] == "mpp/charge/tempo/push" and "fetched" in r["input"]], "B6")
-    read = row["input"]["fetched"]
-    return Rail(MPP_CHARGE_TEMPO_PUSH, row["input"]["presented"], read, {**read, "logs": []}, landed, "tempo/read-first")
-
-
-def hedera_charge() -> Rail:
-    challenge = issued("hedera", "charge", js_json(HC["fixed"]["request"]), realm=HC["fixed"]["realm"], expires=HC["fixed"]["expires"])
-    sent = {"challenge": placed_doc(challenge, H, LINK)[0], "payload": {"type": "hash", "transactionId": HC["push"]["transactionId"]}}
-    read = HC["fetchPresented"]["expectLanded"]
-    other = {"network": HC["fetchPresented"]["reader"], "memo": "not an attribution memo"}
-    return Rail(MPP_CHARGE_HEDERA, sent, read, other, landed, HC["push"]["expectWithout"])
-
-
-def hedera_session() -> Rail:
-    row = one([r for r in HS["agreedRefusals"]["rows"] if "landed" in r], "agreedRefusals rows carrying landed")
-    assert row["opening"] == "HS3"
-    payload = {"action": "open", "channelId": HS["HS1"]["expectChannelId"], "txHash": HS["HS3"]["txHash"], "cumulativeAmount": "0", "signature": "0x00"}
-    sent = {"challenge": HS["SS1"]["hedera"]["placed"], "payload": payload}
-    read = row["landed"]
-    return Rail(MPP_SESSION_HEDERA, sent, read, {**read, "logs": []}, landed, row["expect"])
-
-
 def solana_charge() -> Rail:
     row = one(
         [r for r in SC["refusals"] if r.get("payload", {}).get("type") == "signature" and "transaction" in r["payload"]],
@@ -110,18 +75,6 @@ def solana_charge() -> Rail:
     sent = {"challenge": SC["place"]["expect"], "payload": without(row["payload"], "transaction")}
     other = {"transaction": SC["plant"]["wireBase64"]}
     return Rail(MPP_CHARGE_SOLANA, sent, read, other, carrying("transaction"), row["expect"])
-
-
-def stellar_charge() -> Rail:
-    row = one(
-        [r for r in ST["refusals"] if r.get("payload", {}).get("type") == "hash" and "transaction" in r["payload"]],
-        "refusals carrying a hash credential's transaction",
-    )
-    read = {"transaction": row["payload"]["transaction"]}
-    assert read["transaction"] == ST["V3"]["envelope"]
-    sent = {"challenge": ST[row["challenge"]]["challenge"], "payload": without(row["payload"], "transaction")}
-    other = {"transaction": ST["plant"]["envelope"]}
-    return Rail(MPP_CHARGE_STELLAR, sent, read, other, carrying("transaction"), row["expect"])
 
 
 def xrpl_charge() -> Rail:
@@ -135,7 +88,7 @@ def xrpl_charge() -> Rail:
     return Rail(MPP_CHARGE_XRPL, sent, read, {"blob": XC["plant"]["blob"]}, carrying("blob"), row["expect"])
 
 
-RAILS = [tempo_push, hedera_charge, hedera_session, solana_charge, stellar_charge, xrpl_charge]
+RAILS = [solana_charge, xrpl_charge]
 
 
 @pytest.mark.parametrize("rail_of", RAILS, ids=[f.__name__ for f in RAILS])
@@ -161,7 +114,7 @@ def test_a_read_is_taken_only_from_what_is_held_beside_the_payment(rail_of: Call
 def test_check_takes_the_landed_receipt_beside_the_payment() -> None:
     """check reads a payment with the landed receipt given beside it, never one written into the payment, and
     declines a landed receipt that is not a JSON object beside a payment that is one."""
-    rail = tempo_push()
+    rail = xrpl_charge()
     binding = rail.binding
     assert check(ABC, rail.sent, binding, rail.read) == Checked(h=H)
     for out in (check(ABC, rail.sent, binding), check(ABC, landed(rail.sent, rail.read), binding)):
@@ -169,15 +122,3 @@ def test_check_takes_the_landed_receipt_beside_the_payment() -> None:
     for read, sent in (("landed", rail.sent), (rail.read, "payment")):
         out = check(ABC, sent, binding, read)
         assert out == Declined("signed-not-bound", "The landed receipt is not a JSON object beside the payment."), out
-
-
-def test_a_held_hedera_session_keeps_the_landed_receipt_beside_its_opening() -> None:
-    """open_channel holds the session opening with the landed receipt given beside it, and keeps the opening as
-    signed and the receipt as the hold's own landed member; an opening that carries the receipt as a member of its
-    own, given no receipt beside it, is not held."""
-    rail = hedera_session()
-    hold = open_channel(ABC, rail.sent, rail.binding, rail.read)
-    assert isinstance(hold, dict), hold
-    assert (hold["opening"], hold["landed"]) == (rail.sent, rail.read)
-    out = open_channel(ABC, landed(rail.sent, rail.read), rail.binding)
-    assert isinstance(out, Declined) and out.code == "signed-not-bound", out

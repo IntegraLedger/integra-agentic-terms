@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 from breadth import ABC, Recording, code, run
-from support import VECTORS, load, serving
+from support import PENDING, VECTORS, load, migrating, serving
 
 import integraledger_terms as terms
 from integraledger_terms import Refusal, _gate, confirm, transact
@@ -63,16 +63,21 @@ def offered_alone(b2: dict[str, Any], challenge: dict[str, Any], monkeypatch: py
     assert link.calls == 0
 
 
-ROWS: list[tuple[str, dict[str, Any]]] = [
+ALL_ROWS: list[tuple[str, dict[str, Any]]] = [
     (f.name, row) for f in sorted(VECTORS.glob("mpp-*.json")) for row in load(f.name).get("boundChallenge", {}).get("rows", [])
 ]
+# The rows of the pairings this package has a binding for; those of PENDING's pairings wait for their bindings.
+ROWS = [(f, row) for f, row in ALL_ROWS if row["pairing"] not in PENDING]
 
 
 def test_the_bound_challenge_rows_are_read() -> None:
     assert len(ROWS) > 0
+    assert all(row["pairing"] not in BINDINGS for _, row in ALL_ROWS if row["pairing"] in PENDING)
 
 
-@pytest.mark.parametrize(("file", "row"), ROWS, ids=[f"{f}: {r['case']}" for f, r in ROWS])
+@pytest.mark.parametrize(
+    ("file", "row"), [pytest.param(f, r, id=f"{f}: {r['case']}", marks=migrating(r["pairing"])) for f, r in ROWS]
+)
 def test_a_challenge_the_filter_does_not_name_for_the_pairing_is_no_payable_option(
     file: str, row: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:

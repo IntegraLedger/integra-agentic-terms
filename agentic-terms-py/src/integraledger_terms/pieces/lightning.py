@@ -1,4 +1,4 @@
-"""The buyer pieces for Lightning on x402 and MPP: the buyer's node pays exactly the invoice the build names, and its
+"""The buyer pieces for Lightning on MPP: the buyer's node pays exactly the invoice the build names, and its
 answer is the payment preimage, as the build's complete takes it. The node moves the payment, so a decline keeps
 it."""
 
@@ -8,10 +8,9 @@ from collections.abc import Mapping
 
 from .._types import Advertised, Chosen, Inputs, Json, Refusal, Signature
 from ..bindings._bolt11 import decode
-from ..bindings.lightning import LNBTC, MPP_CHARGE, MPP_SESSION, NAMED
+from ..bindings.lightning import MPP_CHARGE, MPP_SESSION
 from ._base import BasePiece
-from ._common import InputKind, account_of, choice_of, first_option, inputs_of, with_payment_identifier
-from ._lnbtc_request import check_request_hash
+from ._common import InputKind, account_of, choice_of, inputs_of
 from ._mpp import challenges_of, pairings_of_placed, request_of
 
 # The BOLT11 currency of each lnbtc network, the CAIP-2 reference being the first 32 hex characters of the network's
@@ -35,53 +34,6 @@ def _invoice_of(challenge: object, session: bool) -> object:
         return request.get("depositInvoice")
     details = request.get("methodDetails")
     return details.get("invoice") if isinstance(details, Mapping) else None
-
-
-class LnbtcPiece(BasePiece):
-    """The first option on the account's lnbtc network, whose request hash, recomputed from the buyer's own request
-    (the request input), equals both the option's extra.requestHash and the invoice's description hash. With named, the
-    build reads the ATR the gate compared, which rides beside the choice as the bytes the gate passes."""
-
-    def __init__(self, pairing: str, named: bool) -> None:
-        self.pairing = pairing
-        self._named = named
-
-    def choose(self, read: Advertised, account: str, inputs: Inputs, now: int, ref: str, doc: Json) -> Chosen | Refusal:
-        o = first_option(read, account, "lnbtc", self.pairing)
-        if isinstance(o, Refusal):
-            return Refusal("x402/no-payable-option")
-        if not isinstance(inputs, Mapping) or "request" not in inputs:
-            return Refusal("x402/input-missing")
-        request = inputs["request"]
-        resource = o.required.get("resource") if isinstance(o.required, Mapping) else None
-        url = resource.get("url") if isinstance(resource, Mapping) else None
-        checked = check_request_hash(o.accepted, url, request)
-        if isinstance(checked, Refusal):
-            return checked
-        return Chosen(pairing=self.pairing, choice={"required": o.required, "accepted": o.accepted}, ref=ref)
-
-    def choice(self, chosen: Chosen, atr_bytes: bytes) -> Any:
-        c = choice_of(chosen)
-        if c is None:
-            return Refusal("x402/choice-malformed")
-        return {**c, "atr": atr_bytes} if self._named else c
-
-    def request(self, unsigned: Any) -> dict[str, Any]:
-        request: dict[str, Any] = unsigned.request
-        return request
-
-    def complete(self, unsigned: Any, signature: Signature, chosen: Chosen) -> dict[str, Any] | Refusal:
-        """The paid payment, with the payment identifier where the challenge advertises it."""
-        if not isinstance(signature, str):
-            return Refusal("ln/preimage-malformed")
-        signed = unsigned.complete(signature)
-        if isinstance(signed, Refusal):
-            return signed
-        c = choice_of(chosen)
-        return with_payment_identifier(signed, c.get("required") if c is not None else None, chosen.ref)
-
-    def moves(self, request: Json) -> bool:
-        return True
 
 
 class LnMppPiece(BasePiece):
@@ -132,7 +84,5 @@ class LnMppPiece(BasePiece):
         return True
 
 
-LNBTC_PIECE = LnbtcPiece(LNBTC, False)
-NAMED_PIECE = LnbtcPiece(NAMED, True)
 MPP_CHARGE_PIECE = LnMppPiece(MPP_CHARGE, False)
 MPP_SESSION_PIECE = LnMppPiece(MPP_SESSION, True)

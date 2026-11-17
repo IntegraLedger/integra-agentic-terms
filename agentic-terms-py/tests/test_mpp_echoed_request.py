@@ -17,7 +17,6 @@ import integraledger_terms as terms
 from integraledger_terms import ChannelRef, Refusal
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, canonical_json
 from integraledger_terms.bindings._mpp import Held, pairings_of
-from integraledger_terms.bindings._mpp_checks import hedera_charge_network
 from integraledger_terms.bindings.mpp_charge_usdc import gateway_account, usdc_gateway_salt, usdc_request_hash
 from integraledger_terms.pieces._mpp import pairings_of_placed
 
@@ -31,10 +30,7 @@ BINDINGS: dict[str, Any] = {
 FILES = {
     "mpp/charge/evm/authorization": "mpp-charge-evm-authorization.json",
     "mpp/charge/evm/permit2": "mpp-charge-evm-permit2.json",
-    "mpp/charge/tempo/memo": "mpp-charge-tempo-memo.json",
-    "mpp/charge/tempo/push": "mpp-charge-tempo-push.json",
     "mpp/charge/solana": "mpp-charge-solana.json",
-    "mpp/charge/stellar": "mpp-charge-stellar.json",
     "mpp/charge/xrpl": "mpp-charge-xrpl.json",
     "mpp/charge/nearintents": "mpp-charge-nearintents.json",
     "mpp/charge/usdc/evm": "mpp-charge-usdc-evm.json",
@@ -43,12 +39,10 @@ FILES = {
     "mpp/charge/usdc/gateway": "mpp-charge-usdc-gateway.json",
     "mpp/session/evm": "mpp-session-evm.json",
     "mpp/session/tempo": "mpp-session-tempo.json",
-    "mpp/session/hedera": "mpp-session-hedera-solana-xrpl.json",
-    "mpp/session/solana": "mpp-session-hedera-solana-xrpl.json",
     "mpp/session/xrpl": "mpp-session-hedera-solana-xrpl.json",
     "mpp/subscription/tempo": "mpp-subscription-tempo.json",
 }
-CHANNELS = ("mpp/session/evm", "mpp/session/tempo", "mpp/session/hedera", "mpp/session/solana", "mpp/session/xrpl")
+CHANNELS = ("mpp/session/evm", "mpp/session/tempo", "mpp/session/xrpl")
 
 
 def b6(pairing: str) -> dict[str, Any]:
@@ -145,10 +139,7 @@ HELD: list[tuple[str, str, Edit, str | None]] = [
     ("charge/evm/authorization, no expires", "mpp/charge/evm/authorization", no_expires, "mpp/expires-required"),
     ('charge/evm/authorization, amount "abc"', "mpp/charge/evm/authorization", member("amount", "abc"), "mpp/request-malformed"),
     ("charge/evm/permit2, externalId null", "mpp/charge/evm/permit2", member("externalId", None), "mpp/request-malformed"),
-    ('charge/tempo/memo, amount "abc"', "mpp/charge/tempo/memo", member("amount", "abc"), "mpp/request-malformed"),
-    ("charge/tempo/push, no expires", "mpp/charge/tempo/push", no_expires, "mpp/expires-required"),
     ("charge/solana, no expires", "mpp/charge/solana", no_expires, None),
-    ('charge/stellar, amount "0"', "mpp/charge/stellar", member("amount", "0"), None),
     ("charge/xrpl, no expires", "mpp/charge/xrpl", no_expires, "mpp/expires-required"),
     ('charge/nearintents, amount "x"', "mpp/charge/nearintents", member("amount", "x"), None),
     ("charge/usdc/evm, no expires", "mpp/charge/usdc/evm", no_expires, "mpp/expires-required"),
@@ -162,7 +153,6 @@ HELD: list[tuple[str, str, Edit, str | None]] = [
         "mpp/credential-types",
     ),
     ('session/tempo, amount "abc"', "mpp/session/tempo", member("amount", "abc"), None),
-    ("session/solana, no expires", "mpp/session/solana", no_expires, None),
     (
         'session/xrpl, no expires and currency "USD"',
         "mpp/session/xrpl",
@@ -223,11 +213,6 @@ def test_a_method_details_that_is_not_an_object_is_request_malformed_never_read_
         assert channel_ref(pairing, c) == Refusal("mpp/request-malformed")
 
 
-def test_the_hedera_charge_network_refuses_a_method_details_that_is_not_an_object() -> None:
-    assert hedera_charge_network({"methodDetails": 5}, "hedera:testnet") == Refusal("mpp/request-malformed")
-    assert hedera_charge_network({}, "hedera:testnet") == "hedera:testnet"
-
-
 # The request member that carries H is read as pairings_of reads it: externalId is a string ("externalId | string |
 # OPTIONAL", draft-nearintents-charge-01), on Solana one that "MUST NOT exceed 566 bytes (Solana Memo Program limit)"
 # (draft-solana-charge-00), which usdc's Solana profile inherits (draft-usdc-charge-00); the XRP Ledger's invoiceId is
@@ -257,19 +242,6 @@ def test_an_absent_carrier_is_the_members_own_refusal() -> None:
     assert bound("mpp/charge/nearintents", near) == Refusal("near/memo-not-lcp")
     xrpl = presented("mpp/charge/xrpl", without_detail("invoiceId"))
     assert bound("mpp/charge/xrpl", xrpl) == Refusal("xrpl/carrier-mismatch")
-
-
-# The codes pairings_of gives the same request: an MPP Stellar charge names stellar:pubnet or stellar:testnet, and its
-# recipient is a Stellar account or its muxed form.
-@pytest.mark.parametrize(
-    "edit",
-    [member("recipient", 7), member("recipient", "GBAD"), detail("network", "stellar:mars"), without_detail("network")],
-    ids=["recipient 7", 'recipient "GBAD"', 'network "stellar:mars"', "no network"],
-)
-def test_stellar_reads_its_network_and_recipient(edit: Edit) -> None:
-    c = presented("mpp/charge/stellar", edit)
-    assert pairings_of(offer_of(c)) == Refusal("stellar/option-malformed")
-    assert bound("mpp/charge/stellar", c) == Refusal("stellar/option-malformed")
 
 
 @pytest.mark.parametrize(
@@ -337,24 +309,12 @@ def test_the_gateway_reads_the_recipient_its_salt_carries() -> None:
     assert bound("mpp/charge/usdc/gateway", c) == Refusal("mpp/request-malformed")
 
 
-def test_the_hedera_escrow_and_the_solana_channel_program() -> None:
-    hedera = presented("mpp/session/hedera", without_detail("escrowContract"))
-    assert bound("mpp/session/hedera", hedera) == Refusal("mpp/request-malformed")
-    solana = presented("mpp/session/solana", detail("channelProgram", "program"))
-    assert bound("mpp/session/solana", solana) == Refusal("svm/input-malformed")
-
-
-# The session openings take only a challenge the filter names: a named channel, a currency or network of another form
-# is refused with the code pairings_of gives the same challenge.
 @pytest.mark.parametrize(
     ("pairing", "edit", "code"),
     [
-        ("mpp/session/hedera", detail("channelId", "0x" + "11" * 32), "mpp/channel-named"),
-        ("mpp/session/hedera", member("currency", "usdc"), "mpp/request-malformed"),
-        ("mpp/session/solana", member("currency", "usdc"), "svm/input-malformed"),
         ("mpp/session/xrpl", without_detail("network"), "xrpl/network-missing"),
     ],
-    ids=["hedera, channelId named", 'hedera, currency "usdc"', 'solana, currency "usdc"', "xrpl, no network"],
+    ids=["xrpl, no network"],
 )
 def test_the_session_openings_hold_the_filter(pairing: str, edit: Edit, code: str) -> None:
     c = presented(pairing, edit)

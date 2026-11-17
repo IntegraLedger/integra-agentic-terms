@@ -1,6 +1,6 @@
-"""B2 and B6 for the Lightning pairings on x402, with their vector rows for the buyer half. Every expected value is the
-vector files' (x402-exact-lnbtc.json and x402-exact-lnbtc-invoice-named.json); the node answers with the preimage they
-publish."""
+"""The BOLT11 decoder the Lightning pairings share, and B6 for the Lightning pairings on MPP, with their vector rows for
+the buyer half. Every expected value is the vector files' (x402-exact-lnbtc.json's BOLT11 rows L1, L4 and L7,
+mpp-charge-lightning.json and mpp-session-lightning.json); the node answers with the preimage they publish."""
 
 import copy
 import dataclasses
@@ -15,8 +15,6 @@ from support import load, serving
 from integraledger_terms import (
     MPP_CHARGE_LIGHTNING,
     MPP_SESSION_LIGHTNING,
-    X402_EXACT_LNBTC,
-    X402_EXACT_LNBTC_INVOICE_NAMED,
     Advertised,
     Chosen,
     Confirmed,
@@ -31,14 +29,11 @@ from integraledger_terms.bindings._bolt11 import Bolt11, decode, invoice_h
 from integraledger_terms.bindings._channel import ChannelRef
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._codec import b64u_encode, canonical_json
-from integraledger_terms.bindings.lightning import atr_names_invoice
 from mpp_docs import placed_doc
 
 NOW = 1_790_000_000
 V = load("x402-exact-lnbtc.json")
-N = load("x402-exact-lnbtc-invoice-named.json")
 F = V["fixed"]
-FN = N["fixed"]
 
 
 @pytest.fixture(autouse=True)
@@ -71,21 +66,6 @@ def decoded(invoice: str) -> Bolt11:
     b = decode(invoice)
     assert isinstance(b, Bolt11), b
     return b
-
-
-# ── x402/exact/lnbtc ──
-
-# The buyer's own request: x402's lnbtc example, GET of the vector's resource with an empty body.
-REQUEST = {"request": {"method": "GET", "url": "https://api.example.com/article/A"}}
-LNBTC = Pairing(
-    X402_EXACT_LNBTC, x402_doc(F["O"], F["resource"]), f"{F['O']['network']}:{F['payee']}", lambda r: F["preimage"], REQUEST
-)
-
-def test_x402_exact_lnbtc_b6_the_node_pays_the_option_invoice_whose_m_is_h() -> None:
-    def inspect(request: Any) -> None:
-        assert request == {"kind": "bolt11-pay", "invoice": F["O"]["extra"]["invoice"]}
-
-    build_and_sign(LNBTC, inspect)
 
 
 def test_bolt11_l1_published_h_example() -> None:
@@ -162,116 +142,6 @@ def test_bolt11_l7_an_amount_of_4301_digits_decodes() -> None:
     assert b.amount_msat == expected
     assert dataclasses.replace(b, amount_msat=l4.amount_msat) == l4
 
-
-def test_x402_exact_lnbtc_l5_read_build_complete_and_bound() -> None:
-    o = F["O"]
-    doc = x402_doc(o, F["resource"], F["H"], F["link"])
-    r = X402_EXACT_LNBTC.read(doc)
-    assert r == Advertised(h=F["H"], link=F["link"], offer={"required": doc, "options": [o]})
-    binding: Any = X402_EXACT_LNBTC
-    unsigned = binding.build({"required": required(o), "accepted": o}, F["H"])
-    assert unsigned.request == {"kind": "bolt11-pay", "invoice": V["L4"]["invoice"]}
-    payment = unsigned.complete(F["preimage"])
-    assert payment == V["L5"]["payment"]
-    assert X402_EXACT_LNBTC.bound(payment) == V["L5"]["expectBound"]
-
-
-@pytest.mark.parametrize(
-    "row", [r for r in V["refusals"]["rows"] if r["fn"] in ("complete", "bound")], ids=lambda r: str(r["case"])
-)
-def test_x402_exact_lnbtc_refusal_rows(row: dict[str, Any]) -> None:
-    o = F["O"]
-    if row["fn"] == "complete":
-        binding: Any = X402_EXACT_LNBTC
-        unsigned = binding.build({"required": required(o), "accepted": o}, F["H"])
-        assert unsigned.complete(row["preimage"]) == refusal(row["expect"])
-    else:
-        option = with_set(o, row.get("optionSet", {}))
-        assert X402_EXACT_LNBTC.bound(with_set(V["L5"]["payment"], {"accepted": option})) == refusal(row["expect"])
-
-
-@pytest.mark.parametrize(
-    "row", [r for r in V["refusals"]["rows"] if r["fn"] == "advertise"], ids=lambda r: str(r["case"])
-)
-def test_x402_exact_lnbtc_option_checks_refuse_in_build(row: dict[str, Any]) -> None:
-    """The option checks advertise makes, which build repeats on the chosen option."""
-    option = with_set(F["O"], row.get("optionSet", {}))
-    binding: Any = X402_EXACT_LNBTC
-    assert binding.build({"required": required(option), "accepted": option}, F["H"]) == refusal(row["expect"])
-
-
-def test_x402_exact_lnbtc_build_with_another_h_is_no_metadata() -> None:
-    row = next(r for r in V["refusals"]["rows"] if r["fn"] == "advertiseOtherH")
-    binding: Any = X402_EXACT_LNBTC
-    assert binding.build({"required": required(F["O"]), "accepted": F["O"]}, row["h"]) == refusal(row["expect"])
-
-
-def test_x402_exact_lnbtc_bound_holds_the_options_network_to_the_invoice() -> None:
-    """bound reads the paid option's network as build checks it: the file's option whose network is not its invoice's
-    currency's, echoed in L5's payment, is refused with the row's code."""
-    rows = [r for r in V["refusals"]["rows"] if r["fn"] == "advertise" and r["expect"]["code"] == "ln/currency-network"]
-    assert len(rows) > 0
-    for row in rows:
-        option = with_set(F["O"], row["optionSet"])
-        assert X402_EXACT_LNBTC.bound(with_set(V["L5"]["payment"], {"accepted": option})) == refusal(row["expect"])
-
-
-# ── x402/exact/lnbtc/invoice-named ──
-
-
-def atr_n() -> bytes:
-    """The core's bytes for the vectors' id and the x402 slot {accepts: [O_N], request}, members in that order."""
-    slot = {"accepts": [FN["O_N"]], "request": FN["request"]}
-    text = '{"atrVersion":"1","id":' + json.dumps(FN["atrId"]) + ',"x402":' + json.dumps(slot, separators=(",", ":"), ensure_ascii=False) + "}"
-    return text.encode("utf-8")
-
-
-def test_x402_exact_lnbtc_invoice_named_l6_the_invoice_and_the_atr_that_names_it() -> None:
-    b = decoded(N["L6"]["invoice"])
-    assert {
-        "currency": b.currency,
-        "amountMsat": None if b.amount_msat is None else str(b.amount_msat),
-        "expiry": b.expiry,
-        "paymentHash": b.payment_hash.hex(),
-        "descriptionHash": None if b.description_hash is None else b.description_hash.hex(),
-        "metadata": None if b.metadata is None else b.metadata.hex(),
-    } == N["L6"]["expectDecoded"]
-    atr = atr_n()
-    assert len(atr) == N["L6"]["expectAtrLength"]
-    assert "0x" + hashlib.sha256(atr).hexdigest() == N["L6"]["expectH_N"]
-    assert atr_names_invoice(atr, N["L6"]["invoice"]) is N["L6"]["expectAtrNamesInvoice"]
-
-def test_x402_exact_lnbtc_invoice_named_l6_build_and_bound() -> None:
-    atr = atr_n()
-    on = FN["O_N"]
-    binding: Any = X402_EXACT_LNBTC_INVOICE_NAMED
-    unsigned = binding.build({"required": required(on), "accepted": on, "atr": atr}, N["L6"]["expectH_N"])
-    assert unsigned.request == N["L6"]["expectBuild"]
-    payment = N["L6"]["payment"]
-    assert binding.bound(payment) == N["L6"]["expectBound"]
-    with_l4 = with_set(payment, {"accepted.extra.invoice": FN["L4"]})
-    assert binding.bound(with_l4) == refusal(N["L6"]["withL4"]["expect"])
-    bare = {k: v for k, v in payment.items() if k != "extensions"}
-    assert binding.bound(bare) == refusal(N["L6"]["withoutExtensions"]["expect"])
-
-
-def test_x402_exact_lnbtc_invoice_named_plant2_never_pays_an_invoice_its_atr_does_not_name() -> None:
-    atr = atr_n()
-    offered = with_set(FN["O_N"], {"extra.invoice": N["plant2"]["invoice"]})
-    binding: Any = X402_EXACT_LNBTC_INVOICE_NAMED
-    out = binding.build({"required": required(offered), "accepted": offered, "atr": atr}, N["L6"]["expectH_N"])
-    assert out == refusal(N["plant2"]["expect"])
-
-
-def test_x402_lightning_9a_each_read_serves_only_its_own_options() -> None:
-    doc_m = x402_doc(F["O"], F["resource"])
-    doc_n = x402_doc(FN["O_N"], FN["resource"])
-    assert X402_EXACT_LNBTC_INVOICE_NAMED.read(doc_m) == Refusal("x402/no-payable-option")
-    assert X402_EXACT_LNBTC.read(doc_n) == Refusal("x402/no-payable-option")
-    assert (H, LINK) == (F["H"], F["link"])
-
-
-# ── mpp/charge/lightning and mpp/session/lightning ──
 
 C = load("mpp-charge-lightning.json")
 S = load("mpp-session-lightning.json")

@@ -2,8 +2,8 @@
 that take a URL through them. Expected values come from the URL Standard (url.spec.whatwg.org): the table of host
 parser results in section 3 and the registrable-domain table in section 3.2, which shows إختبار as the host
 xn--kgbechtv; RFC 3492's own encoder (rfc3492.py) for a long label; web-platform-tests' url/resources/toascii.json at
-42cbc75a for the hosts that IDNA 2003 reads otherwise; and Node.js 26.11.1's URL for the lnbtc request URLs and hosts,
-each of which it reads as the Standard does. The conformance files are run in test_url_conformance.py."""
+42cbc75a for the hosts that IDNA 2003 reads otherwise; and Node.js 26.11.1's URL for the hosts, each of which it reads
+as the Standard does. The conformance files are run in test_url_conformance.py."""
 
 from typing import Any
 from urllib.parse import quote
@@ -14,7 +14,6 @@ from rfc3492 import rfc3492_encode
 
 from integraledger_terms import Refusal
 from integraledger_terms.bindings._url import UrlAuthority, domain_to_ascii, parse_host, read_url
-from integraledger_terms.pieces._lnbtc_request import request_hash_of
 
 # [input, the host with is_opaque false, with is_opaque true], None for failure.
 HOST_PARSER_RESULTS = [
@@ -211,18 +210,3 @@ NODE_HOSTS = [
 def test_each_host_reads_as_the_standard_reads_it(url: str, host: str | None) -> None:
     u = read_url(url)
     assert (None if u is None else u.host) == host
-
-
-# lnbtc request URLs, percent-encoded: the first two are refused as Node.js's URL refuses them (an xn-- label that is
-# not Punycode, and a ZWJ, U+200D, that ContextJ refuses), and the third is hashed.
-LNBTC_URLS = [
-    ("https://xn--a.b%C3%BCcher.de/x", "ln/request-binding-malformed"),
-    (f"https://a{quote(chr(0x200D))}b.com/x", "ln/request-binding-malformed"),
-    ("https://b%C3%BCcher.de/x", None),
-]
-
-
-@pytest.mark.parametrize(("url", "refusal"), LNBTC_URLS, ids=[r[0] for r in LNBTC_URLS])
-def test_an_lnbtc_request_url_is_hashed_only_where_the_standard_reads_it(url: str, refusal: str | None) -> None:
-    out: Any = request_hash_of("http:1", {"headers": []}, {"method": "GET", "url": url}, url)
-    assert (out.code if isinstance(out, Refusal) else None) == refusal

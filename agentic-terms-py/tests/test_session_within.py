@@ -2,7 +2,7 @@
 serves MPP sessions as the TypeScript gate's does; and the within challenge the seller issues itself on a live
 channel, with its own id and the channel named in methodDetails.channelId: the gate signs only for a channel it opened
 for an ATR it compared, and only when the within challenge's legal context is absent or names that H. The voucher
-digests and bytes are the vector files' (ES5, TS4, HS2, SV3 on SV2's opening, XS3 on XS2's); the within challenges are
+digests and bytes are the vector files' (ES5, TS4, XS3 on XS2's opening); the within challenges are
 the issued request with methodDetails.channelId added, a fresh id, and no opaque unless a legal context is given. The
 TypeScript gate's tests are channels.test.ts's."""
 
@@ -16,8 +16,6 @@ import pytest
 
 from integraledger_terms import (
     MPP_SESSION_EVM,
-    MPP_SESSION_HEDERA,
-    MPP_SESSION_SOLANA,
     MPP_SESSION_TEMPO,
     MPP_SESSION_XRPL,
     Declined,
@@ -33,7 +31,6 @@ from integraledger_terms.bindings._channel import BatchUnsigned
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._svm import PAYMENT_CHANNELS, key_bytes
 from integraledger_terms.bindings.mpp_session import MppSessionEvm, MppSessionTempo
-from integraledger_terms.bindings.mpp_session_hedera import MppSessionHedera
 from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 from breadth import ABC, H, LINK, Recording, offered, run
@@ -97,177 +94,16 @@ def test_tempo_v2_build_within_at_0_and_250_are_ts4s_vouchers() -> None:
     assert credential["payload"]["descriptor"] == opening["payload"]["descriptor"]
 
 
-def hedera_opened() -> Transacted:
-    doc = placed_doc(HS["SS1"]["hedera"]["challenge"], H, LINK)
-    signer = Recording(
-        f"hedera:testnet:{HS['fixed']['payer']}",
-        lambda r: {
-            "openTx": HS["HS3"]["txHash"],
-            "signature": sign_typed(r["voucher"]),
-            "landed": {"transaction": HS["HS3"]["txHash"], "blockNumber": "1", "logs": [HS["HS3"]["log"]]},
-        },
-    )
-    out = run(lambda c: transact(doc, offered(MPP_SESSION_HEDERA), signer, c, inputs={"deposit": HS["HS2"]["deposit"]}), serving(ABC))
-    assert isinstance(out, Transacted), out
-    return out
-
-
-def test_hedera_build_within_at_zero_is_hs2s_voucher() -> None:
-    opening = hedera_opened().signed
-    assert opening is not None
-    assert digest(build(MPP_SESSION_HEDERA, opening, 0).requests[0]["typedData"]) == HS["HS2"]["expectVoucherDigest"]
-
-
-def compact(signature: str) -> str:
-    """EIP-2098's 64-byte form of a 65-byte r ‖ s ‖ v signature: r, then s with the y parity (v - 27) in its top bit."""
-    raw = bytes.fromhex(signature[2:])
-    assert len(raw) == 65 and raw[64] in (27, 28), signature
-    vs = int.from_bytes(raw[32:64], "big") | (raw[64] - 27) << 255
-    return "0x" + raw[:32].hex() + vs.to_bytes(32, "big").hex()
-
-
-def test_hedera_refuses_an_action_the_draft_does_not_define_as_channel_kind_does() -> None:
-    # draft-hedera-session-00 L840-845 at tempoxyz/mpp-specs 08e7dd87, as the session file's row cites it: the
-    # payload's action is one of open, topUp, voucher and close. A use or a bearer is mpp/session-action from
-    # channel_kind, channel_ref and build_within; a topUp, which it defines, is within and is not built.
-    hedera = MPP_SESSION_HEDERA
-    assert isinstance(hedera, MppSessionHedera)
-    code = agreed("a hedera use")
-    placed = HS["SS1"]["hedera"]["placed"]
-    opening = {"challenge": placed, "payload": {"action": "open", "channelId": HS["HS1"]["expectChannelId"], "txHash": HS["HS3"]["txHash"], "cumulativeAmount": "0", "signature": "0x00"}}
-    for action in ("use", "bearer"):
-        presented = {"challenge": placed, "payload": {"action": action, "channelId": HS["HS1"]["expectChannelId"]}}
-        assert hedera.channel_kind(presented) == Refusal(code)
-        assert hedera.channel_ref(presented) == Refusal(code)
-        w = {"challenge": placed, "opening": opening, "cumulativeAmount": 1, "action": action}
-        assert hedera.build_within(w, H) == Refusal(code)
-    top_up = {"challenge": placed, "payload": {"action": "topUp", "channelId": HS["HS1"]["expectChannelId"]}}
-    assert hedera.channel_kind(top_up) == "within"
-    w = {"challenge": placed, "opening": opening, "cumulativeAmount": 1, "action": "topUp"}
-    assert hedera.build_within(w, H) == Refusal("mpp/within-action-not-built")
-
-
-def test_hedera_within_complete_takes_a_signature_of_one_byte_or_more() -> None:
-    # The voucher is signed by the payer and passed on unverified, as the other MPP completes do: EIP-2098's 64-byte form
-    # of the voucher's signature is a signature too, and one of no bytes is not (@integraledger/lcp's buildWithin).
-    opening = hedera_opened().signed
-    assert opening is not None
-    unsigned = build(MPP_SESSION_HEDERA, opening, 25)
-    signature = sign_typed(unsigned.requests[0]["typedData"])
-    for answer in (signature, compact(signature), "0x11"):
-        out = unsigned.complete([answer])
-        assert isinstance(out, dict) and out["payload"]["signature"] == answer, (answer, out)
-    for answer in ("0x", "11", "0x1", "0xzz"):
-        assert (answer, unsigned.complete([answer])) == (answer, Refusal("mpp/credential-malformed"))
-
-
-SOLANA_OPENING = {
-    "challenge": HS["SS1"]["solana"]["placed"],
-    "payload": {"action": "open", "channelId": HS["SV2"]["channel"], "transaction": HS["SV2"]["wireBase64"]},
-}
 XRPL_OPENING = {
     "challenge": HS["SS1"]["xrpl"]["placed"],
     "payload": {"action": "open", "transaction": HS["XS2"]["blob"], "amount": "100", "signature": "00"},
 }
-HEDERA_OPENING = {
-    "challenge": HS["SS1"]["hedera"]["placed"],
-    "payload": {
-        "action": "open",
-        "channelId": HS["HS1"]["expectChannelId"],
-        "txHash": HS["HS3"]["txHash"],
-        "cumulativeAmount": "0",
-        "signature": "0x00",
-    },
-}
-
-
-def test_solana_build_within_at_100_is_sv3s_voucher_for_the_opening_s_signer() -> None:
-    unsigned = build(MPP_SESSION_SOLANA, SOLANA_OPENING, 100)
-    assert unsigned.requests == [
-        {"kind": "ed25519-raw", "message": bytes.fromhex(HS["SV3"]["expectVoucher"]), "signer": HS["SV3"]["payer"]}
-    ]
-    signature = "1" * 64
-    credential = unsigned.complete([signature])
-    channel = HS["SV2"]["channel"]
-    assert credential == {
-        "challenge": SOLANA_OPENING["challenge"],
-        "payload": {
-            "action": "voucher",
-            "channelId": channel,
-            "voucher": {
-                "voucher": {"channelId": channel, "cumulativeAmount": "100"},
-                "signer": HS["SV3"]["payer"],
-                "signature": signature,
-                "signatureType": "ed25519",
-            },
-        },
-    }
-    assert unsigned.complete(["0x" + "11" * 64]) == Refusal("mpp/credential-malformed")
-
-
-def with_a_short_channel_instruction(wire_b64: str) -> str:
-    """The wire with one more top-level instruction to the channel program before the others: six accounts, account 4
-    static key 0, and the open discriminator as its only data byte, shorter than an open. The message's key and
-    instruction counts are below 128, so each is one byte (Solana's compact-u16); no signature is read here."""
-    wire = base64.b64decode(wire_b64)
-    signed = 1 + 64 * wire[0]
-    message = wire[signed:]
-    keys = message[4]
-    assert message[0] == 0x80 and keys < 128
-    channel_program = key_bytes(PAYMENT_CHANNELS)
-    assert channel_program is not None
-    program = [message[5 + 32 * k : 37 + 32 * k] for k in range(keys)].index(channel_program)
-    at = 5 + 32 * keys + 32
-    assert message[at] < 127
-    short = bytes([program, 6, 1, 1, 1, 1, 0, 1, 1, 1])
-    return base64.b64encode(wire[:signed] + message[:at] + bytes([message[at] + 1]) + short + message[at + 1 :]).decode()
-
-
-def test_solana_build_within_names_the_signer_of_the_opening_s_one_open() -> None:
-    # The opening's open is its one instruction to the channel program with an open's data and accounts: an
-    # instruction before it that only starts with the open discriminator is not an open, and its account 4 does not
-    # sign the voucher. The voucher's signer is SV2's open's authorizedSigner, SV3's payer.
-    wire = with_a_short_channel_instruction(HS["SV2"]["wireBase64"])
-    opening = {**SOLANA_OPENING, "payload": {**SOLANA_OPENING["payload"], "transaction": wire}}
-    assert MPP_SESSION_SOLANA.bound(opening) == H
-    unsigned = build(MPP_SESSION_SOLANA, opening, 100)
-    assert unsigned.requests == [
-        {"kind": "ed25519-raw", "message": bytes.fromhex(HS["SV3"]["expectVoucher"]), "signer": HS["SV3"]["payer"]}
-    ]
-
-
-def test_solana_build_within_refuses_an_operator_channel_s_voucher() -> None:
-    placed = dict(HS["SS1"]["solana"]["placed"])
-    text = placed["request"]
-    request = json.loads(base64.urlsafe_b64decode(text + "=" * (-len(text) % 4)))
-    request["methodDetails"].update(HS["SV5"]["methodDetails"])
-    placed["request"] = base64.urlsafe_b64encode(json.dumps(request).encode("utf-8")).decode("ascii").rstrip("=")
-    # SV5.opening, whose account 4 is the challenge's operator, with the authentication operator mode requires.
-    authentication = {**HS["SV5"]["expectAuthentication"], "challengeId": placed["id"], "signature": "x"}
-    payload = {"action": "open", "channelId": HS["SV5"]["opening"]["channel"], "transaction": HS["SV5"]["opening"]["wireBase64"], "authentication": authentication}
-    opening = {"challenge": placed, "payload": payload}
-    w = {"challenge": placed, "opening": opening, "cumulativeAmount": 100, "action": "voucher"}
-    assert MPP_SESSION_SOLANA.build_within(w, H) == Refusal("mpp/within-action-not-built")
-
-
 def agreed(prefix: str) -> str:
     """The code of the one agreedRefusals row of the session file whose case starts with prefix."""
     codes = [r["expect"] for r in HS["agreedRefusals"]["rows"] if r["case"].startswith(prefix)]
     assert len(codes) == 1, (prefix, codes)
     found: str = codes[0]
     return found
-
-
-def test_solana_build_within_refuses_a_bearer_as_channel_kind_does() -> None:
-    # draft-solana-session-00 defines open, voucher, use, topUp and close: build_within builds a voucher and a close,
-    # refuses a topUp or a use as not built, and refuses an action the draft does not define with channel_kind's code.
-    code = agreed("a solana bearer")
-    w = {"challenge": SOLANA_OPENING["challenge"], "opening": SOLANA_OPENING, "cumulativeAmount": 100, "action": "bearer"}
-    assert MPP_SESSION_SOLANA.build_within(w, H) == Refusal(code)
-    bearer = {"challenge": SOLANA_OPENING["challenge"], "payload": {"action": "bearer", "channelId": HS["SV2"]["channel"]}}
-    assert MPP_SESSION_SOLANA.channel_kind(bearer) == Refusal(code)
-    for action in ("topUp", "use"):
-        assert MPP_SESSION_SOLANA.build_within({**w, "action": action}, H) == Refusal("mpp/within-action-not-built")
 
 
 def test_xrpl_build_within_at_100_is_xs3s_claim_on_xs2s_channel() -> None:
@@ -538,23 +374,6 @@ def test_an_opaque_of_at_most_8_kib_is_read_with_one_voucher_request(text: str) 
     assert [r["kind"] for r in signer.requests] == ["batch"]
 
 
-# ── the held Hedera session pays the seller's own within challenge (its own id, no legal context).
-
-
-def test_a_held_hedera_session_pays_the_sellers_own_challenge() -> None:
-    opened = hedera_opened()
-    assert opened.signed is not None, opened
-    hold = open_channel(opened.atr_bytes, opened.signed, MPP_SESSION_HEDERA, opened.landed)
-    assert not isinstance(hold, Declined), hold
-    challenge = {k: v for k, v in HS["SS1"]["hedera"]["challenge"].items() if k != "opaque"}
-    challenge["id"] = "sellerOwnChallengeId-0123456789abcdef"
-    signer = Recording(hold["network"], lambda r: [sign_typed(q["typedData"]) for q in r["requests"]])
-    out = asyncio.run(within([challenge], hold, MPP_SESSION_HEDERA, signer))
-    assert isinstance(out, Within), out
-    assert [r["kind"] for r in signer.requests] == ["batch"]
-    assert (out.signed["payload"]["action"], out.signed["payload"]["channelId"]) == ("voucher", HS["HS1"]["expectChannelId"])
-
-
 # ── inChannelSize (mpp-challenge.json): build_within's complete measures the in-channel credential, and the pairing's
 # channel_kind, channel_ref and bound_within measure the payment they are given, with credentialSize's bound and code.
 # The within challenge is the opening's challenge as issued with the id seller-own-id (mpp-session-within.test.ts in
@@ -572,19 +391,17 @@ def _in_channel_set_ups() -> dict[str, tuple[Any, dict[str, Any], dict[str, Any]
     within = {
         "evm": issued("evm", "session", EVM["fixed"]["request"]),
         "tempo": issued("tempo", "session", TF["requestV2"]),
-        **{rail: HS["SS1"][rail]["challenge"] for rail in ("hedera", "solana", "xrpl")},
+        "xrpl": HS["SS1"]["xrpl"]["challenge"],
     }
     w = {rail: {**c, "id": "seller-own-id"} for rail, c in within.items()}
     return {
         "mpp/session/evm": (MPP_SESSION_EVM, b6(EVM), w["evm"], 250, sig),
         "mpp/session/tempo": (MPP_SESSION_TEMPO, tempo, w["tempo"], 250, sig),
-        "mpp/session/hedera": (MPP_SESSION_HEDERA, HEDERA_OPENING, w["hedera"], 100, sig),
-        "mpp/session/solana": (MPP_SESSION_SOLANA, SOLANA_OPENING, w["solana"], 100, "1" * 64),
         "mpp/session/xrpl": (MPP_SESSION_XRPL, XRPL_OPENING, w["xrpl"], 100, "C0" * 64),
     }
 
 
-WITHIN_SESSIONS = [f"mpp/session/{rail}" for rail in ("evm", "tempo", "hedera", "solana", "xrpl")]
+WITHIN_SESSIONS = [f"mpp/session/{rail}" for rail in ("evm", "tempo", "xrpl")]
 
 
 @pytest.mark.parametrize("pairing", WITHIN_SESSIONS)
@@ -624,16 +441,14 @@ def test_in_channel_size_build_within_and_the_channel_members_measure_the_in_cha
 # its own members that the in-channel credential carries; and it gives a reader's code where that reader refuses a
 # payment whose within challenge names channel parameters other than the opening's (mpp-session-within.test.ts in
 # @integraledger/lcp 0.4.1). The set-ups are the rows' about's: the openings are B6's on the EVM session, build's of
-# fixed.requestV2 and fixed.requestV1 on the Tempo session, and those of SS1's placed challenges (HS3, SV2, XS2) on the
-# Hedera, Solana and XRPL sessions; the within challenge is the opening's challenge as issued, with the id
+# fixed.requestV2 and fixed.requestV1 on the Tempo session, and that of SS1's placed challenge (XS2) on the XRPL
+# session; the within challenge is the opening's challenge as issued, with the id
 # seller-own-id.
 
 WITHIN_CHALLENGE = load("mpp-challenge.json")["withinChallenge"]["rows"]
 WITHIN_ROWS = {
     "mpp/session/evm": 2,
     "mpp/session/tempo": 8,
-    "mpp/session/hedera": 2,
-    "mpp/session/solana": 4,
     "mpp/session/xrpl": 2,
 }
 
@@ -664,8 +479,6 @@ def _within_set_up(pairing: str, opening: str = "v2", within: str | None = None)
         return MPP_SESSION_TEMPO, held, issued_of(held["challenge"]), row_within, sig
     binding, held, signature = {
         "mpp/session/evm": (MPP_SESSION_EVM, b6(EVM), sig),
-        "mpp/session/hedera": (MPP_SESSION_HEDERA, HEDERA_OPENING, sig),
-        "mpp/session/solana": (MPP_SESSION_SOLANA, SOLANA_OPENING, "1" * 64),
         "mpp/session/xrpl": (MPP_SESSION_XRPL, XRPL_OPENING, "C0" * 64),
     }[pairing]
     return binding, held, issued_of(held["challenge"]), issued_of(held["challenge"]), signature
@@ -702,8 +515,8 @@ def _within_rows(pairing: str) -> list[dict[str, Any]]:
     return rows
 
 
-def test_within_challenge_rows_are_the_five_sessions() -> None:
-    assert len(WITHIN_CHALLENGE) == sum(WITHIN_ROWS.values()) == 18
+def test_within_challenge_rows_are_the_sessions_with_a_build_within() -> None:
+    assert {r["pairing"] for r in WITHIN_CHALLENGE} == set(WITHIN_ROWS)
 
 
 @pytest.mark.parametrize(

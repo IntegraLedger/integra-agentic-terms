@@ -14,8 +14,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._core import AtrHash, agreement_value
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._evm import (
     ESCROW_V1_0,
     ESCROW_V1_1,
@@ -43,6 +43,7 @@ from ._x402 import (
     MAX_SIGNATURE_BYTES,
     OptionFilter,
     accepted_by,
+    carried_as,
     chosen,
     is_amount,
     is_v2,
@@ -344,8 +345,12 @@ def _copy(value: Any) -> Any:
 # exact and upto over Permit2.
 
 
-def _permit2_build(pairing: str, choice: Json, h: AtrHash) -> Unsigned | Refusal:
-    c = _choice_of(pairing, choice, h)
+def _permit2_build(pairing: str, choice: Json, h: AtrHash, act: Act | None = None) -> Unsigned | Refusal:
+    """The Permit2 transfer the payer signs, its nonce H, or on exact for the act agreement the agreement's own value
+    for H (agreement_value)."""
+    atr = normal_hash(h)
+    signed_nonce = agreement_value(atr) if atr is not None and act == "agreement" and pairing == EXACT_PERMIT2 else h
+    c = _choice_of(pairing, choice, signed_nonce)
     if isinstance(c, Refusal):
         return c
     accepted = c.accepted
@@ -382,8 +387,9 @@ def _permit2_build(pairing: str, choice: Json, h: AtrHash) -> Unsigned | Refusal
     )
 
 
-def _permit2_bound(pairing: str, presented: object) -> AtrHash | Refusal:
-    """H from the Permit2 authorization's nonce, once the spender is the scheme's proxy."""
+def _permit2_bound(pairing: str, presented: object, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+    """H from the Permit2 authorization's nonce, once the spender is the scheme's proxy; on exact for the act
+    agreement, given {"act": "agreement", "h": H}, H where the nonce is the agreement's own value (carried_as)."""
     got = _presented_as(pairing, presented)
     if isinstance(got, Refusal):
         return got
@@ -401,7 +407,9 @@ def _permit2_bound(pairing: str, presented: object) -> AtrHash | Refusal:
     if pairing == UPTO_PERMIT2 and _strings(witness, ("facilitator",)) is None:
         return Refusal("x402/payload-malformed")
     h = _nonce_as_hash(a["nonce"])
-    return h if h is not None else Refusal("x402/nonce-malformed")
+    if h is None:
+        return Refusal("x402/nonce-malformed")
+    return carried_as(h, given) if pairing == EXACT_PERMIT2 else h
 
 
 # exact over ERC-7710: the unsigned level and the salt level.
@@ -699,30 +707,32 @@ def _auth_capture_bound(pairing: str, presented: object) -> AtrHash | Refusal:
 
 @dataclass(frozen=True, slots=True)
 class X402EvmBinding:
-    """One x402 EVM pairing's buyer half. public_proof is the pairing's pattern.publicProof."""
+    """One x402 EVM pairing's buyer half, with the registry's coverage and agreement data of the pairing."""
 
     id: str
-    public_proof: bool
+    coverage: Coverage
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when the legal context names one, and the options the pairing's filter
         serves, in document order."""
         return read_for(_evm_filter(self.id))(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> Unsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> Unsigned | Refusal:
         """What the buyer's signer is handed for the chosen option with H in its place, and how its answer completes
-        the payment."""
+        the payment; on exact over Permit2 the act agreement signs the agreement's own value as the nonce."""
         if self.id in (EXACT_PERMIT2, UPTO_PERMIT2):
-            return _permit2_build(self.id, choice, h)
+            return _permit2_build(self.id, choice, h, act)
         if self.id in (EXACT_ERC7710, EXACT_ERC7710_SALT):
             return _erc7710_build(choice, h)
         return _auth_capture_build(self.id, choice, h)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash inside what the payer signed or, at ERC-7710's unsigned level, the hash the payment echoed. No
-        signature is verified here."""
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        """The hash inside what the payer signed or, at ERC-7710's unsigned level, the hash the payment echoed; on
+        exact over Permit2, given the act agreement and H, H where the nonce is the agreement's own value. No signature
+        is verified here."""
         if self.id in (EXACT_PERMIT2, UPTO_PERMIT2):
-            return _permit2_bound(self.id, presented)
+            return _permit2_bound(self.id, presented, given)
         if self.id == EXACT_ERC7710:
             return _erc7710_bound(presented)
         if self.id == EXACT_ERC7710_SALT:
@@ -736,9 +746,9 @@ class X402EvmBinding:
         return x402_broadcaster(presented, "payee")
 
 
-X402_EXACT_EIP155_PERMIT2 = X402EvmBinding(EXACT_PERMIT2, public_proof=True)
-X402_UPTO_EIP155_PERMIT2 = X402EvmBinding(UPTO_PERMIT2, public_proof=True)
-X402_EXACT_EIP155_ERC7710 = X402EvmBinding(EXACT_ERC7710, public_proof=False)
-X402_EXACT_EIP155_ERC7710_SALT = X402EvmBinding(EXACT_ERC7710_SALT, public_proof=True)
-X402_AUTH_CAPTURE_EIP155_EIP3009 = X402EvmBinding(AUTH_CAPTURE_EIP3009, public_proof=True)
-X402_AUTH_CAPTURE_EIP155_PERMIT2 = X402EvmBinding(AUTH_CAPTURE_PERMIT2, public_proof=True)
+X402_EXACT_EIP155_PERMIT2 = X402EvmBinding(EXACT_PERMIT2, "full", AgreementData(floor="1"))
+X402_UPTO_EIP155_PERMIT2 = X402EvmBinding(UPTO_PERMIT2, "full")
+X402_EXACT_EIP155_ERC7710 = X402EvmBinding(EXACT_ERC7710, "none")
+X402_EXACT_EIP155_ERC7710_SALT = X402EvmBinding(EXACT_ERC7710_SALT, "full")
+X402_AUTH_CAPTURE_EIP155_EIP3009 = X402EvmBinding(AUTH_CAPTURE_EIP3009, "full")
+X402_AUTH_CAPTURE_EIP155_PERMIT2 = X402EvmBinding(AUTH_CAPTURE_PERMIT2, "full")

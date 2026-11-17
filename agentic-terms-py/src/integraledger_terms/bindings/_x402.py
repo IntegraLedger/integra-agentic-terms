@@ -5,7 +5,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, TypeGuard
 
-from .._core import AtrHash
+from .._core import AtrHash, agreement_value, hash_equals, is_hash
 from .._types import Advertised, Broadcaster, Refusal
 from ._codec import canonical_or_none
 from ._jose import js_length
@@ -210,3 +210,16 @@ def x402_broadcaster(
     gate, with the pairing's codes, and that gate's refusal for any other."""
     shape = x402_shape(presented, envelope, refused, payload)
     return shape if isinstance(shape, Refusal) else answer
+
+
+def carried_as(nonce: AtrHash, given: object = None) -> AtrHash | Refusal:
+    """H as a signed nonce carries it: the nonce itself for a payment; for the act agreement, given {"act":
+    "agreement", "h": H}, H where the nonce is the agreement's own value for H (agreement_value), else
+    x402/nonce-not-agreement. A given H that is not a hash is x402/payload-malformed."""
+    if not isinstance(given, Mapping) or given.get("act") != "agreement":
+        return nonce
+    h = given.get("h")
+    if not is_hash(h):
+        return Refusal("x402/payload-malformed")
+    assert isinstance(h, str)
+    return h.lower() if hash_equals(agreement_value(h), nonce) else Refusal("x402/nonce-not-agreement")

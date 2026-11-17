@@ -8,10 +8,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .._core import AtrHash, is_hash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._core import AtrHash, agreement_value, is_hash
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import chain_id_of, is_address, safe_int, uint256_of
-from ._x402 import accepted_by, chosen, filter_of, is_amount, read_for, timeout_seconds, x402_broadcaster
+from ._x402 import accepted_by, carried_as, chosen, filter_of, is_amount, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/eip155/eip3009"
 
@@ -107,18 +107,21 @@ class _Unsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactEip155Eip3009:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="0")
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when the legal context names one, and the options the pairing's filter
         serves, in document order."""
         return _READ(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> _Unsigned | Refusal:
-        """The EIP-712 TransferWithAuthorization request whose nonce is h. H is checked first, then the choice's from
-        and now, then its document and option."""
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> _Unsigned | Refusal:
+        """The EIP-712 TransferWithAuthorization request whose nonce is h, or for the act agreement the agreement's own
+        value for h (agreement_value). H is checked first, then the choice's from and now, then its document and
+        option."""
         if not is_hash(h):
             return Refusal("x402/payload-malformed")
+        nonce = agreement_value(h) if act == "agreement" else h.lower()
         if not isinstance(choice, Mapping):
             return Refusal("x402/not-v2")
         payer = choice.get("from")
@@ -151,7 +154,7 @@ class X402ExactEip155Eip3009:
                 "value": value,
                 "validAfter": 0,
                 "validBefore": now + max_timeout,
-                "nonce": h.lower(),
+                "nonce": nonce,
             },
         }
         authorization = {
@@ -160,14 +163,15 @@ class X402ExactEip155Eip3009:
             "value": amount,
             "validAfter": "0",
             "validBefore": str(now + max_timeout),
-            "nonce": h.lower(),
+            "nonce": nonce,
         }
         return _Unsigned(typed_data=typed_data, _required=required, _accepted=accepted, _authorization=authorization)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The authorization's nonce, as a lower-case hash, from a payment whose accepted the pairing's filter serves
-        (accepted_by). A payment that carries a refused member, the member refusals use, is x402/payload-malformed. The
-        signature is not verified here."""
+        (accepted_by); for the act agreement, given {"act": "agreement", "h": H}, H where the nonce is the agreement's
+        own value (carried_as). A payment that carries a refused member, the member refusals use, is
+        x402/payload-malformed. The signature is not verified here."""
         if not isinstance(presented, Mapping) or safe_int(presented.get("x402Version")) != 2:
             return Refusal("x402/not-v2")
         if "refused" in presented:
@@ -195,7 +199,7 @@ class X402ExactEip155Eip3009:
         if not is_hash(nonce):
             return Refusal("x402/payload-malformed")
         assert isinstance(nonce, str)
-        return nonce.lower()
+        return carried_as(nonce.lower(), given)
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
         """The payee broadcasts: the seller's facilitator submits transferWithAuthorization with the authorization the

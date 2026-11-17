@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from integraledger_terms._types import coverage_of
 from integraledger_terms import (
     Advertised,
     AgreementReceipt,
@@ -87,7 +88,7 @@ class Offered:
 
 
 def offered(binding: Binding) -> Binding:
-    if getattr(binding, "public_proof", False) is True:
+    if coverage_of(binding) == "full":
         return binding
     wrapped: Binding = Offered(binding)
     return wrapped
@@ -177,7 +178,7 @@ def build_and_sign(p: Pairing, inspect: Callable[[Any], None]) -> tuple[dict[str
     assert isinstance(whole, Transacted), whole
     assert len(signer.requests) == len(answers)
     assert whole.atr_bytes == ABC
-    assert whole.agreement == (None if getattr(p.binding, "public_proof", False) is True else receipt())
+    assert whole.agreement == (None if coverage_of(p.binding) == "full" else receipt())
 
     # What the buyer holds to confirm later: the payment, with the landed receipt finish returns beside it, if any.
     assert whole.landed == done.landed

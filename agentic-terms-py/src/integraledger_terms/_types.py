@@ -1,6 +1,7 @@
 """The values the gate and the bindings exchange, and the shapes of a binding, a buyer piece and a signer."""
 
-from collections.abc import Mapping
+import inspect
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -31,6 +32,40 @@ DeclineCode = Literal[
     "agreement-failed",
 ]
 
+# A pairing's coverage, as the protocol package's registry data states it: "full" where the payer's own signed act,
+# on a public ledger, binds all of H, so the payment is itself the proof; "none" where no public payer-signed act
+# carries H, so the payment is made only after the agreement is recorded.
+Coverage = Literal["full", "none"]
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementData:
+    """The registry's agreement datum of a pairing whose payment can itself be the agreement: floor, the smallest amount
+    the scheme and token admit ("0", a count of base units, or "rule" where the pairing's build evaluates it), and only,
+    where the form is offered as an agreement and never as a charge."""
+
+    floor: str
+    only: bool = False
+
+
+def coverage_of(binding: object) -> Coverage | None:
+    """The binding's coverage, or None where it states none the registry admits."""
+    c = getattr(binding, "coverage", None)
+    return "full" if c == "full" else "none" if c == "none" else None
+
+
+def agreement_of(binding: object) -> AgreementData | None:
+    """The binding's agreement datum, where its payment can itself be the agreement, and only at coverage full."""
+    a = getattr(binding, "agreement", None)
+    return a if isinstance(a, AgreementData) and coverage_of(binding) == "full" else None
+
+
+# The act a payment is built and checked for: the sale's payment, or the agreement payment made before a payment at
+# coverage none. On a pairing whose single-use value is H itself, the agreement carries the agreement's own value
+# (agreement_value), so the two acts under one H never share a single-use value.
+Act = Literal["payment", "agreement"]
+
+
 # Who puts what a payer presents on its rail: "payer", which sent the payment before presenting it, so the seller reads
 # a landed payment, or "payee", the seller, or the facilitator or processor acting for it, which sends or executes it.
 Broadcaster = Literal["payer", "payee"]
@@ -58,12 +93,14 @@ class Declined:
 @dataclass(frozen=True, slots=True)
 class Chosen:
     """What the gate chose to pay, so finish can rebuild the same request. agreement is the agreement URL the seller's
-    offer names, for a pairing whose payment is not itself a public proof of the ATR hash."""
+    offer names, for a pairing at coverage none, whose payment is not itself a public proof of the ATR hash. act is the
+    act the payment is built and checked for: "agreement" for the agreement payment, else "payment"."""
 
     pairing: str
     choice: dict[str, Any]
     ref: str
     agreement: str | None = None
+    act: Act = "payment"
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,22 +218,25 @@ class Unsigned(Protocol):
 
 
 class Binding(Protocol):
+    """A pairing's buyer half. Each binding also carries the registry's coverage and agreement data, read with
+    coverage_of and agreement_of: coverage "full" where the pairing's payment is itself a public proof of the hash, so
+    an agreement URL is not paid, and agreement where that payment can itself be the agreement."""
+
     @property
     def id(self) -> str: ...
 
-    @property
-    def public_proof(self) -> bool:
-        """Whether the pairing's payment is itself a public proof of the hash, so an agreement URL is not paid."""
-        ...
-
     def read(self, doc: Any) -> Advertised | Refusal: ...
 
-    def build(self, choice: Any, h: AtrHash) -> Any:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> Any:
         """The unsigned payment for the choice, which is the pairing's own: an object for most pairings, the
-        checkout_jwt string for VI's."""
+        checkout_jwt string for VI's. For the act agreement, on a pairing whose single-use value is H itself, the
+        payment carries the agreement's own value for H."""
         ...
 
-    def bound(self, presented: Any) -> AtrHash | Refusal: ...
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        """H as the presented payment carries it; given {"act": "agreement", "h": H}, H where the payment carries the
+        agreement's own value for H, on a pairing whose agreement has one."""
+        ...
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
         """Who puts the presented payment on its rail: "payer" or "payee". It answers only for a payment of a type and
@@ -236,3 +276,30 @@ class Piece(Protocol):
         """True when the signer, handed this first request, moves the payment itself before the gate reads what was
         signed."""
         ...
+
+
+def _takes(method: Callable[..., Any], name: str) -> bool:
+    try:
+        return name in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def build_act(binding: Binding, choice: Any, h: AtrHash, act: Act) -> Any:
+    """The binding's build for the act: build(choice, h, act="agreement") for an agreement where the binding's build
+    takes the act, as the protocol package's build(choice, h, act) does, else build(choice, h). A binding whose build
+    takes no act carries the same single-use value on both acts."""
+    build: Any = binding.build
+    if act == "agreement" and _takes(build, "act"):
+        return build(choice, h, act="agreement")
+    return build(choice, h)
+
+
+def bound_act(binding: Binding, presented: Any, h: AtrHash, act: Act) -> Any:
+    """The binding's bound for the act: for an agreement, bound(presented, given={"act": "agreement", "h": h}) where
+    the binding's bound takes it, as the protocol package's bound(presented, {act, h}) does, which gives h where the
+    payment carries the agreement's own value; else bound(presented)."""
+    bound: Any = binding.bound
+    if act == "agreement" and _takes(bound, "given"):
+        return bound(presented, given={"act": "agreement", "h": h})
+    return bound(presented)

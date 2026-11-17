@@ -16,9 +16,7 @@ from eth_utils.crypto import keccak
 
 from integraledger_terms import (
     MPP_SESSION_EVM,
-    MPP_SESSION_HEDERA,
     MPP_SESSION_LIGHTNING,
-    MPP_SESSION_SOLANA,
     MPP_SESSION_TEMPO,
     MPP_SESSION_XRPL,
     MPP_SUBSCRIPTION_TEMPO,
@@ -154,20 +152,6 @@ def test_mpp_session_evm_b6_permit2_es6_funding_then_es5_voucher() -> None:
     assert MPP_SESSION_EVM.bound(signed) == H
 
 
-def test_mpp_session_evm_b6_hash_es2_open_call_then_the_voucher() -> None:
-    es2 = EVM["ES2"]
-
-    def inspect(request: Any) -> None:
-        assert request["kind"] == "evm-calls"
-        assert request["broadcast"] is True
-        open_call = request["calls"][1]
-        assert (len(open_call["data"]) - 2) // 2 == es2["expectOpenLength"]
-        assert open_call["data"][:10] == es2["expectOpenSelector"]
-        assert open_call["data"].count(H[2:]) == es2["expectHOccurrences"]
-
-    build_and_sign(evm_pairing({"deposit": EF["deposit"], "credentialType": "hash"}, EvmAnswer()), inspect)
-
-
 def test_mpp_session_evm_b10_http_link() -> None:
     b10(EVM_DOC, MPP_SESSION_EVM, EVM_ACCOUNT, AUTHORIZATION_INPUTS)
 
@@ -177,22 +161,23 @@ def test_mpp_session_evm_b16_other_namespace_and_chain() -> None:
 
 
 # methodDetails.permit2Contract is the verifying contract the Permit2 opening signs, so the session's check reads it
-# only where credentialTypes lists permit2 (an absent credentialTypes is ["hash"]), and after credentialTypes itself.
-# Each expected answer is @integraledger/lcp's pairingsOf for the same challenge.
+# only where credentialTypes lists permit2, and after credentialTypes itself, which must list authorization or permit2
+# alone (an absent credentialTypes is ["hash"], an opening the pairing does not take). Each expected answer is
+# @integraledger/lcp's pairingsOf for the same challenge.
 _UNREAD = ("mpp/session/evm",)
 
 
 @pytest.mark.parametrize(
     ("types", "contract", "expect"),
     [
-        (None, "x", _UNREAD),
-        (["hash"], "0x1234", _UNREAD),
+        (None, "x", "mpp/credential-types"),
+        (["hash"], "0x1234", "mpp/credential-types"),
         (["authorization"], None, _UNREAD),
-        (["hash", "authorization"], 7, _UNREAD),
+        (["hash", "authorization"], 7, "mpp/credential-types"),
         (["permit2"], "0x000000000022D473030F116dDEE9F6B43aC78BA3", _UNREAD),
         (["permit2"], "x", "mpp/request-malformed"),
-        (["hash", "authorization", "permit2"], None, "mpp/request-malformed"),
-        (["permit2", "hash"], [], "mpp/request-malformed"),
+        (["authorization", "permit2"], None, "mpp/request-malformed"),
+        (["permit2", "hash"], [], "mpp/credential-types"),
         ([], "x", "mpp/credential-types"),
         (["permit2", "bogus"], "x", "mpp/credential-types"),
         ("permit2", "x", "mpp/credential-types"),
@@ -1029,7 +1014,7 @@ def test_mpp_session_tempo_a_partial_refund_and_an_action_not_built_sign_nothing
 # ── channel_ref keys only a payment of the channel: one channel_kind refuses is refused with its code, an action the
 # pairing's draft does not define among them. draft-tempo-session-00 and the EVM session draft define open, topUp,
 # voucher and close (tempoxyz/mpp-specs 08e7dd87), and draft-tempo-subscription-00's one credential is the
-# keyAuthorization; the Hedera, Solana, XRP Ledger and Lightning sessions' channel_ref refuse such a payment so. Each
+# keyAuthorization; the XRP Ledger and Lightning sessions' channel_ref refuse such a payment so. Each
 # case changes the pairing's B6 opening (mpp-session.test.ts in @integraledger/lcp 0.4.1).
 
 _RAILS = "mpp-session-hedera-solana-xrpl.json"
@@ -1039,8 +1024,6 @@ _SESSIONS: dict[str, Any] = {
         MPP_SESSION_EVM,
         MPP_SESSION_TEMPO,
         MPP_SUBSCRIPTION_TEMPO,
-        MPP_SESSION_HEDERA,
-        MPP_SESSION_SOLANA,
         MPP_SESSION_XRPL,
         MPP_SESSION_LIGHTNING,
     )
@@ -1061,8 +1044,6 @@ REF_CASES: list[tuple[str, str, str, dict[str, Any]]] = [
         "mpp/subscription/tempo",
         {"type": "transaction"},
     ),
-    ("session/hedera, an opening whose action is use", _RAILS, "mpp/session/hedera", {"action": "use"}),
-    ("session/solana, an opening whose action is bearer", _RAILS, "mpp/session/solana", {"action": "bearer"}),
     ("session/xrpl, an opening whose action is topUp", _RAILS, "mpp/session/xrpl", {"action": "topUp"}),
     (
         "session/lightning, an opening whose action is use",
@@ -1077,7 +1058,6 @@ REF_CASES: list[tuple[str, str, str, dict[str, Any]]] = [
 def test_channel_ref_refuses_a_payment_channel_kind_refuses_with_its_code(
     file: str, pairing: str, change: dict[str, Any]
 ) -> None:
-    assert len(REF_CASES) == 9
     binding = _SESSIONS[pairing]
     rows = load(file)["buyer"]["rows"]
     own = next(r for r in rows if r["name"] == "B6" and r.get("pairing") == pairing)["input"]["presented"]

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._codec import canonical_or_none
 from ._jose import js_length, json_bytes
 from ._lcp import (
@@ -141,12 +141,13 @@ class AcpUnsigned:
 @dataclass(frozen=True, slots=True)
 class AcpCheckoutDelegated:
     id: str = DELEGATED
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> AcpUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> AcpUnsigned | Refusal:
         """The allowance from the buyer's own values, in ACP's order, with checkout_session_id = h."""
         if not is_object(choice):
             return Refusal("acp/choice-malformed")
@@ -187,7 +188,7 @@ class AcpCheckoutDelegated:
             return Refusal("acp/choice-malformed")
         return AcpUnsigned(dict(built), kept)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The allowance's checkout_session_id, lowercase. No signature is verified."""
         if not is_object(presented):
             return Refusal("acp/allowance-malformed")
@@ -209,15 +210,16 @@ class AcpCheckoutDelegated:
 @dataclass(frozen=True, slots=True)
 class AcpCheckoutUndelegated:
     id: str = UNDELEGATED
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> Refusal:
         return Refusal("acp/nothing-to-sign")
 
-    def bound(self, presented: Json) -> Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> Refusal:
         return Refusal("acp/not-buyer-signed")
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:

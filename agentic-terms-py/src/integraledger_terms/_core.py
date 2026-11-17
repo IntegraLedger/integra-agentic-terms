@@ -1,4 +1,4 @@
-"""SHA-256 of an ATR's bytes, and hash equality by decoded bytes."""
+"""SHA-256 of an ATR's bytes, hash equality by decoded bytes, and the agreement's own value for a hash."""
 
 import hashlib
 import re
@@ -25,3 +25,17 @@ def hash_equals(a: str, b: str) -> bool:
     if not is_hash(a) or not is_hash(b):
         return False
     return bytes.fromhex(a[2:]) == bytes.fromhex(b[2:])
+
+
+# The agreement tag: the 16 ASCII bytes lcp-agreement-v1.
+AGREEMENT_TAG = b"lcp-agreement-v1"
+
+
+def agreement_value(h: AtrHash) -> AtrHash:
+    """The agreement's own value for H: SHA-256 over the 16 ASCII bytes lcp-agreement-v1 followed by H's 32 bytes, as 0x
+    and lowercase hex. On a pairing whose single-use value is H itself or H's low bits, an agreement carries this value,
+    or its low bits as the pairing takes H's, where a payment carries H, so the two acts under one H never share a
+    single-use value. Raises TypeError when h is not a 32-byte hash."""
+    if not is_hash(h):
+        raise TypeError("not a 32-byte hash")
+    return "0x" + hashlib.sha256(AGREEMENT_TAG + bytes.fromhex(h[2:])).hexdigest()

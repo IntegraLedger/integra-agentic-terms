@@ -243,6 +243,24 @@ def test_ev1_exact_permit2_build_complete_and_bound() -> None:
     assert X402_EXACT_EIP155_PERMIT2.bound(short) == Refusal(ev1["nonceMalformed"]["expect"]["code"])
 
 
+def test_ag_exact_permit2_agreement_signs_the_agreements_own_value_and_bound_reads_it_given_the_act() -> None:
+    """AG: build(EV1's choice, H, "agreement") signs nonce expectNonceDecimal with digest expectDigest; bound answers
+    expectValue with no act, H given the act agreement and H, and x402/nonce-not-agreement for EV1's payment."""
+    fixed, ag = PERMIT2["fixed"], PERMIT2["AG"]
+    unsigned = X402_EXACT_EIP155_PERMIT2.build(choice(fixed), H, act="agreement")
+    assert not isinstance(unsigned, Refusal), unsigned
+    assert _digest(unsigned.request["typedData"]) == ag["expectDigest"]
+    presented = unsigned.complete(sign(fixed["payerKey"], unsigned.request["typedData"]))
+    assert not isinstance(presented, Refusal), presented
+    assert presented["payload"]["permit2Authorization"]["nonce"] == ag["expectNonceDecimal"]
+    given = {"act": "agreement", "h": H}
+    assert X402_EXACT_EIP155_PERMIT2.bound(presented) == ag["expectBound"]
+    assert X402_EXACT_EIP155_PERMIT2.bound(presented, given=given) == ag["expectBoundAsAgreement"]
+    assert X402_EXACT_EIP155_PERMIT2.bound(completed(X402_EXACT_EIP155_PERMIT2, fixed), given=given) == Refusal(
+        ag["paymentAsAgreement"]["code"]
+    )
+
+
 def test_ev2_upto_permit2_build_complete_and_bound() -> None:
     fixed, ev2 = UPTO["fixed"], UPTO["EV2"]
     unsigned = built(X402_UPTO_EIP155_PERMIT2, fixed)

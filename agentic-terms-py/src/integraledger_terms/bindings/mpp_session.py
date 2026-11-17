@@ -9,7 +9,7 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._keccak import keccak256
-from .._types import Advertised, Broadcaster, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from ._channel import BatchUnsigned, ChannelRef
 from ._codec import hex_bytes, to_hex
 from ._evm import PERMIT2, ZERO_ADDRESS, Witness, address_of_word, permit2_typed_data
@@ -20,7 +20,6 @@ from ._mpp import (
     Params,
     by_type,
     credential_of,
-    did_pkh_address,
     echoed_for,
     expires_of,
     is_hex_bytes,
@@ -65,7 +64,6 @@ SESSION_EVM = "mpp/session/evm"
 SESSION_TEMPO = "mpp/session/tempo"
 SUBSCRIPTION = "mpp/subscription/tempo"
 
-APPROVE_SELECTOR = "0x095ea7b3"
 MAX_SIGNATURE = 8192
 MAX_WIRE = 65_536
 # The shortest voucher signature, one byte: a voucher answers what complete gives with it.
@@ -250,8 +248,9 @@ class _Opening:
 
 
 # The payload types an EVM session opening takes, which _evm_opened reads, each with who broadcasts the funding it
-# carries: the payer a hash, the seller's server an authorization or a permit2. A top-up takes the same types.
-_EVM_FUNDING: Mapping[str, Broadcaster] = {"hash": "payer", "authorization": "payee", "permit2": "payee"}
+# carries: the seller's server an authorization or a permit2. A top-up takes the same types. An opening funded by a hash,
+# a transaction the buyer's client broadcasts, is no part of the pairing.
+_EVM_FUNDING: Mapping[str, Broadcaster] = {"authorization": "payee", "permit2": "payee"}
 
 
 def _evm_opening(payload: Mapping[str, Any]) -> _Opening | Refusal:
@@ -339,15 +338,9 @@ def _evm_opened(presented: Mapping[str, Any]) -> _EvmOpened | Refusal:
     if not is_address(signer):
         return Refusal("mpp/credential-malformed")
     auth: Mapping[str, Any] = o["authorization"] if is_object(o.get("authorization")) else {}
-    if kind == "hash":
-        payer = did_pkh_address(presented.get("source"))
-        if payer is None:
-            return Refusal("mpp/source-required")
-    else:
-        if not is_address(auth.get("from")):
-            return Refusal("mpp/credential-malformed")
-        payer = auth["from"]
-    assert isinstance(payer, str)
+    if not is_address(auth.get("from")):
+        return Refusal("mpp/credential-malformed")
+    payer: str = auth["from"]
     expect = evm_channel_id(payer, recipient, currency, e.h, signer, params.escrow, params.chain_id)
     channel = normal_hash(e.payload.get("channelId"))
     if isinstance(expect, Refusal) or channel is None or not same_bytes(channel, expect):
@@ -404,8 +397,7 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     signer = _signer_of(choice)
     if signer is None:
         return Refusal("mpp/input-malformed")
-    listed = o.details.get("credentialTypes")
-    listed = ["hash"] if listed is None else listed
+    listed = o.details["credentialTypes"]
     kind = choice.get("credentialType")
     kind = (listed[0] if listed else None) if kind is None else kind
     if kind is None or kind not in listed:
@@ -439,27 +431,6 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         return voucher
 
     base = {"action": "open", "channelId": channel_id, "cumulativeAmount": "0", "authorizedSigner": signer, "salt": salt}
-
-    if kind == "hash":
-        calls = [
-            {"to": currency, "data": _words(APPROVE_SELECTOR, [address_word(escrow), uint_word(deposit)])},
-            {
-                "to": escrow,
-                "data": _words(
-                    OPEN_V1_SELECTOR,
-                    [address_word(recipient), address_word(currency), uint_word(deposit), bytes.fromhex(salt[2:]), address_word(signer)],
-                ),
-            },
-        ]
-
-        def complete_hash(funded: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
-            if normal_hash(funded) is None or not is_hex_bytes(voucher_signature, 1, MAX_SIGNATURE):
-                return Refusal("mpp/credential-malformed")
-            payload = {**base, "type": "hash", "hash": funded, "signature": voucher_signature}
-            return measured({"challenge": challenge, "source": source, "payload": payload})
-
-        funding = {"kind": "evm-calls", "chainId": chain_id, "calls": calls, "broadcast": True}
-        return SessionUnsigned(funding, voucher_for(complete_hash), complete_hash)
 
     typed_data: dict[str, Any] | Refusal
     authorization: dict[str, Any]
@@ -1013,7 +984,8 @@ class _Held:
 @dataclass(frozen=True, slots=True)
 class MppSessionEvm(_Held):
     id: str = SESSION_EVM
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
 
     @property
     def channel(self) -> Channel:
@@ -1026,13 +998,13 @@ class MppSessionEvm(_Held):
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> SessionUnsigned | Refusal:
         return _evm_build(choice, h)
 
     def build_within(self, w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
         return _evm_build_within(w, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _evm_bound(presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
@@ -1048,7 +1020,8 @@ class MppSessionEvm(_Held):
 @dataclass(frozen=True, slots=True)
 class MppSessionTempo(_Held):
     id: str = SESSION_TEMPO
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
 
     @property
     def channel(self) -> Channel:
@@ -1061,13 +1034,13 @@ class MppSessionTempo(_Held):
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> SessionUnsigned | Refusal:
         return _tempo_build(choice, h)
 
     def build_within(self, w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
         return _tempo_build_within(w, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _tempo_bound(presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
@@ -1081,7 +1054,8 @@ class MppSessionTempo(_Held):
 @dataclass(frozen=True, slots=True)
 class MppSubscriptionTempo(_Held):
     id: str = SUBSCRIPTION
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
 
     @property
     def channel(self) -> Channel:
@@ -1094,10 +1068,10 @@ class MppSubscriptionTempo(_Held):
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         return _subscription_build(choice, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _subscription_bound(presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:

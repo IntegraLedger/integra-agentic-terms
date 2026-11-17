@@ -6,6 +6,7 @@ from typing import Any
 
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from integraledger_terms import Advertised, Refusal
+from integraledger_terms.bindings.x402_exact_eip155_eip3009 import X402ExactEip155Eip3009
 
 from support import PAIRING, digest, recover, sign_typed
 
@@ -138,3 +139,19 @@ def test_agreed_refusals_with_their_input() -> None:
             doc["accepts"] = copy.deepcopy(row["accepts"])
             got = BINDING.read(doc)
         assert got == Refusal(row["expect"]), row["case"]
+
+
+def test_ag_the_agreement_signs_the_agreements_own_value_and_bound_reads_it_given_the_act() -> None:
+    """AG: build(V1's choice, H, "agreement") signs nonce expectValue with digest expectDigest; bound answers expectValue
+    with no act, H given the act agreement and H, and x402/nonce-not-agreement for V2's payment given the same."""
+    ag, binding = PAIRING["AG"], X402ExactEip155Eip3009()
+    unsigned = binding.build(choice(), H, act="agreement")
+    assert not isinstance(unsigned, Refusal)
+    assert unsigned.typed_data["message"]["nonce"] == ag["expectValue"]
+    assert digest(unsigned.typed_data) == ag["expectDigest"]
+    presented = unsigned.complete(sign_typed(unsigned.typed_data))
+    assert not isinstance(presented, Refusal)
+    given = {"act": "agreement", "h": H}
+    assert binding.bound(presented) == ag["expectBound"]
+    assert binding.bound(presented, given=given) == ag["expectBoundAsAgreement"]
+    assert binding.bound(V2["expectPayload"], given=given) == Refusal(ag["paymentAsAgreement"]["code"])

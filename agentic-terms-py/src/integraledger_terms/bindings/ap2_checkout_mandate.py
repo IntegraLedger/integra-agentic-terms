@@ -8,11 +8,12 @@ link between hops.
 
 import hashlib
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._codec import b64u_encode, text_encode
 from ._jose import (
     MIB,
@@ -147,6 +148,14 @@ def checkout_binding(p: object) -> dict[str, Any] | Refusal:
     return jws_payload(jwt)
 
 
+def mandate_shape(p: object) -> Refusal | None:
+    """The shape gate bound applies first: a JSON object, else ap2/mandate-malformed; and a payment_receipt, where
+    present, a JSON object, else ap2/receipt-malformed. None for a presentation within it."""
+    if not is_object(p):
+        return Refusal("ap2/mandate-malformed")
+    return None if "payment_receipt" not in p or is_object(p["payment_receipt"]) else Refusal("ap2/receipt-malformed")
+
+
 def checkout_jwt_of(m: object) -> str | Refusal:
     """The checkout_jwt the mandate discloses."""
     mandate = read_mandate(m)
@@ -192,7 +201,8 @@ class Ap2Unsigned:
 @dataclass(frozen=True, slots=True)
 class Ap2CheckoutMandate:
     id: str = ID
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """The hash, the link and, when present, the agreement URL from the checkout_jwt's legalContext, and the
@@ -206,7 +216,7 @@ class Ap2CheckoutMandate:
             return Refusal("ap2/legal-context-malformed")
         return Advertised(h=h, link=link, offer=offer, agreement=agreement if isinstance(agreement, str) else None)
 
-    def build(self, choice: Json, h: AtrHash) -> Ap2Unsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> Ap2Unsigned | Refusal:
         """The closed Checkout Mandate's claims over the offer's checkout_jwt, whose hash must be h."""
         if not is_object(choice):
             return Refusal("ap2/jws-malformed")
@@ -221,9 +231,12 @@ class Ap2CheckoutMandate:
             {"vct": CHECKOUT_VCT, "checkout_jwt": checkout_jwt, "checkout_hash": checkout_hash_of(checkout_jwt)}
         )
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the checkout the buyer's closed mandate commits to, lowercase, the mandate presented alone or last
         in AP2's chain. No signature, cnf delegation or link between hops is verified."""
+        shaped = mandate_shape(presented)
+        if shaped is not None:
+            return shaped
         payload = checkout_binding(presented)
         if isinstance(payload, Refusal):
             return payload
@@ -238,6 +251,11 @@ class Ap2CheckoutMandate:
         return decoded[0]
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
-        """The payee broadcasts: the seller's payment processor executes the payment the closed Checkout Mandate
-        authorizes. A value that is not a JSON object gets ap2/mandate-malformed, as bound refuses it."""
-        return "payee" if is_object(presented) else Refusal("ap2/mandate-malformed")
+        """Where the merchant initiates the charge, the payee broadcasts: the seller's payment processor executes the
+        payment the closed Checkout Mandate authorizes. In AP2's push funding the presentation carries payment_receipt
+        and the payer broadcasts: its side sent the funds before the merchant saw them. A value outside bound's shape
+        gate gets the refusal bound gives it."""
+        shaped = mandate_shape(presented)
+        if shaped is not None:
+            return shaped
+        return "payer" if is_object(presented) and "payment_receipt" in presented else "payee"

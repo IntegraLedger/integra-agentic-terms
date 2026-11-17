@@ -15,6 +15,7 @@ from typing import Any, TypeVar
 import httpx
 import pytest
 
+from integraledger_terms._core import agreement_value
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from integraledger_terms import (
     Advertised,
@@ -37,7 +38,7 @@ from integraledger_terms import (
 )
 from integraledger_terms.bindings._codec import canonical_or_none
 
-from support import A, ACCOUNT, BUYER, D, HASH_A, LINK_A, NOW, Link, StubBinding, digest, load, recover, row, sign_typed
+from support import A, ACCOUNT, BUYER, D, HASH_A, LINK_A, NOW, Link, StubBinding, digest, load, migrating, recover, row, sign_typed
 
 AG: dict[str, Any] = BUYER["fixed"]["agreement"]
 URL: str = AG["url"]
@@ -120,7 +121,7 @@ class Seller:
 def with_agreement(url: str) -> StubBinding:
     real = BINDING.read(D)
     assert isinstance(real, Advertised)
-    return StubBinding(inner=BINDING, public_proof=False, read_answer=dataclasses.replace(real, agreement=url))
+    return StubBinding(inner=BINDING, coverage="none", read_answer=dataclasses.replace(real, agreement=url))
 
 
 def run(link: Link, go: Any) -> Any:
@@ -182,6 +183,9 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
 
     assert len(signer.requests) == r["expect"]["signCalls"]
     agreement, payment = signer.requests
+    # BA1 signs the agreement with nonce H, the payment's own nonce; the agreement carries the agreement's own value for
+    # H (x402-exact-eip155-eip3009.json AG), so the message holds that nonce, and BA1's digest and signature, over nonce
+    # H, are not compared.
     m = r["expect"]["agreementMessage"]
     assert agreement["typedData"]["message"] == {
         "from": m["from"],
@@ -189,9 +193,8 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
         "value": int(m["value"]),
         "validAfter": int(m["validAfter"]),
         "validBefore": int(m["validBefore"]),
-        "nonce": m["nonce"],
+        "nonce": agreement_value(m["nonce"]),
     }
-    assert digest(agreement["typedData"]) == r["expect"]["agreementDigest"]
     assert payment["typedData"]["message"]["nonce"] == HASH_A
     assert payment["typedData"]["message"]["value"] == int(D["accepts"][0]["amount"])
 
@@ -199,11 +202,10 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
     assert len(paid) == r["expect"]["paidRequests"]
     assert len(set(paid)) == 1
     sent = json.loads(base64.b64decode(paid[0]))
-    assert sent["payload"]["authorization"]["nonce"] == HASH_A
+    assert sent["payload"]["authorization"]["nonce"] == agreement_value(HASH_A)
     assert sent["payload"]["authorization"]["value"] == m["value"]
-    assert sent["payload"]["signature"] == r["expect"]["agreementSignature"]
     assert sent["accepted"] == AG["option"]
-    assert recover(agreement["typedData"], r["expect"]["agreementSignature"]) == m["from"]
+    assert recover(agreement["typedData"], sent["payload"]["signature"]) == m["from"]
 
     assert out.signed is not None and out.signed["payload"]["signature"] == B6_SIGNATURE
     assert out.h == HASH_A and out.atr_bytes == A
@@ -734,7 +736,7 @@ def test_the_approved_payment_is_signed_as_shown() -> None:
         option["asset"],
     ]
     assert f"eip155:{typed['domain']['chainId']}" == option["network"]
-    assert typed["message"]["nonce"] == HASH_A
+    assert typed["message"]["nonce"] == agreement_value(HASH_A)
     assert json.loads(base64.b64decode(seller.paid()[0]))["accepted"] == option
     assert all("payment-signature" in q.headers for q in seller.agreement_requests()[1:])
 
@@ -892,6 +894,7 @@ def test_a_sui_option_whose_max_timeout_seconds_gives_no_deadline_is_no_payable_
     assert signer.requests == []
 
 
+@migrating("x402/exact/sui")
 def test_a_sui_option_that_gives_no_deadline_is_passed_over_for_the_next_one() -> None:
     following = {**SUI["O"], "amount": "20000"}
     seller = Challenging(RECORDED, header=with_accepts([{**SUI["O"], "maxTimeoutSeconds": 60.5}, following]))

@@ -1,15 +1,17 @@
 """The buyer half of the pairing ack/payment-request: read, build and bound.
 
 The ATR hash is the id of the seller-signed ACK Payment Request, in LCP's string form, with the link beside the
-request in the 402 body. ACK defines no payer signature, so build and bound always refuse. No token signature is
-verified here.
+request in the 402 body. ACK defines no payer signature, so build and bound always refuse. The token is read under the
+name ACK's SDKs write from 0.10.0, paymentRequestToken, and under paymentToken, the name they wrote before it. No token
+signature is verified here.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._jose import decode_json_segment, js_length, json_bytes, jws_segments, within_depth
 from ._lcp import (
     AgreementFault,
@@ -25,6 +27,22 @@ MAX_BODY_BYTES = 65_536
 MAX_TOKEN = 16_384
 MAX_OPTIONS = 16
 MAX_LINK = 2048
+# The token's name from ACK's SDK 0.10.0 on, and its name before it.
+TOKEN = "paymentRequestToken"
+TOKEN_BEFORE_0_10 = "paymentToken"
+
+
+def token_of(o: Mapping[str, Any]) -> object:
+    """The token an object carries: paymentRequestToken where only it is present, paymentToken where only that is, and
+    either where both are present and are the same string. None where neither is present, or where the two differ,
+    which the caller then refuses as it refuses a malformed token."""
+    current = o.get(TOKEN)
+    before = o.get(TOKEN_BEFORE_0_10)
+    if TOKEN not in o:
+        return before
+    if TOKEN_BEFORE_0_10 not in o or before == current:
+        return current
+    return None
 
 
 def token_payload(token: object) -> dict[str, Any] | None:
@@ -43,7 +61,8 @@ def token_payload(token: object) -> dict[str, Any] | None:
 @dataclass(frozen=True, slots=True)
 class AckPaymentRequest:
     id: str = ID
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """The hash from the signed token's id, which the body's legalContext must match; the link and, when present,
@@ -56,7 +75,7 @@ class AckPaymentRequest:
             return Refusal("ack/token-malformed")
         if size > MAX_BODY_BYTES:
             return Refusal("ack/too-large")
-        token = doc.get("paymentRequestToken")
+        token = token_of(doc)
         if isinstance(token, str) and js_length(token) > MAX_TOKEN:
             return Refusal("ack/too-large")
         payload = token_payload(token)
@@ -92,10 +111,10 @@ class AckPaymentRequest:
             agreement=agreement if isinstance(agreement, str) else None,
         )
 
-    def build(self, choice: Json, h: AtrHash) -> Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> Refusal:
         return Refusal("ack/no-signed-place")
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return Refusal("ack/no-signed-place")
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:

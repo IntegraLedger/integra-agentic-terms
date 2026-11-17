@@ -20,7 +20,7 @@ from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, canoni
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.pieces._mpp import pairings_of_placed
 
-from support import VECTORS, load
+from support import PENDING, VECTORS, load, migrating
 
 BINDINGS: dict[str, Any] = {
     v.id: v for n in dir(terms) if n.startswith("MPP_") and hasattr(v := getattr(terms, n), "id") and hasattr(v, "bound")
@@ -43,18 +43,24 @@ def issued(c: dict[str, Any]) -> dict[str, Any]:
 
 # ── The vector files' boundChallenge rows.
 
-BOUND_ROWS: list[tuple[str, dict[str, Any]]] = [
+ALL_BOUND_ROWS: list[tuple[str, dict[str, Any]]] = [
     (f.name, row)
     for f in sorted(VECTORS.glob("mpp-*.json"))
     for row in load(f.name).get("boundChallenge", {}).get("rows", [])
 ]
+# The rows of the pairings this package has a binding for; those of PENDING's pairings wait for their bindings.
+BOUND_ROWS = [(f, row) for f, row in ALL_BOUND_ROWS if row["pairing"] not in PENDING]
 
 
 def test_the_bound_challenge_rows_are_read() -> None:
     assert len(BOUND_ROWS) > 0
+    assert all(row["pairing"] not in BINDINGS for _, row in ALL_BOUND_ROWS if row["pairing"] in PENDING)
 
 
-@pytest.mark.parametrize(("file", "row"), BOUND_ROWS, ids=[f"{f}: {r['case']}" for f, r in BOUND_ROWS])
+@pytest.mark.parametrize(
+    ("file", "row"),
+    [pytest.param(f, r, id=f"{f}: {r['case']}", marks=migrating(r["pairing"])) for f, r in BOUND_ROWS],
+)
 def test_bound_refuses_a_challenge_the_filter_does_not_name_for_its_pairing(file: str, row: dict[str, Any]) -> None:
     credential = copy.deepcopy(pointer(load(file), row["credential"]))
     pairing = row["pairing"]
@@ -75,8 +81,6 @@ FILES = {
     "mpp/charge/xrpl": "mpp-charge-xrpl.json",
     "mpp/session/xrpl": "mpp-session-hedera-solana-xrpl.json",
     "mpp/subscription/tempo": "mpp-subscription-tempo.json",
-    "mpp/charge/hedera": "mpp-charge-hedera.json",
-    "mpp/charge/stellar": "mpp-charge-stellar.json",
 }
 
 
@@ -149,14 +153,8 @@ def build(pairing: str, challenge: dict[str, Any]) -> Any:
     if pairing == "mpp/session/xrpl":
         xrpl = {**i["xrpl"], "publicKey": i["xrpl"]["publicKey"].removeprefix("0x")}
         return binding.build({"challenge": challenge, "from": account(row), "now": 0, "deposit": int(i["deposit"]), "xrpl": xrpl}, h)
-    if pairing == "mpp/subscription/tempo":
-        return binding.build({"challenge": challenge, "from": account(row), "now": row["input"]["now"]}, h)
-    if pairing == "mpp/charge/stellar":
-        return binding.build({"challenge": challenge, "payer": account(row), "now": row["input"]["now"], **i}, h)
-    assert pairing == "mpp/charge/hedera"
-    valid_start = {"seconds": int(i["validStart"]["seconds"]), "nanos": i["validStart"]["nanos"]}
-    choice = {"challenge": challenge, "payer": account(row), "node": i["node"], "validStart": valid_start, "maxFee": int(i["maxFee"])}
-    return binding.build(choice, h)
+    assert pairing == "mpp/subscription/tempo", pairing
+    return binding.build({"challenge": challenge, "from": account(row), "now": row["input"]["now"]}, h)
 
 
 def past_invoice(c: dict[str, Any], invoice: str) -> dict[str, Any]:
@@ -218,18 +216,13 @@ CASES: list[Case] = [
     # draft-tempo-subscription-00: the key authorization's uint64 expiry and period.
     ("periodCount 10^16 - 1 weeks", "mpp/subscription/tempo", lambda c: with_request(c, lambda r: r.update(periodCount="9999999999999999", periodUnit="week")), "mpp/request-malformed", None),
     ("subscriptionExpires in 1969", "mpp/subscription/tempo", lambda c: with_request(c, set_in(["subscriptionExpires"], "1969-12-31T23:59:59Z")), "mpp/request-malformed", None),
-    # Hedera's chain ids: 295 mainnet and 296 testnet.
-    ("methodDetails.chainId 1", "mpp/charge/hedera", lambda c: with_request(c, set_in([MD, "chainId"], 1)), "hedera/chain-id-unnamed", None),
-    # SEP-41's transfer takes an i128.
-    ("amount 2^127", "mpp/charge/stellar", lambda c: with_request(c, set_in(["amount"], str(2**127))), "stellar/option-malformed", None),
 ]
 
 
-def test_the_build_cases_are_read() -> None:
-    assert len(CASES) == 23
-
-
-@pytest.mark.parametrize(("name", "pairing", "change", "code", "other"), CASES, ids=[f"{p}: {n}" for n, p, _, _, _ in CASES])
+@pytest.mark.parametrize(
+    ("name", "pairing", "change", "code", "other"),
+    [pytest.param(*case, id=f"{case[1]}: {case[0]}", marks=migrating(case[1])) for case in CASES],
+)
 def test_pairings_of_makes_each_check_build_makes_on_the_challenge_alone(
     name: str, pairing: str, change: Callable[[dict[str, Any]], dict[str, Any]], code: str, other: str | None
 ) -> None:
@@ -264,14 +257,12 @@ def test_a_lightning_challenge_without_its_invoice(name: str, pairing: str, edit
 
 
 # A placed challenge whose opaque does not decode as a JSON object of strings (mpp/opaque-malformed): no pairing
-# pairings_of_placed names, and build refuses it with that code. The Hedera charge's build takes the challenge's id,
-# realm and request, and no opaque.
+# pairings_of_placed names, and build refuses it with that code.
 @pytest.mark.parametrize("pairing", sorted(FILES))
 def test_a_placed_challenge_whose_opaque_does_not_read(pairing: str) -> None:
     changed = {**own(pairing), "opaque": "!!"}
     assert pairings_of_placed(changed) == ()
-    if pairing != "mpp/charge/hedera":
-        assert build(pairing, changed) == Refusal("mpp/opaque-malformed")
+    assert build(pairing, changed) == Refusal("mpp/opaque-malformed")
 
 
 # The EVM transaction and hash charges' bound, which no signed place carries H in, holds the echoed challenge to the

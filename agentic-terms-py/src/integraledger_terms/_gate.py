@@ -9,7 +9,7 @@ import secrets
 import time
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -35,6 +35,10 @@ from ._types import (
     Step,
     ToApprove,
     Transacted,
+    Act,
+    bound_act,
+    build_act,
+    coverage_of,
 )
 from .bindings._lcp import is_https_link, is_other_scheme_link
 from .bindings._mpp import Held, fetched_of
@@ -153,13 +157,24 @@ def _build(piece: Piece, binding: Binding, chosen: Chosen, h: AtrHash, atr_bytes
         choice = piece.choice(chosen, atr_bytes)
         if isinstance(choice, Refusal):
             return choice
+        if chosen.act == "agreement":
+            return build_act(binding, choice, h, "agreement")
         return piece.build(binding, choice, h)
     except Exception:
         return Refusal(binding.id.split("/")[0] + "/build-failed")
 
 
-def _public_proof(binding: Binding) -> bool:
-    return getattr(binding, "public_proof", False) is True
+def _kept(piece: Piece, chosen: Chosen, unsigned: Any) -> Chosen:
+    """chosen with what the build drew itself, such as a random value, where the piece keeps it, so that a rebuild from
+    it gives the request the signer was handed."""
+    kept = getattr(piece, "kept", None)
+    return chosen if kept is None else cast(Chosen, kept(chosen, unsigned))
+
+
+def _full(binding: Binding) -> bool:
+    """Whether the pairing is at coverage full, its payment itself a public proof of the hash. A binding that states
+    no coverage is taken as at coverage none, so its payment is made only after the agreement."""
+    return coverage_of(binding) == "full"
 
 
 def _moves(piece: Piece, unsigned: Any) -> bool:
@@ -202,8 +217,12 @@ def json_form(value: Any) -> Any:
     return top
 
 
-def _bound(binding: Binding, presented: Any) -> AtrHash | Refusal:
+def _bound(binding: Binding, presented: Any, h: AtrHash | None = None, act: Act = "payment") -> AtrHash | Refusal:
+    """The binding's bound, for the act: for an agreement, given h (bound_act)."""
     try:
+        if act == "agreement" and h is not None:
+            out: AtrHash | Refusal = bound_act(binding, presented, h, act)
+            return out
         return binding.bound(presented)
     except Exception:
         return Refusal("bound-failed")
@@ -215,8 +234,8 @@ async def confirm(
     """Read the offer (the seller's document as given: an object, a list of challenges, or a string), choose the option,
     fetch the ATR and compare hashes. Only on a match build, with the hash computed. request is what the signer is
     handed, or None when nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build is
-    itself the payment, which finish completes with no signature. For a pairing whose payment is not itself a public
-    proof, chosen.agreement is the agreement URL the offer names. Inputs that are not a mapping are declined
+    itself the payment, which finish completes with no signature. For a pairing at coverage none, whose payment is not
+    itself a public proof, chosen.agreement is the agreement URL the offer names. Inputs that are not a mapping are declined
     no-payable-option with <namespace>/input-malformed before the offer is read."""
     piece = _piece(binding)
     if piece is None:
@@ -226,7 +245,7 @@ async def confirm(
     advertised = binding.read(doc)
     if isinstance(advertised, Refusal):
         return Declined("offer-unreadable", advertised.code)
-    agreement = None if _public_proof(binding) else advertised.agreement
+    agreement = None if _full(binding) else advertised.agreement
     if agreement is not None and not isinstance(agreement, str):
         return Declined("offer-unreadable", "The offer names an agreement URL that is not a string.")
     given = inputs if inputs is not None else {}
@@ -242,7 +261,7 @@ async def confirm(
     computed = atr_hash(fetched)
     if not hash_equals(advertised.h, computed):
         return Declined("hash-mismatch", "The bytes the link served do not hash to the advertised ATR hash.")
-    if not _public_proof(binding) and agreement is None:
+    if not _full(binding) and agreement is None:
         return Declined(
             "agreement-not-offered", "The pairing's payment carries no public proof and the offer names no agreement URL."
         )
@@ -254,13 +273,13 @@ async def confirm(
     request = piece.request(unsigned)
     if isinstance(request, Refusal):
         return Declined("offer-unreadable", request.code)
-    return Confirmed(chosen=chosen, request=json_form(request), atr_bytes=fetched, h=computed)
+    return Confirmed(chosen=_kept(piece, chosen, unsigned), request=json_form(request), atr_bytes=fetched, h=computed)
 
 
 def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding) -> Finished | Next | Declined:
     """Rebuild the payment from chosen and the bytes, join the signer's answer, and return the payment only when the
-    pairing's bound reads the hash of these bytes from the completed payment. For a pairing whose payment is not a
-    public proof and whose bound finds no signed place for the hash, the proof is the agreement payment, and the
+    pairing's bound reads the hash of these bytes from the completed payment. For a pairing at coverage none, whose
+    payment is not a public proof, and whose bound finds no signed place for the hash, the proof is the agreement payment, and the
     completed payment is returned as it is. A payment signed in steps returns the next request. Where the signer moved
     the payment itself, a decline keeps it as moved."""
     piece = _piece(binding)
@@ -290,8 +309,8 @@ def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bind
     if isinstance(signed, Step):
         return Next(next=json_form(signed.next), h=h)
     sent = piece.sent(signed)
-    bound = _bound(binding, signed)
-    on_agreement = not _public_proof(binding) and isinstance(bound, Refusal) and _NOTHING_TO_SIGN.fullmatch(bound.code)
+    bound = _bound(binding, signed, h, chosen.act)
+    on_agreement = not _full(binding) and isinstance(bound, Refusal) and _NOTHING_TO_SIGN.fullmatch(bound.code)
     if not on_agreement and (isinstance(bound, Refusal) or not hash_equals(bound, h)):
         return keep(
             "signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.", sent
@@ -339,7 +358,8 @@ async def pay(binding: Binding, chosen: Chosen, signer: Signer, atr_bytes: bytes
     request = piece.request(unsigned)
     if isinstance(request, Refusal):
         return Declined("offer-unreadable", request.code)
-    return await _sign_steps(binding, chosen, json_form(request) if request is not None else None, signer, atr_bytes, h)
+    first = json_form(request) if request is not None else None
+    return await _sign_steps(binding, _kept(piece, chosen, unsigned), first, signer, atr_bytes, h)
 
 
 async def _sign_steps(

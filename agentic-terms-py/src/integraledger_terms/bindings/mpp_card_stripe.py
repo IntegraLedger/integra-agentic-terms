@@ -2,11 +2,12 @@
 challenge the seller's server binds and in the method's reference field. Nothing the buyer's card or Stripe token
 signs carries the hash, so build and bound refuse mpp/no-signed-place."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from ._mpp import credential_of, echoed_for, mpp_broadcaster, read
 
 CHARGE_CARD = "mpp/charge/card"
@@ -26,16 +27,17 @@ def _bound(pairing: str, presented: Any) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class _ConfirmOnly:
     id: str
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> Refusal:
         """Nothing the buyer signs has a place for H."""
         return Refusal("mpp/no-signed-place")
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _bound(self.id, presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:

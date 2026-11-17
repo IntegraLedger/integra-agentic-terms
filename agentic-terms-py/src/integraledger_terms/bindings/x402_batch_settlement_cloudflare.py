@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._batch import SCHEME
 from ._lcp import is_object, normal_hash, safe_int
 from ._x402 import (
@@ -55,13 +55,14 @@ _FILTER = filter_of(is_pairing, _payable)
 @dataclass(frozen=True, slots=True)
 class X402BatchSettlementCloudflare:
     id: str = ID
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when the legal context names one, and the options this pairing can pay."""
         return read_for(_FILTER)(doc)
 
-    def build(self, c: Json, h: AtrHash) -> dict[str, Any] | Refusal:
+    def build(self, c: Json, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
         """The request's payment document: the option's amount and asset, with the challenge's extensions echoed,
         when the challenge's legal context carries h. H is checked first, then the document and the option."""
         nh = normal_hash(h)
@@ -86,7 +87,7 @@ class X402BatchSettlementCloudflare:
             "extensions": required["extensions"],
         }
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The echoed extensions.legalContext hash. The agent's HTTP message signature is not verified here."""
         version = presented.get("x402Version") if is_object(presented) else None
         if not is_object(presented) or isinstance(version, bool) or safe_int(version) != 2:

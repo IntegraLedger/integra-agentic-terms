@@ -7,6 +7,7 @@ import dataclasses
 import hashlib
 import json
 import re
+import secrets
 from collections.abc import Callable
 from typing import Any
 
@@ -34,6 +35,7 @@ from breadth import (
 )
 from support import load, serving
 
+from integraledger_terms._types import coverage_of
 from integraledger_terms import (
     ACK_PAYMENT_REQUEST,
     ACP_CHECKOUT_DELEGATED,
@@ -63,6 +65,7 @@ from integraledger_terms import (
 )
 from integraledger_terms.bindings._jose import disclosure_digest
 from integraledger_terms.bindings.ap2_checkout_mandate import checkout_binding, checkout_jwt_of, read_mandate
+from integraledger_terms.bindings import card as card_binding
 from integraledger_terms.bindings.card import verify_es256
 from integraledger_terms.pieces import PIECES
 
@@ -102,7 +105,7 @@ def signs_over(p: Pairing, atr: bytes, h: str) -> dict[str, Any]:
     assert isinstance(whole, Transacted), whole
     assert len(signer.requests) == 1
     assert whole.signed == done.signed and whole.atr_bytes == atr
-    assert whole.agreement == (None if getattr(p.binding, "public_proof", False) is True else receipt(h))
+    assert whole.agreement == (None if coverage_of(p.binding) == "full" else receipt(h))
     assert check(atr, done.signed, p.binding) == Checked(h=h)
     assert code(check(ABD, done.signed, p.binding)) == "signed-not-bound"
     return done.signed
@@ -116,7 +119,7 @@ def confirms_only_over(p: Pairing, atr: bytes, h: str) -> Chosen:
     assert json.loads(json.dumps(confirmed.chosen.choice)) == confirmed.chosen.choice
     signer = Recording(p.account, never)
     whole = run(lambda c: transact(p.doc, offered(p.binding), signer, c, inputs=p.inputs), serving(atr))
-    agreement = None if getattr(p.binding, "public_proof", False) is True else receipt(h)
+    agreement = None if coverage_of(p.binding) == "full" else receipt(h)
     assert whole == Transacted(signed=None, atr_bytes=atr, h=h, agreement=agreement)
     assert signer.requests == []
     return confirmed.chosen
@@ -210,7 +213,14 @@ def test_ack_payment_request_k5_build_and_bound_refuse() -> None:
     for given in ACK["K5"]["inputs"]:
         assert ACK_PAYMENT_REQUEST.build(given, H) == expect
         assert ACK_PAYMENT_REQUEST.bound(given) == expect
-    assert ACK["K5"]["pattern"]["buyerSigns"] is False
+
+
+def test_ack_payment_request_k6_the_token_under_either_name() -> None:
+    # ACK's SDKs before 0.10.0 write the token as paymentToken; both names carrying one token read as it, two differ.
+    k6 = ACK["K6"]
+    assert ACK_PAYMENT_REQUEST.read(k6["body"]) == advertised(k6["expect"])
+    assert ACK_PAYMENT_REQUEST.read(k6["bothSame"]["body"]) == advertised(k6["bothSame"]["expect"])
+    assert ACK_PAYMENT_REQUEST.read(k6["bothDiffer"]["body"]) == refusal(k6["bothDiffer"]["expect"])
 
 
 ACK_READ_ROWS = [r for r in ACK["agreedRefusals"]["rows"] if r["call"] == "paymentRequest.read"]
@@ -256,11 +266,12 @@ def _cj_http() -> str:
 
 
 def tap_answer(request: Any) -> dict[str, str]:
-    """The agent's RFC 9421 signer, as the vectors publish it: sig2 over a base that carries the lcp-hash line."""
+    """The agent's RFC 9421 signer, as the vectors publish it: handed C2's nonce, the hash's 32 bytes then C2's 32 random
+    bytes, it answers C2's two fields, whose sig2 covers a base whose signature parameters carry that nonce."""
     c2 = CARD["C2"]
-    assert request == {"kind": "tap-field", **c2["build"]["expect"]}
+    assert request == {"kind": "tap-field", "nonce": c2["nonce"]}
     base: str = c2["sig2Base"]
-    assert f'"lcp-hash": {request["value"]}' in base.split("\n")
+    assert f';nonce="{request["nonce"]}";' in base.split("\n")[-1]
     assert hashlib.sha256(base.encode("utf-8")).hexdigest() == c2["expectSig2BaseSha256"]
     sig2 = re.search(r"sig2=:([^:]+):", c2["request"]["signature"])
     assert sig2 is not None
@@ -269,7 +280,14 @@ def tap_answer(request: Any) -> dict[str, str]:
     signature = base64.b64decode(sig2.group(1))
     assert ed25519.verify(spki[12:], base.encode("utf-8"), signature)
     assert not ed25519.verify(spki[12:], base.encode("utf-8"), signature[:-1] + bytes([signature[-1] ^ 1]))
-    return {"signatureInput": c2["request"]["signatureInput"], "signature": c2["request"]["signature"], "lcpHash": c2["request"]["lcpHash"]}
+    return {"signatureInput": c2["request"]["signatureInput"], "signature": c2["request"]["signature"]}
+
+
+@pytest.fixture
+def c2_random(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TAP's build, which draws its nonce's random half, draws C2's 32 random bytes, so it builds C2's nonce."""
+    random = bytes.fromhex(CARD["C2"]["random"])
+    monkeypatch.setattr(card_binding, "token_bytes", lambda n: random if n == 32 else secrets.token_bytes(n))
 
 
 def vi_immediate_answer(request: Any) -> dict[str, str]:
@@ -299,6 +317,7 @@ def _through(p: Pairing, doc: Any) -> tuple[Any, Chosen, Any]:
 
 
 @pytest.mark.parametrize("p", [CARD_TAP, CARD_IMMEDIATE, CARD_AUTONOMOUS], ids=lambda p: p.binding.id)
+@pytest.mark.usefixtures("c2_random")
 def test_card_piece_keeps_the_document_and_completes_a_payment_bound_to_h(p: Pairing) -> None:
     piece, chosen, unsigned = _through(p, p.doc)
     assert chosen.choice == {"doc": p.doc}
@@ -310,33 +329,28 @@ def test_card_piece_keeps_the_document_and_completes_a_payment_bound_to_h(p: Pai
     assert code(check(ABD, signed, p.binding)) == "signed-not-bound"
 
 
-def test_card_visa_tap_payment_carries_the_lines_the_signer_sent() -> None:
-    # C2's repeated field is refused, an upper-case line is read, another hash is not bound, and an answer without
-    # lcpHash is malformed. finish declines the repeated field's payment, from which the pairing reads no hash.
+def test_card_visa_tap_the_nonce_is_the_hash_then_32_random_bytes_kept_in_chosen_and_rebuilt_as_handed() -> None:
     piece, chosen, unsigned = _through(CARD_TAP, TAP_DOC)
-    c2 = CARD["C2"]
-    answer = {"signatureInput": c2["request"]["signatureInput"], "signature": c2["request"]["signature"]}
-    repeated = piece.complete(unsigned, {**answer, "lcpHash": c2["repeatedField"]["lcpHash"]}, chosen)
-    assert CARD_VISA_TAP.bound(repeated) == Refusal(c2["repeatedField"]["expect"])
-    assert code(check(ABC, repeated, CARD_VISA_TAP)) == "signed-not-bound"
-    upper = piece.complete(unsigned, {**answer, "lcpHash": c2["upperCaseField"]["lcpHash"]}, chosen)
-    assert check(ABC, upper, CARD_VISA_TAP) == Checked(h=c2["upperCaseField"]["expectBound"])
-    other = piece.complete(unsigned, {**answer, "lcpHash": ["0x" + "11" * 32]}, chosen)
-    assert code(check(ABC, other, CARD_VISA_TAP)) == "signed-not-bound"
-    assert piece.complete(unsigned, answer, chosen) == Refusal("card/signature-malformed")
-    out = finish(ABC, chosen, {**answer, "lcpHash": c2["repeatedField"]["lcpHash"]}, CARD_VISA_TAP)
-    assert out == Declined("signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.")
+    nonce = unsigned["nonce"]
+    assert len(nonce) == CARD["C2"]["build"]["expectNonceLength"]
+    assert "0x" + base64.b64decode(nonce)[:32].hex() == CARD["C2"]["build"]["expectHashBytes"]
+    assert piece.request(unsigned) == {"kind": "tap-field", "nonce": nonce}
+    kept = Chosen(**json.loads(json.dumps(dataclasses.asdict(piece.kept(chosen, unsigned)))))
+    assert kept.choice == {"doc": TAP_DOC, "nonce": nonce}
+    assert piece.build(CARD_VISA_TAP, piece.choice(kept, ABC), H) == {"nonce": nonce}
+    assert CARD_VISA_TAP.build(TAP_DOC, H)["nonce"] != nonce
 
 
-def test_card_visa_tap_payment_carries_the_one_line_and_the_signer_fields() -> None:
-    piece, chosen, unsigned = _through(CARD_TAP, TAP_DOC)
+def test_card_visa_tap_payment_is_the_signer_fields_and_c2_key_id_spelling_is_bound_to_h() -> None:
+    chosen = Chosen(pairing="card/visa-tap", choice={"doc": TAP_DOC, "nonce": CARD["C2"]["nonce"]}, ref="r" * 32)
+    piece = PIECES["card/visa-tap"]
+    unsigned = piece.build(CARD_VISA_TAP, piece.choice(chosen, ABC), H)
     signed = piece.complete(unsigned, tap_answer(piece.request(unsigned)), chosen)
     request = CARD["C2"]["request"]
-    assert signed == {
-        "signatureInput": request["signatureInput"],
-        "signature": request["signature"],
-        "lcpHash": request["lcpHash"],
-    }
+    assert signed == {"signatureInput": request["signatureInput"], "signature": request["signature"]}
+    key_id = CARD["C2"]["keyId"]
+    presented = {"signatureInput": key_id["signatureInput"], "signature": key_id["signature"]}
+    assert check(ABC, presented, CARD_VISA_TAP) == Checked(h=key_id["expectBound"])
 
 
 def test_card_seller_reference_build_refuses_so_nothing_goes_to_a_signer() -> None:
@@ -366,6 +380,7 @@ def test_card_b16_unnamed_buyer(p: Pairing) -> None:
     unpayable(p, UNNAMED)
 
 
+@pytest.mark.usefixtures("c2_random")
 def test_card_visa_tap_b6() -> None:
     build_and_sign(CARD_TAP, lambda request: None)
 
@@ -545,7 +560,7 @@ def _segment_or_disclosure_with_a_pad_bit() -> list[object]:
 def _tap(**over: Any) -> dict[str, Any]:
     """C2's presented TAP request with the given members replaced."""
     request = CARD["C2"]["request"]
-    return {"signatureInput": request["signatureInput"], "signature": request["signature"], "lcpHash": request["lcpHash"], **over}
+    return {"signatureInput": request["signatureInput"], "signature": request["signature"], **over}
 
 
 def _jws(header: Any, payload: Any) -> str:
@@ -554,6 +569,9 @@ def _jws(header: Any, payload: Any) -> str:
 
 
 KB_HEAD = {"alg": "ES256", "typ": "kb-sd-jwt"}
+
+
+_C2_INPUT: str = CARD["C2"]["request"]["signatureInput"]
 
 
 def _tap_too_large() -> list[object]:
@@ -641,7 +659,7 @@ def _vi_open_mandates_not_one_or_user_key_not_p256() -> list[object]:
 # card.json's agreedRefusals rows that the buyer half reads (read, build and bound), by case: each builds the inputs
 # its row describes, as @integraledger/lcp's card test builds them.
 CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
-    "advertise or TAP build with a hash that is not 0x and 64 hex digits": lambda: [
+    "advertise, or the TAP, Agent Pay or VIC build, with a hash that is not 0x and 64 hex digits": lambda: [
         CARD_VISA_TAP.build({}, CARD["fixed"]["H"][2:]),
     ],
     "read of shown JSON that is not an object, or has no legalContext member": lambda: [
@@ -682,12 +700,22 @@ CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
             _tap(signatureInput=CARD["C2"]["request"]["signatureInput"].replace('tag="agent-payer-auth"', "tag=agent-payer-auth"))
         ),
     ],
-    "TAP bound with lcpHash not an array, or a line that is not a string": lambda: [
-        CARD_VISA_TAP.bound(_tap(lcpHash=CARD["fixed"]["H"])),
-        CARD_VISA_TAP.bound(_tap(lcpHash=[7])),
+    "TAP or Agent Pay bound with a payment signature whose nonce parameter is not a String": lambda: [
+        CARD_VISA_TAP.bound(_tap(signatureInput=_C2_INPUT.replace(f'nonce="{CARD["C2"]["nonce"]}"', "nonce=7"))),
     ],
-    "TAP bound with the one lcp-hash line over 256 characters": lambda: [
-        CARD_VISA_TAP.bound(_tap(lcpHash=[CARD["fixed"]["H"] + " " * 200])),
+    "TAP or Agent Pay bound with a request path over 2048 characters": lambda: [
+        CARD_VISA_TAP.bound(_tap(path="/" + "a" * 2048)),
+    ],
+    "TAP or Agent Pay bound with a request path that is not a string of visible ASCII starting with /": lambda: [
+        CARD_VISA_TAP.bound(_tap(path="checkout")),
+        CARD_VISA_TAP.bound(_tap(path="/check out")),
+        CARD_VISA_TAP.bound(_tap(path=7)),
+    ],
+    "TAP or Agent Pay bound with a signature input that names both keyid and keyId": lambda: [
+        CARD_VISA_TAP.bound(
+            {"signatureInput": CARD["C2"]["bothSpellings"]["signatureInput"], "signature": CARD["C2"]["bothSpellings"]["signature"]}
+        ),
+        CARD_VISA_TAP.bound(_tap(signatureInput=_C2_INPUT.replace('keyid="test-key-ed25519"', 'keyId="a";keyid="b"'))),
     ],
     "VI bound with a layer over 65536 characters or over 32 disclosures": _vi_layer_too_large,
     "VI bound with an L2 or L3b layer that has no disclosure or a non-empty last part": (
@@ -722,11 +750,16 @@ CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
 
 # The one row the buyer half does not read: advertise is the seller's.
 CARD_SELLER_ROWS = ["advertise with a link over 2048 characters"]
+# The rows of Immediate mode's build over the agent's own checkout payload, which this package does not build yet.
+CARD_NOT_BUILT = [
+    "VI Immediate build of a checkout payload that is not an object, or whose checkout is not an object",
+    "VI Immediate build of a checkout payload over 12288 bytes of JSON",
+]
 
 
 def test_card_agreed_refusals_name_every_row_the_buyer_half_reads() -> None:
     cases = sorted(r["case"] for r in CARD["agreedRefusals"]["rows"])
-    assert sorted([*CARD_REFUSALS, *CARD_SELLER_ROWS]) == cases
+    assert sorted([*CARD_REFUSALS, *CARD_SELLER_ROWS, *CARD_NOT_BUILT]) == cases
 
 
 @pytest.mark.parametrize("case", list(CARD_REFUSALS))
@@ -768,19 +801,19 @@ def _equal(a: Any, b: Any) -> None:
 def test_card_c2_tap_bound_build_and_read() -> None:
     c2 = CARD["C2"]
     assert CARD_VISA_TAP.bound(c2["request"]) == c2["expectBound"]
-    upper = {**c2["request"], "lcpHash": c2["upperCaseField"]["lcpHash"]}
-    assert CARD_VISA_TAP.bound(upper) == c2["upperCaseField"]["expectBound"]
-    repeated = {**c2["request"], "lcpHash": c2["repeatedField"]["lcpHash"]}
-    assert CARD_VISA_TAP.bound(repeated) == Refusal(c2["repeatedField"]["expect"])
-    assert CARD_VISA_TAP.bound({**c2["request"], "lcpHash": []}) == Refusal("card/tap-field-missing")
-    assert CARD_VISA_TAP.build(c2["build"]["doc"], CARD["fixed"]["H"]) == c2["build"]["expect"]
+    assert CARD_VISA_TAP.bound({k: c2["keyId"][k] for k in ("signatureInput", "signature")}) == c2["keyId"]["expectBound"]
+    both = c2["bothSpellings"]
+    assert CARD_VISA_TAP.bound({k: both[k] for k in ("signatureInput", "signature")}) == Refusal(both["expect"])
+    built = CARD_VISA_TAP.build(c2["build"]["doc"], CARD["fixed"]["H"])
+    assert len(built["nonce"]) == c2["build"]["expectNonceLength"]
+    assert "0x" + base64.b64decode(built["nonce"])[:32].hex() == c2["build"]["expectHashBytes"]
     read = CARD_VISA_TAP.read(c2["build"]["doc"])
     assert read == Advertised(h=CARD["fixed"]["H"], link=CARD["fixed"]["link"], offer={})
 
 
-def test_card_c3_tap_plant_the_listing_must_be_the_payer_signature() -> None:
+def test_card_c3_tap_plant_the_payer_signature_must_carry_the_hash() -> None:
     c3 = CARD["C3"]
-    presented = {"signatureInput": c3["signatureInput"], "signature": c3["signature"], "lcpHash": c3["lcpHash"]}
+    presented = {"signatureInput": c3["signatureInput"], "signature": c3["signature"]}
     assert CARD_VISA_TAP.bound(presented) == Refusal(c3["expect"])
 
 
@@ -807,7 +840,6 @@ def test_card_c8_seller_reference_has_no_signed_place() -> None:
     for given in CARD["C8"]["inputs"]:
         assert CARD_SELLER_REFERENCE.build(given, H) == expect
         assert CARD_SELLER_REFERENCE.bound(given) == expect
-    assert CARD["C8"]["buyerSigns"] is False
 
 
 # ── AP2 ──
@@ -991,8 +1023,11 @@ def _sha256_b64u(text: str) -> str:
 
 
 def ucp_mandate_over(c: dict[str, Any]) -> tuple[str, str]:
-    """The vectors' fixed recipe for J and M over a checkout the mandate discloses."""
-    j = f"{_b64u(UCP_F['jwtHeader'])}.{_b64u(json.dumps(c, separators=(',', ':'), ensure_ascii=False))}.{UCP_F['signature']}"
+    """The vectors' fixed recipe for J and M over a checkout the mandate discloses: J is the business's detached merchant
+    authorization with the RFC 8785 form of the checkout, without its ap2 member, reinserted as its payload; that form,
+    for these values (ASCII strings and integers), is json.dumps with sorted keys and no whitespace, as ucp.json says."""
+    header, _, signature = UCP_F["merchantAuthorization"].split(".")
+    j = f"{header}.{_b64u(json.dumps(c, sort_keys=True, separators=(',', ':')))}.{signature}"
     d = _b64u(UCP_F["disclosureTemplate"].replace("<J>", j))
     payload = (
         UCP_F["mandatePayload"]

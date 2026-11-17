@@ -1,8 +1,7 @@
 """expires, read per pairing. The core draft makes expires a SHOULD for servers (draft-httpauth-payment-01 L324), and
 the charge intent's "REQUIRED for blockchain methods" is an example of a method elevating it
 (draft-payment-intent-charge-00 L143-145). A pairing needs it where its build writes it into what the payer signs: the
-EIP-3009 validBefore, the Permit2 deadline, the Tempo transaction's validBefore, the Stellar entry's expiration ledger
-and the session openings' deadline; and on NEAR Intents, whose draft says expires "MUST be set to the 1Click quote
+EIP-3009 validBefore, the Permit2 deadline and the session openings' deadline; and on NEAR Intents, whose draft says expires "MUST be set to the 1Click quote
 deadline" (draft-nearintents-charge-01 L414-415), and on the XRP Ledger charge, whose draft says "The server MUST reject
 a credential whose challenge carries no expires" (draft-xrpl-charge-00 L391-392). Without expires those pairings are
 left out, and a challenge left with none is mpp/expires-required, as the protocol package's pairingsOf answers."""
@@ -10,36 +9,26 @@ left out, and a challenge left with none is mpp/expires-required, as the protoco
 import json
 from typing import Any
 
+import pytest
+
 from integraledger_terms import MPP_CHARGE_EVM_AUTHORIZATION, MPP_CHARGE_EVM_TRANSACTION, Refusal
 from integraledger_terms.bindings._mpp import NEEDS_EXPIRES, MppUnsigned, pairings_of
 
 from mpp_docs import MC, issued, place, placed_doc
-from support import load
+from support import PENDING, VECTORS, load, migrating
 
 REQUIRED = Refusal("mpp/expires-required")
 H: str = MC["fixed"]["H"]
 LINK: str = MC["fixed"]["link"]
 FROM = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 TOKEN_DOMAIN = {"name": "USD Coin", "version": "2"}
-FILES = [
-    "mpp-charge-evm-authorization.json",
-    "mpp-charge-hedera.json",
-    "mpp-charge-lightning.json",
-    "mpp-charge-nearintents.json",
-    "mpp-charge-solana.json",
-    "mpp-charge-stellar.json",
-    "mpp-charge-tempo-memo.json",
-    "mpp-charge-tempo-push.json",
-    "mpp-charge-usdc-evm.json",
-    "mpp-charge-usdc-gateway.json",
-    "mpp-charge-usdc-solana.json",
-    "mpp-charge-usdc-stacks.json",
-    "mpp-charge-xrpl.json",
-    "mpp-session-evm.json",
-    "mpp-session-hedera-solana-xrpl.json",
-    "mpp-session-lightning.json",
-    "mpp-session-tempo.json",
-    "mpp-subscription-tempo.json",
+# Each vector file's first buyer row that presents a credential, whose echoed challenge is the file's challenge as
+# placed; the files of pairings this package has no binding for yet (PENDING) are left out.
+ROWS: list[tuple[str, dict[str, Any]]] = [
+    (f.name, row)
+    for f in sorted(VECTORS.glob("mpp-*.json"))
+    for row in [next((r for r in load(f.name).get("buyer", {}).get("rows", []) if "challenge" in r["input"].get("presented", {})), None)]
+    if row is not None and row["pairing"] not in PENDING
 ]
 
 
@@ -47,33 +36,16 @@ def without_expires(c: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in c.items() if k != "expires"}
 
 
-def test_the_pairings_that_need_expires() -> None:
-    assert NEEDS_EXPIRES == {
-        "mpp/charge/evm/authorization",
-        "mpp/charge/evm/permit2",
-        "mpp/charge/tempo/memo",
-        "mpp/charge/tempo/push",
-        "mpp/charge/usdc/evm",
-        "mpp/charge/stellar",
-        "mpp/charge/nearintents",
-        "mpp/charge/xrpl",
-        "mpp/session/evm",
-        "mpp/session/tempo",
-    }
-
-
-def test_each_vector_files_challenge_without_expires_offers_its_pairings_that_do_not_need_it() -> None:
-    read = 0
-    for file in FILES:
-        row = next(r for r in load(file)["buyer"]["rows"] if "challenge" in r["input"].get("presented", {}))
-        offer = {k: v for k, v in row["input"]["presented"]["challenge"].items() if k not in ("id", "opaque")}
-        named = pairings_of(offer)
-        assert isinstance(named, tuple) and named, file
-        kept = tuple(p for p in named if p not in NEEDS_EXPIRES)
-        assert (file, pairings_of(without_expires(offer))) == (file, kept or REQUIRED)
-        assert (file, pairings_of({**offer, "expires": "tomorrow"})) == (file, REQUIRED)
-        read += 1
-    assert read == len(FILES) == 18
+@pytest.mark.parametrize(
+    "row", [pytest.param(row, id=file, marks=migrating(row["pairing"])) for file, row in ROWS]
+)
+def test_each_vector_files_challenge_without_expires_offers_its_pairings_that_do_not_need_it(row: dict[str, Any]) -> None:
+    offer = {k: v for k, v in row["input"]["presented"]["challenge"].items() if k not in ("id", "opaque")}
+    named = pairings_of(offer)
+    assert isinstance(named, tuple) and named
+    kept = tuple(p for p in named if p not in NEEDS_EXPIRES)
+    assert pairings_of(without_expires(offer)) == (kept or REQUIRED)
+    assert pairings_of({**offer, "expires": "tomorrow"}) == REQUIRED
 
 
 def test_card_stripe_and_the_evm_transaction_and_hash_charges_need_none() -> None:

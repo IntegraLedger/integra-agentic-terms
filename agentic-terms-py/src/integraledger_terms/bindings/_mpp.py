@@ -32,7 +32,6 @@ from ._mpp_checks import (
     PAIRING_CHECKS,
     decode_object,
     decode_string_map,
-    hedera_charge_network,
     hedera_session_network_of,
     positive_int,
     solana_network_of,
@@ -157,17 +156,13 @@ class Checked:
 
 
 # The pairings that need the challenge's expires: each one's build writes it into what the payer signs (the EIP-3009
-# validBefore, the Permit2 deadline, the Tempo transaction's validBefore, the Stellar entry's expiration ledger, the
-# session opening's deadline), or, on NEAR Intents and the XRP Ledger charge, the method's draft requires it. Without
-# expires a challenge offers none of them.
+# validBefore, the Permit2 deadline, the session opening's deadline), or, on NEAR Intents and the XRP Ledger charge, the
+# method's draft requires it. Without expires a challenge offers none of them.
 NEEDS_EXPIRES = frozenset(
     {
         "mpp/charge/evm/authorization",
         "mpp/charge/evm/permit2",
-        "mpp/charge/tempo/memo",
-        "mpp/charge/tempo/push",
         "mpp/charge/usdc/evm",
-        "mpp/charge/stellar",
         "mpp/charge/nearintents",
         "mpp/charge/xrpl",
         "mpp/session/evm",
@@ -398,8 +393,6 @@ def network(challenge: object) -> str | Refusal:
         return Refusal("svm/network-undeclared") if n is None else n
     if key in ("charge/xrpl", "session/xrpl"):
         return xrpl_network_of(d)
-    if key == "charge/hedera":
-        return hedera_charge_network(c.request)
     if key == "session/hedera":
         return hedera_session_network_of(d)
     if key == "charge/stellar":

@@ -12,7 +12,6 @@ from . import _stellar
 from ._bolt11 import FIELD
 from ._bolt11 import decode as decode_invoice
 from ._codec import b58_decode, b64u_decode, b64u_encode, canonical_or_none, utf16_key
-from ._hedera_proto import amount_of, is_entity
 from ._jose import js_length, parse_json, within_depth
 from ._lcp import is_address, is_list, is_object, uint256_of
 from ._svm import TOKEN, TOKEN_2022
@@ -46,7 +45,6 @@ _HEX64 = re.compile(r"[0-9A-Fa-f]{64}")
 _STACKS_CHAIN = re.compile(r"(?:0|[1-9][0-9]{0,9})")
 _STACKS_NAME = re.compile(r"[a-zA-Z](?:[a-zA-Z0-9]|[-_])*")
 _C32_PRINCIPAL = re.compile(r"S[0-9A-HJKMNP-TV-Z]{38,40}")
-_HEDERA_MAX_SPLITS = 8
 _EVM_MAX_SPLITS = 10
 _MAX_MEMO_BYTES = 566
 
@@ -69,8 +67,6 @@ XRPL_NETWORKS: Mapping[str, str] = {"mainnet": "xrpl:0", "testnet": "xrpl:1", "d
 
 # MPP Hedera's chain ids and their CAIP-2 networks.
 HEDERA_CHAIN_IDS: Mapping[int, str] = {295: "hedera:mainnet", 296: "hedera:testnet"}
-# The networks a Hedera charge with no chainId may be read on, as the protocol package's Hedera networks.
-_HEDERA_DEFAULTS = ("hedera:mainnet", "hedera:testnet", "hedera:previewnet", "hedera:devnet")
 
 # The profiles usdc's methodDetails.type names, and the pairing each one is.
 USDC_PROFILES: Mapping[str, str] = {
@@ -224,18 +220,6 @@ def hedera_session_network_of(details: Obj) -> str | Refusal:
     return hedera_network_of_chain_id(295 if chain_id is None else chain_id)
 
 
-def hedera_charge_network(request: Obj, default: str | None = None) -> str | Refusal:
-    """The CAIP-2 network of an MPP Hedera charge: methodDetails.chainId 295 or 296, or, when it names none, the
-    default network given. A methodDetails that is present and not an object is mpp/request-malformed, the code
-    pairings_of gives it."""
-    md = request.get("methodDetails")
-    if "methodDetails" in request and not is_object(md):
-        return Refusal("mpp/request-malformed")
-    if not is_object(md) or "chainId" not in md:
-        return default if default in _HEDERA_DEFAULTS else Refusal("hedera/chain-id-unnamed")
-    return hedera_network_of_chain_id(md["chainId"])
-
-
 def stacks_network_of(details: Obj) -> str | None:
     """The CAIP-2 network of a usdc Stacks profile: stacks: and its chainId."""
     p = details.get("stacks")
@@ -300,42 +284,65 @@ def evm_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     return listed
 
 
-def tempo_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    """charge on tempo: currency and recipient addresses and amount a decimal, else mpp/request-malformed; a zero amount
-    names none. Then the modes supportedModes and feePayer leave, and splits as tempo_splits reads them, which the
-    build writes after the primary transfer of amount less their sum (draft-tempo-charge-00 L233): a sum of amount or
-    more leaves the primary transfer nothing, mpp/input-malformed, the code the Permit2 charge gives."""
+def tempo_charge_pairings(r: Obj, d: Obj, c: Obj, carried: bool = False) -> list[str] | Refusal:
+    """charge on tempo (profile mpp/charge/tempo/split-memo, rules 2 to 4): currency and recipient addresses and amount
+    a decimal, else mpp/request-malformed; methodDetails.chainId a positive integer, else mpp/chain-id-required, since
+    the draft reads an absent one as Moderato; methodDetails.zones present is mpp/zones-not-served, and
+    machineTokenEnabled other than absent or false is mpp/machine-token-enabled; a zero amount names no pairing, its
+    payment being an off-chain proof that moves nothing; methodDetails.memo present is mpp/carrier-taken. The forms are
+    read from supportedModes alone, absent being pull and push: pull names mpp/charge/tempo/split-memo, push
+    mpp/charge/tempo/split-memo/push; a list that is not of those two, or is empty, is mpp/request-malformed, as is a
+    feePayer that is not a boolean. splits reads as tempo_splits reads them. The split carrying H is the one whose memo
+    is the H the challenge's id carries: there is at most one, and it is {recipient, amount: 1, memo: H} with the
+    request's own recipient, else mpp/split-not-placed; with carried (a challenge as placed, or echoed) it is required.
+    Beside it the seller's own splits number at most nine, else mpp/splits-malformed, and the primary transfer, amount
+    less every split and the one that carries H, must be above zero, else mpp/input-malformed."""
+    from ._mpp import challenge_id_h
+
     if not is_address(r.get("currency")) or not is_address(r.get("recipient")) or not is_decimal(r.get("amount")):
         return Refusal("mpp/request-malformed")
-    if _has(d, "chainId") and positive_int(d["chainId"]) is None:
-        return Refusal("mpp/request-malformed")
-    # A charge of amount 0 is paid with a proof credential, which moves no money, so no pairing binds it;
-    # supportedModes does not apply to it.
+    if positive_int(d.get("chainId")) is None:
+        return Refusal("mpp/chain-id-required")
+    if _has(d, "zones"):
+        return Refusal("mpp/zones-not-served")
+    if _has(d, "machineTokenEnabled") and d["machineTokenEnabled"] is not False:
+        return Refusal("mpp/machine-token-enabled")
     if int(r["amount"]) == 0:
         return []
     if _has(d, "memo"):
         return Refusal("mpp/carrier-taken")
-    pull = push = True
-    if _has(d, "supportedModes"):
-        modes = d["supportedModes"]
-        if not is_list(modes) or not all(m in ("pull", "push") and isinstance(m, str) for m in modes):
-            return Refusal("mpp/request-malformed")
-        pull = "pull" in modes
-        push = "push" in modes
-    if d.get("feePayer") is True:
-        push = False
-    out: list[str] = []
-    if pull:
-        out.append("mpp/charge/tempo/memo")
-    if push:
-        out.append("mpp/charge/tempo/push")
-    if not out:
-        return Refusal("mpp/modes-pull-only")
+    modes = d.get("supportedModes")
+    if _has(d, "supportedModes") and (
+        not is_list(modes) or len(modes) == 0 or not all(isinstance(m, str) and m in ("pull", "push") for m in modes)
+    ):
+        return Refusal("mpp/request-malformed")
+    if _has(d, "feePayer") and not isinstance(d["feePayer"], bool):
+        return Refusal("mpp/request-malformed")
     splits = tempo_splits(d)
     if isinstance(splits, Refusal):
         return splits
-    split = sum(s.amount for s in splits or [])
-    return out if int(r["amount"]) - split > 0 else Refusal("mpp/input-malformed")
+    h = challenge_id_h(c) if isinstance(c.get("id"), str) else None
+    carrier = (
+        [s for s in splits or [] if s.memo is not None and s.memo.lower() == h.lower()] if isinstance(h, str) else []
+    )
+    if len(carrier) > 1:
+        return Refusal("mpp/split-not-placed")
+    placed = carrier[0] if carrier else None
+    if placed is not None and (placed.to.lower() != str(r["recipient"]).lower() or placed.amount != 1):
+        return Refusal("mpp/split-not-placed")
+    if carried and placed is None:
+        return Refusal("mpp/split-not-placed")
+    own = [s for s in splits or [] if s is not placed]
+    if len(own) > _MAX_TEMPO_SPLITS - 1:
+        return Refusal("mpp/splits-malformed")
+    if int(r["amount"]) - sum((s.amount for s in own), 1) <= 0:
+        return Refusal("mpp/input-malformed")
+    out: list[str] = []
+    if modes is None or "pull" in modes:
+        out.append("mpp/charge/tempo/split-memo")
+    if modes is None or "push" in modes:
+        out.append("mpp/charge/tempo/split-memo/push")
+    return out
 
 
 _MAX_TEMPO_SPLITS = 10
@@ -344,7 +351,7 @@ _BYTES32_HEX = re.compile(r"0x[0-9a-fA-F]{64}")
 
 @dataclass(frozen=True, slots=True)
 class TempoSplit:
-    """A Tempo charge split as its build writes it: the recipient, the amount and, when present, the memo."""
+    """A Tempo charge split: the recipient, the amount and, when present, the memo."""
 
     to: str
     amount: int
@@ -362,10 +369,10 @@ def tempo_splits(d: Obj) -> list[TempoSplit] | None | Refusal:
         return Refusal("mpp/splits-malformed")
     out: list[TempoSplit] = []
     for s in splits:
-        if not is_object(s) or not is_address(s.get("recipient")):
+        if not is_object(s) or not is_address(s.get("recipient")) or not is_decimal(s.get("amount")):
             return Refusal("mpp/splits-malformed")
-        amount = uint256_of(s.get("amount"))
-        if amount is None or amount == 0:
+        amount = int(s["amount"])
+        if amount == 0:
             return Refusal("mpp/splits-malformed")
         memo = s.get("memo")
         if _has(s, "memo") and (not isinstance(memo, str) or _BYTES32_HEX.fullmatch(memo) is None):
@@ -383,14 +390,16 @@ def evm_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         return Refusal("mpp/chain-id-required")
     if not is_address(r.get("currency")) or not is_address(r.get("recipient")):
         return Refusal("mpp/request-malformed")
+    # The pairing is an opening the seller's settler submits, funded by an authorization or a permit2; an opening funded
+    # by a hash, a transaction the buyer's client broadcasts, is no part of it and is not offered. So the challenge names
+    # credentialTypes, without hash, since an absent member admits hash (draft-evm-session-00 reads it as ["hash"]).
     types = d.get("credentialTypes")
-    if _has(d, "credentialTypes"):
-        if not is_list(types) or len(types) == 0:
-            return Refusal("mpp/credential-types")
-        if not all(isinstance(t, str) and t in ("permit2", "authorization", "hash") for t in types):
-            return Refusal("mpp/credential-types")
-    # The Permit2 opening signs permit2Contract as the verifying contract; an absent credentialTypes is ["hash"].
-    if is_list(types) and "permit2" in types and _has(d, "permit2Contract") and not is_address(d["permit2Contract"]):
+    if not is_list(types) or len(types) == 0:
+        return Refusal("mpp/credential-types")
+    if not all(isinstance(t, str) and t in ("permit2", "authorization") for t in types):
+        return Refusal("mpp/credential-types")
+    # The Permit2 opening signs permit2Contract as the verifying contract.
+    if "permit2" in types and _has(d, "permit2Contract") and not is_address(d["permit2Contract"]):
         return Refusal("mpp/request-malformed")
     return ["mpp/session/evm"]
 
@@ -498,63 +507,6 @@ def lightning_pairings(pairing: str, carried: bool = False) -> PairingCheck:
 
 
 # ── charge and session on Hedera, Solana, Stellar, XRPL and NEAR Intents.
-
-
-def _hedera_positive_amount(value: object) -> int | None:
-    """A positive decimal below 2^63: the charge's amount."""
-    number = amount_of(value)
-    return number if number is not None and number > 0 else None
-
-
-def hedera_charge_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] | Refusal:
-    """The currency, the amount and the transfer legs of an MPP Hedera charge: the recipient's remainder and each
-    split, every account distinct. The amount is positive; a split's amount may be zero. At most eight splits: with the
-    payer and the recipient, ten token transfer entries, the most a Hedera transaction carries."""
-    amount = _hedera_positive_amount(request.get("amount"))
-    currency, recipient = request.get("currency"), request.get("recipient")
-    if amount is None or not is_entity(currency) or not is_entity(recipient):
-        return Refusal("hedera/option-malformed")
-    assert isinstance(currency, str) and isinstance(recipient, str)
-    splits = request.get("splits")
-    splits = [] if splits is None else splits
-    if not is_list(splits) or len(splits) > _HEDERA_MAX_SPLITS:
-        return Refusal("hedera/option-malformed")
-    legs: list[tuple[str, int]] = []
-    split_total = 0
-    for sp in splits:
-        a = amount_of(sp.get("amount")) if is_object(sp) else None
-        if not is_object(sp) or not is_entity(sp.get("recipient")) or a is None:
-            return Refusal("hedera/option-malformed")
-        legs.append((sp["recipient"], a))
-        split_total += a
-    if split_total >= amount:
-        return Refusal("hedera/option-malformed")
-    every = [(recipient, amount - split_total), *legs]
-    if len({account for account, _ in every}) != len(every):
-        return Refusal("hedera/option-malformed")
-    return currency, amount, every
-
-
-def hedera_charge_request_legs(request: Obj) -> tuple[str, int, list[tuple[str, int]]] | Refusal:
-    """The checks of a decoded Hedera charge request, which pairings_of makes and the charge's build makes on the
-    request it is given: hedera_charge_legs, then methodDetails absent or an object (mpp/request-malformed) whose
-    chainId, when present, is 295 or 296. Gives the legs."""
-    legs = hedera_charge_legs(request)
-    if isinstance(legs, Refusal):
-        return legs
-    md = request.get("methodDetails")
-    if _has(request, "methodDetails") and not is_object(md):
-        return Refusal("mpp/request-malformed")
-    if is_object(md) and _has(md, "chainId"):
-        n = hedera_network_of_chain_id(md["chainId"])
-        if isinstance(n, Refusal):
-            return n
-    return legs
-
-
-def hedera_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    legs = hedera_charge_request_legs(r)
-    return legs if isinstance(legs, Refusal) else ["mpp/charge/hedera"]
 
 
 def is_external_id(r: Obj) -> bool:
@@ -720,7 +672,7 @@ def hedera_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         return network
     if not is_address(r.get("currency")) or not is_address(r.get("recipient")) or not is_address(d.get("escrowContract")):
         return Refusal("mpp/request-malformed")
-    return ["mpp/session/hedera"]
+    return ["mpp/session/hedera/stock"]
 
 
 def solana_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
@@ -871,7 +823,6 @@ PAIRING_CHECKS: Mapping[str, PairingCheck] = {
     "subscription/tempo": subscription_pairings,
     "charge/lightning": lightning_pairings("mpp/charge/lightning"),
     "session/lightning": lightning_pairings("mpp/session/lightning"),
-    "charge/hedera": hedera_charge_pairings,
     "charge/solana": solana_charge_pairings,
     "charge/stellar": stellar_charge_pairings,
     "charge/xrpl": xrpl_charge_pairings,
@@ -889,6 +840,7 @@ PAIRING_CHECKS: Mapping[str, PairingCheck] = {
 # challenge without it: the Lightning invoice.
 CARRIED_PAIRING_CHECKS: Mapping[str, PairingCheck] = {
     **PAIRING_CHECKS,
+    "charge/tempo": lambda r, d, c: tempo_charge_pairings(r, d, c, carried=True),
     "charge/lightning": lightning_pairings("mpp/charge/lightning", carried=True),
     "session/lightning": lightning_pairings("mpp/session/lightning", carried=True),
 }

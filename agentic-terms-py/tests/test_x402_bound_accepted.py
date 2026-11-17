@@ -13,7 +13,7 @@ import pytest
 import integraledger_terms
 from integraledger_terms import Refusal
 
-from support import VECTORS, load
+from support import MIGRATING, PENDING, VECTORS, load, migrating
 
 X402_FILES = sorted(path.name for path in VECTORS.glob("x402-*.json"))
 BINDINGS: dict[str, Any] = {
@@ -42,7 +42,7 @@ PAYMENTS = [payment for name in X402_FILES for payment in payments_in(load(name)
 def test_the_x402_bindings_are_the_pairings_the_vector_files_name() -> None:
     named = {row["pairing"] for name in X402_FILES for row in load(name).get("boundAccepted", {}).get("rows", [])}
     assert named, "the x402 vector files hold no boundAccepted rows"
-    assert set(BINDINGS) == named
+    assert set(BINDINGS) - MIGRATING == named - PENDING - MIGRATING
 
 
 _REMOVED = object()
@@ -55,7 +55,7 @@ NOT_AN_OBJECT: list[tuple[str, object]] = [
 ]
 
 
-@pytest.mark.parametrize("pairing", sorted(BINDINGS))
+@pytest.mark.parametrize("pairing", [pytest.param(p, marks=migrating(p)) for p in sorted(BINDINGS)])
 def test_a_presented_payment_whose_accepted_is_not_an_object_is_payload_malformed(pairing: str) -> None:
     """A vector payment the pairing's bound binds, with accepted replaced by each value that is not an object, or
     removed: bound refuses it x402/payload-malformed."""
@@ -88,19 +88,24 @@ def offering(option: Any) -> dict[str, Any]:
     }
 
 
+# The rows of the pairings this package has a binding for; those of PENDING's pairings wait for their bindings.
 ROWS = [
     (name, i, row, at(load(name), row["payment"]))
     for name in X402_FILES
     for i, row in enumerate(load(name).get("boundAccepted", {}).get("rows", []))
+    if row["pairing"] not in PENDING
 ]
 
 
 def test_the_x402_vector_files_hold_a_bound_accepted_row_for_every_pairing() -> None:
     assert ROWS, "the x402 vector files hold no boundAccepted rows"
-    assert {row["pairing"] for _, _, row, _ in ROWS} == set(BINDINGS)
+    assert {row["pairing"] for _, _, row, _ in ROWS} - MIGRATING == set(BINDINGS) - MIGRATING
 
 
-@pytest.mark.parametrize(("name", "i", "row", "payment"), ROWS, ids=[f"{n} boundAccepted.rows[{i}]" for n, i, _, _ in ROWS])
+@pytest.mark.parametrize(
+    ("name", "i", "row", "payment"),
+    [pytest.param(n, i, r, p, id=f"{n} boundAccepted.rows[{i}]", marks=migrating(r["pairing"])) for n, i, r, p in ROWS],
+)
 def test_a_bound_accepted_row_is_refused_with_its_code(name: str, i: int, row: dict[str, Any], payment: dict[str, Any]) -> None:
     """The file's payment, which the row's pairing binds, presented under the row's option, which its read does not
     offer: bound refuses it with the row's code."""

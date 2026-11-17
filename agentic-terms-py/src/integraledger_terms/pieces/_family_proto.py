@@ -12,8 +12,6 @@ FAMILY: dict[str, Piece] = {
     card.VI_IMMEDIATE_PIECE.pairing: card.VI_IMMEDIATE_PIECE,
     card.VI_AUTONOMOUS_PIECE.pairing: card.VI_AUTONOMOUS_PIECE,
     card.SELLER_REFERENCE_PIECE.pairing: card.SELLER_REFERENCE_PIECE,
-    lightning.LNBTC_PIECE.pairing: lightning.LNBTC_PIECE,
-    lightning.NAMED_PIECE.pairing: lightning.NAMED_PIECE,
     lightning.MPP_CHARGE_PIECE.pairing: lightning.MPP_CHARGE_PIECE,
     lightning.MPP_SESSION_PIECE.pairing: lightning.MPP_SESSION_PIECE,
     ucp.CHECKOUT_AP2_MANDATE_PIECE.pairing: ucp.CHECKOUT_AP2_MANDATE_PIECE,

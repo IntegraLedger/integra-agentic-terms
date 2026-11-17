@@ -7,13 +7,12 @@ import hashlib
 import json
 from typing import Any
 
+import pytest
 from eth_account import Account
 from integraledger_terms import (
     MPP_CHARGE_EVM_AUTHORIZATION,
     MPP_CHARGE_EVM_HASH,
     MPP_CHARGE_EVM_TRANSACTION,
-    MPP_CHARGE_TEMPO_MEMO,
-    MPP_CHARGE_TEMPO_PUSH,
     Advertised,
     Refusal,
 )
@@ -166,11 +165,6 @@ def test_the_issued_checks_of_step_2() -> None:
         "mpp/charge/evm/permit2",
         "mpp/charge/evm/authorization",
     )
-    tempo = {"amount": "1", "currency": "0x20c0000000000000000000000000000000000000", "recipient": "0x742d35Cc6634C0532925a3b844Bc9e7595f8fE00"}
-    memo = issued("tempo", "charge", json.dumps({**tempo, "methodDetails": {"memo": "0x" + "00" * 32}}))
-    assert pairings_of(memo) == refused("mpp/carrier-taken")
-    push_only = issued("tempo", "charge", json.dumps({**tempo, "methodDetails": {"supportedModes": ["push"], "feePayer": True}}))
-    assert pairings_of(push_only) == refused("mpp/modes-pull-only")
 
 
 _A1, _A2, _A3 = "0x" + "11" * 20, "0x" + "22" * 20, "0x" + "33" * 20
@@ -186,8 +180,6 @@ _READS_ONLY_WHAT_IS_BUILT: list[tuple[str, str, dict[str, Any], tuple[str, ...] 
      ("mpp/charge/evm/transaction", "mpp/charge/evm/hash")),
     ("evm", "permit2, externalId 7", {**_EVM, "externalId": 7, "methodDetails": {"chainId": 1, "credentialTypes": ["permit2"]}},
      "mpp/request-malformed"),
-    ("hedera", "a split of 0", {"amount": "100", "currency": "0.0.456858", "recipient": "0.0.1234",
-     "splits": [{"recipient": "0.0.5678", "amount": "0"}]}, ("mpp/charge/hedera",)),
     ("card", "amount abc, currency empty", {"amount": "abc", "currency": ""}, ("mpp/charge/card",)),
     ("card", "externalId 7", {"amount": "1", "currency": "usd", "externalId": 7}, "mpp/request-malformed"),
     ("stripe", "externalId 7, no currency", {"amount": "1", "externalId": 7}, ("mpp/charge/stripe",)),
@@ -203,7 +195,6 @@ _READS_ONLY_WHAT_IS_BUILT: list[tuple[str, str, dict[str, Any], tuple[str, ...] 
 
 
 def test_each_charge_check_reads_only_what_its_build_reads() -> None:
-    assert len(_READS_ONLY_WHAT_IS_BUILT) == 13
     for method, case, request, expect in _READS_ONLY_WHAT_IS_BUILT:
         # The request in its RFC 8785 form, which the usdc EVM and Gateway derivations hash as received.
         out = pairings_of(issued(method, "charge", json.dumps(request, separators=(",", ":"), sort_keys=True)))
@@ -225,6 +216,17 @@ def test_read_refusals() -> None:
     assert read([C_E] * 33) == refused("mpp/challenge-malformed")
 
 
+# mpp-charge-tempo-split-memo.json's challenge rows, whose oracle is stock mppx 0.17.6's Tempo charge client: the
+# pairings a Tempo charge challenge names, or the refusal its checks give.
+SPLIT_MEMO_CHALLENGES: list[dict[str, Any]] = load("mpp-charge-tempo-split-memo.json")["challenges"]
+
+
+@pytest.mark.parametrize("row", SPLIT_MEMO_CHALLENGES, ids=[r["case"] for r in SPLIT_MEMO_CHALLENGES])
+def test_the_tempo_charge_challenge_rows(row: dict[str, Any]) -> None:
+    e = row["expect"]
+    assert pairings_of(row["offer"]) == (tuple(e) if isinstance(e, list) else refused(e["code"]))
+
+
 def _agreed(prefix: str) -> str:
     for r in V["agreedRefusals"]["rows"]:
         if r["case"].startswith(prefix):
@@ -236,7 +238,6 @@ def _agreed(prefix: str) -> str:
 def test_agreed_refusals_on_the_buyer_path() -> None:
     i = V["agreedRefusals"]["inputs"]
     assert pairings_of(issued("evm", "charge", i["requestMalformed"])) == refused(_agreed("pairingsOf with an EVM charge"))
-    assert pairings_of(issued("tempo", "charge", i["modesMalformed"])) == refused(_agreed("pairingsOf with a Tempo charge"))
     assert pairings_of({**C_E, "opaque": b64u(i["opaqueNotFlat"])}) == refused(_agreed("pairingsOf with an opaque"))
     assert pairings_of({**C_E, "method": "no-such-method"}) == refused(_agreed("pairingsOf with an intent and method"))
     assert _agreed("pairingsOf with a duplicate credentialTypes") == "no refusal"
@@ -266,19 +267,15 @@ def test_agreed_refusals_on_the_buyer_path() -> None:
         assert (h, position, challenge_id(h, position)) == (h, position, challenge_malformed)
 
 
-# The EVM and Tempo charge builds over the challenges placed with H: C_E; C_E's request without credentialTypes, which
-# offers the transaction and hash pairings; C_T; and C_T's request without supportedModes, which offers memo and push.
-# The payer and the token's EIP-712 domain are mpp-charge-evm-authorization.json's.
+# The EVM charge builds over the challenges placed with H: C_E; and C_E's request without credentialTypes, which offers
+# the transaction and hash pairings. The payer and the token's EIP-712 domain are mpp-charge-evm-authorization.json's.
 _PAYER = load("mpp-charge-evm-authorization.json")["fixed"]
-_R_E, _R_T = json.loads(V["fixed"]["R_E"]), json.loads(V["fixed"]["R_T"])
+_R_E = json.loads(V["fixed"]["R_E"])
 _CALLS = issued("evm", "charge", json.dumps({**_R_E, "methodDetails": {"chainId": _R_E["methodDetails"]["chainId"]}}))
-_PUSH = issued("tempo", "charge", json.dumps({**_R_T, "methodDetails": {"chainId": _R_T["methodDetails"]["chainId"]}}))
 _BUILDS: dict[str, tuple[Any, dict[str, Any], dict[str, Any]]] = {
     "authorization": (MPP_CHARGE_EVM_AUTHORIZATION, C_E, {"tokenDomain": _PAYER["tokenDomain"]}),
     "hash": (MPP_CHARGE_EVM_HASH, _CALLS, {}),
     "transaction": (MPP_CHARGE_EVM_TRANSACTION, _CALLS, {}),
-    "memo": (MPP_CHARGE_TEMPO_MEMO, C_T, {}),
-    "push": (MPP_CHARGE_TEMPO_PUSH, _PUSH, {}),
 }
 
 
@@ -321,42 +318,19 @@ def test_a_charge_build_refuses_an_h_its_challenge_id_does_not_derive_from() -> 
             assert (name, h, binding.build(_choice(name), h)) == (name, h, expect)
 
 
-def _tempo_wire_of(size: int) -> str:
-    """A 0x76 transaction of exactly size bytes on C_T's chain, which memo's complete decodes as bound does: the memo
-    build's call, then one more call to C_T's currency whose input is zero bytes enough to reach size, in
-    rlp([chainId, 1, 2, 100000, calls, [], 0, 0, validBefore, "", currency, "", [], 0x11 × 65])."""
-    request = _built("memo").request
-    calls = [request["call"]["to"], request["call"]["data"]]
-
-    def wire(n: int) -> bytes:
-        both = [(calls[0], calls[1]), (calls[0], "0x" + "00" * n)]
-        call_list = rlp_list([rlp_list([rlp_bytes(bytes.fromhex(t[2:])), rlp_uint_bytes(0), rlp_bytes(bytes.fromhex(d[2:]))]) for t, d in both])
-        fields = [rlp_uint_bytes(request["chainId"]), rlp_uint_bytes(1), rlp_uint_bytes(2), rlp_uint_bytes(100000), call_list, rlp_list([]),
-                  rlp_uint_bytes(0), rlp_uint_bytes(0), rlp_uint_bytes(request["validBefore"]), rlp_bytes(b""),
-                  rlp_bytes(bytes.fromhex(calls[0][2:])), rlp_bytes(b""), rlp_list([]), rlp_bytes(b"\x11" * 65)]  # fmt: skip
-        return b"\x76" + rlp_list(fields)
-
-    for n in range(size - len(wire(0)) - 8, size):
-        w = wire(n)
-        if len(w) == size:
-            return "0x" + w.hex()
-    raise AssertionError(f"no padding gives {size} bytes")
-
-
 @functools.cache
 def _largest_taken(name: str) -> int:
     """The largest signed transaction, in bytes, whose credential bound does not refuse for its size, for the
-    transaction or memo build's challenge: on the transaction pairing, whose bound then gives mpp/no-signed-place and
-    reads no byte of the transaction, so size bytes of 0x11 stand for a signed transaction of that length; on the memo
-    pairing, whose bound then gives H, a 0x76 transaction of that size (_tempo_wire_of). Bisection over 1,024 to 65,536
+    transaction build's challenge: its pairing's bound then gives mpp/no-signed-place and reads no byte of the
+    transaction, so size bytes of 0x11 stand for a signed transaction of that length. Bisection over 1,024 to 65,536
     bytes, with bound the judge."""
     binding, _, _ = _BUILDS[name]
     challenge = _choice(name)["challenge"]
-    chain = (_R_E if name == "transaction" else _R_T)["methodDetails"]["chainId"]
-    ok: object = Refusal("mpp/no-signed-place") if name == "transaction" else H
+    chain = _R_E["methodDetails"]["chainId"]
+    ok: object = Refusal("mpp/no-signed-place")
 
     def taken(size: int) -> bool:
-        wire = "0x" + "11" * size if name == "transaction" else _tempo_wire_of(size)
+        wire = "0x" + "11" * size
         source = f"did:pkh:eip155:{chain}:{_PAYER['payer']}"
         payload = {"type": "transaction", "signature": wire}
         answer = binding.bound({"challenge": challenge, "source": source, "payload": payload})
@@ -378,16 +352,14 @@ def test_a_charge_complete_refuses_an_answer_past_its_bound() -> None:
     not 32 bytes, or a signed transaction whose credential is over the credential size bound, 64 KiB: an answer at each
     bound completes, and one past it is the row's refusal. A signed transaction's bound is the largest whose credential
     bound takes (_largest_taken). The EVM transactions at the bound and past it are EIP-1559 transactions on the
-    challenge's chain, which complete reads, so the size bound alone refuses those past it; the memo's at the bound is a
-    0x76 transaction on its chain."""
+    challenge's chain, which complete reads, so the size bound alone refuses those past it."""
     expect = refused(_agreed("complete with a signature outside 1 to 8192 bytes"))
-    tx, memo = _largest_taken("transaction"), _largest_taken("memo")
-    at_bound = [("authorization", "0x11"), ("authorization", "0x" + "11" * 8192), ("hash", H), ("push", H),
-                ("transaction", _evm_wire_of(tx)), ("memo", _tempo_wire_of(memo))]  # fmt: skip
+    tx = _largest_taken("transaction")
+    at_bound = [("authorization", "0x11"), ("authorization", "0x" + "11" * 8192), ("hash", H),
+                ("transaction", _evm_wire_of(tx))]  # fmt: skip
     past = [("authorization", "0x"), ("authorization", "0x" + "11" * 8193), ("hash", "0x" + "11" * 31),
-            ("push", "0x" + "11" * 33), ("transaction", _evm_wire_of(tx + 1)), ("transaction", _evm_wire_of(48_000)),
-            ("transaction", _evm_wire_of(65_537)), ("memo", _tempo_wire_of(memo + 1)), ("memo", _tempo_wire_of(48_000)),
-            ("memo", "0x" + "11" * 65_537)]  # fmt: skip
+            ("transaction", _evm_wire_of(tx + 1)), ("transaction", _evm_wire_of(48_000)),
+            ("transaction", _evm_wire_of(65_537))]  # fmt: skip
     for name, answer in at_bound:
         assert not isinstance(_built(name).complete(answer), Refusal), (name, len(answer))
     for name, answer in past:

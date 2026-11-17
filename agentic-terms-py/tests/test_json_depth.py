@@ -24,7 +24,6 @@ from integraledger_terms import (
 )
 from integraledger_terms.bindings._codec import MAX_JSON_DEPTH, js_json
 from integraledger_terms.bindings._jose import UNPARSED, json_bytes, json_within_depth, parse_json, within_depth
-from integraledger_terms.bindings.lightning import atr_names_invoice
 from integraledger_terms.bindings.mpp_charge_usdc import usdc_request_hash
 
 CORE = load("core-vectors.json")
@@ -175,17 +174,6 @@ def test_ap2_checkout_payload_nested_past_64_is_too_large() -> None:
 def test_mpp_usdc_request_nested_past_64_is_request_malformed() -> None:
     assert isinstance(usdc_request_hash(b64u(('{"a":' + arrays(63) + "}").encode())), str)
     assert usdc_request_hash(b64u(('{"a":' + arrays(64) + "}").encode())) == Refusal("mpp/request-malformed")
-
-
-def test_lightning_atr_nested_past_64_is_not_read() -> None:
-    def atr(levels: int) -> bytes:
-        head = '{"atrVersion":"1","id":"i","x402":{"accepts":[{"extra":{"invoice":"lnbc1"}}]},"z":'
-        text = head + arrays(levels - 1) + "}"
-        return text.encode("utf-8")
-
-    assert atr_names_invoice(atr(64), "lnbc1") is True
-    assert atr_names_invoice(atr(65), "lnbc1") is False
-    assert json.loads(atr(64))["x402"]["accepts"][0]["extra"]["invoice"] == "lnbc1"
 
 
 def nested_arrays(count: int) -> list[Any]:

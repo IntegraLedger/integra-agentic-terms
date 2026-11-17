@@ -67,12 +67,6 @@ CASES: list[tuple[str, Callable[[], Pairing], int, int]] = [
     ("mpp/charge/evm/authorization", lambda: AUTHORIZATION, EVM_NOW, 8192),
     ("mpp/charge/evm/permit2", lambda: PERMIT2, EVM_NOW, 8192),
     ("mpp/charge/usdc/evm", lambda: EVM_P, EVM_NOW, 8192),
-    (
-        "mpp/session/evm, hash",
-        lambda: evm_pairing({"deposit": EF["deposit"], "credentialType": "hash"}, EvmAnswer()),
-        SESSION_NOW,
-        8192,
-    ),
     ("mpp/session/evm, authorization", lambda: evm_pairing(AUTHORIZATION_INPUTS, EvmAnswer()), SESSION_NOW, 8192),
     ("mpp/session/tempo", lambda: tempo_pairing(TempoAnswer()), SESSION_NOW, 8192),
     ("mpp/subscription/tempo", lambda: SUB_P, SESSION_NOW, 65),

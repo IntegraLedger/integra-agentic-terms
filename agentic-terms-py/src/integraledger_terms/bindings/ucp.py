@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._jose import MIB, js_length, json_bytes
 from ._lcp import agreement_fault, from_lcp_string, is_agreement_url, is_https_link, is_list, is_object, is_other_scheme_link
 from .ap2_checkout_mandate import checkout_binding, checkout_jwt_of
@@ -159,15 +159,16 @@ def _bound_ap2(presented: object) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class UcpAp2Mandate:
     id: str
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read_shown(doc, True)
 
-    def build(self, choice: Json, h: AtrHash) -> UcpUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> UcpUnsigned | Refusal:
         return _build_ap2(choice, h)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _bound_ap2(presented)
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
@@ -179,15 +180,16 @@ class UcpAp2Mandate:
 @dataclass(frozen=True, slots=True)
 class UcpUnsignedPairing:
     id: str
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read_shown(doc, False)
 
-    def build(self, choice: Json, h: AtrHash) -> Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> Refusal:
         return Refusal("ucp/nothing-to-sign")
 
-    def bound(self, presented: Json) -> Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> Refusal:
         return Refusal("ucp/not-buyer-signed")
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:

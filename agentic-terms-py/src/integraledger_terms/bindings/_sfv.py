@@ -1,6 +1,7 @@
 """The RFC 9651 subset the two TAP signature fields need: a Dictionary whose members are Items or Inner Lists, with
 Integer, String, Token, Boolean and Byte Sequence items and parameters. A Decimal, Date or Display String fails. A
-repeated key overwrites the earlier value in its first place."""
+repeated key overwrites the earlier value in its first place. One parameter name is also admitted as keyId, the spelling
+Visa's reference agent writes, and read as keyid; parameters that name both spellings fail."""
 
 from dataclasses import dataclass
 from typing import Literal
@@ -44,6 +45,7 @@ _DIGIT = frozenset("0123456789")
 _KEY = _LC_ALPHA | _DIGIT | frozenset("_-.*")
 _TOKEN = _ALPHA | _DIGIT | frozenset(":/!#$%&'*+-.^_`|~")
 _BASE64 = _ALPHA | _DIGIT | frozenset("+/=")
+KEY_ID_SPELLING = "keyId"
 
 
 class _Parser:
@@ -135,12 +137,24 @@ class _Parser:
 
     def params(self) -> Params | None:
         p: Params = {}
+        key_id_spelled: str | None = None
         while self.at(self.i) == ";":
             self.i += 1
             self.sp()
-            k = self.key()
+            k: str | None
+            after = self.at(self.i + len(KEY_ID_SPELLING))
+            if self.s.startswith(KEY_ID_SPELLING, self.i) and (after == "" or after not in _KEY):
+                self.i += len(KEY_ID_SPELLING)
+                k = KEY_ID_SPELLING
+            else:
+                k = self.key()
             if k is None:
                 return None
+            if k in ("keyid", KEY_ID_SPELLING):
+                if key_id_spelled is not None and key_id_spelled != k:
+                    return None
+                key_id_spelled = k
+                k = "keyid"
             v = Bare("boolean", True)
             if self.at(self.i) == "=":
                 self.i += 1

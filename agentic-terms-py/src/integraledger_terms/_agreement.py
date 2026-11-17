@@ -1,7 +1,8 @@
 """The agreement payment, in two calls. Called without an approved payment, agree asks the agreement URL for its
 challenge and returns the agreement payment for the buyer's agent to approve, signing nothing: the challenge's first
-option, in document order, that the signer can pay with a pairing whose payment is itself a public proof of the ATR
-hash. Called with the payment the agent approved, it signs exactly that payment, sends it, and returns the resource's
+option, in document order, that the signer can pay with a pairing whose payment can itself be the agreement: a pairing
+at coverage full whose registry data holds agreement. The payment is built and checked for the act agreement, so on a
+pairing whose single-use value is H itself it carries the agreement's own value. Called with the payment the agent approved, it signs exactly that payment, sends it, and returns the resource's
 receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is sent
 unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again after
 each 202, 5xx or timeout, each paid request bounded by min(maxTimeoutSeconds, 120) + 60 + 10 seconds and the whole
@@ -26,6 +27,7 @@ from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
 from .bindings._x402 import MAX_OPTIONS, is_offered, timeout_seconds
 from ._types import (
+    agreement_of,
     Advertised,
     AgreementPayment,
     AgreementReceipt,
@@ -229,13 +231,10 @@ def _x402_bindings() -> tuple[Binding, ...]:
         X402_EXACT_EIP155_PERMIT2,
         X402_EXACT_HEDERA,
         X402_EXACT_HEDERA_TRANSFER_EXECUTOR,
-        X402_EXACT_LNBTC,
-        X402_EXACT_LNBTC_INVOICE_NAMED,
         X402_EXACT_NEAR,
         X402_EXACT_POLKADOT_LCP_ASSETS_REMARK,
         X402_EXACT_SOLANA,
         X402_EXACT_STARKNET,
-        X402_EXACT_STELLAR,
         X402_EXACT_SUI,
         X402_EXACT_TRON_LCP_TRC20_MEMO,
         X402_EXACT_TVM,
@@ -261,13 +260,10 @@ def _x402_bindings() -> tuple[Binding, ...]:
         X402_EXACT_EIP155_PERMIT2,
         X402_EXACT_HEDERA,
         X402_EXACT_HEDERA_TRANSFER_EXECUTOR,
-        X402_EXACT_LNBTC,
-        X402_EXACT_LNBTC_INVOICE_NAMED,
         X402_EXACT_NEAR,
         X402_EXACT_POLKADOT_LCP_ASSETS_REMARK,
         X402_EXACT_SOLANA,
         X402_EXACT_STARKNET,
-        X402_EXACT_STELLAR,
         X402_EXACT_SUI,
         X402_EXACT_TRON_LCP_TRC20_MEMO,
         X402_EXACT_TVM,
@@ -294,8 +290,8 @@ def _select(
     required: Mapping[str, Any], account: str, inputs: Inputs, approved: Mapping[str, Any] | None = None
 ) -> _Selected | Declined:
     """The option the agreement is paid with, by the main payment's rule: the options in document order, and the first
-    one the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402
-    pairing, in the protocol package's order, whose read accepts the challenge holding only that option. An option
+    one the signer can pay whose pairing's payment can itself be the agreement (agreement_of). An option's pairing is
+    the first x402 pairing, in the protocol package's order, whose read accepts the challenge holding only that option. An option
     whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it. An accepts that is
     not a list, holds more than 32 entries or holds no mapping serves no option, and is declined offer-unreadable with
     the code the read gives the whole challenge (_unserved_code). With approved, the challenge is checked whole in the
@@ -331,7 +327,7 @@ def _select(
                 break
             if read.code != "x402/no-payable-option" and unreadable is None:
                 unreadable = read.code
-        if found is None or getattr(found[0], "public_proof", False) is not True:
+        if found is None or agreement_of(found[0]) is None:
             continue
         limits = _bounds(option)
         if limits is None:
@@ -344,7 +340,7 @@ def _select(
             unpayable = unpayable if unpayable is not None else chosen.code
             continue
         kept = option if isinstance(option, dict) else dict(option)
-        return _Selected(option=kept, binding=found[0], read=found[1], chosen=chosen, limits=limits)
+        return _Selected(option=kept, binding=found[0], read=found[1], chosen=replace(chosen, act="agreement"), limits=limits)
     if unpayable is None and unreadable is not None:
         return Declined("offer-unreadable", unreadable)
     return Declined("no-payable-option", unpayable if unpayable is not None else "x402/no-payable-option")

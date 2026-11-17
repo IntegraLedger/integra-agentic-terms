@@ -2,11 +2,12 @@
 challenge the seller's server binds. The buyer's deposit carries nothing of this pairing, so nothing is built for the
 buyer to sign."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from ._lcp import from_lcp_string
 from ._mpp import by_type, echoed_for, mpp_broadcaster, read
 from ._mpp_checks import is_external_id
@@ -17,16 +18,17 @@ ID = "mpp/charge/nearintents"
 @dataclass(frozen=True, slots=True)
 class MppChargeNearIntents:
     id: str = ID
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> Refusal:
         """The deposit is not built here: there is nothing for the buyer to sign."""
         return Refusal("mpp/nothing-to-sign")
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """H from the echoed challenge's externalId, for a push credential (type "hash") whose challenge names that
         H. An externalId that is neither absent nor a string is mpp/request-malformed, the code pairings_of gives
         it."""

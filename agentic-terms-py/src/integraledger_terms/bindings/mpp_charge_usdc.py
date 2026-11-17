@@ -9,7 +9,7 @@ from typing import Any
 
 from .._core import AtrHash
 from .._keccak import keccak256
-from .._types import Advertised, Broadcaster, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from ._codec import b58_encode, b64u_decode, canonical_or_none, to_hex
 from ._jose import UNPARSED, parse_json
 from ._lcp import is_address, is_object, normal_hash
@@ -202,15 +202,16 @@ def _evm_bound(presented: Any) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class MppChargeUsdcEvm:
     id: str = EVM
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="1")
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         return _evm_build(choice, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _evm_bound(presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
@@ -363,15 +364,16 @@ def _gateway_bound(presented: Any) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class MppChargeUsdcGateway:
     id: str = GATEWAY
-    public_proof: bool = True
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         return _gateway_build(choice, h)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return _gateway_bound(presented)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:

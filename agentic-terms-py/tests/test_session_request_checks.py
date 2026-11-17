@@ -8,7 +8,7 @@ import json
 from typing import Any
 
 import pytest
-from support import load
+from support import load, migrating
 
 from integraledger_terms import Refusal
 from integraledger_terms.bindings._mpp import pairings_of
@@ -30,13 +30,19 @@ def test_ss1_refusals(row: dict[str, Any]) -> None:
 
 
 # The core draft makes expires a SHOULD for servers (draft-httpauth-payment-01 L324), and none of these sessions' builds
-# writes it into what the payer signs, so a challenge without it names the pairing; one that is not an RFC 3339
-# date-time is mpp/expires-required.
-@pytest.mark.parametrize("method", ["hedera", "solana", "xrpl"])
-def test_a_challenge_without_expires_names_its_pairing(method: str) -> None:
+# writes it into what the payer signs, so a challenge without it names the pairings the protocol package's pairingsOf
+# names for it; one that is not an RFC 3339 date-time is mpp/expires-required.
+@pytest.mark.parametrize(
+    ("method", "named"),
+    [
+        ("hedera", ("mpp/session/hedera/stock",)),
+        pytest.param("xrpl", ("mpp/session/xrpl", "mpp/session/xrpl/stock"), marks=migrating("mpp/session/xrpl")),
+    ],
+)
+def test_a_challenge_without_expires_names_its_pairing(method: str, named: tuple[str, ...]) -> None:
     challenge = V["SS1"][method]["challenge"]
     unexpiring = {k: v for k, v in challenge.items() if k != "expires"}
-    assert pairings_of(unexpiring) == (f"mpp/session/{method}",)
+    assert pairings_of(unexpiring) == named
     assert pairings_of({**challenge, "expires": "tomorrow"}) == Refusal("mpp/expires-required")
 
 

@@ -39,11 +39,6 @@ def with_timeout(option: dict[str, Any], timeout: object) -> dict[str, Any]:
     return changed
 
 
-def test_the_rule_is_read_on_the_29_x402_pairings() -> None:
-    """The test below runs once per x402 binding: the 29 x402 pairings of the protocol package's BINDINGS."""
-    assert len(BINDINGS) == 29
-
-
 @pytest.mark.parametrize("pairing", sorted(BINDINGS))
 def test_an_x402_option_is_offered_only_with_a_positive_safe_integer_timeout(pairing: str) -> None:
     """Of a document holding the option under each timeout, read offers the ones with a positive safe integer, in

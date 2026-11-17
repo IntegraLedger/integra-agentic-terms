@@ -1,8 +1,8 @@
 """The buyer halves of the card pairings card/visa-tap, card/mastercard-vi/immediate, card/mastercard-vi/autonomous and
 card/seller-reference: read, build and bound.
 
-- Visa TAP: the agent sends the hash in an lcp-hash field and lists that field among the covered components of its
-  agent-payer-auth message signature.
+- Visa TAP: the hash rides in what the agent's agent-payer-auth message signature covers: its nonce, the base64 of the
+  hash followed by 32 random bytes, or the merchant's checkout path, whose last segment is the hash.
 - Mastercard Verifiable Intent, Immediate mode: the hash rides in the merchant's checkout_jwt, whose SHA-256 the
   user's L2 mandate signs as checkout_hash.
 - Mastercard Verifiable Intent, Autonomous mode: the hash rides in the checkout_jwt of the agent's L3b checkout
@@ -13,8 +13,10 @@ card/seller-reference: read, build and bound.
 Only the Autonomous mode's bound verifies a signature.
 """
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from secrets import token_bytes
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
@@ -23,8 +25,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Json, Refusal
-from ._codec import b64u_decode, text_encode
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
+from ._codec import b64_decode, b64_encode, b64u_decode, text_encode
 from ._jose import (
     SdJwt,
     SdJwtBounds,
@@ -39,7 +41,6 @@ from ._jose import (
 from ._lcp import (
     AgreementFault,
     agreement_in,
-    is_list,
     is_object,
     legal_context_info,
     normal_hash,
@@ -51,12 +52,13 @@ VI_IMMEDIATE = "card/mastercard-vi/immediate"
 VI_AUTONOMOUS = "card/mastercard-vi/autonomous"
 SELLER_REFERENCE = "card/seller-reference"
 
-TAP_FIELD = "lcp-hash"
 MAX_LINK = 2048
 MAX_TAP_FIELD = 8192
 MAX_TAP_MEMBERS = 16
 MAX_TAP_COMPONENTS = 32
-MAX_TAP_HASH_LINE = 256
+MAX_TAP_PATH = 2048
+# The bytes of a nonce that carries the hash: the hash, then 32 random bytes.
+NONCE_BYTES = 64
 MAX_VI_LAYER = 65_536
 MAX_CHECKOUT_JWT = 16_384
 MAX_VI_DISCLOSURES = 32
@@ -166,24 +168,50 @@ def _is_payer(m: Member) -> bool:
     return tag is not None and tag.t == "string" and tag.v == PAYER_TAG
 
 
-def _is_bare_hash_component(it: Item) -> bool:
-    """The String lcp-hash with no parameters."""
-    return it.item.t == "string" and it.item.v == TAP_FIELD and len(it.params) == 0
+def _is_bare_path_component(it: Item) -> bool:
+    """The String @path with no parameters."""
+    return it.item.t == "string" and it.item.v == "@path" and len(it.params) == 0
 
 
-def _trim_sp_htab(text: str) -> str:
-    return text.strip(" \t")
+def _is_visible_ascii(text: str) -> bool:
+    return all(0x21 <= ord(c) <= 0x7E for c in text)
+
+
+def _hash_in_nonce(nonce: str) -> AtrHash | None:
+    """The hash a nonce carries: the first 32 of the 64 bytes it is the padded base64 of, or None for any other nonce."""
+    data = b64_decode(nonce)
+    return None if data is None or len(data) != NONCE_BYTES else "0x" + data[:32].hex()
+
+
+_PATH_HASH = re.compile(r"0x[0-9a-f]{64}")
+
+
+def _hash_in_path(path: str) -> AtrHash | None:
+    """The hash a path carries: its last segment where that is 0x and 64 lowercase hex digits, or None."""
+    last = path[path.rfind("/") + 1 :]
+    return last if _PATH_HASH.fullmatch(last) else None
+
+
+def tap_build(h: AtrHash) -> dict[str, Any] | Refusal:
+    """The nonce for the agent's signer to place in every message signature of its checkout request: the padded base64
+    of the hash's 32 bytes followed by 32 bytes drawn at random."""
+    value = normal_hash(h)
+    if value is None:
+        return Refusal("card/legal-context-malformed")
+    return {"nonce": b64_encode(bytes.fromhex(value[2:]) + token_bytes(NONCE_BYTES - 32))}
 
 
 def tap_bound(presented: object) -> AtrHash | Refusal:
-    """The hash from a TAP payment request: the one lcp-hash line, when every agent-payer-auth signature lists
-    "lcp-hash" without parameters and one of them has its Signature member, so whichever payer signature the seller's
-    recognition verifies covers the hash. No signature, key, window or nonce is verified."""
+    """The hash from a TAP request: every agent-payer-auth signature carries it, by @path, listed with no parameters,
+    where the request's path ends in a segment that is the hash, the nonce then not read, since a stock agent draws its
+    nonce at random and may draw 64 bytes; or otherwise by its nonce, the padded base64 of 64 bytes whose first 32 are
+    the hash. Each such signature carries the same hash, and one of them has its Signature member, so whichever the
+    merchant's recognition verifies covers the hash. No signature, key, window or nonce use is verified."""
     if not is_object(presented):
         return Refusal("card/tap-signature-input-malformed")
     signature_input = presented.get("signatureInput")
     signature = presented.get("signature")
-    lcp_hash = presented.get("lcpHash")
+    path = presented.get("path")
 
     if not isinstance(signature_input, str):
         return Refusal("card/tap-signature-input-malformed")
@@ -205,27 +233,34 @@ def tap_bound(presented: object) -> AtrHash | Refusal:
     if not isinstance(signatures, dict) or not _is_signature_set(signatures):
         return Refusal("card/tap-signature-malformed")
 
-    payers = [(label, m) for label, m in inputs.items() if _is_payer(m)]
+    by_path_hash: AtrHash | None = None
+    if path is not None:
+        if not isinstance(path, str):
+            return Refusal("card/tap-path-malformed")
+        if js_length(path) > MAX_TAP_PATH:
+            return Refusal("card/too-large")
+        if not path.startswith("/") or not _is_visible_ascii(path):
+            return Refusal("card/tap-path-malformed")
+        by_path_hash = _hash_in_path(path)
+
+    payers = [(label, m) for label, m in inputs.items() if _is_payer(m) and isinstance(m, InnerList)]
     if not payers:
         return Refusal("card/tap-no-payer-signature")
-    if not all(isinstance(m, InnerList) and any(map(_is_bare_hash_component, m.list)) for _, m in payers):
-        return Refusal("card/tap-hash-not-covered")
+    h: AtrHash | None = None
+    for _, m in payers:
+        nonce = m.params.get("nonce")
+        if nonce is not None and nonce.t != "string":
+            return Refusal("card/tap-nonce-malformed")
+        by_path = by_path_hash if by_path_hash is not None and any(map(_is_bare_path_component, m.list)) else None
+        carried = by_path if by_path is not None else (None if nonce is None else _hash_in_nonce(str(nonce.v)))
+        if carried is None:
+            return Refusal("card/tap-hash-not-covered")
+        if h is not None and carried != h:
+            return Refusal("card/tap-hash-conflict")
+        h = carried
     if not any(label in signatures for label, _ in payers):
         return Refusal("card/tap-signature-missing")
-
-    if not is_list(lcp_hash):
-        return Refusal("card/tap-field-malformed")
-    if len(lcp_hash) == 0:
-        return Refusal("card/tap-field-missing")
-    if len(lcp_hash) > 1:
-        return Refusal("card/tap-field-repeated")
-    line = lcp_hash[0]
-    if not isinstance(line, str):
-        return Refusal("card/tap-field-malformed")
-    if js_length(line) > MAX_TAP_HASH_LINE:
-        return Refusal("card/too-large")
-    h = normal_hash(_trim_sp_htab(line))
-    return h if h is not None else Refusal("card/tap-field-malformed")
+    return h if h is not None else Refusal("card/tap-no-payer-signature")
 
 
 # ── Verifiable Intent ──
@@ -398,19 +433,17 @@ def vi_autonomous_bound(presented: object) -> AtrHash | Refusal:
 @dataclass(frozen=True, slots=True)
 class CardVisaTap:
     id: str = VISA_TAP
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_shown(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> dict[str, Any] | Refusal:
-        """The field for the agent's signer to add and list in its agent-payer-auth signature."""
-        value = normal_hash(h)
-        if value is None:
-            return Refusal("card/legal-context-malformed")
-        return {"field": TAP_FIELD, "value": value, "component": TAP_FIELD}
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
+        """The nonce for the agent's signer to place in every message signature of its checkout request."""
+        return tap_build(h)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return tap_bound(presented)
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
@@ -422,15 +455,16 @@ class CardVisaTap:
 @dataclass(frozen=True, slots=True)
 class CardMastercardViImmediate:
     id: str = VI_IMMEDIATE
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_checkout_shown(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> dict[str, Any] | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
         return vi_build(choice, h)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the checkout_jwt of the one checkout mandate the user's L2 references. Its checkout_hash, and
         a referenced payment mandate's transaction_id, must be that checkout_jwt's digest. No signature is
         verified."""
@@ -450,15 +484,16 @@ class CardMastercardViImmediate:
 @dataclass(frozen=True, slots=True)
 class CardMastercardViAutonomous:
     id: str = VI_AUTONOMOUS
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_checkout_shown(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> dict[str, Any] | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
         return vi_build(choice, h)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return vi_autonomous_bound(presented)
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
@@ -470,15 +505,16 @@ class CardMastercardViAutonomous:
 @dataclass(frozen=True, slots=True)
 class CardSellerReference:
     id: str = SELLER_REFERENCE
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_shown(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> Refusal:
         return Refusal("card/no-signed-place")
 
-    def bound(self, presented: Json) -> Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> Refusal:
         return Refusal("card/no-signed-place")
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:

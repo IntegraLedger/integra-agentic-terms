@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._batch import SCHEME, U128_LIMIT, batch_broadcaster, is_delay, is_hex_signature, payable, payload_of
 from ._batch_evm import (
     ERC3009_DEPOSIT_COLLECTOR,
@@ -375,16 +375,17 @@ def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
 @dataclass(frozen=True, slots=True)
 class X402BatchSettlementEip155:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when the legal context names one, and the options this pairing can pay."""
         return read_for(_FILTER)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> BatchUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> BatchUnsigned | Refusal:
         return build(choice, h)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         return bound(presented)
 
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:

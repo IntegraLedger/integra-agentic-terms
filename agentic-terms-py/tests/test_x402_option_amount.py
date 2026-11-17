@@ -50,11 +50,6 @@ def offered(pairing: str, *options: Any) -> Any:
     return answer if isinstance(answer, Refusal) else answer.offer["options"]
 
 
-def test_the_rule_is_read_on_the_29_x402_pairings() -> None:
-    """The test below runs once per x402 binding: the 29 x402 pairings of the protocol package's BINDINGS."""
-    assert len(BINDINGS) == 29
-
-
 @pytest.mark.parametrize("pairing", sorted(BINDINGS))
 def test_an_x402_option_is_offered_only_with_an_amount_that_is_a_positive_integer(pairing: str) -> None:
     """The option set to "10" is offered; set to any amount outside the rule it is not, but for "0" on the two

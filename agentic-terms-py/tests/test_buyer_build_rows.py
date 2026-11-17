@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 from breadth import Recording, run
-from support import BUYER, Link
+from support import BUYER, Link, migrating
 
 import integraledger_terms as terms
 from integraledger_terms import Confirmed, Declined, Refusal, _gate, confirm, transact
@@ -19,7 +19,7 @@ from integraledger_terms.bindings._mpp import check_challenge
 BINDINGS: dict[str, Any] = {
     v.id: v for n in dir(terms) if n.isupper() and hasattr(v := getattr(terms, n), "id") and hasattr(v, "bound")
 }
-ROWS = [r for r in BUYER["rows"] if r["name"] in ("BS1", "BS2", "BX1")]
+ROWS = [r for r in BUYER["rows"] if r["name"] == "BX1"]
 CASES = [(r, c) for r in ROWS for c in r["input"]["cases"]]
 
 
@@ -27,11 +27,14 @@ def serving(body: bytes) -> Link:
     return Link(lambda request: httpx.Response(200, content=body))
 
 
-def test_the_file_holds_bs1_bs2_and_bx1() -> None:
-    assert [r["name"] for r in ROWS] == ["BS1", "BS2", "BX1"]
+def test_the_file_holds_bx1() -> None:
+    assert [r["name"] for r in ROWS] == ["BX1"]
 
 
-@pytest.mark.parametrize(("row", "case"), CASES, ids=[f"{r['name']} {c['case']}" for r, c in CASES])
+@pytest.mark.parametrize(
+    ("row", "case"),
+    [pytest.param(r, c, id=f"{r['name']} {c['case']}", marks=migrating(r["input"]["pairing"])) for r, c in CASES],
+)
 def test_build_row(row: dict[str, Any], case: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     given = row["input"]
     if "now" in given:
