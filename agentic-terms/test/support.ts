@@ -68,7 +68,6 @@ function fromHexBytes(h: string): Uint8Array {
  */
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["acp-allowance", ["acp/checkout/delegated"]],
-  ["algorand-txn", ["x402/exact/algorand"]],
   ["ap2-checkout-mandate", ["ap2/checkout-mandate"]],
   ["aptos-transaction", ["x402/exact/aptos"]],
   ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
@@ -81,10 +80,8 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
   ],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
   ["hedera-body", ["x402/exact/hedera"]],
-  ["hedera-executor", ["x402/exact/hedera/transfer-executor"]],
   ["near-delegate", ["x402/exact/near"]],
   ["solana-message", ["mpp/charge/solana", "mpp/charge/usdc/solana", "x402/exact/solana", "x402/upto/solana"]],
-  ["stacks-contract-call", ["mpp/charge/usdc/stacks"]],
   ["starknet-snip12", ["x402/exact/starknet"]],
   ["substrate-call", ["x402/exact/polkadot/lcp-assets-remark"]],
   ["sui-transaction", ["x402/exact/sui"]],

@@ -144,7 +144,8 @@ describe("mpp/charge/usdc/stacks", () => {
   const p: Pairing = {
     binding: chargeUsdcStacks as unknown as Binding,
     doc: docOf(chargeUsdcStacks, issued("usdc", "charge", f.request, f.realm, f.expires)),
-    placed: (h) => docOf(chargeUsdcStacks, issued("usdc", "charge", f.request, f.realm, f.expires), undefined, h),
+    // No gate-level half over a JSON ATR: the wallet's answer is M4's recorded transaction, signed over the vector's H,
+    // so it can carry no other ATR's hash; the gate's summary of this request is shown in summary-sol.test.ts.
     account: `${f.network}:${f.sender}`,
     answer: async (r) => {
       if (r.kind !== "stacks-contract-call") throw new Error(r.kind);

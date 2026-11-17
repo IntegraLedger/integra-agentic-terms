@@ -170,22 +170,15 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `mpp/charge/evm/permit2` | | | | | | |
     | `mpp/charge/lightning` | | | | | | |
     | `mpp/charge/nearintents` | | | | | | |
-    | `mpp/charge/solana` | | | | | | |
-    | `mpp/charge/solana/unsponsored` | | | | | | |
     | `mpp/charge/stripe` | | | | | | |
     | `mpp/charge/tempo/split-memo` | | | | | | |
     | `mpp/charge/tempo/split-memo/push` | | | | | | |
     | `mpp/charge/usdc/gateway` | | | | | | |
-    | `mpp/charge/usdc/solana` | | | | | | |
-    | `mpp/charge/usdc/stacks` | | | | | | |
-    | `mpp/charge/xrpl` | | | | | | |
     | `mpp/session/evm` | | | | | | |
     | `mpp/session/hedera/stock` | | | | | | |
     | `mpp/session/lightning` | | | | | | |
-    | `mpp/session/solana/memo` | | | | | | |
     | `mpp/session/solana/stock` | | | | | | |
     | `mpp/session/tempo` | | | | | | |
-    | `mpp/session/xrpl` | | | | | | |
     | `mpp/session/xrpl/stock` | | | | | | |
     | `mpp/subscription/solana` | | | | | | |
     | `mpp/subscription/stripe` | | | | | | |
@@ -199,24 +192,27 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `x402/batch-settlement/cloudflare` | | | | | | |
     | `x402/batch-settlement/eip155` | | | | | | |
     | `x402/batch-settlement/solana` | | | | | | |
-    | `x402/exact/algorand` | | | | | | |
     | `x402/exact/aptos` | | | | | | |
     | `x402/exact/cardano` | | | | | | |
     | `x402/exact/cardano/lock` | | | | | | |
     | `x402/exact/casper` | | | | | | |
     | `x402/exact/ccd` | | | | | | |
     | `x402/exact/eip155/gateway-batched` | | | | | | |
-    | `x402/exact/hedera` | | | | | | |
-    | `x402/exact/hedera/transfer-executor` | | | | | | |
     | `x402/exact/near` | | | | | | |
     | `x402/exact/polkadot/lcp-assets-remark` | | | | | | |
-    | `x402/exact/solana` | | | | | | |
     | `x402/exact/starknet` | | | | | | |
     | `x402/exact/sui` | | | | | | |
     | `x402/exact/tron/lcp-trc20-memo` | | | | | | |
     | `x402/exact/tvm` | | | | | | |
-    | `x402/exact/xrpl` | | | | | | |
-    | `x402/upto/solana` | | | | | | |
+    | `solana-message`, token or SOL transfers: `x402/exact/solana`, `mpp/charge/solana`, `mpp/charge/solana/unsponsored`, `mpp/charge/usdc/solana` | `amount`: the sum of the transfers | each `TransferChecked`'s destination token account, or each System `transfer`'s recipient, with its amount | the `TransferChecked`'s mint, or `sol` for a System `transfer`; one asset | the signer's account's network: the request names none | none to none, `block`: the blockhash bounds it for the pairing's `read.life` | none. The message holds only Compute Budget and Memo instructions and these transfers, read with the protocol package's decoder; any other instruction, a durable nonce's `AdvanceNonceAccount` among them, or an account loaded from an address table, gives no summary |
+    | `solana-message`, a payment-channels `open`: `x402/upto/solana` | `maximum`: the `open`'s deposit | the `open`'s distribution, each recipient with its basis points of the deposit, the points summing to 10,000; the channel's payee, its third account, with the whole where it names none | the `open`'s mint, its fourth account | the signer's account's network: the request names none | none to none, `block`, as above | `deposit`: the `open`'s deposit. The message holds only Compute Budget and Memo instructions and the one `open` |
+    | `solana-session-open`: `mpp/session/solana/memo` | none: the vouchers that charge the channel are signed apart | as the row above | as the row above | the signer's account's network: the request names none | none to none, `block`, as above | `deposit`: the `open`'s deposit. Who may close is the payment-channels program's rule, which the `open`'s bytes do not state |
+    | `xrpl-tx`, a `Payment` of XRP: `x402/exact/xrpl`, `mpp/charge/xrpl` | `amount`: `Amount`, in drops | `Destination`, with `Amount` | `XRP`; an issued currency's `Amount`, a decimal value with no base unit, gives no summary | `xrpl:` and `NetworkID` where the transaction sets one; otherwise the signer's account's network: the request names none | none to `LastLedgerSequence`, `ledger` | none. `Flags` is 0, and a member other than those the protocol package writes gives no summary |
+    | `xrpl-session-open`: `mpp/session/xrpl` | `amount`: the first claim's drops, its bytes `CLM\0`, the channel the `PaymentChannelCreate` makes, and the drops as a big-endian u64 | `Destination`, with the claim's drops | `XRP` | as the row above | none to `LastLedgerSequence`, `ledger` | `deposit`: `Amount`; `closableBy`: `Account` and `Destination`, the destination at any time and the source once `SettleDelay` has passed (xrpl.org, `PaymentChannelClaim`); `end`: `CancelAfter` plus 946,684,800, in Unix seconds, where set |
+    | `algorand-txn`, an asset transfer: `x402/exact/algorand` | `amount`: `aamt`, 0 where absent | `arcv`'s address, with `aamt` | `xaid`, as a decimal | `algorand:` and the first 32 characters of `gh` in URL-safe base64 | `fv` to `lv`, `round` | none. `type` is `axfer`; a `rekey`, `aclose` or `asnd`, or any member an asset transfer does not need, gives no summary |
+    | `stacks-contract-call`: `mpp/charge/usdc/stacks` | `amount`: `args.amount` | `args.recipient`, with `args.amount` | `contract` | `stacks:` and `chainId` | none to none: a Stacks transaction signs no expiry | none. `functionName` is `transfer`, `postCondition` `SentEq` and `postConditionMode` `deny`, so the call moves the amount and nothing else |
+    | `hedera-body`, a crypto transfer: `x402/exact/hedera`, `mpp/charge/lcp/hedera` | `amount`: the sum of the credits | each row the transfer credits, with its credit | `0.0.0` for HBAR, or the token's id; one asset | the signer's account's network: the request names none | the transaction id's valid start to that plus `transactionValidDuration`, `seconds` | none. The body holds only `transactionID`, `nodeAccountID`, `transactionFee`, `transactionValidDuration`, `memo` and `cryptoTransfer` |
+    | `hedera-executor`: `x402/exact/hedera/transfer-executor` | `amount`: `amount` | `payTo`, with `amount` | `asset` | `network` | none to `validBefore`, `seconds` | `grant`: `{executors, asset, payTo, amount}`, the authorization the executor tooling is asked for |
 
 14. **Not fixed here.** The names of `mpp/charge/usdc/gateway`'s floor inputs are those lcp's build takes once it signs `maxBlockHeight` from Gateway's `burnIntentExpirationHeight` and the wallet's `withdrawalDelay`; lcp's build does not take them yet, the buyer's own Gateway client choosing `maxBlockHeight`.
 

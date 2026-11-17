@@ -9,6 +9,11 @@ import type { Inputs, SigningRequest, Summary } from "./types.js";
 import { exactPermit2, uptoPermit2 } from "./summary/eip712.js";
 import { erc20Transfer } from "./summary/evm-call.js";
 import { keyAuthorization } from "./summary/tempo-key-authorization.js";
+import { algorandTransfer } from "./summary/algorand-txn.js";
+import { hederaExecutor, hederaTransfer } from "./summary/hedera-body.js";
+import { solanaSessionOpen, solanaTransfer, solanaUptoOpen } from "./summary/solana-message.js";
+import { stacksTransfer } from "./summary/stacks-contract-call.js";
+import { xrplPayment, xrplSessionOpen } from "./summary/xrpl-tx.js";
 
 /** A summary without the ATR's bytes, which the gate adds. */
 export type Shown = Omit<Summary, "atr">;
@@ -97,6 +102,20 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["mpp/charge/evm/hash", { show: erc20Transfer }],
   ["mpp/charge/evm/transaction", { show: erc20Transfer }],
   ["mpp/subscription/tempo", { show: keyAuthorization }],
+  ["x402/exact/solana", { show: solanaTransfer }],
+  ["mpp/charge/solana", { show: solanaTransfer }],
+  ["mpp/charge/solana/unsponsored", { show: solanaTransfer }],
+  ["mpp/charge/usdc/solana", { show: solanaTransfer }],
+  ["x402/upto/solana", { show: solanaUptoOpen }],
+  ["mpp/session/solana/memo", { show: solanaSessionOpen }],
+  ["x402/exact/xrpl", { show: xrplPayment }],
+  ["mpp/charge/xrpl", { show: xrplPayment }],
+  ["mpp/session/xrpl", { show: xrplSessionOpen }],
+  ["x402/exact/algorand", { show: algorandTransfer }],
+  ["mpp/charge/usdc/stacks", { show: stacksTransfer }],
+  ["x402/exact/hedera", { show: hederaTransfer }],
+  ["mpp/charge/lcp/hedera", { show: hederaTransfer }],
+  ["x402/exact/hedera/transfer-executor", { show: hederaExecutor }],
 ]);
 
 /**
