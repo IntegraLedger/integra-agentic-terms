@@ -23,6 +23,7 @@ from ._ton_tlb import (
     is_state_init,
     load_address,
     load_maybe_address,
+    Message,
     message_of,
     raw_address,
     store_address,
@@ -136,21 +137,43 @@ def _comment_hash(c: Cell) -> AtrHash | None:
     return from_lcp_string(text)
 
 
-def _jetton_payload(body: Cell) -> Cell | None | Refusal:
-    """The forward payload of a Jetton transfer body, which must be a reference; None when it is inline."""
+@dataclass(frozen=True, slots=True)
+class _JettonTransfer:
+    """A Jetton transfer body's fields up to and including its forward payload, None where it is inline."""
+
+    query_id: int
+    amount: int
+    destination: Address
+    response_destination: Address | None
+    custom_payload: Cell | None
+    forward_ton_amount: int
+    payload: Cell | None
+
+
+def _jetton_transfer(body: Cell) -> _JettonTransfer | Refusal:
+    """The Jetton transfer body's fields up to and including its forward payload, which must be a reference."""
     try:
         s = body.slice()
         if s.remaining_bits < 32 or s.uint(32) != OP_JETTON_TRANSFER:
             return Refusal("tvm/not-jetton-transfer")
-        s.uint(64)
-        s.coins()
-        load_address(s)
-        load_maybe_address(s)
-        s.maybe_ref()
-        s.coins()
-        return s.ref() if s.bit() else None
+        query_id = s.uint(64)
+        amount = s.coins()
+        destination = load_address(s)
+        response_destination = load_maybe_address(s)
+        custom_payload = s.maybe_ref()
+        forward_ton_amount = s.coins()
+        payload = s.ref() if s.bit() else None
     except Malformed:
         return Refusal("tvm/not-jetton-transfer")
+    return _JettonTransfer(
+        query_id, amount, destination, response_destination, custom_payload, forward_ton_amount, payload
+    )
+
+
+def _jetton_payload(body: Cell) -> Cell | None | Refusal:
+    """The forward payload of a Jetton transfer body, which must be a reference; None when it is inline."""
+    transfer = _jetton_transfer(body)
+    return transfer if isinstance(transfer, Refusal) else transfer.payload
 
 
 def _send_message(actions: Cell) -> tuple[int, Cell] | Refusal:
@@ -208,11 +231,36 @@ def _carrier_in(root: Cell, config: TonConfiguration) -> tuple[AtrHash, Cell] | 
         op = body.slice()
         if op.remaining_bits < 32 or op.uint(32) != OP_INTERNAL_SIGNED or body.length < _REQUEST_MIN_BITS:
             return Refusal("tvm/not-w5-signed")
-        s = Cell(body.value >> SIGNATURE_BITS, body.length - SIGNATURE_BITS, body.refs).slice()
+        signed = Cell(body.value >> SIGNATURE_BITS, body.length - SIGNATURE_BITS, body.refs)
+    except Malformed:
+        return Refusal("tvm/not-w5-signed")
+    r = _request_in(signed, message.dest, config)
+    return r if isinstance(r, Refusal) else (r.h, r.payload)
+
+
+@dataclass(frozen=True, slots=True)
+class _Request:
+    """A W5 request less its signature, as _request_in reads it."""
+
+    h: AtrHash
+    wallet_id: int
+    valid_until: int
+    seqno: int
+    mode: int
+    out: Message
+    transfer: _JettonTransfer
+    payload: Cell
+
+
+def _request_in(signed: Cell, sender: Address | None, config: TonConfiguration) -> _Request | Refusal:
+    """A W5 request less its signature, read as _carrier_in reads the signed part of a settlement message's body, its
+    outgoing message read as one the account sender sends, where sender is known."""
+    try:
+        s = signed.slice()
         s.uint(32)
-        s.uint(32)
-        s.uint(32)
-        s.uint(32)
+        wallet_id = s.uint(32)
+        valid_until = s.uint(32)
+        seqno = s.uint(32)
         actions = s.maybe_ref()
         has_other_actions = s.bit()
         if actions is None or has_other_actions:
@@ -225,20 +273,99 @@ def _carrier_in(root: Cell, config: TonConfiguration) -> tuple[AtrHash, Cell] | 
     mode, sent = send
     if mode not in SCHEME_SEND_MODES:
         return Refusal("tvm/actions")
-    out = message_of(sent, message.dest, config)
+    out = message_of(sent, sender, config)
     if out is None:
         return Refusal("tvm/not-jetton-transfer")
     # The scheme's message to the Jetton wallet is bounceable; the stock codec refuses one that is not as it refuses a
     # wrong mode (@x402/tvm 2.30.0 src/exact/codec.ts:61).
     if not out.bounce:
         return Refusal("tvm/actions")
-    payload = _jetton_payload(out.body)
-    if isinstance(payload, Refusal):
-        return payload
-    if payload is None:
+    transfer = _jetton_transfer(out.body)
+    if isinstance(transfer, Refusal):
+        return transfer
+    if transfer.payload is None:
         return Refusal("tvm/payload-not-lcp")
-    h = _comment_hash(payload)
-    return (h, payload) if h is not None else Refusal("tvm/payload-not-lcp")
+    h = _comment_hash(transfer.payload)
+    if h is None:
+        return Refusal("tvm/payload-not-lcp")
+    return _Request(h, wallet_id, valid_until, seqno, mode, out, transfer, transfer.payload)
+
+
+def _raw_text(a: Address) -> str:
+    """An address as raw text, the workchain in decimal and the hash in lowercase hex."""
+    return f"{a.workchain}:{a.hash.hex()}"
+
+
+@dataclass(frozen=True, slots=True)
+class TvmRequest:
+    """What tvm_request reads of a ton-w5 request's W5 request, as @integraledger/lcp's tvmRequest gives it: hash, the
+    root cell's representation hash, which is the request's hash when the text is its signedBoc; the wallet id,
+    valid_until, the sequence number and the one action's send mode; of the one message that action sends, its
+    destination (jetton_wallet), the nanotons it attaches, its extra-currency dictionary where it attaches one, and its
+    state init, where it carries one, as a base64 bag of cells; and of the Jetton transfer it carries, the query id,
+    amount, the destination (pay_to), the response destination or None for addr_none, the custom payload where it
+    carries one, as a base64 bag of cells, the forward TON amount and the hash the forward payload's comment holds.
+    Addresses are raw. Where lcp lists each extra currency by its id, extra holds the dictionary: at both
+    configurations a message may attach none, so message_of refuses one that does, and extra is always None here."""
+
+    hash: bytes
+    wallet_id: int
+    valid_until: int
+    seqno: int
+    mode: int
+    jetton_wallet: str
+    attach_nanotons: int
+    extra: Cell | None
+    state_init: str | None
+    query_id: int
+    amount: str
+    pay_to: str
+    response_destination: str | None
+    custom_payload: str | None
+    forward_ton_amount: str
+    h: AtrHash
+
+
+def tvm_request(signed_boc: object, network: object) -> TvmRequest | Refusal:
+    """Reads the W5 request a ton-w5 request carries, signed_boc, as tvm_carrier reads the signed part of a settlement
+    message's body at the network's configuration, with its codes. The root must be an ordinary cell whose op is
+    internal_signed, or it is tvm/not-w5-signed. A request holds one action, sending one Jetton transfer, or it is
+    refused, so nothing else runs under the signature; W5 reads nothing after has_other_actions, and neither does this.
+    The request names no wallet, so the message's source is read as the settlement message's sender is, by its form
+    alone. The network is tvm:-239 (mainnet) or tvm:-3 (testnet), and any other is tvm/network-malformed."""
+    config = _CONFIGURATIONS.get(network) if isinstance(network, str) else None
+    if config is None:
+        return Refusal("tvm/network-malformed")
+    root = root_of(signed_boc)
+    if isinstance(root, Refusal):
+        return root
+    try:
+        if root.exotic or root.length < 32 or root.slice().uint(32) != OP_INTERNAL_SIGNED:
+            return Refusal("tvm/not-w5-signed")
+    except Malformed:
+        return Refusal("tvm/not-w5-signed")
+    r = _request_in(root, None, config)
+    if isinstance(r, Refusal):
+        return r
+    t = r.transfer
+    return TvmRequest(
+        hash=root.hash,
+        wallet_id=r.wallet_id,
+        valid_until=r.valid_until,
+        seqno=r.seqno,
+        mode=r.mode,
+        jetton_wallet=_raw_text(r.out.dest),
+        attach_nanotons=r.out.value,
+        extra=r.out.extra,
+        state_init=None if r.out.init is None else boc_of(r.out.init),
+        query_id=t.query_id,
+        amount=str(t.amount),
+        pay_to=_raw_text(t.destination),
+        response_destination=None if t.response_destination is None else _raw_text(t.response_destination),
+        custom_payload=None if t.custom_payload is None else boc_of(t.custom_payload),
+        forward_ton_amount=str(t.forward_ton_amount),
+        h=r.h,
+    )
 
 
 def _decimal_below(value: object, limit: int) -> int | None:
@@ -294,8 +421,9 @@ def _uint32(value: object) -> int | None:
 
 @dataclass(frozen=True, slots=True)
 class TvmUnsigned:
-    """The 32-byte representation hash of the W5 request the wallet key signs, and how the signature completes the
-    payment."""
+    """What the wallet key signs, the request: signedBoc, the W5 request less its signature as a base64 bag of cells of
+    one root, and hash, that root cell's 32-byte representation hash, which tvm_request reads; and how the signature
+    completes the payment."""
 
     request: dict[str, Any]
     _request_cell: Cell
@@ -429,7 +557,7 @@ class X402ExactTvm:
         ):
             return Refusal("x402/option-malformed")
         return TvmUnsigned(
-            request={"kind": "ton-w5", "hash": request.hash},
+            request={"kind": "ton-w5", "hash": request.hash, "signedBoc": boc_of(request)},
             _request_cell=request,
             _wallet=wallet,
             _init=init_cell,

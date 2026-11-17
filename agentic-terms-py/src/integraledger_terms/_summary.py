@@ -32,6 +32,7 @@ from ._summary_sol import (
     xrpl_payment,
     xrpl_session_open,
 )
+from ._summary_hash import near_delegate, near_start, ton_w5, tron_txid
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
@@ -162,6 +163,9 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/hedera": SummaryEntry(show=hedera_transfer),
     "mpp/charge/lcp/hedera": SummaryEntry(show=hedera_transfer),
     "x402/exact/hedera/transfer-executor": SummaryEntry(show=hedera_executor),
+    "x402/exact/near": SummaryEntry(show=near_delegate, start=near_start),
+    "x402/exact/tron/lcp-trc20-memo": SummaryEntry(show=tron_txid),
+    "x402/exact/tvm": SummaryEntry(show=ton_w5),
 }
 
 

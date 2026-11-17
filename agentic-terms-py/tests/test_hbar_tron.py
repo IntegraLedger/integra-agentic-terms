@@ -42,6 +42,7 @@ TRON = Pairing(
     account=f"{F['O']['network']}:{F['payer']}",
     answer=tron_answer,
     inputs={"refBlock": {"number": F["refBlock"]["number"], "id": F["refBlock"]["id"]}, "feeLimit": F["feeLimit"]},
+    placed=lambda h: x402_doc(F["O"], F["resource"], h),
 )
 
 
@@ -130,6 +131,28 @@ def test_x402_exact_tron_lcp_trc20_memo_v2_build_and_complete() -> None:
     assert T["V2"]["expectRawHex"][4:8] == T["V2"]["expectRefBlockBytes"]
     signed = unsigned.complete(bytes.fromhex(T["V2"]["expectSignature"]))
     assert signed == T["V2"]["expectPayload"]
+
+
+def test_x402_exact_tron_lcp_trc20_memo_v2_the_request_carries_its_raw_data_and_tron_request_reads_it() -> None:
+    """expectRawHex is raw_data encoded by hand from TRON's protobuf schema, and expectTxid its SHA-256 by hashlib (V2's
+    case); tron_request reads the request's raw data to V2's members, as the protocol package's tronRequest does."""
+    from integraledger_terms.bindings.x402_exact_tron_lcp_trc20_memo import tron_request
+
+    unsigned = BINDING.build(tron_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    assert unsigned.request["rawBytes"].hex() == T["V2"]["expectRawHex"]
+    r = tron_request(unsigned.request["rawBytes"])
+    assert not isinstance(r, Refusal), r
+    assert "0x" + r.txid.hex() == T["V2"]["expectTxid"]
+    assert r.raw.ref_block_bytes.hex() == T["V2"]["expectRefBlockBytes"]
+    assert r.raw.ref_block_hash.hex() == T["V2"]["expectRefBlockHash"]
+    ref = T["V3"]["expectReference"]
+    assert (r.payer, r.asset, r.pay_to, r.amount, r.h) == (
+        ref["payer"], F["O"]["asset"], F["O"]["payTo"], F["O"]["amount"], F["H"]
+    )  # fmt: skip
+    assert (str(r.raw.expiration), str(r.raw.timestamp), str(r.raw.fee_limit)) == (
+        ref["expiration"], F["now"], F["feeLimit"]
+    )  # fmt: skip
 
 
 def test_x402_exact_tron_lcp_trc20_memo_v3_bound_and_refusals() -> None:

@@ -40,12 +40,22 @@ def caip10(raw: str) -> str:
     return raw.replace(":", "%3A")
 
 
+def placed_for(h: str) -> dict[str, Any]:
+    """The document for another hash h: fixed.O with h's comment placed as its forward payload, as the document for H
+    places V1.expectBoc (test_x402_exact_tvm_the_document_places_v1_as_forward_payload)."""
+    comment = lcp_comment(h)
+    assert isinstance(comment, Cell)
+    option = {**F["O"], "extra": {**F["O"]["extra"], "forwardPayload": boc_of(comment)}}
+    return x402_doc(option, F["resource"], h)
+
+
 TVM = Pairing(
     binding=BINDING,
     doc=x402_doc(F["placed"], F["resource"]),
     account=f"{F['O']['network']}:{caip10(F['wallet'])}",
     answer=tvm_answer,
     inputs={"walletId": F["walletId"], "seqno": F["seqno"], "jettonWallet": F["jettonWallet"], "attachNanotons": F["attachNanotons"]},
+    placed=placed_for,
 )
 UNDEPLOYED = replace(
     TVM,
@@ -187,6 +197,30 @@ def test_x402_exact_tvm_v2_cells_and_v3_bound() -> None:
     assert BINDING.bound(signed) == V["V3"]["expectBound"]
     for row in V["V3"]["refusals"]:
         assert BINDING.bound(presented(row["settlementBoc"], row["accepted"])) == Refusal(row["expect"]), row["case"]
+
+
+def test_x402_exact_tvm_v2_the_request_carries_its_w5_request_and_tvm_request_reads_it() -> None:
+    """V2's settlement BoC is pytoniq-core's settlement tree (V2's case); its body less the signature is the request
+    whose representation hash is expectRequestHash. tvm_request reads the request's signedBoc to V2's members, as the
+    protocol package's tvmRequest does."""
+    from integraledger_terms.bindings.x402_exact_tvm import tvm_request
+
+    unsigned = BINDING.build(tvm_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    signed_body = parse_boc(base64.b64decode(V["V2"]["expectSettlementBoc"])).refs[-1]
+    oracle = Cell(signed_body.value >> 512, signed_body.length - 512, signed_body.refs)
+    request = root_of(unsigned.request["signedBoc"])
+    assert isinstance(request, Cell) and request.equals(oracle)
+    r = tvm_request(unsigned.request["signedBoc"], F["placed"]["network"])
+    assert not isinstance(r, Refusal), r
+    assert r.hash.hex() == V["V2"]["expectRequestHash"]
+    ref = V["V3"]["expectReference"]
+    assert (r.wallet_id, r.valid_until, r.seqno, r.jetton_wallet, r.attach_nanotons) == (
+        F["walletId"], ref["validUntil"], F["seqno"], ref["jettonWallet"], int(F["attachNanotons"])
+    )  # fmt: skip
+    assert (r.extra, r.state_init, r.custom_payload, r.response_destination) == (None, None, None, None)
+    assert r.forward_ton_amount == "0"
+    assert (r.amount, r.pay_to, r.h) == (F["placed"]["amount"], F["placed"]["payTo"], V["V3"]["expectBound"])
 
 
 def test_x402_exact_tvm_v3_a_comment_that_begins_with_a_byte_order_mark_holds_no_lcp_string() -> None:

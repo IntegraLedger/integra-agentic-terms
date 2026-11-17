@@ -10,10 +10,13 @@ from typing import Any, Literal
 from .._core import AtrHash
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
+from ._codec import b58_encode
 from ._tron_proto import (
     INT64_LIMIT,
+    MAX_TX_HEX,
     SIGNATURE_BYTES,
     TronRaw,
+    decode_raw,
     decode_tron_tx,
     encode_transaction,
     encode_tron_raw,
@@ -81,9 +84,63 @@ def _int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _base58check(payload: bytes) -> str:
+    """Bytes in base58check: the bytes and the first four of SHA-256 twice over them, in base58."""
+    return b58_encode(payload + hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4])
+
+
+@dataclass(frozen=True, slots=True)
+class TronRequest:
+    """What tron_request reads of a tron-txid request's raw data, as @integraledger/lcp's tronRequest gives it: txid,
+    its SHA-256, which is the request's txid when the bytes are its rawBytes; raw, every field the bytes hold, which
+    are all the fields decode_raw admits: the reference block's bytes and hash, expiration and timestamp in
+    milliseconds, the memo data, fee_limit in sun, and the one contract, a TriggerSmartContract with no call value
+    from owner to contract_address whose call data is transfer(address,uint256); and read from them, payer, the owner,
+    and asset, the contract, in base58check; pay_to, the transfer's recipient, its address word's last 20 bytes under
+    0x41, in base58check; amount, the transfer's value, in decimal; and h, the hash the memo carries."""
+
+    txid: bytes
+    raw: TronRaw
+    payer: str
+    asset: str
+    pay_to: str
+    amount: str
+    h: AtrHash
+
+
+def tron_request(raw_bytes: object) -> TronRequest | Refusal:
+    """Reads the raw_data a tron-txid request carries, as decode_tron_tx reads a signed transaction's and bound reads
+    its call and memo, with their codes: call data that is not transfer(address,uint256) is tron/not-transfer, and a
+    memo that holds no LCP string tron/memo-not-lcp. Bytes longer than the longest transaction decode_tron_tx reads,
+    4,096 bytes, are tron/tx-too-large, and a value that is not bytes tron/tx-malformed."""
+    if not isinstance(raw_bytes, bytes):
+        return Refusal("tron/tx-malformed")
+    if len(raw_bytes) > MAX_TX_HEX // 2:
+        return Refusal("tron/tx-too-large")
+    raw = decode_raw(raw_bytes)
+    if isinstance(raw, Refusal):
+        return raw
+    call = raw.call_data
+    if len(call) != CALL_DATA_BYTES or call[:4] != TRANSFER_SELECTOR:
+        return Refusal("tron/not-transfer")
+    h = _memo_hash(raw.data)
+    if h is None:
+        return Refusal("tron/memo-not-lcp")
+    return TronRequest(
+        txid=hashlib.sha256(raw_bytes).digest(),
+        raw=raw,
+        payer=_base58check(raw.owner),
+        asset=_base58check(raw.contract_address),
+        pay_to=_base58check(b"\x41" + call[16:36]),
+        amount=str(int.from_bytes(call[36:], "big")),
+        h=h,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TronUnsigned:
-    """The 32-byte transaction id the payer signs, and how the signature completes the payment."""
+    """What the payer signs, the request: rawBytes, the transaction's raw_data as encode_tron_raw writes it, and txid,
+    its SHA-256, the 32-byte transaction id, which tron_request reads; and how the signature completes the payment."""
 
     request: dict[str, Any]
     _raw_bytes: bytes
@@ -167,7 +224,7 @@ class X402ExactTronLcpTrc20Memo:
             fee_limit=fee_limit,
         )
         raw_bytes = encode_tron_raw(raw)
-        request = {"kind": "tron-txid", "txid": hashlib.sha256(raw_bytes).digest()}
+        request = {"kind": "tron-txid", "txid": hashlib.sha256(raw_bytes).digest(), "rawBytes": raw_bytes}
         return TronUnsigned(request=request, _raw_bytes=raw_bytes, _required=required, _accepted=accepted)
 
     def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:

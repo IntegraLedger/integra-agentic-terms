@@ -34,6 +34,7 @@ NEAR = Pairing(
     account=f"{F['O']['network']}:{F['payer']}",
     answer=near_answer,
     inputs={"publicKey": F["publicKey"], "accessKeyNonce": F["accessKeyNonce"], "finalHeight": F["finalHeight"]},
+    placed=lambda h: x402_doc(F["O"], F["resource"], h),
 )
 
 
@@ -137,6 +138,28 @@ def test_x402_exact_near_v1_args_and_request_hash() -> None:
     assert len(sda) - 65 == N["V1"]["expectDelegateActionBytes"]
     assert (1073742190).to_bytes(4, "little").hex() == N["V1"]["expectPrefix"]
     assert hashlib.sha256(bytes.fromhex(N["V1"]["expectPrefix"]) + sda[:-65]).hexdigest() == N["V1"]["expectRequestHash"]
+
+
+def test_x402_exact_near_v1_the_request_carries_its_delegate_action_and_near_request_reads_it_to_v2() -> None:
+    """V2's signed delegate action begins with the delegate action V1's request hash was computed over (borsh-construct
+    and hashlib, the file's about): its first expectDelegateActionBytes bytes. near_request reads it to V2's reference,
+    as the protocol package's nearRequest does."""
+    from integraledger_terms.bindings.x402_exact_near import near_request
+
+    unsigned = X402_EXACT_NEAR.build(near_choice(), F["H"])
+    assert not isinstance(unsigned, Refusal)
+    oracle = base64.b64decode(N["V2"]["expectSignedDelegateAction"])[: N["V1"]["expectDelegateActionBytes"]]
+    assert unsigned.request["delegateAction"] == oracle
+    r = near_request(unsigned.request["delegateAction"])
+    assert not isinstance(r, Refusal), r
+    ref = N["V2"]["expectReference"]
+    assert r.hash.hex() == N["V1"]["expectRequestHash"]
+    assert (r.payer, r.public_key, r.asset, r.pay_to, r.amount, r.h) == (
+        ref["payer"], ref["publicKey"], ref["asset"], ref["payee"], F["O"]["amount"], ref["h"]
+    )  # fmt: skip
+    assert (str(r.nonce), str(r.max_block_height), str(r.gas), str(r.deposit)) == (
+        ref["nonce"], ref["maxBlockHeight"], ref["gas"], ref["deposit"]
+    )  # fmt: skip
 
 
 def test_x402_exact_near_v2_presented_options() -> None:

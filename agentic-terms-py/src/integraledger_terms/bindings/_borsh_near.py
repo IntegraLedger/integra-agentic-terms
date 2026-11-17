@@ -209,6 +209,24 @@ def is_near_ed25519_signature(data: bytes) -> bool:
     return len(data) == _SIGNATURE_SIZES[0] and data[-1] < 0x20
 
 
+def _read_delegate(r: _Reader) -> DelegateAction | DelegateRefused:
+    """The delegate action at the reader's position, read as decode_signed_delegate states; a read past the end raises
+    _Malformed."""
+    sender_id = r.string()
+    receiver_id = r.string()
+    if not is_near_account_id(sender_id) or not is_near_account_id(receiver_id):
+        return "malformed"
+    if r.u32() != 1:
+        return "action-count"
+    if r.u8() != _FUNCTION_CALL:
+        return "not-function-call"
+    call = FunctionCall(r.string(), r.vec(), r.u64(), r.u128())
+    nonce = r.u64()
+    max_block_height = r.u64()
+    public_key = r.public_key()
+    return DelegateAction(sender_id, receiver_id, call, nonce, max_block_height, public_key)
+
+
 def decode_signed_delegate(data: bytes) -> tuple[DelegateAction, int, bytes] | DelegateRefused:
     """The DelegateAction, the signature's key type and bytes of a SignedDelegate, read in the order nearcore reads its
     bytes. The sender and the receiver come first, each strict UTF-8 and a NEAR account id (is_near_account_id), as
@@ -218,22 +236,27 @@ def decode_signed_delegate(data: bytes) -> tuple[DelegateAction, int, bytes] | D
     key and signature Ed25519 or secp256k1, and an Ed25519 signature one nearcore reads, or they are "malformed"."""
     r = _Reader(data)
     try:
-        sender_id = r.string()
-        receiver_id = r.string()
-        if not is_near_account_id(sender_id) or not is_near_account_id(receiver_id):
-            return "malformed"
-        if r.u32() != 1:
-            return "action-count"
-        if r.u8() != _FUNCTION_CALL:
-            return "not-function-call"
-        call = FunctionCall(r.string(), r.vec(), r.u64(), r.u128())
-        nonce = r.u64()
-        max_block_height = r.u64()
-        public_key = r.public_key()
+        delegate = _read_delegate(r)
+        if isinstance(delegate, str):
+            return delegate
         key_type = r.enum(2)
         signature = r.take(_SIGNATURE_SIZES[key_type])
     except _Malformed:
         return "malformed"
     if r.at != len(data) or (key_type == 0 and not is_near_ed25519_signature(signature)):
         return "malformed"
-    return DelegateAction(sender_id, receiver_id, call, nonce, max_block_height, public_key), key_type, signature
+    return delegate, key_type, signature
+
+
+def decode_delegate_action(data: bytes) -> DelegateAction | DelegateRefused:
+    """A delegate action, unsigned, read as decode_signed_delegate reads the delegate action at the start of a signed
+    one: the same order and the same answers, the bytes exactly the borsh of the one-action delegate and nothing after
+    it, as @integraledger/lcp's decodeDelegateAction reads them."""
+    r = _Reader(data)
+    try:
+        delegate = _read_delegate(r)
+    except _Malformed:
+        return "malformed"
+    if isinstance(delegate, str):
+        return delegate
+    return delegate if r.at == len(data) else "malformed"

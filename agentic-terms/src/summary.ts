@@ -22,6 +22,9 @@ import { aptosTransaction, cardanoTransaction, suiTransaction } from "./summary/
 import { tapField, vicReference, viCheckout, viCheckoutMandate } from "./summary/card.js";
 import { stellarPrecondition, stellarStart } from "./summary/stellar-precondition.js";
 import { acpAllowance, ap2CheckoutMandate, ucpCheckout, ucpLegalContext } from "./summary/checkout.js";
+import { nearDelegate, nearStart } from "./summary/near-delegate.js";
+import { tronTxid } from "./summary/tron-txid.js";
+import { tonW5 } from "./summary/ton-w5.js";
 
 /** A summary without the ATR's bytes, which the gate adds. */
 export type Shown = Omit<Summary, "atr">;
@@ -159,6 +162,9 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["card/visa-vic", { show: vicReference }],
   ["card/mastercard-vi/immediate", { show: (r) => viCheckout(r) ?? viCheckoutMandate(r) }],
   ["card/mastercard-vi/autonomous", { show: viCheckoutMandate }],
+  ["x402/exact/near", { show: nearDelegate, start: nearStart }],
+  ["x402/exact/tron/lcp-trc20-memo", { show: tronTxid }],
+  ["x402/exact/tvm", { show: tonW5 }],
 ]);
 
 /**

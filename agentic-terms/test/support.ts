@@ -71,10 +71,7 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
   ["cardano-transaction", ["x402/exact/cardano/lock"]],
   ["eip712", ["mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"]],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
-  ["near-delegate", ["x402/exact/near"]],
   ["tempo-call", ["mpp/session/tempo"]],
-  ["ton-w5", ["x402/exact/tvm"]],
-  ["tron-txid", ["x402/exact/tron/lcp-trc20-memo"]],
 ]);
 
 /** Whether the gate has no summary yet of the request `pairing`'s build hands the signer: SUMMARY_PENDING lists it. */

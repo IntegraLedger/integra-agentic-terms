@@ -1,0 +1,139 @@
+{
+  "about": "The approval summary (profile buyer-gate.md, rule 13) of the requests that hand the signer only a hash, near-delegate, tron-txid and ton-w5, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors: the file's buyer row B2 for that pairing gives the document and the account, inputs the buyer's inputs and now the time in Unix seconds, B2's where it gives one and otherwise the file's fixed.now (x402-exact-tron-lcp-trc20-memo.json's is 1790300664000 milliseconds), from which the pairing's buyer piece builds the request the signer is handed, over the ATR abc (616263, whose SHA-256 is the H the document advertises); each {\"$ref\": pointer} stands for the value at that JSON Pointer (RFC 6901) in the file. The inputs are the file's fixed ones, from which its V rows were computed (x402-exact-tvm.json's B2 row gives attachNanotons 50,000,000, above the 30,000,000 its about states its rows were recomputed at, which the protocol package's build refuses tvm/value-too-high, so the row takes fixed.attachNanotons). requestHash is the hash the signer is handed, which the request built must carry: x402-exact-near.json V1.expectRequestHash (borsh-construct 0.1.0 and hashlib), x402-exact-tron-lcp-trc20-memo.json V2.expectTxid (raw data written by hand from TRON's protobuf schema, hashlib) and x402-exact-tvm.json V2.expectRequestHash (pytoniq-core 0.2.0); the request's bytes hash to it, so they are the bytes those tools wrote. The network is the signer's account's, B2's account's network, since none of these requests names one. expect is the summary of that request without the ATR's bytes, which are abc; every value in it is read from the rows `from` names. Nothing here is terms' output.",
+  "rows": [
+    {
+      "pairing": "x402/exact/near",
+      "file": "x402-exact-near.json",
+      "from": "V2.expectReference's payee, asset, network and maxBlockHeight; V1.expectArgsUtf8's amount, the ft_transfer arguments the delegate action signs",
+      "inputs": {
+        "publicKey": {
+          "$ref": "/fixed/publicKey"
+        },
+        "accessKeyNonce": {
+          "$ref": "/fixed/accessKeyNonce"
+        },
+        "finalHeight": {
+          "$ref": "/fixed/finalHeight"
+        }
+      },
+      "now": 1790000000,
+      "requestHash": {
+        "$ref": "/V1/expectRequestHash"
+      },
+      "expect": {
+        "amount": "1000000",
+        "payees": [
+          {
+            "account": {
+              "$ref": "/V2/expectReference/payee"
+            },
+            "amount": "1000000"
+          }
+        ],
+        "asset": {
+          "$ref": "/V2/expectReference/asset"
+        },
+        "network": {
+          "$ref": "/V2/expectReference/network"
+        },
+        "validity": {
+          "notBefore": null,
+          "notAfter": {
+            "$ref": "/V2/expectReference/maxBlockHeight"
+          },
+          "unit": "block"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/tron/lcp-trc20-memo",
+      "file": "x402-exact-tron-lcp-trc20-memo.json",
+      "from": "V3.expectReference's payee and network, and its expiration, 1790300724000 milliseconds, in seconds; fixed.O.asset, whose bytes are fixed.assetBytes (base58 2.1.1); the amount V2's calldata signs (eth-abi 6.0.0), 10000",
+      "inputs": {
+        "refBlock": {
+          "$ref": "/fixed/refBlock"
+        },
+        "feeLimit": {
+          "$ref": "/fixed/feeLimit"
+        }
+      },
+      "now": 1790300664,
+      "requestHash": {
+        "$ref": "/V2/expectTxid"
+      },
+      "expect": {
+        "amount": "10000",
+        "payees": [
+          {
+            "account": {
+              "$ref": "/V3/expectReference/payee"
+            },
+            "amount": "10000"
+          }
+        ],
+        "asset": {
+          "$ref": "/fixed/O/asset"
+        },
+        "network": {
+          "$ref": "/V3/expectReference/network"
+        },
+        "validity": {
+          "notBefore": null,
+          "notAfter": "1790300724",
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "x402/exact/tvm",
+      "file": "x402-exact-tvm.json",
+      "from": "V3.expectReference's payee, jettonWallet, network and validUntil; the amount of V2's transfer body (pytoniq-core 0.2.0), fixed.placed.amount",
+      "inputs": {
+        "walletId": {
+          "$ref": "/fixed/walletId"
+        },
+        "seqno": {
+          "$ref": "/fixed/seqno"
+        },
+        "jettonWallet": {
+          "$ref": "/fixed/jettonWallet"
+        },
+        "attachNanotons": {
+          "$ref": "/fixed/attachNanotons"
+        }
+      },
+      "now": {
+        "$ref": "/fixed/now"
+      },
+      "requestHash": {
+        "$ref": "/V2/expectRequestHash"
+      },
+      "expect": {
+        "amount": {
+          "$ref": "/fixed/placed/amount"
+        },
+        "payees": [
+          {
+            "account": {
+              "$ref": "/V3/expectReference/payee"
+            },
+            "amount": {
+              "$ref": "/fixed/placed/amount"
+            }
+          }
+        ],
+        "asset": {
+          "$ref": "/V3/expectReference/jettonWallet"
+        },
+        "network": {
+          "$ref": "/V3/expectReference/network"
+        },
+        "validity": {
+          "notBefore": null,
+          "notAfter": "1790000060",
+          "unit": "seconds"
+        }
+      }
+    }
+  ]
+}

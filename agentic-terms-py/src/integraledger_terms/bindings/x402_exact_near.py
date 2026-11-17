@@ -14,8 +14,10 @@ from ._borsh_near import (
     U128_LIMIT,
     DelegateAction,
     FunctionCall,
+    decode_delegate_action,
     decode_signed_delegate,
     delegate_hash,
+    encode_delegate_action,
     encode_signed_delegate,
     is_near_account_id,
     is_near_ed25519_signature,
@@ -119,11 +121,10 @@ def _token_reads(text: str, parsed: Mapping[str, Any]) -> bool:
     return len(digits) <= len(str(U128_LIMIT)) and int(digits or "0") < U128_LIMIT
 
 
-def _memo_of(args: bytes) -> AtrHash | Refusal:
-    """The hash in the memo of ft_transfer arguments read only as the token contract reads them: strict UTF-8 JSON
-    text of at most 4096 bytes, whose leading byte-order mark is a character, so arguments that begin with one are not
-    JSON, and whose value is an object that _token_reads takes; anything else is near/args-malformed. Then a memo that
-    is not a string is near/memo-missing, and one that is not an LCP string near/memo-not-lcp."""
+def _args_of(args: bytes) -> dict[str, Any] | Refusal:
+    """ft_transfer arguments read only as the token contract reads them: strict UTF-8 JSON text of at most 4096 bytes,
+    whose leading byte-order mark is a character, so arguments that begin with one are not JSON, and whose value is an
+    object that _token_reads takes; anything else is near/args-malformed."""
     if len(args) > MAX_ARGS_BYTES:
         return Refusal("near/args-malformed")
     try:
@@ -133,6 +134,15 @@ def _memo_of(args: bytes) -> AtrHash | Refusal:
     parsed = parse_json(text)
     if not isinstance(parsed, dict) or not _token_reads(text, parsed):
         return Refusal("near/args-malformed")
+    return parsed
+
+
+def _memo_of(args: bytes) -> AtrHash | Refusal:
+    """The hash in the memo of ft_transfer arguments read as _args_of reads them. Then a memo that is not a string is
+    near/memo-missing, and one that is not an LCP string near/memo-not-lcp."""
+    parsed = _args_of(args)
+    if isinstance(parsed, Refusal):
+        return parsed
     memo = parsed.get("memo")
     if not isinstance(memo, str):
         return Refusal("near/memo-missing")
@@ -183,8 +193,67 @@ def near_carrier(signed_delegate_action: object) -> AtrHash | Refusal:
 
 
 @dataclass(frozen=True, slots=True)
+class NearRequest:
+    """What near_request reads of a near-delegate request's delegate action, as @integraledger/lcp's nearRequest gives
+    it: hash, the SHA-256 of the NEP-461 prefix and the bytes, which is the request's hash when the bytes are its
+    delegateAction; the sender (payer) and its access key; the token contract (asset, the receiver); the
+    ft_transfer arguments' receiver_id (pay_to), amount, as the canonical decimal of the value the token contract
+    reads, and the hash its memo carries (h); the nonce; max_block_height, the last block height at which the action
+    can run; and the one function call's gas and attached deposit in yoctoNEAR."""
+
+    hash: bytes
+    payer: str
+    public_key: str
+    asset: str
+    pay_to: str
+    amount: str
+    h: AtrHash
+    nonce: int
+    max_block_height: int
+    gas: int
+    deposit: int
+
+
+def near_request(delegate_action: object) -> NearRequest | Refusal:
+    """Reads the delegate action a near-delegate request carries, its borsh bytes, as near_carrier reads the delegate
+    action of a signed one, with its codes. A delegate action holds one action, an ft_transfer, or it is refused, so
+    nothing else runs under the signature. A value that is not bytes is near/sda-malformed, and bytes longer than those
+    of the longest signed delegate action read (MAX_SDA_BASE64 base64 characters) are near/sda-too-large."""
+    if not isinstance(delegate_action, bytes):
+        return Refusal("near/sda-malformed")
+    if len(delegate_action) > MAX_SDA_BASE64 // 4 * 3:
+        return Refusal("near/sda-too-large")
+    da = decode_delegate_action(delegate_action)
+    if isinstance(da, str):
+        return Refusal(_DELEGATE_REFUSED[da])
+    call = da.function_call
+    if call.method_name != "ft_transfer":
+        return Refusal("near/not-ft-transfer")
+    parsed = _args_of(call.args)
+    if isinstance(parsed, Refusal):
+        return parsed
+    h = _memo_of(call.args)
+    if isinstance(h, Refusal):
+        return h
+    return NearRequest(
+        hash=delegate_hash(da),
+        payer=da.sender_id,
+        public_key=da.public_key.text(),
+        asset=da.receiver_id,
+        pay_to=parsed["receiver_id"],
+        amount=str(int(parsed["amount"].removeprefix("+"))),
+        h=h,
+        nonce=da.nonce,
+        max_block_height=da.max_block_height,
+        gas=call.gas,
+        deposit=call.deposit,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class NearUnsigned:
-    """The SHA-256 of the NEP-461-prefixed delegate action, which the key signs, and how the signature completes the
+    """What the key signs, the request: delegateAction, the borsh of the NEP-366 DelegateAction, and hash, the SHA-256
+    of the NEP-461 prefix followed by those bytes, which near_request reads; and how the signature completes the
     payment."""
 
     request: dict[str, Any]
@@ -260,7 +329,11 @@ class X402ExactNear:
             return args
         call = FunctionCall("ft_transfer", args, FT_TRANSFER_GAS, 1)
         delegate = DelegateAction(payer, accepted["asset"], call, nonce + 1, height + window, key)
-        request = {"kind": "near-delegate", "hash": delegate_hash(delegate)}
+        request = {
+            "kind": "near-delegate",
+            "hash": delegate_hash(delegate),
+            "delegateAction": encode_delegate_action(delegate),
+        }
         return NearUnsigned(request=request, _delegate=delegate, _required=required, _accepted=accepted)
 
     def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
