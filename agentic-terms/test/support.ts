@@ -315,6 +315,7 @@ export const PIECE_ONLY: ReadonlyMap<string, string> = new Map([
   ["mpp/session/evm", "not placed for A: no gate-level run of its two-step opening yet"],
   ["mpp/subscription/tempo", "not placed for A: no gate-level run yet"],
   ["card/visa-tap", "C2's TAP answer signs a nonce built for H(abc); no answer signed for another H is published"],
+  ["card/mastercard-agent-pay", "T6's Agent Pay answers sign C2's nonce, built for H(abc); no answer signed for another H is published"],
   ["card/mastercard-vi/immediate", "C6's user credential is signed over the checkout mandate for H(abc); none is published for another H"],
   ["card/mastercard-vi/autonomous", "C7's agent chain is signed over the checkout mandate for H(abc); none is published for another H"],
   ["ack/payment-request", "K2's Payment Request token is signed with the id of H(abc), which the read holds the legal context to"],

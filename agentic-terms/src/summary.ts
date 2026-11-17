@@ -19,6 +19,7 @@ import { ccdTransfer } from "./summary/ccd-transfer.js";
 import { starknetTransfer } from "./summary/starknet-snip12.js";
 import { substrateTransfer } from "./summary/substrate-call.js";
 import { aptosTransaction, cardanoTransaction, suiTransaction } from "./summary/x402-wallet.js";
+import { tapField, vicReference, viCheckout, viCheckoutMandate } from "./summary/card.js";
 import { stellarPrecondition, stellarStart } from "./summary/stellar-precondition.js";
 import { acpAllowance, ap2CheckoutMandate, ucpCheckout, ucpLegalContext } from "./summary/checkout.js";
 
@@ -152,6 +153,11 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["ucp/booking/ap2-mandate", { show: ucpCheckout }],
   ["ucp/checkout/agent-signed", { show: ucpLegalContext }],
   ["acp/checkout/delegated", { show: acpAllowance }],
+  ["card/visa-tap", { show: tapField }],
+  ["card/mastercard-agent-pay", { show: tapField }],
+  ["card/visa-vic", { show: vicReference }],
+  ["card/mastercard-vi/immediate", { show: (r) => viCheckout(r) ?? viCheckoutMandate(r) }],
+  ["card/mastercard-vi/autonomous", { show: viCheckoutMandate }],
 ]);
 
 /**

@@ -1,7 +1,7 @@
 import type { Act, AtrHash, Binding as LcpBinding, Json, Presented as LcpPresented, Refusal } from "@integraledger/lcp";
 import type { AptosUnsigned } from "@integraledger/lcp/aptos";
 import type { AvmUnsigned } from "@integraledger/lcp/avm";
-import type { TapUnsigned, ViUnsigned } from "@integraledger/lcp/card";
+import type { TapUnsigned, VicUnsigned, ViCheckoutUnsigned, ViUnsigned } from "@integraledger/lcp/card";
 import type { CardanoUnsigned } from "@integraledger/lcp/cardano";
 import type { CasperUnsigned } from "@integraledger/lcp/casper";
 import type { CcdUnsigned } from "@integraledger/lcp/ccd";
@@ -52,12 +52,13 @@ export type Fetch = (
 
 /**
  * What a signer is handed: the `request` of the pairing's `build` result, exactly as built, one kind per signing
- * scheme. The protocol-group results that carry no kind of their own are tagged here: the TAP field (`tap-field`), VI's
- * checkout mandate (`vi-checkout-mandate`), AP2's checkout-mandate content (`ap2-checkout-mandate`), the UCP checkout
- * for the buyer's mandate issuer (`ucp-checkout`), the `legal_context` member a UCP platform writes into the request
- * that completes the checkout, beside that checkout (`ucp-legal-context`), and ACP's allowance (`acp-allowance`).
- * `batch` is several requests, signed in order, as are the requests of an in-channel payment. `ed25519-raw` is raw
- * Ed25519 over the bytes given.
+ * scheme. The protocol-group results that carry no kind of their own are tagged here: the TAP field (`tap-field`), the
+ * Visa Intelligent Commerce transaction reference (`vic-reference`), VI's checkout payload for the agent's `checkout_jwt`
+ * (`vi-checkout`), VI's checkout mandate (`vi-checkout-mandate`), AP2's checkout-mandate content (`ap2-checkout-mandate`),
+ * the UCP checkout for the buyer's mandate issuer (`ucp-checkout`), the `legal_context` member a UCP platform writes into
+ * the request that completes the checkout, beside that checkout (`ucp-legal-context`), and ACP's allowance
+ * (`acp-allowance`). `batch` is several requests, signed in order, as are the requests of an in-channel payment.
+ * `ed25519-raw` is raw Ed25519 over the bytes given.
  */
 export type SigningRequest =
   | Extract<X402Unsigned, unknown>["request"]
@@ -85,6 +86,8 @@ export type SigningRequest =
   | LnMppUnsigned["request"]
   | ({ kind: "tap-field" } & TapUnsigned)
   | ({ kind: "vi-checkout-mandate" } & ViUnsigned)
+  | ({ kind: "vic-reference" } & VicUnsigned)
+  | ({ kind: "vi-checkout" } & ViCheckoutUnsigned)
   | { kind: "ap2-checkout-mandate"; content: Ap2Unsigned["content"] }
   | { kind: "ucp-checkout"; checkout: UcpUnsigned["checkout"] }
   | { kind: "ucp-legal-context"; checkout: UcpCheckout; legal_context: AgentSignedUnsigned["legal_context"] }
@@ -211,7 +214,8 @@ export interface Summary {
   readonly closableBy?: readonly string[];
   readonly grant?: Json;
   readonly asset: string;
-  readonly network: string;
+  /** The CAIP-2 network, or null where the payment moves on no ledger (a card network, a fiat checkout). */
+  readonly network: string | null;
   readonly validity: Validity;
   /** The ATR's bytes: the bytes the gate hashed, parsed and compared. */
   readonly atr: Uint8Array;

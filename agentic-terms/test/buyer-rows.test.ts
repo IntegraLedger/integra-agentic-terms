@@ -36,8 +36,6 @@ import { CONFIRMING, GATE } from "./support.js";
  * served pairings without a piece, so a piece added here removes its id.
  */
 const PENDING: ReadonlySet<string> = new Set([
-  "card/mastercard-agent-pay",
-  "card/visa-vic",
   "mpp/charge/tempo/split-memo",
   "mpp/charge/tempo/split-memo/push",
   "mpp/session/solana/memo",

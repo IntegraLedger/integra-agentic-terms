@@ -432,17 +432,18 @@ const STARTS: { readonly [namespace: string]: string } = { xrpl: "ledgerIndex" }
 const isIndex = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 
 /** The pairing's network namespace, from the summary's CAIP-2 network. */
-const namespaceOfNetwork = (network: string): string => network.split(":")[0]!;
+/** The CAIP-2 namespace of a network, or "" where the payment moves on no ledger and the summary names none. */
+const namespaceOfNetwork = (network: string | null): string => (network === null ? "" : network.split(":")[0]!);
 
 /** The start the caller gives in `inputs` for a deadline signed as a height on `network`, where its chain has one. */
-function givenStart(network: string, inputs: Inputs): bigint | undefined {
+function givenStart(network: string | null, inputs: Inputs): bigint | undefined {
   const name = STARTS[namespaceOfNetwork(network)];
   const v = name === undefined ? undefined : inputs[name];
   return isIndex(v) ? BigInt(v) : undefined;
 }
 
 /** `read.life` in the pairing's data, in seconds, or undefined where the data states none or no pace converts it. */
-function lifeOf(binding: Binding, network: string): number | undefined {
+function lifeOf(binding: Binding, network: string | null): number | undefined {
   const data: unknown = (binding as { data?: unknown }).data;
   const read = isObject(data) ? data["read"] : undefined;
   const life = isObject(read) ? read["life"] : undefined;
@@ -464,7 +465,7 @@ function big(v: string | null): bigint | undefined {
  * the payer signs no deadline, the pairing's `read.life`; `"no-end"` where none of these bounds it; undefined where the
  * window cannot be read.
  */
-function windowOf(binding: Binding, v: Validity, network: string, now: number, inputs: Inputs): number | "no-end" | undefined {
+function windowOf(binding: Binding, v: Validity, network: string | null, now: number, inputs: Inputs): number | "no-end" | undefined {
   const until = big(v.notAfter);
   if (v.notAfter === null) return lifeOf(binding, network) ?? "no-end";
   if (until === undefined) return undefined;

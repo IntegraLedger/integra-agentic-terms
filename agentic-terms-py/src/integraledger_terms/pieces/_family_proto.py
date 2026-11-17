@@ -10,6 +10,8 @@ FAMILY: dict[str, Piece] = {
     ap2_checkout_mandate.PIECE.pairing: ap2_checkout_mandate.PIECE,
     ap2_checkout_mandate.X402_PIECE.pairing: ap2_checkout_mandate.X402_PIECE,
     card.VISA_TAP_PIECE.pairing: card.VISA_TAP_PIECE,
+    card.AGENT_PAY_PIECE.pairing: card.AGENT_PAY_PIECE,
+    card.VISA_VIC_PIECE.pairing: card.VISA_VIC_PIECE,
     card.VI_IMMEDIATE_PIECE.pairing: card.VI_IMMEDIATE_PIECE,
     card.VI_AUTONOMOUS_PIECE.pairing: card.VI_AUTONOMOUS_PIECE,
     card.SELLER_REFERENCE_PIECE.pairing: card.SELLER_REFERENCE_PIECE,

@@ -193,6 +193,7 @@ def through_gate(p: Pairing, count: int) -> None:
 _NO_RUN = "not placed for A: no gate-level run yet"
 PIECE_ONLY: Mapping[str, str] = {
     "ack/payment-request": "K2's Payment Request token is signed with the id of H(abc), which the read holds the legal context to",
+    "card/mastercard-agent-pay": "T6's Agent Pay answers sign C2's nonce, built for H(abc); no answer signed for another H is published",
     "card/mastercard-vi/autonomous": "C7's agent chain is signed over the checkout mandate for H(abc); none is published for another H",
     "card/mastercard-vi/immediate": "C6's user credential is signed over the checkout mandate for H(abc); none is published for another H",
     "card/seller-reference": _NO_RUN,

@@ -55,7 +55,15 @@ from .bindings._channel import BatchUnsigned, ChannelRef
 from .bindings.ack_payment_request import AckPaymentRequest
 from .bindings.acp_checkout import AcpCheckoutDelegated, AcpCheckoutUndelegated
 from .bindings.ap2_checkout_mandate import Ap2CheckoutMandate, Ap2CheckoutMandateX402
-from .bindings.card import CardMastercardViAutonomous, CardMastercardViImmediate, CardSellerReference, CardVisaTap
+from .bindings.card import (
+    CardMastercardAgentPay,
+    CardMastercardViAutonomous,
+    CardMastercardViImmediate,
+    CardSellerReference,
+    CardVisaTap,
+    CardVisaVic,
+    vi_json,
+)
 from .bindings.lightning import (
     MPP_CHARGE,
     MppLightning,
@@ -131,6 +139,8 @@ MPP_SESSION_LIGHTNING: Binding = MppLightningSession()
 CARD_MASTERCARD_VI_IMMEDIATE: Binding = CardMastercardViImmediate()
 CARD_MASTERCARD_VI_AUTONOMOUS: Binding = CardMastercardViAutonomous()
 CARD_SELLER_REFERENCE: Binding = CardSellerReference()
+CARD_VISA_VIC: Binding = CardVisaVic()
+CARD_MASTERCARD_AGENT_PAY: Binding = CardMastercardAgentPay()
 X402_BATCH_SETTLEMENT_EIP155 = X402BatchSettlementEip155()
 X402_BATCH_SETTLEMENT_CLOUDFLARE = X402BatchSettlementCloudflare()
 X402_EXACT_SOLANA: Binding = X402ExactSolana()
@@ -177,10 +187,12 @@ __all__ = [
     "ACP_CHECKOUT_UNDELEGATED",
     "AP2_CHECKOUT_MANDATE",
     "AP2_CHECKOUT_MANDATE_X402",
+    "CARD_MASTERCARD_AGENT_PAY",
     "CARD_MASTERCARD_VI_AUTONOMOUS",
     "CARD_MASTERCARD_VI_IMMEDIATE",
     "CARD_SELLER_REFERENCE",
     "CARD_VISA_TAP",
+    "CARD_VISA_VIC",
     "MAX_ATR_BYTES",
     "MPP_CHARGE_CARD",
     "MPP_CHARGE_EVM_AUTHORIZATION",
@@ -288,5 +300,6 @@ __all__ = [
     "open_channel",
     "record_charge",
     "transact",
+    "vi_json",
     "within",
 ]

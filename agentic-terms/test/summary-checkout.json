@@ -1,5 +1,5 @@
 {
-  "about": "The approval summary (profile buyer-gate.md, rule 13) of the checkout protocols' requests, ap2-checkout-mandate, ucp-checkout, ucp-legal-context and acp-allowance, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors; its request is the request the pairing's buyer piece hands the signer, each {\"$ref\": pointer} in it standing for the value at that JSON Pointer (RFC 6901) in the file; network is the signer's account's, the network of the files' buyer rows' account, since none of these requests names one; expect is the summary of the request without the ATR's bytes. Every value in expect is read from the rows `from` names: ap2-checkout-mandate.json V6's checkout JWT, AP2's published checkout (google-agentic-commerce/AP2 e1ea56db, docs/ap2/checkout_mandate.md, as the file's about states), its merchant.id, the amount of its totals' total and its currency; the same file's fixed.P0, the checkout the file's J signs, which names no merchant; ucp.json V2's checkout and ucp-checkout-agent-signed.json B2's, neither naming a payee; and acp-checkout.json V4's allowance, ACP's own example (agentic-commerce-protocol 7fdd78df, spec/2026-04-17/json-schema/schema.delegate_payment.json), whose expires_at 2026-09-21T14:23:20Z is 1790000600 Unix seconds by GNU coreutils 9.4 (date -u -d 2026-09-21T14:23:20Z +%s). Nothing here is terms' output.",
+  "about": "The approval summary (profile buyer-gate.md, rule 13) of the checkout protocols' requests, ap2-checkout-mandate, ucp-checkout, ucp-legal-context and acp-allowance, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors; its request is the request the pairing's buyer piece hands the signer, each {\"$ref\": pointer} in it standing for the value at that JSON Pointer (RFC 6901) in the file; network is the signer's account's, the network of the files' buyer rows' account, which the gate hands each summary; each of these payments moves on no ledger, so expect's network is null whatever the account's; expect is the summary of the request without the ATR's bytes. Every value in expect is read from the rows `from` names: ap2-checkout-mandate.json V6's checkout JWT, AP2's published checkout (google-agentic-commerce/AP2 e1ea56db, docs/ap2/checkout_mandate.md, as the file's about states), its merchant.id, the amount of its totals' total and its currency; the same file's fixed.P0, the checkout the file's J signs, which names no merchant; ucp.json V2's checkout and ucp-checkout-agent-signed.json B2's, neither naming a payee; and acp-checkout.json V4's allowance, ACP's own example (agentic-commerce-protocol 7fdd78df, spec/2026-04-17/json-schema/schema.delegate_payment.json), whose expires_at 2026-09-21T14:23:20Z is 1790000600 Unix seconds by GNU coreutils 9.4 (date -u -d 2026-09-21T14:23:20Z +%s). Nothing here is terms' output.",
   "rows": [
     {
       "pairing": "ap2/checkout-mandate",
@@ -27,7 +27,7 @@
           }
         ],
         "asset": "USD",
-        "network": "eip155:84532",
+        "network": null,
         "validity": {
           "notBefore": null,
           "notAfter": null,
@@ -56,7 +56,7 @@
         "amount": "19900",
         "payees": [],
         "asset": "USD",
-        "network": "eip155:84532",
+        "network": null,
         "validity": {
           "notBefore": null,
           "notAfter": null,
@@ -79,7 +79,7 @@
         "amount": "19900",
         "payees": [],
         "asset": "USD",
-        "network": "eip155:84532",
+        "network": null,
         "validity": {
           "notBefore": null,
           "notAfter": null,
@@ -105,7 +105,7 @@
         "amount": "19900",
         "payees": [],
         "asset": "USD",
-        "network": "eip155:84532",
+        "network": null,
         "validity": {
           "notBefore": null,
           "notAfter": null,
@@ -133,7 +133,7 @@
           }
         ],
         "asset": "usd",
-        "network": "eip155:84532",
+        "network": null,
         "validity": {
           "notBefore": null,
           "notAfter": "1790000600",

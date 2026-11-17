@@ -11,6 +11,8 @@ import { cardMastercardViAutonomous } from "./card-mastercard-vi-autonomous.js";
 import { cardMastercardViImmediate } from "./card-mastercard-vi-immediate.js";
 import { cardSellerReference } from "./card-seller-reference.js";
 import { cardVisaTap } from "./card-visa-tap.js";
+import { cardVisaVic } from "./card-visa-vic.js";
+import { cardMastercardAgentPay } from "./card-mastercard-agent-pay.js";
 import { mppChargeEvmAuthorization } from "./mpp-charge-evm-authorization.js";
 import { mppChargeEvmHash } from "./mpp-charge-evm-hash.js";
 import { mppChargeEvmPermit2 } from "./mpp-charge-evm-permit2.js";
@@ -137,4 +139,6 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["mpp/subscription/solana", mppSubscriptionSolana],
   ["ap2/checkout-mandate/x402", ap2CheckoutMandateX402],
   ["ucp/checkout/agent-signed", ucpCheckoutAgentSigned],
+  ["card/visa-vic", cardVisaVic],
+  ["card/mastercard-agent-pay", cardMastercardAgentPay],
 ]);

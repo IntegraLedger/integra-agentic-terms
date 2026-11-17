@@ -1,0 +1,85 @@
+{
+  "about": "The signer's rule of Verifiable Intent (lcp profile card-mastercard-vi.md, rule 7): VI's reference verifier checks each signature over its own re-encoding of the JSON it parses, json.dumps(value, separators=(\",\", \":\")) (agent-intent/verifiable-intent at 356c296, src/verifiable_intent/crypto/sd_jwt.py), so a signer signs JSON that re-encoding leaves unchanged. Each row's expect is what CPython 3.12.3's json module writes for the value it reads from the row's json: json.dumps(json.loads(json), separators=(\",\", \":\"), ensure_ascii=True), run with python3 -I on 2026-11-17, outside this repository. Both languages read each row's json with their own JSON parser and write it by the rule, giving expect. No number is written integral with a fraction or an exponent, which JSON.parse reads as an integer and Python as a float, and none is an integer past 2^53 - 1, which JSON.parse rounds. The last three rows are segments of the Verifiable Intent strings of @integraledger/lcp's vectors/card.json (vi.CJ, vi.L2i), which the rule leaves unchanged.",
+  "rows": [
+    {
+      "case": "members in the order written, not sorted",
+      "json": "{\"z\": 1, \"a\": {\"y\": [3, 2, 1], \"b\": null}, \"m\": true, \"c\": false}",
+      "expect": "{\"z\":1,\"a\":{\"y\":[3,2,1],\"b\":null},\"m\":true,\"c\":false}"
+    },
+    {
+      "case": "whitespace removed",
+      "json": "[ 1 , { \"k\" : \"v\" } , [ ] , { } ]",
+      "expect": "[1,{\"k\":\"v\"},[],{}]"
+    },
+    {
+      "case": "non-ASCII in the Basic Multilingual Plane, in a value and a member name",
+      "json": "{\"café\": \"été €10 中文\"}",
+      "expect": "{\"caf\\u00e9\":\"\\u00e9t\\u00e9 \\u20ac10 \\u4e2d\\u6587\"}"
+    },
+    {
+      "case": "a character past the Basic Multilingual Plane, as its two UTF-16 code units",
+      "json": "{\"emoji\": \"😀\"}",
+      "expect": "{\"emoji\":\"\\ud83d\\ude00\"}"
+    },
+    {
+      "case": "the line and paragraph separators",
+      "json": "\"  \"",
+      "expect": "\"\\u2028\\u2029\""
+    },
+    {
+      "case": "the control characters with short escapes",
+      "json": "\"\\b\\f\\n\\r\\t\"",
+      "expect": "\"\\b\\f\\n\\r\\t\""
+    },
+    {
+      "case": "the other control characters, NUL and U+001F",
+      "json": "\"\\u0000\\u0001\\u001f\"",
+      "expect": "\"\\u0000\\u0001\\u001f\""
+    },
+    {
+      "case": "DEL, U+007F, outside space to tilde",
+      "json": "\"a\\u007fb\"",
+      "expect": "\"a\\u007fb\""
+    },
+    {
+      "case": "quotation mark, reverse solidus and solidus",
+      "json": "\"\\\" \\\\ /\"",
+      "expect": "\"\\\" \\\\ /\""
+    },
+    {
+      "case": "raw UTF-8 in the input text",
+      "json": "{\"name\": \"Jürgen Ørsted\"}",
+      "expect": "{\"name\":\"J\\u00fcrgen \\u00d8rsted\"}"
+    },
+    {
+      "case": "integers within the safe range",
+      "json": "[0, -1, 9007199254740991, -9007199254740991, 100000000000000000000]",
+      "expect": "[0,-1,9007199254740991,-9007199254740991,100000000000000000000]"
+    },
+    {
+      "case": "fractions Python and JavaScript write alike",
+      "json": "[0.5, -2.25, 123.456, 0.0001, 1e+21, 1.5e+300]",
+      "expect": "[0.5,-2.25,123.456,0.0001,1e+21,1.5e+300]"
+    },
+    {
+      "case": "fractions below 1e-4, which Python writes with a two-digit exponent",
+      "json": "[0.00001, 1.5e-07, 5e-324]",
+      "expect": "[1e-05,1.5e-07,5e-324]"
+    },
+    {
+      "case": "the checkout_jwt payload of lcp's card.json vi.CJ",
+      "json": "{\"iss\":\"https://seller.example\",\"checkout\":\"chk_1001\",\"legalContext\":{\"type\":\"sha256\",\"value\":\"0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\",\"legalContextUrl\":\"https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f\"}}",
+      "expect": "{\"iss\":\"https://seller.example\",\"checkout\":\"chk_1001\",\"legalContext\":{\"type\":\"sha256\",\"value\":\"0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\",\"legalContextUrl\":\"https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f\"}}"
+    },
+    {
+      "case": "the protected header of lcp's card.json vi.CJ",
+      "json": "{\"alg\":\"ES256\",\"typ\":\"JWT\",\"kid\":\"merchant-1\"}",
+      "expect": "{\"alg\":\"ES256\",\"typ\":\"JWT\",\"kid\":\"merchant-1\"}"
+    },
+    {
+      "case": "the KB-SD-JWT payload of lcp's card.json vi.L2i",
+      "json": "{\"nonce\":\"bm9uY2UtbDI\",\"aud\":\"https://network.example/vi\",\"iat\":1790000000,\"exp\":1790000900,\"sd_hash\":\"7gCJQCAq0P_gJxTGySa8UaIbA-eGUxFNXeITS6lRrTM\",\"_sd_alg\":\"sha-256\",\"_sd\":[\"WXyaAnGMjogrM6ULtwF5e8_NTXHzvARzPW-daUFohaU\",\"Pj0apNiCdyg_wczvRgwLhFjKf2Wao0qC1goEFombEVc\"],\"delegate_payload\":[{\"...\":\"WXyaAnGMjogrM6ULtwF5e8_NTXHzvARzPW-daUFohaU\"},{\"...\":\"Pj0apNiCdyg_wczvRgwLhFjKf2Wao0qC1goEFombEVc\"}]}",
+      "expect": "{\"nonce\":\"bm9uY2UtbDI\",\"aud\":\"https://network.example/vi\",\"iat\":1790000000,\"exp\":1790000900,\"sd_hash\":\"7gCJQCAq0P_gJxTGySa8UaIbA-eGUxFNXeITS6lRrTM\",\"_sd_alg\":\"sha-256\",\"_sd\":[\"WXyaAnGMjogrM6ULtwF5e8_NTXHzvARzPW-daUFohaU\",\"Pj0apNiCdyg_wczvRgwLhFjKf2Wao0qC1goEFombEVc\"],\"delegate_payload\":[{\"...\":\"WXyaAnGMjogrM6ULtwF5e8_NTXHzvARzPW-daUFohaU\"},{\"...\":\"Pj0apNiCdyg_wczvRgwLhFjKf2Wao0qC1goEFombEVc\"}]}"
+    }
+  ]
+}

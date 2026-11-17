@@ -2,9 +2,9 @@
 // ucp/checkout/agent-signed by their own steps: the request handed to the signer is the protocol package's build over
 // the file's checkout, and the file's payment, given as the signer's answer, completes a payment bound to the file's H.
 // AP2's push funding: a payment the payer's side already sent is kept as `moved` when the gate declines it. The
-// summaries of the checkout requests, summary-checkout.json's rows, which the Python tests run too; none names a
-// network, so each is shown with the signer's account's. The x402 route is also paid through the gate, its approver
-// shown that summary.
+// summaries of the checkout requests, summary-checkout.json's rows, which the Python tests run too; each payment moves
+// on no ledger, so each is shown with no network. The x402 route is also paid through the gate, its approver shown that
+// summary.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BINDINGS } from "@integraledger/lcp";
@@ -23,7 +23,6 @@ const bindingOf = (id: string): Binding => BINDINGS.find((b) => b.id === id) as 
 const row = (file: V, pairing: string, name: string): V =>
   file.buyer.rows.find((r: V) => r.pairing === pairing && r.name === name);
 const ACCOUNT = row(AP2_X402, "ap2/checkout-mandate/x402", "B2").input.account as string;
-const NETWORK = ACCOUNT.split(":").slice(0, 2).join(":");
 const NO_END = { notBefore: null, notAfter: null, unit: "seconds" };
 
 /** The request for the file's checkout and the payment the file presents, completed by `finish` with the file's ATR. */
@@ -62,7 +61,7 @@ describe("the checkout pieces by their own steps", () => {
     expect(whole).toEqual({ signed: presented, bytes: atr, h, agreement: receiptFor(h) });
     expect([signer.requests, shown.map((t) => [t.act, t.request, t.summary])]).toEqual([
       [request],
-      [["payment", request, { amount: "19900", payees: [], asset: "USD", network: NETWORK, validity: NO_END, atr }]],
+      [["payment", request, { amount: "19900", payees: [], asset: "USD", network: null, validity: NO_END, atr }]],
     ]);
   });
 

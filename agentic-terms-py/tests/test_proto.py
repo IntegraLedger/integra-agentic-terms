@@ -677,8 +677,15 @@ CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
     ],
     "VI read or build of a checkout_jwt that is not a string of three dot-separated visible-ASCII segments whose second decodes to a JSON object": lambda: [
         CARD_MASTERCARD_VI_IMMEDIATE.read("a.b"),
-        CARD_MASTERCARD_VI_IMMEDIATE.read(42),
+        CARD_MASTERCARD_VI_AUTONOMOUS.read(42),
         CARD_MASTERCARD_VI_AUTONOMOUS.build(f"a.{_encoded([1])}.b", CARD["fixed"]["H"]),
+    ],
+    "VI Immediate build of a checkout payload that is not an object, or whose checkout is not an object": lambda: [
+        CARD_MASTERCARD_VI_IMMEDIATE.build(42, CARD["fixed"]["H"]),
+        CARD_MASTERCARD_VI_IMMEDIATE.build({"checkout": [], "shown": CARD["C2"]["build"]["doc"]}, CARD["fixed"]["H"]),
+    ],
+    "VI Immediate build of a checkout payload over 12288 bytes of JSON": lambda: [
+        CARD_MASTERCARD_VI_IMMEDIATE.build({"checkout": {"pad": "a" * 12288}, "shown": CARD["C2"]["build"]["doc"]}, CARD["fixed"]["H"]),
     ],
     "VI read or build of a checkout_jwt over 16384 characters": lambda: [
         CARD_MASTERCARD_VI_IMMEDIATE.read("a" * 16385),
@@ -749,16 +756,11 @@ CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
 
 # The one row the buyer half does not read: advertise is the seller's.
 CARD_SELLER_ROWS = ["advertise with a link over 2048 characters"]
-# The rows of Immediate mode's build over the agent's own checkout payload, which this package does not build yet.
-CARD_NOT_BUILT = [
-    "VI Immediate build of a checkout payload that is not an object, or whose checkout is not an object",
-    "VI Immediate build of a checkout payload over 12288 bytes of JSON",
-]
 
 
 def test_card_agreed_refusals_name_every_row_the_buyer_half_reads() -> None:
     cases = sorted(r["case"] for r in CARD["agreedRefusals"]["rows"])
-    assert sorted([*CARD_REFUSALS, *CARD_SELLER_ROWS, *CARD_NOT_BUILT]) == cases
+    assert sorted([*CARD_REFUSALS, *CARD_SELLER_ROWS]) == cases
 
 
 @pytest.mark.parametrize("case", list(CARD_REFUSALS))

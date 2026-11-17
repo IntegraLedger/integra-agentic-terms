@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ._types import Inputs, Payee, Summary, Validity
+from ._summary_card import tap_field, vi_checkout_mandate, vi_immediate, vic_reference
 from ._summary_checkout import acp_allowance, ap2_checkout_mandate, ucp_checkout, ucp_legal_context
 from ._summary_rail import (
     aptos_transaction,
@@ -122,6 +123,11 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/aptos": SummaryEntry(show=aptos_transaction),
     "x402/exact/cardano": SummaryEntry(show=cardano_transaction),
     "x402/exact/sui": SummaryEntry(show=sui_transaction),
+    "card/visa-tap": SummaryEntry(show=tap_field),
+    "card/mastercard-agent-pay": SummaryEntry(show=tap_field),
+    "card/visa-vic": SummaryEntry(show=vic_reference),
+    "card/mastercard-vi/immediate": SummaryEntry(show=vi_immediate),
+    "card/mastercard-vi/autonomous": SummaryEntry(show=vi_checkout_mandate),
 }
 
 

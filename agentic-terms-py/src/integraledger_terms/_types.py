@@ -386,7 +386,8 @@ class Summary:
     closable_by: tuple[str, ...] | None = None
     grant: Any = None
     asset: str
-    network: str
+    # The CAIP-2 network, or None where the payment moves on no ledger (a card network, a fiat checkout).
+    network: str | None
     validity: Validity
     atr: bytes
 

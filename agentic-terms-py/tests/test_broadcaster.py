@@ -124,12 +124,12 @@ BINDS_NOTHING = {
     "mpp/session/xrpl/stock": "mpp/no-signed-place",
     "x402/upto/xrpl": "x402/no-signed-place",
 }
-PRESENTED_KEYS = ("payload", "allowance", "checkout_mandate", "signatureInput", "l2", "contentDigest")
+PRESENTED_KEYS = ("payload", "allowance", "checkout_mandate", "signatureInput", "l2", "contentDigest", "transactionReferenceId")
 
 
 def presented_in(value: Any, depth: int = 0) -> Iterator[dict[str, Any]]:
     """Every object in a vector file that can be presented: one carrying a member PRESENTED_KEYS names, such as a
-    payload, an allowance, a checkout mandate or a request's Content-Digest."""
+    payload, an allowance, a checkout mandate, a request's Content-Digest or a VIC transaction reference."""
     if depth > 14:
         return
     if isinstance(value, dict):

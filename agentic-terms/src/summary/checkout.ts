@@ -3,7 +3,7 @@
  * merchant's `checkout_jwt` (`ap2-checkout-mandate`), the UCP checkout a mandate issuer signs over (`ucp-checkout`), the
  * UCP checkout a platform's signed request completes with the `legal_context` member (`ucp-legal-context`), and ACP's
  * delegated-payment allowance (`acp-allowance`). Each authorises a charge the seller's own processor makes, in a
- * currency's minor units; none names a network, so the summary's is the signer's account's.
+ * currency's minor units, and the payment moves on no ledger, so the summary's network is null.
  */
 import { jwsPayload } from "@integraledger/lcp/ap2";
 import { disclosureDigest } from "@integraledger/lcp/card";
@@ -16,7 +16,6 @@ import { isObject } from "./evm-fields.js";
 const MAX_TEXT = 256;
 /** The longest checkout JWT read: 1 MiB, the protocol package's bound on it. */
 const MAX_JWT = 1_048_576;
-const CAIP2 = /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/;
 const CHECKOUT_VCT = "mandate.checkout.1";
 const NO_END = { notBefore: null, notAfter: null, unit: "seconds" } as const;
 
@@ -33,11 +32,11 @@ function totalOf(totals: unknown): string | undefined {
 
 /**
  * A checkout's charge: the amount of its one `total`, in `currency`'s minor units, paid to the merchant `merchant.id`
- * names where `named` reads one, to no payee the request names otherwise. The checkout names no expiry, and no network:
- * the network is the signer's account's.
+ * names where `named` reads one, to no payee the request names otherwise. The checkout names no expiry, and the payment
+ * moves on no ledger: the network is null.
  */
-function checkoutShown(c: unknown, network: unknown, named: boolean): Shown | undefined {
-  if (!isObject(c) || typeof network !== "string" || !CAIP2.test(network)) return undefined;
+function checkoutShown(c: unknown, named: boolean): Shown | undefined {
+  if (!isObject(c)) return undefined;
   const amount = totalOf(c["totals"]);
   const currency = c["currency"];
   if (amount === undefined || !text(currency)) return undefined;
@@ -47,7 +46,7 @@ function checkoutShown(c: unknown, network: unknown, named: boolean): Shown | un
     if (!isObject(merchant) || !text(merchant["id"])) return undefined;
     payees = [{ account: merchant["id"], amount }];
   }
-  return { amount, payees, asset: currency, network, validity: NO_END };
+  return { amount, payees, asset: currency, network: null, validity: NO_END };
 }
 
 /**
@@ -55,7 +54,7 @@ function checkoutShown(c: unknown, network: unknown, named: boolean): Shown | un
  * `checkout_hash`: its `checkout_jwt` is read only where `checkout_hash` is that JWT's hash, the base64url of its
  * SHA-256, and its payload is the checkout read, the merchant `merchant.id` where it names one.
  */
-export async function ap2CheckoutMandate(request: SigningRequest, network?: string): Promise<Shown | undefined> {
+export async function ap2CheckoutMandate(request: SigningRequest): Promise<Shown | undefined> {
   const r = request as { kind?: unknown; content?: unknown };
   if (r.kind !== "ap2-checkout-mandate" || !isObject(r.content) || r.content["vct"] !== CHECKOUT_VCT) return undefined;
   const jwt = r.content["checkout_jwt"];
@@ -63,22 +62,22 @@ export async function ap2CheckoutMandate(request: SigningRequest, network?: stri
     return undefined;
   }
   const payload = jwsPayload(jwt);
-  return isRefusal(payload) ? undefined : checkoutShown(payload, network, true);
+  return isRefusal(payload) ? undefined : checkoutShown(payload, true);
 }
 
 /** `ucp-checkout`: the checkout the mandate issuer signs over. */
-export function ucpCheckout(request: SigningRequest, network?: string): Shown | undefined {
+export function ucpCheckout(request: SigningRequest): Shown | undefined {
   const r = request as { kind?: unknown; checkout?: unknown };
-  return r.kind === "ucp-checkout" ? checkoutShown(r.checkout, network, false) : undefined;
+  return r.kind === "ucp-checkout" ? checkoutShown(r.checkout, false) : undefined;
 }
 
 /** `ucp-legal-context`: the checkout the platform's signed request completes, with the member `{type, value}`. */
-export function ucpLegalContext(request: SigningRequest, network?: string): Shown | undefined {
+export function ucpLegalContext(request: SigningRequest): Shown | undefined {
   const r = request as { kind?: unknown; checkout?: unknown; legal_context?: unknown };
   if (r.kind !== "ucp-legal-context" || !isObject(r.legal_context)) return undefined;
   const { type, value } = r.legal_context;
   if (type !== "sha256" || typeof value !== "string" || !/^0x[0-9a-f]{64}$/.test(value)) return undefined;
-  return checkoutShown(r.checkout, network, false);
+  return checkoutShown(r.checkout, false);
 }
 
 /** Days from 1970-01-01 to the civil date, in the proleptic Gregorian calendar. */
@@ -119,7 +118,7 @@ function unixSeconds(s: unknown): string | undefined {
  * `acp-allowance`: ACP's allowance, the most the merchant may charge: `max_amount`, in `currency`'s minor units, to
  * `merchant_id`, until `expires_at`.
  */
-export function acpAllowance(request: SigningRequest, network?: string): Shown | undefined {
+export function acpAllowance(request: SigningRequest): Shown | undefined {
   const r = request as { kind?: unknown; allowance?: unknown };
   if (r.kind !== "acp-allowance" || !isObject(r.allowance)) return undefined;
   const a = r.allowance;
@@ -127,12 +126,11 @@ export function acpAllowance(request: SigningRequest, network?: string): Shown |
   const until = unixSeconds(a["expires_at"]);
   const { currency, merchant_id: merchant } = a;
   if (maximum === undefined || until === undefined || !text(currency) || !text(merchant)) return undefined;
-  if (typeof network !== "string" || !CAIP2.test(network)) return undefined;
   return {
     maximum,
     payees: [{ account: merchant, amount: maximum }],
     asset: currency,
-    network,
+    network: null,
     validity: { notBefore: null, notAfter: until, unit: "seconds" },
   };
 }

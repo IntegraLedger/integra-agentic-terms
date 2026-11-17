@@ -3,6 +3,7 @@ export { FLOOR_INPUTS } from "./checks.js";
 export { openChannel, recordCharge, within, type ChannelHold } from "./channels.js";
 export { check, confirm, finish } from "./gate.js";
 export { transact } from "./transact.js";
+export { viJson } from "./pairings/card.js";
 export type {
   AgreeOptions,
   AgreementPayment,

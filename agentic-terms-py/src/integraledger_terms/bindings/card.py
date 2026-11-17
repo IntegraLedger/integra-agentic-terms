@@ -1,10 +1,13 @@
-"""The buyer halves of the card pairings card/visa-tap, card/mastercard-vi/immediate, card/mastercard-vi/autonomous and
-card/seller-reference: read, build and bound.
+"""The buyer halves of the card pairings card/visa-tap, card/mastercard-agent-pay, card/visa-vic,
+card/mastercard-vi/immediate, card/mastercard-vi/autonomous and card/seller-reference: read, build and bound.
 
-- Visa TAP: the hash rides in what the agent's agent-payer-auth message signature covers: its nonce, the base64 of the
+- Visa TAP and Mastercard Agent Pay: the hash rides in what the agent's message signature covers, a TAP signature
+  tagged agent-payer-auth or an Agent Pay one tagged Agent-pay-auth or agent-pay-auth: its nonce, the base64 of the
   hash followed by 32 random bytes, or the merchant's checkout path, whose last segment is the hash.
-- Mastercard Verifiable Intent, Immediate mode: the hash rides in the merchant's checkout_jwt, whose SHA-256 the
-  user's L2 mandate signs as checkout_hash.
+- Visa Intelligent Commerce: the hash is the transactionReferenceId the agent writes when it asks for the sale's
+  credential, as unpadded base64url.
+- Mastercard Verifiable Intent, Immediate mode: the hash rides in the checkout_jwt, the merchant's or one the agent
+  creates from its checkout payload, whose SHA-256 the user's L2 mandate signs as checkout_hash.
 - Mastercard Verifiable Intent, Autonomous mode: the hash rides in the checkout_jwt of the agent's L3b checkout
   mandate, signed under the key the user's L2 delegates, with L2 signed under L1's key; bound verifies both ES256
   signatures.
@@ -13,6 +16,7 @@ card/seller-reference: read, build and bound.
 Only the Autonomous mode's bound verifies a signature.
 """
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -26,7 +30,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from .._core import AtrHash, hash_equals
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
-from ._codec import b64_decode, b64_encode, b64u_decode, text_encode
+from ._codec import b64_decode, b64_encode, b64u_decode, b64u_encode, text_encode
 from ._jose import (
     SdJwt,
     SdJwtBounds,
@@ -34,6 +38,7 @@ from ._jose import (
     decode_json_segment,
     disclosure_digest,
     js_length,
+    json_bytes,
     jws_segments,
     read_sd_jwt,
     within_depth,
@@ -46,8 +51,11 @@ from ._lcp import (
     normal_hash,
 )
 from ._sfv import TOO_LARGE, InnerList, Item, Member, parse_dictionary
+from ._x402 import same_json
 
 VISA_TAP = "card/visa-tap"
+AGENT_PAY = "card/mastercard-agent-pay"
+VISA_VIC = "card/visa-vic"
 VI_IMMEDIATE = "card/mastercard-vi/immediate"
 VI_AUTONOMOUS = "card/mastercard-vi/autonomous"
 SELLER_REFERENCE = "card/seller-reference"
@@ -62,7 +70,13 @@ NONCE_BYTES = 64
 MAX_VI_LAYER = 65_536
 MAX_CHECKOUT_JWT = 16_384
 MAX_VI_DISCLOSURES = 32
-PAYER_TAG = "agent-payer-auth"
+# The tag of a TAP payment signature (TAP's field table, tag), and Mastercard's two published spellings of Agent Pay's.
+TAP_TAGS = ("agent-payer-auth",)
+AGENT_PAY_TAGS = ("Agent-pay-auth", "agent-pay-auth")
+# The room build leaves within MAX_CHECKOUT_JWT for the agent's protected header and signature, and so the longest
+# checkout payload build writes, in bytes of JSON, as the protocol package bounds them.
+CHECKOUT_JWT_FRAME = 1024
+MAX_CHECKOUT_PAYLOAD = ((MAX_CHECKOUT_JWT - CHECKOUT_JWT_FRAME) // 4) * 3
 CHECKOUT_VCT = "mandate.checkout.1"
 PAYMENT_VCT = "mandate.payment.1"
 OPEN_CHECKOUT_VCT = "mandate.checkout.open.1"
@@ -140,6 +154,12 @@ def read_checkout_shown(doc: object) -> Advertised | Refusal:
     return _with_agreement(payload, _legal_context_of(payload))
 
 
+def read_vi_immediate(doc: object) -> Advertised | Refusal:
+    """Immediate mode: the hash, the link and, when present, the agreement URL from a checkout_jwt, or from the JSON the
+    seller showed where the agent creates the checkout_jwt itself."""
+    return read_checkout_shown(doc) if isinstance(doc, str) else read_shown(doc)
+
+
 # ── TAP ──
 
 
@@ -163,9 +183,9 @@ def _is_signature_set(d: Mapping[str, Member]) -> bool:
     return all(isinstance(m, Item) and m.item.t == "bytes" for m in d.values())
 
 
-def _is_payer(m: Member) -> bool:
+def _is_payer(m: Member, tags: tuple[str, ...]) -> bool:
     tag = m.params.get("tag")
-    return tag is not None and tag.t == "string" and tag.v == PAYER_TAG
+    return tag is not None and tag.t == "string" and tag.v in tags
 
 
 def _is_bare_path_component(it: Item) -> bool:
@@ -201,8 +221,30 @@ def tap_build(h: AtrHash) -> dict[str, Any] | Refusal:
     return {"nonce": b64_encode(bytes.fromhex(value[2:]) + token_bytes(NONCE_BYTES - 32))}
 
 
-def tap_bound(presented: object) -> AtrHash | Refusal:
-    """The hash from a TAP request: every agent-payer-auth signature carries it, by @path, listed with no parameters,
+def vic_build(h: AtrHash) -> dict[str, Any] | Refusal:
+    """The transaction reference for the agent to write into its VIC credential request: the hash as unpadded
+    base64url."""
+    value = normal_hash(h)
+    if value is None:
+        return Refusal("card/legal-context-malformed")
+    return {"transactionReferenceId": b64u_encode(bytes.fromhex(value[2:]))}
+
+
+def vic_bound(presented: object) -> AtrHash | Refusal:
+    """The hash from a VIC transaction reference: exactly 43 characters of unpadded base64url of 32 bytes."""
+    if not is_object(presented):
+        return Refusal("card/vic-reference-malformed")
+    reference = presented.get("transactionReferenceId")
+    if not isinstance(reference, str) or js_length(reference) != 43:
+        return Refusal("card/vic-reference-malformed")
+    data = b64u_decode(reference)
+    if data is None or len(data) != 32:
+        return Refusal("card/vic-reference-malformed")
+    return "0x" + data.hex()
+
+
+def tap_bound(presented: object, tags: tuple[str, ...] = TAP_TAGS) -> AtrHash | Refusal:
+    """The hash from a TAP or Agent Pay request: every signature whose tag is one of tags carries it, by @path, listed with no parameters,
     where the request's path ends in a segment that is the hash, the nonce then not read, since a stock agent draws its
     nonce at random and may draw 64 bytes; or otherwise by its nonce, the padded base64 of 64 bytes whose first 32 are
     the hash. Each such signature carries the same hash, and one of them has its Signature member, so whichever the
@@ -243,7 +285,7 @@ def tap_bound(presented: object) -> AtrHash | Refusal:
             return Refusal("card/tap-path-malformed")
         by_path_hash = _hash_in_path(path)
 
-    payers = [(label, m) for label, m in inputs.items() if _is_payer(m) and isinstance(m, InnerList)]
+    payers = [(label, m) for label, m in inputs.items() if _is_payer(m, tags) and isinstance(m, InnerList)]
     if not payers:
         return Refusal("card/tap-no-payer-signature")
     h: AtrHash | None = None
@@ -334,6 +376,45 @@ def vi_build(doc: object, h: AtrHash) -> dict[str, Any] | Refusal:
         "checkoutMandate": {"vct": CHECKOUT_VCT, "checkout_jwt": doc, "checkout_hash": digest},
         "transactionId": digest,
     }
+
+
+def vi_immediate_build(doc: object, h: AtrHash) -> dict[str, Any] | Refusal:
+    """Immediate mode: on a checkout_jwt, the checkout mandate as vi_build gives it; on {checkout, shown}, the checkout
+    payload the agent creates with the seller's legalContext member written into it, last, for the agent to sign as its
+    checkout_jwt. The shown legal context's hash must be h, and a payload that already holds a legalContext must hold
+    that one."""
+    if isinstance(doc, str):
+        return vi_build(doc, h)
+    if not is_object(doc) or not is_object(doc.get("checkout")):
+        return Refusal("card/vi-malformed")
+    shown = read_shown(doc.get("shown"))
+    if isinstance(shown, Refusal):
+        return shown
+    if not hash_equals(shown.h, h):
+        return Refusal("card/vi-legal-context-conflict")
+    legal_context = doc["shown"]["legalContext"]
+    checkout = doc["checkout"]
+    if "legalContext" in checkout and not same_json(checkout["legalContext"], legal_context):
+        return Refusal("card/vi-legal-context-conflict")
+    out = dict(checkout) if "legalContext" in checkout else {**checkout, "legalContext": legal_context}
+    size = json_bytes(out)
+    if size is None:
+        return Refusal("card/vi-malformed")
+    if size > MAX_CHECKOUT_PAYLOAD or not within_depth(out):
+        return Refusal("card/too-large")
+    return {"checkout": out}
+
+
+def vi_json(value: Any) -> str | None:
+    """JSON as a Verifiable Intent signer signs it (lcp profile card-mastercard-vi.md, rule 7): compact, with every
+    character outside space to ~ escaped, a non-ASCII one as \\uXXXX in lowercase hex, one per UTF-16 code unit, and
+    members in the order the mapping holds them; json.dumps(value, separators=(",", ":")), the re-encoding VI's
+    reference verifier checks each signature over, so a header or payload signed as this text is one it accepts. None
+    for a value that is not JSON: NaN, an infinity, or anything json.dumps does not write."""
+    try:
+        return json.dumps(value, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    except (TypeError, ValueError, RecursionError):
+        return None
 
 
 def _jwk_of(cnf: object) -> Mapping[str, Any] | None:
@@ -454,6 +535,54 @@ class CardVisaTap:
 
 
 @dataclass(frozen=True, slots=True)
+class CardMastercardAgentPay:
+    """TAP's carrier under Mastercard's two published tag spellings."""
+
+    id: str = AGENT_PAY
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
+
+    def read(self, doc: Json) -> Advertised | Refusal:
+        return read_shown(doc)
+
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
+        """The nonce for the agent's signer to place in every Agent Pay message signature of its checkout request."""
+        return tap_build(h)
+
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        return tap_bound(presented, AGENT_PAY_TAGS)
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller submits the card payment to its processor. A value that is not an object
+        gets card/tap-signature-input-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("card/tap-signature-input-malformed")
+
+
+@dataclass(frozen=True, slots=True)
+class CardVisaVic:
+    id: str = VISA_VIC
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
+
+    def read(self, doc: Json) -> Advertised | Refusal:
+        return read_shown(doc)
+
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
+        """The transaction reference for the agent's credential request."""
+        return vic_build(h)
+
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        return vic_bound(presented)
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller submits the card payment with the credential Visa issued for the sale to
+        its processor. A value that is not an object gets card/vic-reference-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("card/vic-reference-malformed")
+
+
+@dataclass(frozen=True, slots=True)
 class CardMastercardViImmediate:
     id: str = VI_IMMEDIATE
     coverage: Coverage = "none"
@@ -461,10 +590,10 @@ class CardMastercardViImmediate:
     agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
-        return read_checkout_shown(doc)
+        return read_vi_immediate(doc)
 
     def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
-        return vi_build(choice, h)
+        return vi_immediate_build(choice, h)
 
     def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the checkout_jwt of the one checkout mandate the user's L2 references. Its checkout_hash, and

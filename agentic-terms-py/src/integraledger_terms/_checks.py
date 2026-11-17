@@ -224,11 +224,12 @@ def floor_missing(pairing: str, inputs: Inputs) -> Declined | None:
     return _declined("floor-missing", floor.input)
 
 
-def _namespace(network: str) -> str:
-    return network.split(":", 1)[0]
+def _namespace(network: str | None) -> str:
+    """The CAIP-2 namespace of a network, or "" where the payment moves on no ledger and the summary names none."""
+    return "" if network is None else network.split(":", 1)[0]
 
 
-def _life_of(pairing: str, network: str) -> float | None:
+def _life_of(pairing: str, network: str | None) -> float | None:
     """read.life in seconds, or None where the data states none or no pace converts it."""
     life = _LIFE.get(pairing)
     if life is None:
@@ -244,7 +245,7 @@ def _big(v: str | None) -> int | None:
     return int(v) if v is not None and v.isascii() and v.isdigit() and len(v) <= 78 else None
 
 
-def _window(pairing: str, v: Validity, network: str, now: int, inputs: Inputs) -> float | Literal["no-end"] | None:
+def _window(pairing: str, v: Validity, network: str | None, now: int, inputs: Inputs) -> float | Literal["no-end"] | None:
     """How long the signed payment stays payable, in seconds, from the summary's validity: a deadline in seconds less
     the gate's clock; a deadline signed as a height less the start the request signs, else the height the caller gave
     the build, times the chain's pace; where the payer signs no deadline, the pairing's read.life; "no-end" where none

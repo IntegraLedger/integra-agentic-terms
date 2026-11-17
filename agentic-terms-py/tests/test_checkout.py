@@ -112,9 +112,8 @@ def test_ap2_checkout_mandate_x402_by_its_own_steps() -> None:
     )
     assert whole == Transacted(signed=presented, atr_bytes=atr, h=h, agreement=receipt(h))
     assert signer.requests == [request]
-    network = ":".join(ACCOUNT.split(":")[:2])
     expected = Summary(
-        amount="19900", payees=(), asset="USD", network=network, validity=Validity(None, None, "seconds"), atr=atr
+        amount="19900", payees=(), asset="USD", network=None, validity=Validity(None, None, "seconds"), atr=atr
     )
     assert [(t.act, t.request, t.summary) for t in shown] == [("payment", request, expected)]
 
