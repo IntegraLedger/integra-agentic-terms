@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import is_object, normal_hash
 from ._rail_bytes import U64_LIMIT, base64_bytes, decimal_below, parse_json
 from ._x402 import (
@@ -242,13 +242,14 @@ class AptosUnsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactAptos:
     id: str = ID
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return read_for(_check)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> AptosUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> AptosUnsigned | Refusal:
         """The wallet request: the scheme's own payment, which carries no hash. H is checked first, then the document
         and the option."""
         if normal_hash(h) is None:
@@ -263,7 +264,7 @@ class X402ExactAptos:
             request={"kind": "aptos-transaction", "accepted": accepted}, _required=required, _accepted=accepted
         )
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the echoed, unsigned extensions.legalContext."""
         parts = presented_with(presented, _check)
         if isinstance(parts, Refusal):

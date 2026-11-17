@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._cbor import UNDEFINED, CborMap, decode_cbor, is_tag, map_get
 from ._codec import b58_decode, canonical_or_none
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
@@ -31,6 +31,9 @@ MAX_ADDRESS = 64
 MAX_MEMO = 256
 MAX_OPERATIONS = 4096
 MAX_TRANSACTION = 16384
+# The margin the stock client takes off an expiry, in seconds: it signs now plus maxTimeoutSeconds less this, so that the
+# stock facilitator, which refuses an expiry past its own clock plus maxTimeoutSeconds, takes the payment.
+EXPIRY_MARGIN = 5
 _UINT64_LIMIT = 1 << 64
 _TEXT_PREFIX = bytes([0x78, 0x4D])
 _TAG24_PREFIX = bytes([0xD8, 0x18, 0x58, 0x4F])
@@ -81,7 +84,8 @@ def _is_account(v: object) -> bool:
 
 def ccd_option(o: object) -> bool:
     """The pairing's filter: an exact option on a ccd: network, for CCD or a token symbol, whose payTo and
-    extra.feePayer are base58check account addresses."""
+    extra.feePayer are base58check account addresses, and whose amount is "0" or a positive decimal below 2^64: the
+    scheme asks strict equality and sets no floor."""
     if not is_object(o):
         return False
     extra = o.get("extra")
@@ -95,7 +99,7 @@ def ccd_option(o: object) -> bool:
         and _is_account(o.get("payTo"))
         and is_object(extra)
         and _is_account(extra.get("feePayer"))
-        and is_amount(amount)
+        and (is_amount(amount) or amount == "0")
         and _DECIMAL.fullmatch(amount) is not None
         and int(amount) < _UINT64_LIMIT
         and timeout_seconds(o.get("maxTimeoutSeconds")) is not None
@@ -230,15 +234,18 @@ class CcdUnsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactCcd:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    # No agreement while the nonce is not shown single-use: the agreement option waits on a run that shows it.
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return read_for(CHECK)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> CcdUnsigned | Refusal:
-        """One transfer to payTo whose memo carries the hash. H is checked first, then the form of the choice's now,
-        then its document and option."""
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> CcdUnsigned | Refusal:
+        """One transfer to payTo whose memo carries the hash, the CCD memo where the asset is CCD in any case and the
+        PLT memo otherwise, expiring at now plus maxTimeoutSeconds less EXPIRY_MARGIN, as the stock client sets it. H
+        is checked first, then the form of the choice's now, then its document and option."""
         if normal_hash(h) is None:
             return Refusal("ccd/memo-not-lcp")
         if not is_object(choice):
@@ -262,12 +269,13 @@ class X402ExactCcd:
             "toAddress": accepted["payTo"],
             "asset": accepted["asset"],
             "amount": accepted["amount"],
-            "memo": ccd_memo(h) if accepted["asset"] == "CCD" else plt_memo(h),
-            "expiresBy": now + timeout,
+            # CCD is named without regard to case, as the stock facilitator reads the asset.
+            "memo": ccd_memo(h) if accepted["asset"].lower() == "ccd" else plt_memo(h),
+            "expiresBy": now + timeout - EXPIRY_MARGIN,
         }
         return CcdUnsigned(request=request, _required=required, _accepted=accepted)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash inside what the sender signed, in x402's wire form: the one transfer's memo. Of the signed
         transaction it reads the version, the header's sender and expiry, the payload's type and the one transfer's
         memo, and no sponsor, receiver, amount or token. No signature is verified here; the chain accepts the

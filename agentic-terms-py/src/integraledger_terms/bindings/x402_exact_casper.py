@@ -1,6 +1,7 @@
 """The buyer half of the pairing x402/exact/casper: read, build with complete, and bound.
 
-The ATR hash rides as the 32-byte nonce of a CEP-3009 TransferWithAuthorization. Nothing here fetches, hashes or signs.
+The ATR hash rides as the 32-byte nonce of a CEP-3009 TransferWithAuthorization; on an agreement the nonce is the
+agreement's own value for H, SHA-256 over the ASCII bytes lcp-agreement-v1 and H. Nothing here fetches or signs.
 """
 
 import re
@@ -8,8 +9,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._core import AtrHash, agreement_value
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._jose import js_length
 from ._lcp import is_object, normal_hash, safe_int, uint256_of
 from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds, x402_broadcaster
@@ -25,6 +26,7 @@ _TAGGED = re.compile(r"0[12](?:[0-9a-fA-F]{2})+")
 MAX_NAME = 64
 MAX_PUBLIC_KEY_HEX = 68
 MAX_SIGNATURE_HEX = 132
+ACTS = ("payment", "agreement")
 
 
 def _is_address(value: object) -> bool:
@@ -40,7 +42,8 @@ def _is_tagged(value: object, max_hex: int) -> bool:
 
 
 def casper_option(option: object) -> bool:
-    """The pairing's filter: an exact option on a casper: network that build can turn into typed data."""
+    """The pairing's filter: an exact option on a casper: network that build can turn into typed data, its amount a
+    canonical decimal uint256, "0" among them, the agreement's floor being zero by the token."""
     if not is_object(option):
         return False
     extra = option.get("extra")
@@ -53,7 +56,7 @@ def casper_option(option: object) -> bool:
         and isinstance(asset, str)
         and _PACKAGE.fullmatch(asset) is not None
         and _is_address(option.get("payTo"))
-        and is_amount(option.get("amount"))
+        and (is_amount(option.get("amount")) or option.get("amount") == "0")
         and uint256_of(option.get("amount")) is not None
         and is_object(extra)
         and _is_name(extra.get("name"))
@@ -158,16 +161,21 @@ def _payment_of(presented: object) -> Mapping[str, Any] | Refusal:
 @dataclass(frozen=True, slots=True)
 class X402ExactCasper:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="0")
 
     def read(self, doc: Any) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return read_for(CHECK)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> CasperUnsigned | Refusal:
-        """The CEP-3009 authorization the payer signs for the chosen option, with the hash as its nonce. H is checked
-        first, then the form of the choice's from and now, then its document and option."""
-        if normal_hash(h) is None:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> CasperUnsigned | Refusal:
+        """The CEP-3009 authorization the payer signs for the chosen option, with H as its nonce, or for the act
+        agreement the agreement's value. H is checked first, then the act (None is the act payment), then the form of
+        the choice's from and now, then its document and option."""
+        nh = normal_hash(h)
+        if nh is None:
+            return Refusal("casper/payload-malformed")
+        if act is not None and act not in ACTS:
             return Refusal("casper/payload-malformed")
         if not is_object(choice):
             return Refusal("x402/not-v2")
@@ -190,7 +198,7 @@ class X402ExactCasper:
         extra = accepted["extra"]
         typed_data = cep3009_typed_data(
             accepted["network"], accepted["asset"], extra["name"], extra["version"], from_, accepted["payTo"],
-            accepted["amount"], valid_before, h,
+            accepted["amount"], valid_before, agreement_value(nh) if act == "agreement" else nh,
         )  # fmt: skip
         if isinstance(typed_data, Refusal):
             return typed_data
@@ -209,16 +217,25 @@ class X402ExactCasper:
             _authorization=authorization,
         )
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
-        """The hash inside what the payer signed: the authorization's nonce, lower-case. The signature is not
-        verified here."""
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        """The nonce the payer signed, lower-case: with nothing given, H as a payment carries it. Given the act and H,
+        H where the nonce is the value that act carries in H's place (H, or the agreement's value for the act
+        agreement), and casper/nonce-not-bound otherwise; a given H that is not a 32-byte hash, or an act that is not
+        one, is casper/payload-malformed. The signature is not verified here; the token contract verifies it."""
         p = _payment_of(presented)
         if isinstance(p, Refusal):
             return p
         n: str = p["payload"]["authorization"]["nonce"]
-        h = normal_hash(n if n.startswith("0x") else "0x" + n)
-        assert h is not None
-        return h
+        nonce = normal_hash(n if n.startswith("0x") else "0x" + n)
+        assert nonce is not None
+        if given is None:
+            return nonce
+        h = normal_hash(given.get("h")) if is_object(given) else None
+        act = given.get("act") if is_object(given) else None
+        if h is None or act not in ACTS:
+            return Refusal("casper/payload-malformed")
+        carried = agreement_value(h) if act == "agreement" else h
+        return h if nonce == carried else Refusal("casper/nonce-not-bound")
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
         """The payee broadcasts: the seller's facilitator submits the call that executes the payer's signed

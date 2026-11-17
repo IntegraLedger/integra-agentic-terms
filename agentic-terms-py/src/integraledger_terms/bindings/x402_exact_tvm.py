@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._codec import b64_decode
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._ton_cell import Bag, Builder, Cell, Malformed, cells_of, layout_of, merkle_depth, serialize_boc
@@ -44,10 +44,15 @@ SIGNATURE_BITS = 512
 # (wallet_v5.fc, recv_internal). W5 takes a shorter body as a plain transfer and runs no request.
 _REQUEST_MIN_BITS = 32 + 32 + 32 + 32 + SIGNATURE_BITS
 SEND_MODE = 3
-# The send modes TON's action phase sends a message with (try_action_send_msg): +16 is bounce-on-fail and is set aside
-# from global version 4, and the rest must be +1, +2, +32, +64 and +128 alone, never +64 with +128. Any other mode is
-# refused, or skipped under +2 from global version 13: the message is not sent either way.
-_SEND_MODES = 0xE3
+# The send modes the scheme admits for the request's one action, 1 (PAY_FEES_SEPARATELY) and 3 (with IGNORE_ERRORS)
+# (x402's specs/schemes/exact/scheme_exact_ton.md:170 at x402-foundation/x402@88b66dd4); the stock settler's codec admits
+# the same two (@x402/tvm 2.30.0 src/exact/codec.ts:66-72). TON's other modes include those that remove the sending
+# account once its balance reaches zero, and with it the sequence number a read of the payment rests on.
+SCHEME_SEND_MODES = frozenset({1, 3})
+# The most nanotons build attaches above the option's forward TON amount: the stock settler refuses a request whose
+# attached value is above forwardTonAmount plus this (@x402/tvm 2.30.0 src/exact/facilitator/scheme.ts:326-329,
+# DEFAULT_JETTON_WALLET_MESSAGE_AMOUNT in src/constants.ts:14).
+MAX_ATTACHED_ABOVE_FORWARD = 30_000_000
 
 # The two networks the pairing serves, as x402's TON scheme names them, each with the configuration its messages are
 # read at: tvm:-239 (mainnet) and tvm:-3 (testnet).
@@ -165,12 +170,6 @@ def _send_message(actions: Cell) -> tuple[int, Cell] | Refusal:
     return s.uint(8), actions.refs[1]
 
 
-def _sends_with(mode: int, config: TonConfiguration) -> bool:
-    """True when TON's action phase sends a message with this mode at the configuration (_SEND_MODES)."""
-    m = mode & ~16 if config.global_version >= 4 else mode
-    return m & ~_SEND_MODES == 0 and m & 0xC0 != 0xC0
-
-
 def tvm_carrier(settlement_boc: object, network: object) -> tuple[AtrHash, Cell] | Refusal:
     """The hash and the forward payload of the signed request in a settlement bag of cells: an internal message whose
     body is a W5 internal_signed request with exactly one action_send_msg behind an empty list, carrying a Jetton
@@ -185,9 +184,10 @@ def tvm_carrier(settlement_boc: object, network: object) -> tuple[AtrHash, Cell]
     configuration held for the network: a source of addr_none or an addr_std with no anycast (the outgoing message's
     the W5 wallet's own), a destination TON sends to, a value and an extra_flags of at
     most 3 each in its shortest form, no extra currency, its state init validated as TON validates it, a referenced
-    body that is an ordinary cell with nothing after it, and at most two nested Merkle proofs or updates; the W5
-    action's send mode is one TON sends with (_sends_with). The settlement message TON would not send is
-    tvm/boc-malformed, and the outgoing one, or a send mode TON refuses or skips, tvm/not-jetton-transfer. The
+    body that is an ordinary cell with nothing after it, and at most two nested Merkle proofs or updates. The settlement
+    message TON would not send is tvm/boc-malformed, and the outgoing one tvm/not-jetton-transfer; a send mode other
+    than 1 or 3, the two the scheme admits (SCHEME_SEND_MODES), or an outgoing message that is not bounceable, as the
+    scheme's message to the Jetton wallet is, is tvm/actions. The
     settlement message's source names the account that relays it, which the bag cannot show: one naming another
     account is read, and TON sends it when that account relays it. The network is tvm:-239 (mainnet) or tvm:-3
     (testnet), and any other is tvm/network-malformed."""
@@ -223,11 +223,15 @@ def _carrier_in(root: Cell, config: TonConfiguration) -> tuple[AtrHash, Cell] | 
     if isinstance(send, Refusal):
         return send
     mode, sent = send
-    if not _sends_with(mode, config):
-        return Refusal("tvm/not-jetton-transfer")
+    if mode not in SCHEME_SEND_MODES:
+        return Refusal("tvm/actions")
     out = message_of(sent, message.dest, config)
     if out is None:
         return Refusal("tvm/not-jetton-transfer")
+    # The scheme's message to the Jetton wallet is bounceable; the stock codec refuses one that is not as it refuses a
+    # wrong mode (@x402/tvm 2.30.0 src/exact/codec.ts:61).
+    if not out.bounce:
+        return Refusal("tvm/actions")
     payload = _jetton_payload(out.body)
     if isinstance(payload, Refusal):
         return payload
@@ -245,8 +249,9 @@ def _decimal_below(value: object, limit: int) -> int | None:
 
 
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
-    """The pairing's option filter: the option's scheme, network, asset, payTo and extra, the amount as a positive
-    Jetton amount (is_amount) below 2^120, a forward TON amount below 2^120 - 1 (build attaches more TON than it, and
+    """The pairing's option filter: the option's scheme, network, asset, payTo and extra, the amount as a Jetton amount
+    below 2^120, "0" among them (the agreement's floor is zero: the scheme asks the transfer to equal the amount with no
+    floor, and the stock settler and the standard Jetton wallet take a zero), a forward TON amount below 2^120 - 1 (build attaches more TON than it, and
     the attached value is a Grams, below 2^120), and maxTimeoutSeconds a positive integer below 2^32, which build writes
     into the request (the wallet message's valid_until, a uint32, is now plus maxTimeoutSeconds). The network is one of
     the two the pairing serves (_CONFIGURATIONS), whose configuration the messages are read at; any other tvm: network
@@ -273,7 +278,7 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
         return Refusal("tvm/option-malformed")
     if "responseDestination" in extra and raw_address(extra["responseDestination"]) is None:
         return Refusal("tvm/option-malformed")
-    if not is_amount(o.get("amount")) or _decimal_below(o.get("amount"), COINS_LIMIT) is None:
+    if not (o.get("amount") == "0" or is_amount(o.get("amount"))) or _decimal_below(o.get("amount"), COINS_LIMIT) is None:
         return Refusal("tvm/option-malformed")
     timeout = timeout_seconds(o.get("maxTimeoutSeconds"))
     if timeout is None or timeout >= UINT32_LIMIT:
@@ -314,13 +319,14 @@ class TvmUnsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactTvm:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="0")
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when named, and the options this pairing pays, in document order."""
         return read_for(check)(doc)
 
-    def build(self, c: Json, h: AtrHash) -> TvmUnsigned | Refusal:
+    def build(self, c: Json, h: AtrHash, act: Act | None = None) -> TvmUnsigned | Refusal:
         """The W5 request for the chosen option: one Jetton transfer whose forward payload is the hash's comment,
         which must be the option's extra.forwardPayload. wallet and jettonWallet are on a workchain the option's
         network's configuration holds, -1 or 0. A stateInit must be exactly one StateInitWithLibs, as TON validates a
@@ -333,7 +339,8 @@ class X402ExactTvm:
         now and attachNanotons, each x402/option-malformed, and of a state init given as a bag of cells, its bytes
         (bag_of); then its document and option; the option's forward payload's bytes (bag_of, else
         tvm/carrier-mismatch); the wallets' workchains and now with the option's timeout, each x402/option-malformed;
-        and the attached value against the option's forward amount (tvm/value-too-low). Then the forward payload's
+        and the attached value against the option's forward amount, which it must be above (tvm/value-too-low) by at
+        most MAX_ATTACHED_ABOVE_FORWARD, the stock settler's cap (tvm/value-too-high). Then the forward payload's
         cells, which must be the hash's comment cell, and the state init's cells. A state init given as an object or
         a list holds no bag of cells: it is tvm/boc-malformed at that step. The state init's fields and hash against
         the wallet come last."""
@@ -379,6 +386,8 @@ class X402ExactTvm:
         forward_ton = int(extra["forwardTonAmount"]) if "forwardTonAmount" in extra else 0
         if attach <= forward_ton:
             return Refusal("tvm/value-too-low")
+        if attach > forward_ton + MAX_ATTACHED_ABOVE_FORWARD:
+            return Refusal("tvm/value-too-high")
         comment = lcp_comment(nh)
         assert not isinstance(comment, Refusal)
         held = root_in(carried)
@@ -428,7 +437,7 @@ class X402ExactTvm:
             _accepted=accepted,
         )
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the forward payload of the transfer the payer's W5 wallet signed, which must be the option's,
         under an option the pairing's filter serves. The signature is not verified here. A state init that holds a
         libraries dictionary, has a fixed prefix longer than 8 bits, or does not hash to the settlement message's

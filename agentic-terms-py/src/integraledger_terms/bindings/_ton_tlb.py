@@ -204,10 +204,11 @@ def msg_address(s: Slice, config: TonConfiguration) -> tuple[int, Address | None
 
 @dataclass(frozen=True, slots=True)
 class Message:
-    """A message TON's action phase sends: the address it sends to, and its body."""
+    """A message TON's action phase sends: the address it sends to, its body, and its bounce flag."""
 
     dest: Address
     body: Cell
+    bounce: bool = False
 
 
 def message_of(c: Cell, sender: Address | None, config: TonConfiguration) -> Message | None:
@@ -237,7 +238,9 @@ def message_of(c: Cell, sender: Address | None, config: TonConfiguration) -> Mes
         s = c.slice()
         if s.bit():
             return None
-        s.uint(3)
+        s.bit()
+        bounce = s.bit()
+        s.bit()
         tag, src = msg_address(s, config)
         if tag != 0 and (tag != 2 or src is None or (sender is not None and src != sender)):
             return None
@@ -278,7 +281,7 @@ def message_of(c: Cell, sender: Address | None, config: TonConfiguration) -> Mes
         under = ([] if init is None else [init]) + ([body] if body_ref else list(body.refs))
         if merkle_depth(under) > MAX_MERKLE_DEPTH:
             return None
-        return Message(dest, body)
+        return Message(dest, body, bounce)
     except Malformed:
         return None
 

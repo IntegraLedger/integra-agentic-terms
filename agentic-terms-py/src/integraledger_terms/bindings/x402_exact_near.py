@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._borsh_near import (
     U64_LIMIT,
     U128_LIMIT,
@@ -213,13 +213,14 @@ def _big(value: object) -> bool:
 @dataclass(frozen=True, slots=True)
 class X402ExactNear:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="1")
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when named, and the options this pairing pays, in document order."""
         return read_for(check)(doc)
 
-    def build(self, c: Json, h: AtrHash) -> NearUnsigned | Refusal:
+    def build(self, c: Json, h: AtrHash, act: Act | None = None) -> NearUnsigned | Refusal:
         """The delegate action for the chosen option: one ft_transfer whose memo is the hash's LCP string, with the
         key's next nonce and a window of maxTimeoutSeconds blocks past the final height. publicKey is read as
         nearcore's PublicKey::from_str reads it: the key type before the first ':', ed25519 or secp256k1 in ASCII
@@ -262,7 +263,7 @@ class X402ExactNear:
         request = {"kind": "near-delegate", "hash": delegate_hash(delegate)}
         return NearUnsigned(request=request, _delegate=delegate, _required=required, _accepted=accepted)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the memo of the ft_transfer the payer's delegate action signs. The signature is not verified
         here."""
         p = presented_with(presented, check)

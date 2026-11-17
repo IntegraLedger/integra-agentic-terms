@@ -5,6 +5,7 @@ lists), entity ids, and the transaction id's text form."""
 import base64
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 from .._types import Refusal
 
@@ -13,6 +14,9 @@ MAX_LIST = 16
 MAX_DEPTH = 8
 MAX_MEMO = 100
 VALID_DURATION = 120
+# The chain's longest transactionValidDuration, transaction.maxValidDuration, in seconds: a body above it never reaches
+# consensus (INVALID_TRANSACTION_DURATION).
+MAX_VALID_DURATION = 180
 INT64_LIMIT = 1 << 63
 UINT64_LIMIT = 1 << 64
 
@@ -60,10 +64,31 @@ def tx_id_text(tx_id: TxId) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class HederaRow:
+    """One row of a transfer list as the signed body holds it: the account, its signed change in the asset's smallest
+    unit (negative for a debit), and is_approval, true where the row spends an allowance the account granted."""
+
+    account: str
+    amount: int
+    is_approval: bool
+
+
+@dataclass(frozen=True, slots=True)
+class HederaTransfer:
+    """A crypto transfer as the signed body holds it: its HBAR rows, and its rows per token."""
+
+    hbar: tuple[HederaRow, ...]
+    tokens: tuple[tuple[str, tuple[HederaRow, ...]], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class HederaBody:
     tx_id: TxId
+    node: str
+    max_fee: int
     valid_duration: int
     memo: str
+    transfer: HederaTransfer | None
     body_bytes: bytes
 
 
@@ -151,8 +176,10 @@ def _int64_of(v: int) -> int:
 
 
 def decode_hedera_tx(wire: object) -> list[HederaBody] | Refusal:
-    """A wire Transaction, or a TransactionList of them (a top-level field 1): each body's transaction id, valid
-    duration, memo and exact bytes. Every body of a list must share id and memo."""
+    """A wire Transaction, or a TransactionList of them (a top-level field 1): each body's transaction id, node,
+    maximum fee, valid duration, memo, crypto transfer and exact bytes. Every body of a list must equal the first in all
+    but its node, else hedera/list-inconsistent; a valid duration above the chain's 180 seconds is
+    hedera/valid-duration."""
     if not isinstance(wire, (bytes, bytearray)):
         return Refusal("hedera/tx-malformed")
     if len(wire) > MAX_TX:
@@ -177,9 +204,13 @@ def decode_hedera_tx(wire: object) -> list[HederaBody] | Refusal:
         if isinstance(body, Refusal):
             return body
         bodies.append(body)
-    first = bodies[0]
-    same = all(tx_id_text(b.tx_id) == tx_id_text(first.tx_id) and b.memo == first.memo for b in bodies)
-    return bodies if same else Refusal("hedera/list-inconsistent")
+    first = _without_node(bodies[0].body_bytes)
+    return bodies if all(_without_node(b.body_bytes) == first for b in bodies) else Refusal("hedera/list-inconsistent")
+
+
+def _without_node(body_bytes: bytes) -> list[tuple[int, int, int, bytes]]:
+    """A body's fields other than nodeAccountID (2), in wire order."""
+    return [(f.n, f.wt, f.varint, f.data) for f in _fields_of(body_bytes) or [] if f.n != 2]
 
 
 def _transaction_of(tx: list[_Field], depth: int) -> HederaBody | Refusal:
@@ -198,20 +229,34 @@ def _transaction_of(tx: list[_Field], depth: int) -> HederaBody | Refusal:
     if not isinstance(body_field, _Field):
         return Refusal("hedera/tx-malformed")
     body = _body_of(body_field.data, depth + 2)
+    if body == "duration":
+        return Refusal("hedera/valid-duration")
     return Refusal("hedera/tx-malformed") if body is None else body
 
 
-def _body_of(body_bytes: bytes, depth: int) -> HederaBody | None:
-    """TransactionBody: transactionID (1), transactionValidDuration (4), memo (6)."""
+def _body_of(body_bytes: bytes, depth: int) -> HederaBody | Literal["duration"] | None:
+    """TransactionBody: transactionID (1), nodeAccountID (2), transactionFee (3), transactionValidDuration (4), memo (6)
+    and cryptoTransfer (14). None where the body is not well formed; "duration" where its valid duration is above the
+    chain's maximum."""
     if depth + 3 > MAX_DEPTH:
         return None
     fields = _fields_of(body_bytes)
     if fields is None:
         return None
     id_field = _single(fields, 1, 2)
+    node_field = _single(fields, 2, 2)
+    fee_field = _single(fields, 3, 0)
     duration_field = _single(fields, 4, 2)
     memo_field = _single(fields, 6, 2)
-    if not isinstance(id_field, _Field) or duration_field is _REPEATED or memo_field is _REPEATED:
+    transfer_field = _single(fields, 14, 2)
+    if (
+        not isinstance(id_field, _Field)
+        or not isinstance(node_field, _Field)
+        or fee_field is _REPEATED
+        or duration_field is _REPEATED
+        or memo_field is _REPEATED
+        or transfer_field is _REPEATED
+    ):
         return None
 
     id_fields = _fields_of(id_field.data)
@@ -223,7 +268,8 @@ def _body_of(body_bytes: bytes, depth: int) -> HederaBody | None:
         return None
     start = _fields_of(start_field.data)
     account = _account_of(account_field.data)
-    if start is None or account is None:
+    node = _account_of(node_field.data)
+    if start is None or account is None or node is None:
         return None
     seconds = _single(start, 1, 0)
     nanos = _single(start, 2, 0)
@@ -243,8 +289,10 @@ def _body_of(body_bytes: bytes, depth: int) -> HederaBody | None:
         if ds is _REPEATED:
             return None
         v = _int64_of(ds.varint) if isinstance(ds, _Field) else 0
-        if v < 0 or v > 1_000_000:
+        if v < 0:
             return None
+        if v > MAX_VALID_DURATION:
+            return "duration"
         valid_duration = v
 
     memo = ""
@@ -255,7 +303,73 @@ def _body_of(body_bytes: bytes, depth: int) -> HederaBody | None:
             memo = memo_field.data.decode("utf-8")
         except UnicodeDecodeError:
             return None
-    return HederaBody(TxId(account, s, ns), valid_duration, memo, body_bytes)
+    transfer: HederaTransfer | None = None
+    if isinstance(transfer_field, _Field):
+        transfer = _transfer_of(transfer_field.data)
+        if transfer is None:
+            return None
+    max_fee = fee_field.varint if isinstance(fee_field, _Field) else 0
+    return HederaBody(TxId(account, s, ns), node, max_fee, valid_duration, memo, transfer, body_bytes)
+
+
+def _transfer_of(data: bytes) -> HederaTransfer | None:
+    """CryptoTransferTransactionBody: transfers (1), a TransferList of AccountAmounts, and tokenTransfers (2), each a
+    TokenTransferList of token (1), transfers (2) and expected_decimals (4). None for any other field, NFT transfers (3)
+    among them, or a row that is not an AccountAmount of accountID (1), amount (2) and is_approval (3) alone."""
+    fields = _fields_of(data)
+    if fields is None or any(f.n not in (1, 2) or f.wt != 2 for f in fields):
+        return None
+    listed = _single(fields, 1, 2)
+    if listed is _REPEATED:
+        return None
+    hbar: list[HederaRow] = []
+    if isinstance(listed, _Field):
+        rows = _rows_of(listed.data, 1)
+        if rows is None:
+            return None
+        hbar = rows
+    tokens: list[tuple[str, tuple[HederaRow, ...]]] = []
+    for f in fields:
+        if f.n != 2:
+            continue
+        t = _fields_of(f.data)
+        if t is None or any(x.n not in (1, 2, 4) for x in t):
+            return None
+        token = _single(t, 1, 2)
+        if not isinstance(token, _Field):
+            return None
+        token_id = _account_of(token.data)
+        token_rows = _rows_of(f.data, 2)
+        if token_id is None or token_rows is None:
+            return None
+        tokens.append((token_id, tuple(token_rows)))
+    return HederaTransfer(tuple(hbar), tuple(tokens))
+
+
+def _rows_of(data: bytes, n: int) -> list[HederaRow] | None:
+    """The AccountAmounts numbered n in a message."""
+    fields = _fields_of(data)
+    if fields is None:
+        return None
+    out: list[HederaRow] = []
+    for f in fields:
+        if f.n != n:
+            continue
+        if f.wt != 2:
+            return None
+        a = _fields_of(f.data)
+        if a is None or any(not 1 <= x.n <= 3 for x in a):
+            return None
+        id_field, amount, approval = _single(a, 1, 2), _single(a, 2, 0), _single(a, 3, 0)
+        if not isinstance(id_field, _Field) or amount is _REPEATED or approval is _REPEATED:
+            return None
+        account = _account_of(id_field.data)
+        if account is None:
+            return None
+        z = amount.varint if isinstance(amount, _Field) else 0
+        value = -((z + 1) >> 1) if z & 1 else z >> 1
+        out.append(HederaRow(account, value, isinstance(approval, _Field) and approval.varint != 0))
+    return out
 
 
 def _account_of(data: bytes) -> str | None:

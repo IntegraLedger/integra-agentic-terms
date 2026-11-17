@@ -92,11 +92,11 @@ from .bindings.x402_exact_xrpl import X402ExactXrpl
 
 # A binding marked type: ignore[assignment] has a build and bound that take no act yet (Binding.build, Binding.bound).
 X402_EXACT_EIP155_EIP3009: Binding = X402ExactEip155Eip3009()
-X402_EXACT_HEDERA: Binding = X402ExactHedera()  # type: ignore[assignment]
-X402_EXACT_HEDERA_TRANSFER_EXECUTOR: Binding = X402ExactHederaExecutor()  # type: ignore[assignment]
-X402_EXACT_NEAR: Binding = X402ExactNear()  # type: ignore[assignment]
-X402_EXACT_TRON_LCP_TRC20_MEMO: Binding = X402ExactTronLcpTrc20Memo()  # type: ignore[assignment]
-X402_EXACT_TVM: Binding = X402ExactTvm()  # type: ignore[assignment]
+X402_EXACT_HEDERA: Binding = X402ExactHedera()
+X402_EXACT_HEDERA_TRANSFER_EXECUTOR: Binding = X402ExactHederaExecutor()
+X402_EXACT_NEAR: Binding = X402ExactNear()
+X402_EXACT_TRON_LCP_TRC20_MEMO: Binding = X402ExactTronLcpTrc20Memo()
+X402_EXACT_TVM: Binding = X402ExactTvm()
 ACK_PAYMENT_REQUEST: Binding = AckPaymentRequest()
 ACP_CHECKOUT_DELEGATED: Binding = AcpCheckoutDelegated()
 ACP_CHECKOUT_UNDELEGATED: Binding = AcpCheckoutUndelegated()
@@ -130,13 +130,13 @@ MPP_CHARGE_USDC_GATEWAY: Binding = MppChargeUsdcGateway()
 MPP_SESSION_EVM: Binding = MppSessionEvm()
 MPP_SESSION_TEMPO: Binding = MppSessionTempo()
 MPP_SUBSCRIPTION_TEMPO: Binding = MppSubscriptionTempo()
-X402_EXACT_STARKNET: Binding = X402ExactStarknet()  # type: ignore[assignment]
-X402_EXACT_CASPER: Binding = X402ExactCasper()  # type: ignore[assignment]
-X402_EXACT_APTOS: Binding = X402ExactAptos()  # type: ignore[assignment]
-X402_EXACT_POLKADOT_LCP_ASSETS_REMARK: Binding = X402ExactPolkadotLcpAssetsRemark()  # type: ignore[assignment]
-X402_EXACT_CCD: Binding = X402ExactCcd()  # type: ignore[assignment]
-X402_EXACT_CARDANO: Binding = X402ExactCardano()  # type: ignore[assignment]
-X402_EXACT_SUI: Binding = X402ExactSui()  # type: ignore[assignment]
+X402_EXACT_STARKNET: Binding = X402ExactStarknet()
+X402_EXACT_CASPER: Binding = X402ExactCasper()
+X402_EXACT_APTOS: Binding = X402ExactAptos()
+X402_EXACT_POLKADOT_LCP_ASSETS_REMARK: Binding = X402ExactPolkadotLcpAssetsRemark()
+X402_EXACT_CCD: Binding = X402ExactCcd()
+X402_EXACT_CARDANO: Binding = X402ExactCardano()
+X402_EXACT_SUI: Binding = X402ExactSui()
 
 X402_EXACT_XRPL: Binding = X402ExactXrpl()
 X402_EXACT_ALGORAND: Binding = X402ExactAlgorand()

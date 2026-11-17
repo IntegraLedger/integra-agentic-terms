@@ -3,12 +3,13 @@ x402/exact/hedera/transfer-executor (the hash advertised in the challenge only):
 Nothing here fetches, hashes or signs."""
 
 import re
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._codec import b64_decode
 from ._hedera_proto import (
     INT64_LIMIT,
@@ -129,6 +130,12 @@ def check_executor(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
 # ── x402/exact/hedera ─────────────────────────────────────────────────────────────────────────────────────────────
 
 
+def starts_later(seconds: int, nanos: int) -> bool:
+    """Whether a valid start is later than the time of the check: the network takes no valid start later than its
+    consensus time (HAPI ResponseCode INVALID_TRANSACTION_START)."""
+    return seconds * 1_000_000_000 + nanos > time.time_ns()
+
+
 @dataclass(frozen=True, slots=True)
 class HederaUnsigned:
     """The body the payer signs, and how its signature completes the wire transaction."""
@@ -163,17 +170,18 @@ def _valid_build_inputs(c: Mapping[str, Any]) -> bool:
 @dataclass(frozen=True, slots=True)
 class X402ExactHedera:
     id: str = EXACT
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="1")
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when named, and the options this pairing pays, in document order."""
         return read_for(check_exact)(doc)
 
-    def build(self, c: Json, h: AtrHash) -> HederaUnsigned | Refusal:
+    def build(self, c: Json, h: AtrHash, act: Act | None = None) -> HederaUnsigned | Refusal:
         """The TransactionBody the payer signs: the fee payer's transaction id, the hash's LCP string as the memo, and
         the payer's debit and the payee's credit of the option's amount, in HBAR or the option's token. H is checked
-        first, then the form of the choice's payer, node, valid start, maximum fee and decimals, then its document and
-        option."""
+        first, then the form of the choice's payer, node, valid start, maximum fee and decimals, then the valid start
+        against the time of the check (hedera/valid-start-future where it is later), then its document and option."""
         nh = normal_hash(h)
         if nh is None:
             return Refusal("x402/payload-malformed")
@@ -181,6 +189,8 @@ class X402ExactHedera:
             return Refusal("hedera/option-malformed")
         if not _valid_build_inputs(c):
             return Refusal("hedera/option-malformed")
+        if starts_later(c["validStart"]["seconds"], _whole(c["validStart"]["nanos"]) or 0):
+            return Refusal("hedera/valid-start-future")
         ok = chosen(c.get("required"), c.get("accepted"), check_exact)
         if ok is not True:
             return ok
@@ -205,10 +215,12 @@ class X402ExactHedera:
         body = write_body(tx_id, c["node"], c["maxFee"], to_lcp_string(nh), transfer)
         return HederaUnsigned(request={"kind": "hedera-body", "bodyBytes": body})
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
-        """The hash inside what the payer signed: the body memo, in LCP string form, under an option the pairing's
-        filter serves. Transfers, amounts, the fee payer and the payer are not read, and no signature is verified
-        here."""
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        """The hash inside what the payer signed: the body memo, byte for byte H's LCP string, lcp:sha256:0x and 64
+        lower-case hex digits, under an option the pairing's filter serves; an empty memo is hedera/no-memo and any
+        other hedera/memo-not-lcp, an upper-case digit among them. A body whose valid start is later than the time of
+        the check is hedera/valid-start-future, as the network refuses it. Transfers, amounts, the fee payer and the
+        payer are not read, and no signature is verified here."""
         p = presented_with(presented, check_exact)
         if isinstance(p, Refusal):
             return p
@@ -218,11 +230,13 @@ class X402ExactHedera:
         decoded = decode_hedera_tx(wire)
         if isinstance(decoded, Refusal):
             return decoded
-        memo = decoded[0].memo
-        if memo == "":
+        body = decoded[0]
+        if starts_later(body.tx_id.seconds, body.tx_id.nanos):
+            return Refusal("hedera/valid-start-future")
+        if body.memo == "":
             return Refusal("hedera/no-memo")
-        h = from_lcp_string(memo)
-        return h if h is not None else Refusal("hedera/memo-not-lcp")
+        h = from_lcp_string(body.memo)
+        return h if h is not None and to_lcp_string(h) == body.memo else Refusal("hedera/memo-not-lcp")
 
     def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
         """The payee broadcasts: the seller's facilitator, the transaction's fee payer, adds its signature to the
@@ -273,13 +287,14 @@ class ExecutorUnsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactHederaExecutor:
     id: str = EXECUTOR
-    public_proof: bool = False
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when named, and the options this pairing pays, in document order."""
         return read_for(check_executor)(doc)
 
-    def build(self, c: Json, h: AtrHash) -> ExecutorUnsigned | Refusal:
+    def build(self, c: Json, h: AtrHash, act: Act | None = None) -> ExecutorUnsigned | Refusal:
         """The request {kind hedera-executor, network, executors, asset, payTo, amount, validBefore}, validBefore being
         now plus the option's maxTimeoutSeconds. A now that is not a non-negative safe integer, or whose sum with
         maxTimeoutSeconds is not a safe integer, is hedera/option-malformed. H is checked first, then the form of now,
@@ -314,7 +329,7 @@ class X402ExactHederaExecutor:
         }
         return ExecutorUnsigned(request=request, _required=required, _accepted=accepted)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash from the echoed, unsigned extensions.legalContext. Nothing the payer signed carries it."""
         p = presented_with(presented, check_executor)
         if isinstance(p, Refusal):

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
 from ._scale import compact, compact_at
 from ._ss58 import ss58_decode
@@ -183,13 +183,14 @@ class PolkadotUnsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactPolkadotLcpAssetsRemark:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="1")
 
     def read(self, doc: Any) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return read_for(_check)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> PolkadotUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> PolkadotUnsigned | Refusal:
         """The profile call for the chosen option, the hash's LCP string as its remark. H is checked first, then the
         document and the option."""
         nh = normal_hash(h)
@@ -208,7 +209,7 @@ class X402ExactPolkadotLcpAssetsRemark:
         request = {"kind": "substrate-call", "network": accepted["network"], "call": call}
         return PolkadotUnsigned(request=request, _required=required, _accepted=accepted, _call=call)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash inside what the payer signed: the remark of the profile call the extrinsic ends with, which must be
         the hash's LCP string with lower-case hex, byte for byte. No signature is verified here."""
         p = presented_with(presented, _check)

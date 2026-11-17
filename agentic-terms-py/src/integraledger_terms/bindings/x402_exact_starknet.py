@@ -1,7 +1,8 @@
 """The buyer half of the pairing x402/exact/starknet: read, build with complete, and bound.
 
 The payer signs a SNIP-12 OutsideExecution (SNIP-9 v2) authorizing one token transfer; its Nonce is the ATR hash's
-low 250 bits. Nothing here fetches, hashes or signs.
+low 250 bits, and on an agreement the low 250 bits of the agreement's own value for H, SHA-256 over the ASCII bytes
+lcp-agreement-v1 and H. Nothing here fetches or signs.
 """
 
 import re
@@ -9,8 +10,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._core import AtrHash, agreement_value
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._jose import json_bytes
 from ._lcp import from_legal_context, is_object, normal_hash, safe_int, uint256_of
 from ._x402 import (
@@ -42,6 +43,9 @@ MAX_SIGNATURE_FELTS = 32
 # The presented typed data as JSON: at most 16 KiB of UTF-8, nested at most 64 levels (json_bytes).
 MAX_TYPED_DATA_BYTES = 16_384
 _FELT_TEXT = re.compile(r"0x[0-9a-fA-F]{1,64}")
+_SELECTOR_TRANSFER = int(SELECTOR_TRANSFER, 16)
+ACTS = ("payment", "agreement")
+
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
 
@@ -213,17 +217,21 @@ class StarknetUnsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactStarknet:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="rule")
 
     def read(self, doc: Any) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return read_for(CHECK)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> StarknetUnsigned | Refusal:
-        """x402's typed data for the chosen option, with Nonce the hash's low 250 bits. H is checked first, then the
-        form of the choice's from and now, then its document and option, then from against the option's fee payer."""
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> StarknetUnsigned | Refusal:
+        """x402's typed data for the chosen option, with Nonce the hash's low 250 bits, or for the act agreement the
+        low 250 bits of the agreement's value. H is checked first, then the act (None is the act payment), then the form
+        of the choice's from and now, then its document and option, then from against the option's fee payer."""
         nh = normal_hash(h)
         if nh is None:
+            return Refusal("x402/payload-malformed")
+        if act is not None and act not in ACTS:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
             return Refusal("starknet/option-malformed")
@@ -244,7 +252,7 @@ class X402ExactStarknet:
         amount = uint256_of(accepted["amount"])
         timeout = safe_int(accepted["maxTimeoutSeconds"])
         assert amount is not None and timeout is not None
-        nonce = sn_nonce(nh)
+        nonce = sn_nonce(agreement_value(nh) if act == "agreement" else nh)
         if isinstance(nonce, Refusal):
             return nonce
         typed_data = outside_execution(
@@ -255,8 +263,12 @@ class X402ExactStarknet:
         request = {"kind": "starknet-snip12", "typedData": typed_data, "account": felt_of(account)}
         return StarknetUnsigned(request=request, _required=required, _accepted=accepted)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
-        """The echoed hash whose low 250 bits are the nonce the payer signed. The signature is not verified here."""
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        """H as the payment carries it in the low 250 bits of the signed Nonce: from the echoed legal context, or, given
+        the act and H, H where the Nonce is the low 250 bits of the value that act carries. The typed data's domain,
+        chain id, Nonce, Caller and Calls are checked first; then H; then the Caller, which is the option's
+        extra.feePayer (starknet/caller-not-fee-payer); then each call, a transfer (starknet/selector-not-transfer). The
+        signature is not verified here; the payer's account contract verifies it at execution."""
         p = presented_with(presented, CHECK)
         if isinstance(p, Refusal):
             return p
@@ -281,15 +293,35 @@ class X402ExactStarknet:
         if chain is None or chain != int(chain_id_felt(accepted["network"]), 16):
             return Refusal("starknet/typed-data-malformed")
         nonce = felt_value(message.get("Nonce"))
-        if nonce is None:
+        caller = felt_value(message.get("Caller"))
+        calls = message.get("Calls")
+        if nonce is None or caller is None or not isinstance(calls, list) or len(calls) == 0 or not all(is_object(c) for c in calls):
             return Refusal("starknet/typed-data-malformed")
-        lc = extensions.get(LEGAL_CONTEXT) if is_object(extensions) else None
-        decoded = from_legal_context({"legalContext": lc.get("info") if is_object(lc) else None})
-        if decoded is None:
-            return Refusal("starknet/no-legal-context")
-        if int(decoded[0], 16) & MASK_250 != nonce:
-            return Refusal("starknet/nonce-not-bound")
-        return decoded[0]
+        if given is not None:
+            gh = normal_hash(given.get("h")) if is_object(given) else None
+            act = given.get("act") if is_object(given) else None
+            if gh is None or act not in ACTS:
+                return Refusal("x402/payload-malformed")
+            if int(agreement_value(gh) if act == "agreement" else gh, 16) & MASK_250 != nonce:
+                return Refusal("starknet/nonce-not-bound")
+            h = gh
+        else:
+            lc = extensions.get(LEGAL_CONTEXT) if is_object(extensions) else None
+            decoded = from_legal_context({"legalContext": lc.get("info") if is_object(lc) else None})
+            if decoded is None:
+                return Refusal("starknet/no-legal-context")
+            if int(decoded[0], 16) & MASK_250 != nonce:
+                return Refusal("starknet/nonce-not-bound")
+            h = decoded[0]
+        if caller != felt_value(accepted["extra"]["feePayer"]):
+            return Refusal("starknet/caller-not-fee-payer")
+        for call in calls:
+            selector = felt_value(call.get("Selector"))
+            if selector is None:
+                return Refusal("starknet/typed-data-malformed")
+            if selector != _SELECTOR_TRANSFER:
+                return Refusal("starknet/selector-not-transfer")
+        return h
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
         """The payee broadcasts: the seller's facilitator executes the outside execution the payer signed and names its

@@ -18,6 +18,8 @@ from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._cbor import CborMap, decode_cbor, is_tag, map_get
 from integraledger_terms.bindings._codec import b58_encode, canonical_json
 from integraledger_terms.bindings.x402_exact_cardano import LCP_MARKER, auxiliary_data, cardano_option_check, decode_cardano_tx
+from integraledger_terms._core import agreement_value
+from integraledger_terms.bindings.x402_exact_ccd import EXPIRY_MARGIN as CCD_EXPIRY_MARGIN
 from integraledger_terms.bindings.x402_exact_ccd import account_bytes, ccd_memo, memo_carrier, plt_memo
 from integraledger_terms.bindings.x402_exact_aptos import _instrument_of, aptos_option_check, decode_aptos_tx
 from integraledger_terms.bindings._ss58 import ss58_decode
@@ -234,6 +236,45 @@ def test_starknet_bound_measures_the_typed_data_as_json_within_16_kib_and_64_lev
         assert X402_EXACT_STARKNET.bound(with_x(x)) == malformed
 
 
+def sn_agreed() -> dict[str, Any]:
+    c = {"required": sn_advertised(), "accepted": SN_F["O"], "from": SN_F["from"], "now": SN_F["now"]}
+    u = X402_EXACT_STARKNET.build(c, SN_F["H"], "agreement")
+    assert not isinstance(u, Refusal), u
+    out = u.complete(SN["S3"]["signature"])
+    assert isinstance(out, dict)
+    return out
+
+
+def test_starknet_s7_the_act_agreement_signs_the_low_250_bits_of_the_agreements_value() -> None:
+    s7 = SN["S7"]
+    assert agreement_value(SN_F["H"]) == s7["agreementValue"]
+    agreed, paid = sn_agreed()["payload"], sn_pay()["payload"]
+    assert int(agreed["outsideExecution"]["typedData"]["message"]["Nonce"], 16) == int(s7["expectNonce"], 16)
+    agreed["outsideExecution"]["typedData"]["message"]["Nonce"] = paid["outsideExecution"]["typedData"]["message"]["Nonce"]
+    assert agreed == paid
+
+
+@pytest.mark.parametrize("row", SN["S7"]["bound"], ids=lambda r: r["case"])
+def test_starknet_s7_bound(row: dict[str, Any]) -> None:
+    payment = sn_agreed() if row["payload"] == "agreement" else sn_pay()
+    want = Refusal(row["expect"]["code"]) if isinstance(row["expect"], dict) else row["expect"]
+    got = X402_EXACT_STARKNET.bound(payment, row["given"]) if "given" in row else X402_EXACT_STARKNET.bound(payment)
+    assert got == want
+
+
+@pytest.mark.parametrize("row", SN["S8"]["rows"], ids=lambda r: r["case"])
+def test_starknet_s8_bound_refuses_a_caller_or_a_call_not_the_options_form(row: dict[str, Any]) -> None:
+    p = sn_pay()
+    message = p["payload"]["outsideExecution"]["typedData"]["message"]
+    changed = [k for k in ("Caller", "Selector") if k in row]
+    assert len(changed) == 1
+    if "Caller" in row:
+        message["Caller"] = row["Caller"]
+    else:
+        message["Calls"][0]["Selector"] = row["Selector"]
+    assert X402_EXACT_STARKNET.bound(p) == Refusal(row["expect"]["code"])
+
+
 def test_starknet_chain_id_felt_takes_only_the_two_networks() -> None:
     # The SNIP-12 domain's chainId is the network reference as a short string; the protocol package's chainIdFelt
     # throws TypeError("not a Starknet network") for any network but starknet:SN_MAIN and starknet:SN_SEPOLIA.
@@ -359,6 +400,61 @@ def test_casper_c2_complete_then_bound() -> None:
     assert X402_EXACT_CASPER.bound(upper) == c2["boundOfUpperCaseNonce"]
     mismatch = c2["tagMismatch"]
     assert cs_unsigned().complete(mismatch["publicKey"], mismatch["signature"]) == Refusal(mismatch["expect"]["code"])
+
+
+def cs_struct_and_digest(td: dict[str, Any]) -> tuple[str, str]:
+    """The typed data's struct hash and digest, by EIP-712's rules with Casper's 33-byte addresses encoded as their
+    keccak256, as the toolkit the vectors name encodes them, and the domain separator C1 states."""
+
+    def word(n: int) -> bytes:
+        return n.to_bytes(32, "big")
+
+    fields = ",".join(f"{f['type']} {f['name']}" for f in td["types"]["TransferWithAuthorization"])
+    m = td["message"]
+    struct = keccak256(
+        keccak256(f"TransferWithAuthorization({fields})".encode())
+        + keccak256(bytes.fromhex(m["from"]))
+        + keccak256(bytes.fromhex(m["to"]))
+        + word(int(m["value"]))
+        + word(int(m["validAfter"]))
+        + word(int(m["validBefore"]))
+        + bytes.fromhex(m["nonce"])
+    )
+    separator = bytes.fromhex(CS["C1"]["expectDomainSeparator"][2:])
+    return "0x" + struct.hex(), "0x" + keccak256(b"\x19\x01" + separator + struct).hex()
+
+
+def cs_agreed() -> Any:
+    choice = {"required": cs_required(), "accepted": CS_F["O"], "from": CS_F["from"], "now": CS_F["now"]}
+    u = X402_EXACT_CASPER.build(choice, CS_F["H"], "agreement")
+    assert not isinstance(u, Refusal), u
+    return u
+
+
+def test_casper_c1_struct_hash_and_digest_by_eip712s_rules() -> None:
+    assert cs_struct_and_digest(cs_unsigned().request["typedData"]) == (CS["C1"]["expectStructHash"], CS["C1"]["expectDigest"])
+
+
+def test_casper_c5_the_act_agreement_signs_the_agreements_value_as_the_nonce() -> None:
+    c5 = CS["C5"]
+    assert agreement_value(CS_F["H"]) == c5["agreementValue"]
+    td = cs_agreed().request["typedData"]
+    assert td["message"]["nonce"] == c5["expectMessageNonce"]
+    assert cs_struct_and_digest(td) == (c5["expectStructHash"], c5["expectDigest"])
+    payment = cs_unsigned().complete(CS_F["publicKey"], CS_F["signature"])
+    agreed = cs_agreed().complete(CS_F["publicKey"], CS_F["signature"])
+    assert agreed["payload"]["authorization"] == {**payment["payload"]["authorization"], "nonce": c5["expectMessageNonce"]}
+    u = X402_EXACT_CASPER.build({"required": cs_required(), "accepted": CS_F["O"], "from": CS_F["from"], "now": CS_F["now"]}, CS_F["H"], "payment")
+    assert not isinstance(u, Refusal) and u.request == cs_unsigned().request
+
+
+@pytest.mark.parametrize("row", CS["C5"]["bound"], ids=lambda r: r["case"])
+def test_casper_c5_bound(row: dict[str, Any]) -> None:
+    unsigned = cs_agreed() if row["payload"] == "agreement" else cs_unsigned()
+    payment = unsigned.complete(CS_F["publicKey"], CS_F["signature"])
+    want = Refusal(row["expect"]["code"]) if isinstance(row["expect"], dict) else row["expect"]
+    got = X402_EXACT_CASPER.bound(payment, row["given"]) if "given" in row else X402_EXACT_CASPER.bound(payment)
+    assert got == want
 
 
 def test_casper_refusals() -> None:
@@ -612,7 +708,7 @@ def test_aptos_complete_gives_each_transaction_row_the_code_reference_gives() ->
     gives. A row that carries transaction is that text; every other row is found by its expect member, its inputs
     built as the runners above build them: text that is not padded base64, fixture F cut inside its sequence number
     and a module name led by U+FEFF; a u64 type argument; a payload transaction that is not a string; V2's script
-    payload, and fixture F on chain 2, each in both wire forms. The option's network row and the status row hold no
+    payload, and fixture F on chain 2, each in both wire forms. The option's network row and the two status rows hold no
     transaction. Fixture F on chain 1 completes in both wire forms."""
     raw = aptos_raw()
     at = raw.index(bytes([1, 7]) + addr32("0x1")) + 1
@@ -632,7 +728,8 @@ def test_aptos_complete_gives_each_transaction_row_the_code_reference_gives() ->
     assert {r["expect"] for r in keyed} == set(inputs)
     assert {r["expect"] for r in texts} == {"aptos/tx-too-large", "aptos/tx-malformed"}
     left = [r for r in rows if r not in texts and r not in keyed]
-    assert sorted(r["expect"] for r in left) == ["aptos/network-malformed", "pending unreadable"]
+    assert sorted(r["expect"] for r in left) == ["aptos/network-malformed", "unreadable chain-mismatch", "unreadable unparseable"]
+    assert all(r["case"].startswith("status: ") for r in left if r["expect"] != "aptos/network-malformed")
     cases: list[tuple[str, object]] = [(r["expect"], t) for r in keyed for t in inputs[r["expect"]]]
     for r in texts:
         text = r["transaction"] if isinstance(r["transaction"], str) else repeated(r["transaction"])
@@ -871,7 +968,7 @@ def ccd_inspect(r: Any) -> None:
     assert r["memo"] == "0x" + CCD["D1"]["expectCcdMemo"]
     assert r["sponsor"] == CCD_F["sponsor"]
     assert r["toAddress"] == CCD_F["payee"]
-    assert r["expiresBy"] == NOW + CCD_F["O"]["maxTimeoutSeconds"]
+    assert r["expiresBy"] == NOW + CCD_F["O"]["maxTimeoutSeconds"] - CCD_EXPIRY_MARGIN
 
 
 CONCORDIUM = Pairing(
@@ -964,7 +1061,7 @@ def test_ccd_build_the_transfer_the_wallet_signs_and_complete_wraps_what_it_retu
         "asset": "CCD",
         "amount": "1000000",
         "memo": bytes.fromhex(CCD["D1"]["expectCcdMemo"]),
-        "expiresBy": 1790000060,
+        "expiresBy": CCD["stockOptions"]["rows"][0]["expectRequest"]["expiresBy"],
     }
     payment = u.complete(CCD["D3"]["ccd"]["payment"]["payload"]["signedTransaction"])
     assert payment == CCD["D3"]["ccd"]["payment"]
@@ -972,6 +1069,22 @@ def test_ccd_build_the_transfer_the_wallet_signs_and_complete_wraps_what_it_retu
     plt = X402_EXACT_CCD.build({"required": required(CCD_F["OPlt"]), "accepted": CCD_F["OPlt"], "now": CCD_F["now"]}, CCD_F["H"])
     assert not isinstance(plt, Refusal), plt
     assert plt.request["memo"].hex() == CCD["D1"]["expectPltMemo"]
+
+
+@pytest.mark.parametrize("row", CCD["stockOptions"]["rows"], ids=lambda r: r["case"])
+def test_ccd_stock_options_an_amount_of_zero_and_ccd_in_another_case(row: dict[str, Any]) -> None:
+    """The options the stock facilitator takes: read offers the row's option, build writes the row's request at the
+    file's now, its memo the CCD memo, and bound reads D3's CCD payment under that option, with the row's members set."""
+    option = row["option"]
+    doc = {"x402Version": 2, "resource": CCD_F["resource"], "accepts": [option]}
+    u = X402_EXACT_CCD.build({"required": doc, "accepted": option, "now": CCD_F["now"]}, CCD_F["H"])
+    assert not isinstance(u, Refusal), u
+    assert {**u.request, "memo": u.request["memo"].hex()} == row["expectRequest"]
+    payment = mutate({**CCD["D3"]["ccd"]["payment"], "accepted": option}, row.get("presentedSet", {}))
+    assert X402_EXACT_CCD.bound(payment) == row["expectBound"]
+    advertised = x402_doc(option, CCD_F["resource"])
+    read = X402_EXACT_CCD.read(advertised)
+    assert not isinstance(read, Refusal) and read.offer["options"] == [option]
 
 
 # ── x402/exact/cardano
@@ -1086,8 +1199,9 @@ def test_cardano_the_filter_build_and_complete() -> None:
     O = ADA_F["O"]
     for network in ("cardano:mainnet", "cardano:preview", "cip34:1-764824073", "cip34:0-2"):
         assert cardano_option_check({**O, "network": network}) is None
-    for m in ("default", "script", "masumi"):
-        assert cardano_option_check({**O, "extra": {"assetTransferMethod": m}}) is None
+    assert cardano_option_check({**O, "extra": {"assetTransferMethod": "default"}}) is None
+    for m in ("script", "masumi"):
+        assert cardano_option_check({**O, "extra": {"assetTransferMethod": m}}) == Refusal("x402/option-not-this-pairing")
     assert cardano_option_check({**O, "extra": {"assetTransferMethod": "eip3009"}}) is not None
     assert cardano_option_check({**O, "extra": {"paymentFlow": "upfront"}}) is not None
     assert cardano_option_check({**O, "network": "cip34:0-4"}) == Refusal("cardano/network-malformed")
@@ -1108,11 +1222,6 @@ def test_cardano_the_filter_build_and_complete() -> None:
         "extensions": required["extensions"],
     }
     assert u.complete({"transaction": ADA["V3"]["transactionBase64"], "nonce": ADA_F["nonce"]}) == Refusal("x402/signed-not-bound")
-    # lcp's exactCardano takes a payload nonce of any length.
-    for nonce in ("x" * 257, "x" * 4096):
-        long_nonce = u.complete({"transaction": ADA["V2"]["transactionBase64"], "nonce": nonce})
-        assert isinstance(long_nonce, dict) and long_nonce["payload"]["nonce"] == nonce
-        assert X402_EXACT_CARDANO.bound(long_nonce) == ADA["V2"]["expectBound"]
 
 
 # ── x402/exact/sui
@@ -1287,6 +1396,23 @@ def test_sui_v3_a_call_whose_module_name_is_led_by_a_bom() -> None:
         modules = [c["MoveCall"]["module"] for c in commands if c["$kind"] == "MoveCall"]
         assert any(m.startswith("\ufeff") for m in modules), row["case"]
         assert X402_EXACT_SUI.bound(sui_payment(row["tx"]["transactionBase64"])) == row["expectBound"], row["case"]
+
+
+@pytest.mark.parametrize("row", SUI["filter"]["rows"], ids=lambda r: r["case"])
+def test_sui_filter_the_gas_path_and_the_agreements_zero(row: dict[str, Any]) -> None:
+    o = {**SUI_F["O"], **row["change"]}
+    assert sui_option_check(o) == (None if row["expect"] is True else Refusal(row["expect"]))
+
+
+@pytest.mark.parametrize("row", SUI["sponsored"]["rows"], ids=lambda r: r["case"])
+def test_sui_sponsored_complete_holds_the_signed_transaction_to_the_one_sent(row: dict[str, Any]) -> None:
+    o = {**SUI_F["O"], "extra": {"gasStation": SUI["sponsored"]["gasStation"]}}
+    required = x402_doc(o, SUI_F["resource"], link=SUI_F["link"])
+    u = X402_EXACT_SUI.build({"required": required, "accepted": o}, SUI_F["H"])
+    assert not isinstance(u, Refusal), u
+    sent = None if row.get("sent", "") is None else SUI["sponsored"]["sent"]
+    got = u.complete({"signature": "AAAA", "transaction": row["returned"]}, sent)
+    assert (got.code if isinstance(got, Refusal) else got["payload"]["transaction"] == row["returned"]) == row["expect"]
 
 
 def test_sui_the_pairings_filter() -> None:

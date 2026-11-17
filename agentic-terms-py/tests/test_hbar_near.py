@@ -284,7 +284,7 @@ def test_x402_exact_near_agreed_refusals_args_led_by_a_byte_order_mark() -> None
 
 # The agreedRefusals rows whose code the file's about gives to the TypeScript implementation alone: the two recover rows
 # and the missing-peer row. The Python half has no recover, and decodes NEAR with no optional package.
-TYPESCRIPT_ONLY = {"near/unreadable", "near/no-relayer", "near/peer-missing"}
+TYPESCRIPT_ONLY = {"near/unreadable", "near/actions", "near/peer-missing"}
 
 
 def test_x402_exact_near_agreed_refusals() -> None:

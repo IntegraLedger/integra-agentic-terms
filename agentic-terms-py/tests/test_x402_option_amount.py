@@ -41,6 +41,10 @@ OUTSIDE: list[tuple[str, object]] = [
 # stock facilitators compare the transfer's amount with the option's by equality and whose transfer of zero lands
 # (x402-exact-solana.json zeroAmount, the stock @x402/svm 2.31.0 client's payment at "0").
 ZERO_PRICE = {"x402/batch-settlement/eip155", "x402/batch-settlement/solana", "x402/exact/solana", "x402/exact/algorand"}
+# The pairings whose @integraledger/lcp option filter also admits "0", the agreement's floor being zero by the token and
+# the scheme: x402/exact/casper, x402/exact/ccd and x402/exact/tvm, and x402/exact/sui where the buyer or a sponsor pays
+# the gas (x402-exact-ccd.json stockOptions, x402-exact-sui.json filter).
+ZERO_PRICE |= {"x402/exact/casper", "x402/exact/ccd", "x402/exact/sui", "x402/exact/tvm"}
 
 
 def with_amount(option: dict[str, Any], amount: object) -> dict[str, Any]:
@@ -55,9 +59,9 @@ def offered(pairing: str, *options: Any) -> Any:
 
 @pytest.mark.parametrize("pairing", sorted(BINDINGS))
 def test_an_x402_option_is_offered_only_with_an_amount_that_is_a_positive_integer(pairing: str) -> None:
-    """The option set to "10" is offered; set to any amount outside the rule it is not, but for "0" on the two
-    zero-price pairings; and of a document holding all seven, read offers the "10" one alone, or the "0" one beside it
-    on those two."""
+    """The option set to "10" is offered; set to any amount outside the rule it is not, but for "0" on the pairings
+    whose filter takes a zero (ZERO_PRICE); and of a document holding all seven, read offers the "10" one alone, or the
+    "0" one beside it on those."""
     option = first_offered(pairing, lambda o: with_amount(o, "10"))
     assert option is not None, f"no vector option that {pairing}'s read offers"
     assert offered(pairing, option) == [option]

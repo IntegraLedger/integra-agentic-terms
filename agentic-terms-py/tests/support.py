@@ -68,19 +68,6 @@ PENDING: frozenset[str] = frozenset(
 # Each family leaves this set when its bindings are brought up to date.
 MIGRATING: frozenset[str] = frozenset(
     {
-        # Hedera, NEAR, Tron, TON, Starknet, Casper, Aptos, Polkadot, Concordium, Cardano and Sui.
-        "x402/exact/hedera",
-        "x402/exact/hedera/transfer-executor",
-        "x402/exact/near",
-        "x402/exact/tron/lcp-trc20-memo",
-        "x402/exact/tvm",
-        "x402/exact/starknet",
-        "x402/exact/casper",
-        "x402/exact/aptos",
-        "x402/exact/polkadot/lcp-assets-remark",
-        "x402/exact/ccd",
-        "x402/exact/cardano",
-        "x402/exact/sui",
     }
 )
 

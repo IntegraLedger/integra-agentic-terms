@@ -15,7 +15,7 @@ import pytest
 from integraledger_terms import X402_EXACT_TVM as BINDING
 from integraledger_terms import Declined, Refusal, _gate
 from integraledger_terms.bindings._ton_cell import Builder, Cell, Malformed, crc32c, parse_boc
-from integraledger_terms.bindings._ton_tlb import raw_address
+from integraledger_terms.bindings._ton_tlb import MAINNET, message_of, raw_address
 from integraledger_terms.bindings.x402_exact_tvm import OP_SEND_MSG, boc_of, lcp_comment, root_of, tvm_carrier
 
 import ed25519
@@ -865,25 +865,44 @@ def test_x402_exact_tvm_a_message_s_value_and_extra_flags_are_read_in_their_shor
         assert BINDING.bound(presented(boc)) == expect, name
 
 
-# The W5 action's send mode is read as TON's action phase takes it (ton-blockchain/ton crypto/block/transaction.cpp,
-# try_action_send_msg): TON's transaction emulator sends V2's settlement's Jetton transfer with exactly these 48 of the
-# 256 modes, refuses the others without +2 and skips those with it, so nothing is sent. lcp's exactTvm.bound binds H
-# for the 48 and answers tvm/not-jetton-transfer for the 208.
-_SENDS = {m + 16 * k for m in range(4) for k in range(12)}
+@pytest.mark.parametrize("row", V["V5"]["sendModes"], ids=lambda r: f"mode {r['mode']}")
+def test_x402_exact_tvm_v5_send_modes(row: dict[str, Any]) -> None:
+    """V2's settlement with its one action's send mode changed, the request left as signed: the mode the row names is
+    the one the action holds, and bound gives H for 1 and 3 and tvm/actions for every other."""
+    actions = parse_boc(base64.b64decode(row["settlementBoc"])).refs[0].refs[0]
+    s = actions.slice()
+    assert s.uint(32) == OP_SEND_MSG and s.uint(8) == row["mode"]
+    want = V["V3"]["expectBound"] if row["expect"] == "bound" else Refusal(row["expect"])
+    assert BINDING.bound(presented(row["settlementBoc"])) == want
 
 
-def test_x402_exact_tvm_the_w5_action_s_send_mode_is_read_as_ton_takes_it() -> None:
-    assert len(_SENDS) == 48 and max(_SENDS) == 179
-    sent = refused = 0
-    for mode in range(256):
-        out = BINDING.bound(presented(_settlement(mode=mode)))
-        if mode in _SENDS:
-            assert out == F["H"], mode
-            sent += 1
-        else:
-            assert out == Refusal("tvm/not-jetton-transfer"), mode
-            refused += 1
-    assert (sent, refused) == (48, 208)
+@pytest.mark.parametrize("row", V["V5"]["cap"], ids=lambda r: f"{r['attachNanotons']} over {r.get('forwardTonAmount', '0')}")
+def test_x402_exact_tvm_v5_the_attached_value_is_capped_as_the_stock_settler_caps_it(row: dict[str, Any]) -> None:
+    option = F["placed"]
+    if "forwardTonAmount" in row:
+        option = {**option, "extra": {**option["extra"], "forwardTonAmount": row["forwardTonAmount"]}}
+    unsigned = BINDING.build(tvm_choice(option, attachNanotons=int(row["attachNanotons"])), F["H"])
+    if row["expect"] != "built":
+        assert unsigned == Refusal(row["expect"])
+        return
+    assert not isinstance(unsigned, Refusal), unsigned
+    if "expectRequestHash" in row:
+        assert unsigned.request["hash"].hex() == row["expectRequestHash"]
+
+
+def test_x402_exact_tvm_v6_the_stock_clients_payment_is_bound_and_laid_out_as_the_scheme_writes_it() -> None:
+    v6 = V["V6"]
+    assert BINDING.bound(v6["presented"]) == v6["expectBound"]
+    layout = v6["expectLayout"]
+    root = parse_boc(base64.b64decode(v6["presented"]["payload"]["settlementBoc"]))
+    settlement = message_of(root, None, MAINNET)
+    assert settlement is not None and settlement.bounce is layout["settlementBounce"]
+    request = root.refs[-1] if layout["requestByReference"] else root
+    actions = request.refs[0]
+    s = actions.slice()
+    assert s.uint(32) == OP_SEND_MSG and s.uint(8) == layout["sendMode"]
+    out = message_of(actions.refs[1], settlement.dest, MAINNET)
+    assert out is not None and out.bounce is layout["outBounce"]
 
 
 def _signed() -> dict[str, Any]:

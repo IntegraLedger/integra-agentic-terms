@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, safe_int, to_lcp_string
 from ._tron_proto import (
     INT64_LIMIT,
@@ -28,6 +28,10 @@ CALL_DATA_BYTES = 68
 MAX_TIMEOUT_SECONDS = 86_340
 MAX_FEE_LIMIT = 15_000_000_000
 UINT256_LIMIT = 1 << 256
+# The contracts a run has shown to succeed and log Transfer on a transfer(to, 0), each by its network and its
+# base58check address, as @integraledger/lcp's TRON_ZERO_SHOWN lists them: the option filter admits "0" for these alone,
+# every other contract taking one base unit. Empty until a run on a test network shows one.
+TRON_ZERO_SHOWN: tuple[tuple[str, str], ...] = ()
 
 _NETWORK = re.compile(r"tron:(0|[1-9][0-9]{0,15})")
 _BLOCK_ID = re.compile(r"0x[0-9a-fA-F]{64}")
@@ -37,7 +41,7 @@ _MAX_SAFE_INTEGER = 2**53 - 1
 
 def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """True for an exact lcp-trc20-memo option on a tron: network that this pairing pays, whose asset and payTo are
-    base58check addresses."""
+    base58check addresses, and whose amount is positive, or "0" on a contract TRON_ZERO_SHOWN names."""
     if not is_object(o) or o.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = o.get("network")
@@ -54,7 +58,8 @@ def check(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     if isinstance(tron_address(o.get("asset")), Refusal) or isinstance(tron_address(o.get("payTo")), Refusal):
         return Refusal("tron/address-malformed")
     amount = o.get("amount")
-    if not is_amount(amount) or _DECIMAL.fullmatch(amount) is None or int(amount) >= UINT256_LIMIT:
+    zero = amount == "0" and (network, o.get("asset")) in TRON_ZERO_SHOWN
+    if not zero and (not is_amount(amount) or _DECIMAL.fullmatch(amount) is None or int(amount) >= UINT256_LIMIT):
         return Refusal("tron/option-malformed")
     t = timeout_seconds(o.get("maxTimeoutSeconds"))
     if t is None or t > MAX_TIMEOUT_SECONDS:
@@ -98,13 +103,14 @@ class TronUnsigned:
 @dataclass(frozen=True, slots=True)
 class X402ExactTronLcpTrc20Memo:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="1")
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when named, and the options this pairing pays, in document order."""
         return read_for(check)(doc)
 
-    def build(self, c: Json, h: AtrHash) -> TronUnsigned | Refusal:
+    def build(self, c: Json, h: AtrHash, act: Act | None = None) -> TronUnsigned | Refusal:
         """The unsigned transaction for the chosen option: one TriggerSmartContract calling transfer(payTo, amount)
         on the token, with the hash's LCP string as its memo. H is checked first, then the form of the choice's payer,
         fee limit, reference block and now, then its document and option, then the expiration now and the option's
@@ -164,7 +170,7 @@ class X402ExactTronLcpTrc20Memo:
         request = {"kind": "tron-txid", "txid": hashlib.sha256(raw_bytes).digest()}
         return TronUnsigned(request=request, _raw_bytes=raw_bytes, _required=required, _accepted=accepted)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the memo of the transaction the payer signed, whose one contract calls transfer. The
         signature is not verified here."""
         p = presented_with(presented, check)

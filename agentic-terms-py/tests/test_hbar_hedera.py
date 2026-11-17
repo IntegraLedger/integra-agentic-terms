@@ -160,6 +160,12 @@ def test_x402_exact_hedera_v2_build_complete_bound() -> None:
     assert X402_EXACT_HEDERA.bound(presented(wire)) == E["V2"]["expectBound"]
 
 
+@pytest.mark.parametrize("row", E["validStartChecked"]["rows"], ids=lambda r: r["case"])
+def test_x402_exact_hedera_valid_start_checked_by_bound(row: dict[str, Any]) -> None:
+    want = Refusal(row["expect"]["code"]) if isinstance(row["expect"], dict) else row["expect"]
+    assert X402_EXACT_HEDERA.bound(presented(row["transactionBase64"])) == want
+
+
 def test_x402_exact_hedera_v2_presented_options() -> None:
     """V2's signed transaction under each presented option of V2.presentedOptions: bound holds the presented option to
     the filter read applies, so a row whose option read does not offer gives its expect refusal, and a row whose option

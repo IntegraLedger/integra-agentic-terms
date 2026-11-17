@@ -10,11 +10,20 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._bcs import BcsError
+from ._jose import js_length
 from ._lcp import is_object, normal_hash
 from ._rail_bytes import U64_LIMIT, base64_bytes, decimal_below
-from ._sui_tx import command_arguments, parse_transaction_data, sui_digest
+from ._sui_tx import (
+    TRANSACTION_DATA,
+    TRANSACTION_EXPIRATION,
+    TRANSACTION_KIND,
+    command_arguments,
+    parse_transaction_data,
+    sui_digest,
+)
+from ._url import read_url
 from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/sui"
@@ -92,8 +101,18 @@ def sui_carrier(tx: SuiTx) -> AtrHash | Refusal:
     return "0x" + carried.hex() if len(carried) == 32 else Refusal("sui/hash-not-carried")
 
 
+def _is_station(value: object) -> bool:
+    """An https URL of at most 2048 characters, as the gas station's endpoint."""
+    if not isinstance(value, str) or js_length(value) > 2048:
+        return False
+    u = read_url(value)
+    return u is not None and u.scheme == "https"
+
+
 def sui_option_check(option: object) -> Refusal | None:
-    """None for an option this pairing can pay, or the refusal naming why not."""
+    """None for an option this pairing can pay, or the refusal naming why not. The option fixes the gas path: sponsored
+    by the gas station extra.gasStation names, an https URL; gasless where extra.gasless is true; else the buyer pays;
+    never both. The amount may be "0" except on the gasless path, whose floor is the coin type's smallest transfer."""
     if not is_object(option) or option.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = option.get("network")
@@ -108,13 +127,21 @@ def sui_option_check(option: object) -> Refusal | None:
         return Refusal("x402/option-not-this-pairing")
     if is_object(extra) and "paymentFlow" in extra and extra["paymentFlow"] != "authorization":
         return Refusal("x402/option-not-this-pairing")
+    gas: Mapping[str, Any] = extra if is_object(extra) else {}
+    station = "gasStation" in gas
+    gasless = "gasless" in gas
+    if station and not _is_station(gas["gasStation"]):
+        return Refusal("x402/option-not-this-pairing")
+    if gasless and (gas["gasless"] is not True or station):
+        return Refusal("x402/option-not-this-pairing")
     pay_to, asset = option.get("payTo"), option.get("asset")
     if not isinstance(pay_to, str) or _PAY_TO.fullmatch(pay_to) is None:
         return Refusal("x402/option-not-this-pairing")
     if not isinstance(asset, str) or _COIN_TYPE.fullmatch(asset) is None:
         return Refusal("x402/option-not-this-pairing")
     amount = option.get("amount")
-    if not is_amount(amount) or decimal_below(amount, U64_LIMIT) is None:
+    zero = amount == "0" and not gasless
+    if not (is_amount(amount) or zero) or decimal_below(amount, U64_LIMIT) is None:
         return Refusal("x402/option-not-this-pairing")
     if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("x402/option-not-this-pairing")
@@ -153,25 +180,64 @@ class SuiUnsigned:
     _accepted: Mapping[str, Any]
     _expected: AtrHash
 
-    def complete(self, signed: Mapping[str, str]) -> dict[str, Any] | Refusal:
-        """The payment, when the signed transaction carries the built hash, with or without an epoch bound."""
+    def complete(self, signed: Mapping[str, str], sent: str | None = None) -> dict[str, Any] | Refusal:
+        """The payment, when the signed transaction carries the built hash, with or without an epoch bound. sent is the
+        transaction the client sent to the option's gas station (extra.gasStation), base64 of its TransactionData: on
+        the sponsored path it is required, and the signed transaction must equal it in everything but the gas data,
+        else sui/not-as-sent, since a gas station that changed the sender, an input, a command or the expiration could
+        raise the amount or remove the lapse under a valid H."""
         payment = payment_with(self._required, self._accepted, signed)
         got = _bound(payment)
         if isinstance(got, Refusal) or got != self._expected:
             return Refusal("x402/signed-not-bound")
+        extra = self._accepted.get("extra")
+        if (is_object(extra) and "gasStation" in extra) or sent is not None:
+            same = _same_but_gas(signed.get("transaction") if is_object(signed) else None, sent)
+            if same is not True:
+                return same
         return payment
+
+
+def _same_but_gas(signed: object, sent: object) -> Literal[True] | Refusal:
+    """True where signed equals sent in everything but the gas data: the sender, the transaction kind (its inputs and
+    commands) and the expiration, compared as their BCS bytes. sui/not-as-sent where they differ, or where sent is
+    absent or does not decode."""
+
+    def v1(text: object) -> Any:
+        data = base64_bytes(text, MAX_TX_BYTES)
+        if not isinstance(data, bytes):
+            return None
+        try:
+            parsed = TRANSACTION_DATA.parse(data)
+        except Exception:
+            return None
+        return parsed["V1"] if parsed["$kind"] == "V1" else None
+
+    a, b = v1(signed), v1(sent)
+    if a is None or b is None:
+        return Refusal("sui/not-as-sent")
+    try:
+        same = (
+            a["sender"] == b["sender"]
+            and TRANSACTION_KIND.serialize(a["kind"]) == TRANSACTION_KIND.serialize(b["kind"])
+            and TRANSACTION_EXPIRATION.serialize(a["expiration"]) == TRANSACTION_EXPIRATION.serialize(b["expiration"])
+        )
+    except Exception:
+        return Refusal("sui/not-as-sent")
+    return True if same else Refusal("sui/not-as-sent")
 
 
 @dataclass(frozen=True, slots=True)
 class X402ExactSui:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AgreementData(floor="rule")
 
     def read(self, doc: Any) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return read_for(_check)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> SuiUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> SuiUnsigned | Refusal:
         """The wallet request: the scheme's payment plus one unused Pure input holding the hash, bounded by epoch. H is
         checked first, then the choice's document and option."""
         expected = normal_hash(h)
@@ -191,7 +257,7 @@ class X402ExactSui:
         }
         return SuiUnsigned(request=request, _required=required, _accepted=accepted, _expected=expected)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash inside the transaction the payer signed. The signature is not verified here."""
         return _bound(presented)
 
