@@ -59,6 +59,10 @@ export type Fetch = (
  * the request that completes the checkout, beside that checkout (`ucp-legal-context`), and ACP's allowance
  * (`acp-allowance`). `batch` is several requests, signed in order, as are the requests of an in-channel payment.
  * `ed25519-raw` is raw Ed25519 over the bytes given.
+ * Where the wallet builds the transaction and picks its expiry itself (`aptos-transaction`, `cardano-transaction`,
+ * `sui-transaction` and `substrate-call`), the gate adds the latest deadline the wallet may sign, the pairing's ceiling
+ * in the form's own unit, as a decimal string: `maxExpirationTimestampSecs` (Unix seconds), `maxTtl` (a slot),
+ * `maxEpoch` (an epoch) or `maxEraPeriod` (the longest mortal era, in blocks).
  */
 export type SigningRequest =
   | Extract<X402Unsigned, unknown>["request"]
@@ -72,12 +76,12 @@ export type SigningRequest =
   | HederaUnsigned["request"]
   | Extract<Awaited<ReturnType<(typeof exactHederaExecutor)["build"]>>, { request: unknown }>["request"]
   | AvmUnsigned["request"]
-  | AptosUnsigned["request"]
-  | CardanoUnsigned["request"]
-  | SuiUnsigned["request"]
+  | (AptosUnsigned["request"] & { readonly maxExpirationTimestampSecs?: string })
+  | (CardanoUnsigned["request"] & { readonly maxTtl?: string })
+  | (SuiUnsigned["request"] & { readonly maxEpoch?: string })
   | StarknetUnsigned["request"]
   | StellarUnsigned["request"]
-  | PolkadotUnsigned["request"]
+  | (PolkadotUnsigned["request"] & { readonly maxEraPeriod?: string })
   | TronUnsigned["request"]
   | TvmUnsigned["request"]
   | NearUnsigned["request"]
@@ -123,6 +127,11 @@ export interface Chosen {
   choice: Json;
   ref: string;
   agreement?: string;
+  /**
+   * For a form whose wallet picks the expiry, the latest deadline the request handed to it carries, as a decimal string
+   * in the form's unit, so that a rebuild gives the request the signer was handed and the signed deadline is held to it.
+   */
+  deadline?: string;
 }
 
 export type DeclineCode =

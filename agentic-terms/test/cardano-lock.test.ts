@@ -5,9 +5,8 @@
 import { describe, expect, it } from "vitest";
 import { exactCardanoLock } from "@integraledger/lcp/cardano";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import type { AtrHash } from "@integraledger/lcp";
 import type { Binding, Presented, SigningRequest } from "../src/index.js";
-import { buildAndSign, code, counting, LINK, piecePay, toHex, vectors, type Pairing } from "./support.js";
+import { buildAndSign, code, counting, piecePay, toHex, vectors, type Pairing } from "./support.js";
 
 interface BuyerRow {
   name: string;
@@ -50,16 +49,11 @@ async function atNow<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** The lock's document as the pairing's own `advertise` places another hash `h` over the file's lock option. */
-function placed(h: AtrHash): unknown {
-  const base = { x402Version: 2, resource: ADA.fixed.resource, accepts: [ADA.fixed.OLock] } as PaymentRequired;
-  return exactCardanoLock.advertise(base, h, LINK, ADA.fixed.OLock);
-}
-
-const lock: Pairing & { placed: (h: AtrHash) => unknown } = {
+const lock: Pairing = {
   binding,
   doc: B2.input.doc,
-  placed,
+  // No `placed`: the answer is the vectors' payment, bound to H, which no signer here makes for another H, so the gate's
+  // half over A cannot be signed; the steps by themselves hold the pairing.
   account: B2.input.account!,
   answer: async (r) => {
     checkRequest(r);

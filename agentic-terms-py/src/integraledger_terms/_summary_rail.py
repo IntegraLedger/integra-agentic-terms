@@ -220,11 +220,16 @@ _HEX = re.compile(r"0x(?:[0-9a-f]{2})*")
 def substrate_transfer(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
     """x402/exact/polkadot/lcp-assets-remark: the amount and the one payee's part are the transfer's amount, the payee
     its dest, the 32-byte account as 0x and lowercase hex, the asset its assetId in decimal, the network network, and
-    the validity none to none, in blocks: the call signs no era."""
+    the validity 0 to maxEraPeriod, in blocks from the era's birth (the block whose hash the extrinsic signs, at or
+    before the block it is signed at): the call signs no era, which the signer's extrinsic adds, of at most the
+    maxEraPeriod the gate hands it; none to none where the request carries no maxEraPeriod."""
     chain, call = request.get("network"), request.get("call")
     if request.get("kind") != "substrate-call" or not isinstance(chain, str) or _POLKADOT_NETWORK.fullmatch(chain) is None:
         return None
     if not isinstance(call, str) or _HEX.fullmatch(call) is None:
+        return None
+    ok, era = _latest_in(request, "maxEraPeriod")
+    if not ok:
         return None
     decoded = decode_profile_call(bytes.fromhex(call[2:]))
     if not isinstance(decoded, tuple):
@@ -236,7 +241,7 @@ def substrate_transfer(request: Mapping[str, Any], network: str | None = None, o
         payees=(Payee(account="0x" + dest.hex(), amount=amount),),
         asset=str(asset_id),
         network=chain,
-        validity=Validity(not_before=None, not_after=None, unit="block"),
+        validity=Validity(not_before=None if era is None else "0", not_after=era, unit="block"),
         atr=b"",
     )
 
@@ -244,7 +249,9 @@ def substrate_transfer(request: Mapping[str, Any], network: str | None = None, o
 # ── aptos-transaction, cardano-transaction and sui-transaction: the requests whose transaction the payer's wallet
 # builds itself from the option the request carries, as x402's scheme for the chain has the client do. The request
 # hands the wallet accepted, the exact option to pay, beside what carries H; the summary reads accepted as the request
-# holds it. The transaction's expiry is the wallet's to set and the request names none, so the request signs no end.
+# holds it. The transaction's expiry is the wallet's to set: the gate hands it the latest it may sign
+# (maxExpirationTimestampSecs, maxTtl, maxEpoch), which the summary shows as the validity's end, and a request without
+# one signs no end.
 
 # The longest account or asset text read, in UTF-16 code units: Sui's coin type bound, the longest of the three chains'.
 _MAX_TEXT = 4096
@@ -254,12 +261,25 @@ def _text(v: object) -> bool:
     return isinstance(v, str) and 0 < js_length(v) <= _MAX_TEXT
 
 
-def _wallet_built(request: Mapping[str, Any], kind: str, network: re.Pattern[str], unit: str) -> Summary | None:
+def _latest_in(request: Mapping[str, Any], member: str) -> tuple[bool, str | None]:
+    """The latest deadline a request carries in member: (True, a decimal string), (True, None) where it carries none,
+    and (False, None) where member holds anything else."""
+    if member not in request:
+        return True, None
+    v = request[member]
+    return (True, v) if isinstance(v, str) and _DECIMAL.fullmatch(v) is not None else (False, None)
+
+
+def _wallet_built(request: Mapping[str, Any], kind: str, network: re.Pattern[str], unit: str, member: str) -> Summary | None:
     """An exact option as a request of kind carries it in accepted, on a network network matches: the amount and the
     one payee's part are accepted.amount, the payee accepted.payTo, the asset accepted.asset, the network
-    accepted.network, and the validity none to none in unit."""
+    accepted.network, and the validity none to the latest deadline the request carries in member, in unit, or none to
+    none where it carries none."""
     a = request.get("accepted")
     if request.get("kind") != kind or not isinstance(a, Mapping):
+        return None
+    ok, not_after = _latest_in(request, member)
+    if not ok:
         return None
     amount, chain, pay_to, asset = _decimal(a.get("amount")), a.get("network"), a.get("payTo"), a.get("asset")
     if a.get("scheme") != "exact" or amount is None or not isinstance(chain, str) or network.fullmatch(chain) is None:
@@ -272,29 +292,42 @@ def _wallet_built(request: Mapping[str, Any], kind: str, network: re.Pattern[str
         payees=(Payee(account=pay_to, amount=amount),),
         asset=asset,
         network=chain,
-        validity=Validity(not_before=None, not_after=None, unit=unit),
+        validity=Validity(not_before=None, not_after=not_after, unit=unit),
         atr=b"",
     )
 
 
 _APTOS_NETWORK = re.compile(r"aptos:[1-9][0-9]{0,2}")
-_CARDANO_NETWORK = re.compile(r"cardano:(?:mainnet|preprod|preview)")
+# A Cardano network named in the cardano namespace or by its CIP-34 alias, as the protocol package reads it.
+_CARDANO_NETWORK = re.compile(r"cardano:(?:mainnet|preprod|preview)|cip34:(?:1-764824073|0-1|0-2)")
 _SUI_NETWORK = re.compile(r"sui:(?:mainnet|testnet|devnet)")
 
 
 def aptos_transaction(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
-    """x402/exact/aptos: accepted's members; the validity none to none, in seconds."""
-    return _wallet_built(request, "aptos-transaction", _APTOS_NETWORK, "seconds")
+    """x402/exact/aptos: accepted's members; the validity none to maxExpirationTimestampSecs, in seconds."""
+    return _wallet_built(request, "aptos-transaction", _APTOS_NETWORK, "seconds", "maxExpirationTimestampSecs")
 
 
 def cardano_transaction(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
-    """x402/exact/cardano: accepted's members; the validity none to none, in slots."""
-    return _wallet_built(request, "cardano-transaction", _CARDANO_NETWORK, "slot")
+    """x402/exact/cardano: accepted's members, on a network named in the cardano namespace or by its CIP-34 alias; the
+    validity none to maxTtl, in slots."""
+    return _wallet_built(request, "cardano-transaction", _CARDANO_NETWORK, "slot", "maxTtl")
+
+
+def cardano_lock(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
+    """x402/exact/cardano/lock, a script lock (accepted.extra.assetTransferMethod "script"): the address method's
+    members, its payee payTo, the contract the seller defines, as the protocol package's reference names it. A Masumi
+    lock, whose payTo is the escrow every seller of a deployment shares, has no summary here."""
+    a = request.get("accepted")
+    extra = a.get("extra") if isinstance(a, Mapping) else None
+    if not isinstance(extra, Mapping) or extra.get("assetTransferMethod") != "script":
+        return None
+    return cardano_transaction(request, network, opened)
 
 
 def sui_transaction(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
     """x402/exact/sui: accepted's members, where the request asks a transaction bounded by epoch; the validity none to
-    none, in epochs: the request names no epoch."""
+    maxEpoch, in epochs."""
     if request.get("expiration") != "epoch-bounded":
         return None
-    return _wallet_built(request, "sui-transaction", _SUI_NETWORK, "epoch")
+    return _wallet_built(request, "sui-transaction", _SUI_NETWORK, "epoch", "maxEpoch")

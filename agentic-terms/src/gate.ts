@@ -27,6 +27,7 @@ import {
   stepsOf,
   type Approval,
 } from "./checks.js";
+import { heldToDeadline, withDeadline } from "./deadline.js";
 import { fetchedOf, held, isRefusal, jsonSafe, refuse } from "./pairings/common.js";
 import { PIECES } from "./pairings/index.js";
 import { summaryOf, type Opened } from "./summary.js";
@@ -248,12 +249,18 @@ export interface GateArgs {
   readonly chosen?: Chosen | undefined;
 }
 
-/** The choice of a `chosen` given back, without the agreement URL the offer names again; undefined for another form. */
+/**
+ * The choice of a `chosen` given back, with the latest deadline it keeps for a wallet that picks the expiry, and without
+ * the agreement URL the offer names again; undefined for another form.
+ */
 function givenChoice(chosen: unknown, pairing: string): Chosen | undefined {
   if (!isObject(chosen) || chosen["pairing"] !== pairing || !isObject(chosen["choice"]) || typeof chosen["ref"] !== "string") {
     return undefined;
   }
-  return { pairing, choice: chosen["choice"] as Chosen["choice"], ref: chosen["ref"] };
+  const deadline = chosen["deadline"];
+  if (deadline !== undefined && (typeof deadline !== "string" || !/^[0-9]{1,78}$/.test(deadline))) return undefined;
+  const given: Chosen = { pairing, choice: chosen["choice"] as Chosen["choice"], ref: chosen["ref"] };
+  return deadline === undefined ? given : { ...given, deadline };
 }
 
 /** What checks 3 to 11 give: the choice, the request for the signer with its summary, the bytes and H. */
@@ -370,9 +377,12 @@ export async function charged(
     if (NOTHING_TO_SIGN.test(unsigned.code)) return { chosen, request: null, count: 0, bytes, h };
     return declined("offer-unreadable", unsigned.code);
   }
-  const request = piece.request(unsigned);
-  if (isRefusal(request)) return declined("offer-unreadable", request.code);
-  const kept = keptWith(piece, chosen, unsigned);
+  const built = piece.request(unsigned);
+  if (isRefusal(built)) return declined("offer-unreadable", built.code);
+  const bounded = withDeadline(binding, built, chosen, inputs, ceilings, Math.floor(Date.now() / 1000));
+  if ("decline" in bounded) return bounded;
+  const { request } = bounded;
+  const kept = keptWith(piece, bounded.chosen, unsigned);
   if (request === null) return { chosen: kept, request, count: 0, bytes, h };
   const summary = await shown(binding, request, bytes, inputs, ceilings, networkOfAccount(account));
   if ("decline" in summary) return summary;
@@ -496,6 +506,10 @@ async function finishAs(
       sent,
     );
   }
+  // A wallet that picked the expiry is held to the latest deadline it was handed; a payment past it is discarded.
+  const request = piece.request(unsigned);
+  const late = await heldToDeadline(binding, isRefusal(request) ? null : request, signed, chosen);
+  if (late !== undefined) return late;
   const landed = sent !== signed ? jsonSafe(fetchedOf(signed)) : undefined;
   return landed === undefined ? { signed: sent, h } : { signed: sent, landed, h };
 }
@@ -586,9 +600,15 @@ export async function pay(
     if (NOTHING_TO_SIGN.test(unsigned.code)) return { signed: null, h };
     return declined("offer-unreadable", unsigned.code);
   }
-  const request = piece.request(unsigned);
-  if (isRefusal(request)) return declined("offer-unreadable", request.code);
-  return signSteps(binding, keptWith(piece, chosen, unsigned), request, signer, bytes, h, act, approval, stepsOf(unsigned));
+  const built = piece.request(unsigned);
+  if (isRefusal(built)) return declined("offer-unreadable", built.code);
+  // Where a ceiling holds the payment (`approval`), a wallet that picks the expiry is handed the latest it may sign.
+  const bounded =
+    approval === undefined
+      ? { request: built, chosen }
+      : withDeadline(binding, built, chosen, approval.inputs, approval.ceilings, Math.floor(Date.now() / 1000));
+  if ("decline" in bounded) return bounded;
+  return signSteps(binding, keptWith(piece, bounded.chosen, unsigned), bounded.request, signer, bytes, h, act, approval, stepsOf(unsigned));
 }
 
 /**

@@ -223,7 +223,7 @@ PIECE_ONLY: Mapping[str, str] = {
     "x402/batch-settlement/solana": _NO_RUN,
     "x402/exact/algorand": _NO_RUN,
     "x402/exact/cardano": "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H",
-    "x402/exact/cardano/lock": _NO_RUN,
+    "x402/exact/cardano/lock": "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H",
     "x402/exact/ccd": "D3's recorded transaction is bound to H(abc); no signer here makes one for another H",
     "x402/exact/hedera": _NO_RUN,
     "x402/exact/hedera/transfer-executor": _NO_RUN,

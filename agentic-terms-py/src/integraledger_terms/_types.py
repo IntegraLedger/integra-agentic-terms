@@ -102,13 +102,16 @@ class Declined:
 class Chosen:
     """What the gate chose to pay, so finish can rebuild the same request. agreement is the agreement URL the seller's
     offer names, for a pairing at coverage none, whose payment is not itself a public proof of the ATR hash. act is the
-    act the payment is built and checked for: "agreement" for the agreement payment, else "payment"."""
+    act the payment is built and checked for: "agreement" for the agreement payment, else "payment". deadline, for a
+    form whose wallet picks the expiry, is the latest deadline the request handed to it carries, a decimal string in
+    the form's unit, so that a rebuild gives the request the signer was handed and the signed deadline is held to it."""
 
     pairing: str
     choice: dict[str, Any]
     ref: str
     agreement: str | None = None
     act: Act = "payment"
+    deadline: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

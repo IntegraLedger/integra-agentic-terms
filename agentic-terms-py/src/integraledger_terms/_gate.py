@@ -16,6 +16,7 @@ import httpx
 from . import _agreement, _return
 from ._checks import Approval, approves, ceilings_ok, floor_missing, network_of, request_held, shown, slot_holds, steps_of
 from ._core import MAX_ATR_BYTES, AtrHash, atr_hash, hash_equals
+from ._deadline import held_to_deadline, with_deadline
 from ._parse import parse_atr
 from ._summary import Opened, summary_of
 from ._types import (
@@ -358,10 +359,13 @@ def _built(
     request = piece.request(unsigned)
     if isinstance(request, Refusal):
         return Declined("offer-unreadable", request.code)
+    bounded = with_deadline(binding, None if request is None else json_form(request), chosen, inputs, ceilings, _now())
+    if isinstance(bounded, Declined):
+        return bounded
+    formed, chosen = bounded
     kept = _kept(piece, chosen, unsigned)
-    if request is None:
+    if formed is None:
         return Confirmed(chosen=kept, request=None, atr_bytes=fetched, h=computed), 0
-    formed = json_form(request)
     summary = shown(binding, formed, fetched, inputs, ceilings, network_of(account))
     if isinstance(summary, Declined):
         return summary
@@ -437,6 +441,12 @@ def _finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bin
         return keep(
             "signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.", sent
         )
+    # A wallet that picked the expiry is held to the latest deadline it was handed; a payment past it is discarded.
+    request = piece.request(unsigned)
+    formed = None if request is None or isinstance(request, Refusal) else json_form(request)
+    late = held_to_deadline(binding, formed, signed, chosen)
+    if late is not None:
+        return late
     landed = fetched_of(signed) if sent is not signed else None
     return Finished(signed=sent, h=h, landed=landed)
 
@@ -484,6 +494,12 @@ async def pay(
     if isinstance(request, Refusal):
         return Declined("offer-unreadable", request.code)
     first = json_form(request) if request is not None else None
+    # Where a ceiling holds the payment (approval), a wallet that picks the expiry is handed the latest it may sign.
+    if approval is not None:
+        bounded = with_deadline(binding, first, chosen, approval.inputs, approval.ceilings, _now())
+        if isinstance(bounded, Declined):
+            return bounded
+        first, chosen = bounded
     kept = _kept(piece, chosen, unsigned)
     return await _sign_steps(binding, kept, first, signer, atr_bytes, h, approval, steps_of(unsigned))
 

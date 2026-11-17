@@ -14,6 +14,7 @@ from ._summary_card import tap_field, vi_checkout_mandate, vi_immediate, vic_ref
 from ._summary_checkout import acp_allowance, ap2_checkout_mandate, ucp_checkout, ucp_legal_context
 from ._summary_rail import (
     aptos_transaction,
+    cardano_lock,
     cardano_transaction,
     casper_transfer_with_authorization,
     ccd_transfer,
@@ -135,6 +136,7 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/polkadot/lcp-assets-remark": SummaryEntry(show=substrate_transfer),
     "x402/exact/aptos": SummaryEntry(show=aptos_transaction),
     "x402/exact/cardano": SummaryEntry(show=cardano_transaction),
+    "x402/exact/cardano/lock": SummaryEntry(show=cardano_lock),
     "x402/exact/sui": SummaryEntry(show=sui_transaction),
     "card/visa-tap": SummaryEntry(show=tap_field),
     "card/mastercard-agent-pay": SummaryEntry(show=tap_field),

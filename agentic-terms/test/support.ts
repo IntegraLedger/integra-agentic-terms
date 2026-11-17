@@ -68,7 +68,6 @@ function fromHexBytes(h: string): Uint8Array {
  */
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
-  ["cardano-transaction", ["x402/exact/cardano/lock"]],
   ["eip712", ["mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"]],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
   ["tempo-call", ["mpp/session/tempo"]],
@@ -324,6 +323,7 @@ export const PIECE_ONLY: ReadonlyMap<string, string> = new Map([
   ["x402/exact/polkadot/lcp-assets-remark", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
   ["x402/exact/sui", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
   ["x402/exact/cardano", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
+  ["x402/exact/cardano/lock", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
   ["ucp/checkout/agent-signed", "the bound rows' signed request bodies carry H(abc); none is published for another H"],
 ]);
 

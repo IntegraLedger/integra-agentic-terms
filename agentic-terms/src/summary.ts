@@ -18,7 +18,7 @@ import { casperTransferWithAuthorization } from "./summary/casper-eip712.js";
 import { ccdTransfer } from "./summary/ccd-transfer.js";
 import { starknetTransfer } from "./summary/starknet-snip12.js";
 import { substrateTransfer } from "./summary/substrate-call.js";
-import { aptosTransaction, cardanoTransaction, suiTransaction } from "./summary/x402-wallet.js";
+import { aptosTransaction, cardanoLock, cardanoTransaction, suiTransaction } from "./summary/x402-wallet.js";
 import { tapField, vicReference, viCheckout, viCheckoutMandate } from "./summary/card.js";
 import { stellarPrecondition, stellarStart } from "./summary/stellar-precondition.js";
 import { acpAllowance, ap2CheckoutMandate, ucpCheckout, ucpLegalContext } from "./summary/checkout.js";
@@ -149,6 +149,7 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/polkadot/lcp-assets-remark", { show: substrateTransfer }],
   ["x402/exact/aptos", { show: aptosTransaction }],
   ["x402/exact/cardano", { show: cardanoTransaction }],
+  ["x402/exact/cardano/lock", { show: cardanoLock }],
   ["x402/exact/sui", { show: suiTransaction }],
   ["x402/exact/stellar/precondition", { show: stellarPrecondition, start: stellarStart }],
   ["ap2/checkout-mandate", { show: ap2CheckoutMandate }],

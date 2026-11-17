@@ -413,6 +413,31 @@ function raisedOf(ceilings: Ceilings | undefined, pairing: string): number | "no
 }
 
 /**
+ * The pairing's ceiling in seconds: 600, or on a rail with a served floor that floor plus the service's margin
+ * (`floor-missing` where `inputs` lacks it), raised to `raised` where it is larger.
+ */
+function secondsOf(pairing: string, inputs: Inputs, raised: number | undefined): number | Declined {
+  const floor = FLOORS.get(pairing);
+  let ceiling = DEFAULT_CEILING_S;
+  if (floor !== undefined) {
+    const given = inputs[floor.input];
+    if (!isPositiveSafe(given)) return declined("floor-missing", floor.input);
+    ceiling = given + floor.margin;
+  }
+  return raised !== undefined ? Math.max(ceiling, raised) : ceiling;
+}
+
+/**
+ * The pairing's ceiling as check 11 holds a payment to it: its seconds, `"no-end"` where `ceilings` lifts it, or the
+ * decline a malformed `ceilings` value or a missing floor input answers.
+ */
+export function ceilingOf(pairing: string, inputs: Inputs, ceilings: Ceilings | undefined): number | "no-end" | Declined {
+  const raised = raisedOf(ceilings, pairing);
+  if (raised === null) return declined("no-payable-option", `${pairing.split("/")[0]!}/input-malformed`);
+  return raised === "no-end" ? raised : secondsOf(pairing, inputs, raised);
+}
+
+/**
  * `floor-missing`, naming the input, where the pairing's rail serves a floor and `inputs` does not hold it as a positive
  * safe integer.
  */
@@ -425,9 +450,16 @@ export function floorMissing(pairing: string, inputs: Inputs): Declined | undefi
 /**
  * The input that gives the start of a deadline signed as a height where neither the request nor the build signs one, by
  * the network's CAIP-2 namespace: on the XRP Ledger `ledgerIndex`, the index of the validated ledger the caller read,
- * since the protocol package's XRPL builds take `LastLedgerSequence` itself from the caller and sign no start.
+ * since the protocol package's XRPL builds take `LastLedgerSequence` itself from the caller and sign no start; on
+ * Cardano `currentSlot` and on Sui `currentEpoch`, the slot and the epoch the caller read, since the wallet picks the
+ * transaction's TTL or expiration epoch itself.
  */
-const STARTS: { readonly [namespace: string]: string } = { xrpl: "ledgerIndex" };
+const STARTS: { readonly [namespace: string]: string } = {
+  xrpl: "ledgerIndex",
+  cardano: "currentSlot",
+  cip34: "currentSlot",
+  sui: "currentEpoch",
+};
 
 const isIndex = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 
@@ -435,8 +467,18 @@ const isIndex = (v: unknown): v is number => typeof v === "number" && Number.isS
 /** The CAIP-2 namespace of a network, or "" where the payment moves on no ledger and the summary names none. */
 const namespaceOfNetwork = (network: string | null): string => (network === null ? "" : network.split(":")[0]!);
 
+/** Seconds per unit of a deadline signed as a height on `network`, from the profile's pace table; undefined for none. */
+export function paceOf(network: string): number | undefined {
+  return PACE[namespaceOfNetwork(network)];
+}
+
+/** The name of the input that gives the start of a deadline signed as a height on `network`, where its chain has one. */
+export function startInput(network: string): string | undefined {
+  return STARTS[namespaceOfNetwork(network)];
+}
+
 /** The start the caller gives in `inputs` for a deadline signed as a height on `network`, where its chain has one. */
-function givenStart(network: string | null, inputs: Inputs): bigint | undefined {
+export function givenStart(network: string | null, inputs: Inputs): bigint | undefined {
   const name = STARTS[namespaceOfNetwork(network)];
   const v = name === undefined ? undefined : inputs[name];
   return isIndex(v) ? BigInt(v) : undefined;
@@ -461,9 +503,9 @@ function big(v: string | null): bigint | undefined {
 /**
  * How long the signed payment stays payable, in seconds, from the summary's validity: a deadline in seconds less the
  * gate's clock; a deadline signed as a height less the start the request signs, else the height the caller gave the
- * build, else the start the caller gives in `inputs` (`ledgerIndex` on the XRP Ledger), times the chain's pace; where
- * the payer signs no deadline, the pairing's `read.life`; `"no-end"` where none of these bounds it; undefined where the
- * window cannot be read.
+ * build, else the start the caller gives in `inputs` (`ledgerIndex` on the XRP Ledger), times the chain's pace, an
+ * epoch counting to its end; where the payer signs no deadline, the pairing's `read.life`; `"no-end"` where none of
+ * these bounds it; undefined where the window cannot be read.
  */
 function windowOf(binding: Binding, v: Validity, network: string | null, now: number, inputs: Inputs): number | "no-end" | undefined {
   const until = big(v.notAfter);
@@ -473,7 +515,8 @@ function windowOf(binding: Binding, v: Validity, network: string | null, now: nu
   const pace = PACE[namespaceOfNetwork(network)];
   const from = big(v.notBefore) ?? startOf(String(binding.id), inputs) ?? givenStart(network, inputs);
   if (pace === undefined || from === undefined) return undefined;
-  return Number(until - from) * pace;
+  // A deadline that is an epoch admits the whole of that epoch: the window runs to its end.
+  return Number(until - from + (v.unit === "epoch" ? 1n : 0n)) * pace;
 }
 
 /**
@@ -506,14 +549,8 @@ export function withinCeiling(
   }
   if (raised === "no-end") return undefined;
   if (window === undefined) return declined("past-ceiling", `The gate cannot read how long the payment through ${pairing} stays payable.`);
-  const floor = FLOORS.get(pairing);
-  let ceiling = DEFAULT_CEILING_S;
-  if (floor !== undefined) {
-    const given = inputs[floor.input];
-    if (!isPositiveSafe(given)) return declined("floor-missing", floor.input);
-    ceiling = given + floor.margin;
-  }
-  if (raised !== undefined) ceiling = Math.max(ceiling, raised);
+  const ceiling = secondsOf(pairing, inputs, raised);
+  if (typeof ceiling !== "number") return ceiling;
   return window > ceiling
     ? declined("past-ceiling", `The payment through ${pairing} stays payable ${window} s, past its ceiling of ${ceiling} s.`)
     : undefined;

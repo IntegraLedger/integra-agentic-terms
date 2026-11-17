@@ -123,6 +123,28 @@ def split_signed(xt: bytes) -> tuple[bytes, int] | Refusal:
     return signer, at + 1 + size
 
 
+def era_of(xt: bytes) -> tuple[int, int] | Literal["immortal"] | Refusal:
+    """The era a signed v4 extrinsic signs, the first of its extensions' explicit bytes after the signature
+    (CheckMortality), as polkadot-sdk's Era decodes it and the protocol package's reference reads it: "immortal" for
+    its one zero byte, else (period, phase) from its two bytes; polkadot/extrinsic-malformed where it does not decode."""
+    split = split_signed(xt)
+    if isinstance(split, Refusal):
+        return split
+    at = split[1]
+    if at >= len(xt):
+        return Refusal("polkadot/extrinsic-malformed")
+    first = xt[at]
+    if first == 0:
+        return "immortal"
+    if at + 1 >= len(xt):
+        return Refusal("polkadot/extrinsic-malformed")
+    encoded = first + (xt[at + 1] << 8)
+    period = 2 << (encoded % 16)
+    quantize = max(period >> 12, 1)
+    phase = (encoded >> 4) * quantize
+    return (period, phase) if period >= 4 and phase < period else Refusal("polkadot/extrinsic-malformed")
+
+
 def _with_suffix(xt: bytes, call: bytes) -> bool | Refusal:
     """The extrinsic ends with the call, which starts at or after the signature's end."""
     split = split_signed(xt)

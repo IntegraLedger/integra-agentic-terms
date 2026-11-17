@@ -215,6 +215,29 @@ def _raised(ceilings: Ceilings | None, pairing: str) -> int | Literal["no-end"] 
     return Refusal("malformed")
 
 
+def _seconds_of(pairing: str, inputs: Inputs, raised: int | None) -> int | Declined:
+    """The pairing's ceiling in seconds: 600, or on a rail with a served floor that floor plus the service's margin
+    (floor-missing where inputs lacks it), raised to raised where it is larger."""
+    floor = _FLOORS.get(pairing)
+    ceiling = DEFAULT_CEILING_S
+    if floor is not None:
+        given = inputs.get(floor.input)
+        if not _is_positive_safe(given):
+            return _declined("floor-missing", floor.input)
+        assert isinstance(given, int)
+        ceiling = given + floor.margin
+    return ceiling if raised is None else max(ceiling, raised)
+
+
+def ceiling_of(pairing: str, inputs: Inputs, ceilings: Ceilings | None) -> int | Literal["no-end"] | Declined:
+    """The pairing's ceiling as check 11 holds a payment to it: its seconds, "no-end" where ceilings lifts it, or the
+    decline a malformed ceilings value or a missing floor input answers."""
+    raised = _raised(ceilings, pairing)
+    if isinstance(raised, Refusal):
+        return _declined("no-payable-option", f"{pairing.split('/', 1)[0]}/input-malformed")
+    return "no-end" if raised == "no-end" else _seconds_of(pairing, inputs, raised)
+
+
 def floor_missing(pairing: str, inputs: Inputs) -> Declined | None:
     """floor-missing, naming the input, where the pairing's rail serves a floor and inputs does not hold it as a
     positive safe integer."""
@@ -227,6 +250,35 @@ def floor_missing(pairing: str, inputs: Inputs) -> Declined | None:
 def _namespace(network: str | None) -> str:
     """The CAIP-2 namespace of a network, or "" where the payment moves on no ledger and the summary names none."""
     return "" if network is None else network.split(":", 1)[0]
+
+
+# The input that gives the start of a deadline signed as a height where neither the request nor the build signs one, by
+# the network's CAIP-2 namespace: on the XRP Ledger ledgerIndex, the index of the validated ledger the caller read,
+# since the protocol package's XRPL builds take LastLedgerSequence itself from the caller and sign no start; on Cardano
+# currentSlot and on Sui currentEpoch, the slot and the epoch the caller read, since the wallet picks the transaction's
+# TTL or expiration epoch itself.
+_STARTS: Mapping[str, str] = {"xrpl": "ledgerIndex", "cardano": "currentSlot", "cip34": "currentSlot", "sui": "currentEpoch"}
+
+
+def _is_index(v: object) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= MAX_SAFE_INTEGER
+
+
+def pace_of(network: str | None) -> float | None:
+    """Seconds per unit of a deadline signed as a height on network, from the profile's pace table; None for none."""
+    return _PACE.get(_namespace(network))
+
+
+def start_input(network: str | None) -> str | None:
+    """The name of the input that gives the start of a deadline signed as a height on network, where its chain has one."""
+    return _STARTS.get(_namespace(network))
+
+
+def given_start(network: str | None, inputs: Inputs) -> int | None:
+    """The start the caller gives in inputs for a deadline signed as a height on network, where its chain has one."""
+    name = start_input(network)
+    v = None if name is None else inputs.get(name)
+    return v if isinstance(v, int) and _is_index(v) else None
 
 
 def _life_of(pairing: str, network: str | None) -> float | None:
@@ -245,29 +297,12 @@ def _big(v: str | None) -> int | None:
     return int(v) if v is not None and v.isascii() and v.isdigit() and len(v) <= 78 else None
 
 
-# The input that gives the start of a deadline signed as a height where neither the request nor the build signs one, by
-# the network's CAIP-2 namespace: on the XRP Ledger ledgerIndex, the index of the validated ledger the caller read,
-# since the protocol package's XRPL builds take LastLedgerSequence itself from the caller and sign no start.
-_STARTS: Mapping[str, str] = {"xrpl": "ledgerIndex"}
-
-
-def _is_index(v: object) -> bool:
-    return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= MAX_SAFE_INTEGER
-
-
-def _given_start(network: str | None, inputs: Inputs) -> int | None:
-    """The start the caller gives in inputs for a deadline signed as a height on network, where its chain has one."""
-    name = _STARTS.get(_namespace(network))
-    v = None if name is None else inputs.get(name)
-    return v if isinstance(v, int) and _is_index(v) else None
-
-
 def _window(pairing: str, v: Validity, network: str | None, now: int, inputs: Inputs) -> float | Literal["no-end"] | None:
     """How long the signed payment stays payable, in seconds, from the summary's validity: a deadline in seconds less
     the gate's clock; a deadline signed as a height less the start the request signs, else the height the caller gave
-    the build, else the start the caller gives in inputs (ledgerIndex on the XRP Ledger), times the chain's pace; where
-    the payer signs no deadline, the pairing's read.life; "no-end" where none of these bounds it; None where the window
-    cannot be read."""
+    the build, else the start the caller gives in inputs (ledgerIndex on the XRP Ledger, currentSlot on Cardano,
+    currentEpoch on Sui), times the chain's pace, an epoch counting to its end; where the payer signs no deadline, the pairing's read.life; "no-end"
+    where none of these bounds it; None where the window cannot be read."""
     if v.not_after is None:
         life = _life_of(pairing, network)
         return "no-end" if life is None else life
@@ -281,10 +316,11 @@ def _window(pairing: str, v: Validity, network: str | None, now: int, inputs: In
     if start is None:
         start = start_of(pairing, inputs)
     if start is None:
-        start = _given_start(network, inputs)
+        start = given_start(network, inputs)
     if pace is None or start is None:
         return None
-    return (until - start) * pace
+    # A deadline that is an epoch admits the whole of that epoch: the window runs to its end.
+    return (until - start + (1 if v.unit == "epoch" else 0)) * pace
 
 
 def within_ceiling(pairing: str, summary: Summary, inputs: Inputs, ceilings: Ceilings | None, now: int) -> Declined | None:
@@ -298,28 +334,20 @@ def within_ceiling(pairing: str, summary: Summary, inputs: Inputs, ceilings: Cei
     if isinstance(raised, Refusal):
         return _declined("no-payable-option", f"{ns}/input-malformed")
     v = summary.validity
-    chain = _namespace(summary.network)
-    start_name = _STARTS.get(chain)
+    start_name = start_input(summary.network)
     if v.unit != "seconds" and v.not_after is not None and v.not_before is None and start_name is not None:
         if start_of(pairing, inputs) is None and not _is_index(inputs.get(start_name)):
-            return _declined("no-payable-option", f"{chain}/input-missing")
-    window = _window(pairing, summary.validity, summary.network, now, inputs)
+            return _declined("no-payable-option", f"{_namespace(summary.network)}/input-missing")
+    window = _window(pairing, v, summary.network, now, inputs)
     if window == "no-end":
         return None if raised == "no-end" else _declined("no-end", f"The payment through {pairing} signs no end.")
     if raised == "no-end":
         return None
     if window is None:
         return _declined("past-ceiling", f"The gate cannot read how long the payment through {pairing} stays payable.")
-    floor = _FLOORS.get(pairing)
-    ceiling = DEFAULT_CEILING_S
-    if floor is not None:
-        given = inputs.get(floor.input)
-        if not _is_positive_safe(given):
-            return _declined("floor-missing", floor.input)
-        assert isinstance(given, int)
-        ceiling = given + floor.margin
-    if raised is not None:
-        ceiling = max(ceiling, raised)
+    ceiling = _seconds_of(pairing, inputs, raised)
+    if isinstance(ceiling, Declined):
+        return ceiling
     if window > ceiling:
         shown = math.ceil(window)
         return _declined("past-ceiling", f"The payment through {pairing} stays payable {shown} s, past its ceiling of {ceiling} s.")
