@@ -30,7 +30,7 @@ import type { AgentSignedUnsigned, Checkout as UcpCheckout, Unsigned as UcpUnsig
 import type { Unsigned as Ap2Unsigned } from "@integraledger/lcp/ap2";
 import type { Unsigned as AcpUnsigned } from "@integraledger/lcp/acp";
 import type { HttpRequest, PaymentRequired, PaymentRequirements, ToolCall, X402Unsigned } from "@integraledger/lcp/x402";
-import type { SigningRequest as BatchRequest } from "@integraledger/lcp/x402-batch-settlement";
+import type { SigningRequest as BatchRequest, ChannelConfig } from "@integraledger/lcp/x402-batch-settlement";
 import type { SvmUnsigned } from "@integraledger/lcp/x402-exact-solana";
 import type { XrplUnsigned } from "@integraledger/lcp/xrpl";
 
@@ -59,7 +59,9 @@ export type Fetch = (
  * (`vi-checkout`), VI's checkout mandate (`vi-checkout-mandate`), AP2's checkout-mandate content (`ap2-checkout-mandate`),
  * the UCP checkout for the buyer's mandate issuer (`ucp-checkout`), the `legal_context` member a UCP platform writes into
  * the request that completes the checkout, beside that checkout (`ucp-legal-context`), and ACP's allowance
- * (`acp-allowance`). `batch` is several requests, signed in order, as are the requests of an in-channel payment.
+ * (`acp-allowance`). `batch` is several requests, signed in order, as are the requests of an in-channel payment; an
+ * x402 `batch-settlement` opening on EVM also carries the channel's `config`, whose id both requests sign, and
+ * `authSalt`, the salt of its ERC-3009 deposit's nonce `keccak256(abi.encode(channelId, authSalt))`.
  * `ed25519-raw` is raw Ed25519 over the bytes given.
  * Where the wallet builds the transaction and picks its expiry itself (`aptos-transaction`, `cardano-transaction`,
  * `sui-transaction` and `substrate-call`), the gate adds the latest deadline the wallet may sign, the pairing's ceiling
@@ -100,7 +102,7 @@ export type SigningRequest =
   | { kind: "ucp-checkout"; checkout: UcpUnsigned["checkout"] }
   | { kind: "ucp-legal-context"; checkout: UcpCheckout; legal_context: AgentSignedUnsigned["legal_context"] }
   | { kind: "acp-allowance"; allowance: AcpUnsigned["allowance"] }
-  | { kind: "batch"; requests: readonly (BatchRequest | WithinSigningRequest)[] }
+  | { kind: "batch"; requests: readonly (BatchRequest | WithinSigningRequest)[]; config?: ChannelConfig; authSalt?: string }
   | Extract<BatchRequest, { kind: "ed25519-raw" }>;
 
 /**

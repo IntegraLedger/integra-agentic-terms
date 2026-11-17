@@ -40,7 +40,7 @@ const PAYMENT_WITNESS = [
  * token and amount, the spender, the witness, the deadline and the chain, or undefined where the request is of another
  * form.
  */
-function permitWitness(
+export function permitWitness(
   request: SigningRequest,
   witnessType: string,
   witness: readonly (readonly [string, string])[],

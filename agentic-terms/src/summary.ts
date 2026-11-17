@@ -9,6 +9,8 @@ import type { Inputs, Signature, SigningRequest, Summary } from "./types.js";
 import { exactPermit2, mppPermit2, uptoPermit2 } from "./summary/eip712.js";
 import { erc20Transfer } from "./summary/evm-call.js";
 import { keyAuthorization } from "./summary/tempo-key-authorization.js";
+import { authCaptureEip3009, authCapturePermit2 } from "./summary/auth-capture.js";
+import { batchEvmOpening } from "./summary/batch-settlement.js";
 import { tempoOpen } from "./summary/tempo-call.js";
 import { algorandTransfer } from "./summary/algorand-txn.js";
 import { hederaExecutor, hederaTransfer } from "./summary/hedera-body.js";
@@ -132,6 +134,9 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["mpp/charge/evm/transaction", { show: erc20Transfer }],
   ["mpp/charge/evm/permit2", { show: mppPermit2 }],
   ["mpp/subscription/tempo", { show: keyAuthorization }],
+  ["x402/auth-capture/eip155/eip3009", { show: authCaptureEip3009 }],
+  ["x402/auth-capture/eip155/permit2", { show: authCapturePermit2 }],
+  ["x402/batch-settlement/eip155", { show: batchEvmOpening }],
   ["x402/exact/solana", { show: solanaTransfer }],
   ["mpp/charge/solana", { show: solanaTransfer }],
   ["mpp/charge/solana/unsponsored", { show: solanaTransfer }],

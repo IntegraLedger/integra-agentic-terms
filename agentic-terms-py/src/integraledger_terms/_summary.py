@@ -8,7 +8,16 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from ._summary_evm import erc20_transfer, exact_permit2, key_authorization, mpp_permit2, upto_permit2
+from ._summary_evm import (
+    auth_capture_eip3009,
+    auth_capture_permit2,
+    batch_evm_opening,
+    erc20_transfer,
+    exact_permit2,
+    key_authorization,
+    mpp_permit2,
+    upto_permit2,
+)
 from ._summary_tempo import tempo_open
 from ._types import Inputs, Payee, Summary, Validity
 from ._summary_bolt11 import bolt11_deposit, bolt11_pay
@@ -154,6 +163,9 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "mpp/charge/evm/hash": SummaryEntry(show=erc20_transfer),
     "mpp/charge/evm/transaction": SummaryEntry(show=erc20_transfer),
     "mpp/subscription/tempo": SummaryEntry(show=key_authorization),
+    "x402/auth-capture/eip155/eip3009": SummaryEntry(show=auth_capture_eip3009),
+    "x402/auth-capture/eip155/permit2": SummaryEntry(show=auth_capture_permit2),
+    "x402/batch-settlement/eip155": SummaryEntry(show=batch_evm_opening),
     "x402/exact/solana": SummaryEntry(show=solana_transfer),
     "mpp/charge/solana": SummaryEntry(show=solana_transfer),
     "mpp/charge/solana/unsponsored": SummaryEntry(show=solana_transfer),

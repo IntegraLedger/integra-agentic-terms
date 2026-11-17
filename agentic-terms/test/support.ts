@@ -67,8 +67,8 @@ function fromHexBytes(h: string): Uint8Array {
  * full.
  */
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
-  ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
-  ["eip712", ["mpp/session/evm", "mpp/session/tempo", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"]],
+  ["batch", ["x402/batch-settlement/solana"]],
+  ["eip712", ["mpp/session/evm", "mpp/session/tempo"]],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
 ]);
 

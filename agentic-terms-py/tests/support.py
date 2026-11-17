@@ -422,8 +422,6 @@ SUMMARY_PENDING: Mapping[str, frozenset[str]] = {
         {
             "mpp/session/evm",
             "mpp/session/tempo",
-            "x402/auth-capture/eip155/eip3009",
-            "x402/auth-capture/eip155/permit2",
         }
     ),
 }

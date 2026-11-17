@@ -598,10 +598,13 @@ def _auth_capture_build(pairing: str, choice: Json, h: AtrHash) -> Unsigned | Re
     assert not isinstance(t, Refusal)
     salt = bind_salt(t.receiver_authorizer, t.policy, c.h) if t.bound else c.h
     assert not isinstance(salt, Refusal)
-    signature_nonce = payment_hash(t.chain_id, t.deployment.escrow, t.info(ZERO_ADDRESS, salt, c.deadline))
+    info = t.info(ZERO_ADDRESS, salt, c.deadline)
+    signature_nonce = payment_hash(t.chain_id, t.deployment.escrow, info)
     if isinstance(signature_nonce, Refusal):
         return Refusal("x402/option-malformed")
     salts = {"salt": salt, "saltNonce": c.h} if t.bound else {"salt": salt}
+    # What the nonce is the hash of, beside the typed data: paymentHash(chainId, escrow, paymentInfo), the payer zero.
+    preimage = {"paymentInfo": _payment_info_json(info), "escrow": t.deployment.escrow}
     if pairing == AUTH_CAPTURE_EIP3009:
         typed_data = eip3009_typed_data(
             "ReceiveWithAuthorization",
@@ -647,7 +650,26 @@ def _auth_capture_build(pairing: str, choice: Json, h: AtrHash) -> Unsigned | Re
             "deadline": str(c.deadline),
         }
         payload = {"permit2Authorization": permit2_authorization, **salts}
-    return Unsigned({"kind": "eip712", "typedData": typed_data}, _signed(c.required, accepted, payload))
+    return Unsigned({"kind": "eip712", "typedData": typed_data, **preimage}, _signed(c.required, accepted, payload))
+
+
+def _payment_info_json(p: PaymentInfo) -> dict[str, Any]:
+    """A PaymentInfo as the auth-capture signing request carries it, its members named as the escrow's struct names
+    them."""
+    return {
+        "operator": p.operator,
+        "payer": p.payer,
+        "receiver": p.receiver,
+        "token": p.token,
+        "maxAmount": p.max_amount,
+        "preApprovalExpiry": p.pre_approval_expiry,
+        "authorizationExpiry": p.authorization_expiry,
+        "refundExpiry": p.refund_expiry,
+        "minFeeBps": p.min_fee_bps,
+        "maxFeeBps": p.max_fee_bps,
+        "feeReceiver": p.fee_receiver,
+        "salt": p.salt,
+    }
 
 
 def _salt_of(value: object) -> AtrHash | None:

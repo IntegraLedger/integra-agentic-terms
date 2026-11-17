@@ -35,12 +35,22 @@ export const REQUEST = {
   body: Buffer.from(COMMITTED.bodyUtf8, "utf8").toString("base64"),
 };
 
+/** The x402 batch-settlement EVM opening the tests pay: x402-batch-settlement.json's fixed option. */
+const BATCH_EVM_OPTION = JSON.parse(
+  readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/x402-batch-settlement.json", import.meta.url), "utf8"),
+).fixed.evm.option as { maxTimeoutSeconds: number };
+
 /**
  * What the host gives every test server whose subject is not the ceiling: the delegation forms, which sign no end,
- * raised to "no-end", as terms' profile asks a caller to raise them.
+ * raised to "no-end", and the batch-settlement EVM opening, whose deposit authorization stays payable for its option's
+ * maxTimeoutSeconds, raised to it, as terms' profile asks a caller to raise them.
  */
 const HOST = {
-  ceilings: { "x402/exact/eip155/erc7710": "no-end", "x402/exact/eip155/erc7710-salt": "no-end" },
+  ceilings: {
+    "x402/exact/eip155/erc7710": "no-end",
+    "x402/exact/eip155/erc7710-salt": "no-end",
+    "x402/batch-settlement/eip155": BATCH_EVM_OPTION.maxTimeoutSeconds,
+  },
 } as const;
 
 type Requests = { request(method: string, params?: object): Promise<unknown> };

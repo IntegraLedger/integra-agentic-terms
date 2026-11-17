@@ -90,7 +90,13 @@ def evm_answer(request: Any) -> list[str]:
     return [sign(keys[i], q["typedData"]) for i, q in enumerate(request["requests"])]
 
 
-EVM = Pairing(X402_BATCH_SETTLEMENT_EIP155, EVM_DOC, EVM_ACCOUNT, evm_answer, EVM_INPUTS)
+# Through the gate over A, the opening's deposit authorization stays payable for the option's maxTimeoutSeconds, past
+# the default ceiling, which the caller raises to it.
+EVM = Pairing(
+    X402_BATCH_SETTLEMENT_EIP155, EVM_DOC, EVM_ACCOUNT, evm_answer, EVM_INPUTS,
+    placed=lambda h: x402_doc(E["option"], RESOURCE, h),
+    ceilings={X402_BATCH_SETTLEMENT_EIP155.id: E["option"]["maxTimeoutSeconds"]},
+)  # fmt: skip
 
 def test_x402_batch_settlement_eip155_b6_build_and_sign() -> None:
     def inspect(request: Any) -> None:

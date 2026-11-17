@@ -19,6 +19,7 @@ import {
   transact,
   within,
   type Binding,
+  type Ceilings,
   type ChannelHold,
   type Declined,
   type Inputs,
@@ -120,10 +121,11 @@ async function evmAnswer(r: SigningRequest): Promise<Signature> {
 /**
  * The opening through the gate, over an ATR that is one JSON text, its document placed for that ATR's H: while
  * SUMMARY_PENDING lists the pairing, declined summary-missing with no request of a kind it lists handed to the signer;
- * otherwise signed, and held by `openChannel` with that H.
+ * otherwise signed, and held by `openChannel` with that H. `ceilings` raises the pairing's ceiling where the opening
+ * stays payable past it.
  */
-async function opensThroughGate(doc: unknown, binding: Binding, signer: Counting, inputs: Inputs): Promise<void> {
-  const out = await transact(doc, binding, signer, serving(ATR_A), { ...GATE, inputs });
+async function opensThroughGate(doc: unknown, binding: Binding, signer: Counting, inputs: Inputs, ceilings?: Ceilings): Promise<void> {
+  const out = await transact(doc, binding, signer, serving(ATR_A), { ...GATE, inputs, ...(ceilings === undefined ? {} : { ceilings }) });
   if (summaryPending(binding.id)) {
     expect(code(out)).toBe("summary-missing");
     expect(signer.requests.filter((r) => pendingKinds(binding.id).includes(r.kind))).toEqual([]);
@@ -147,7 +149,9 @@ const voucherOf = (signed: Presented) =>
 describe("x402/batch-settlement/eip155: the channel hold", () => {
   it("openChannel holds the ATR's bytes with the opening and EB1's channel; charged 0, signed max EB2's 1000", () =>
     at(E.now, async () => {
-      await opensThroughGate(x402Doc(batchEvm, E.option, HA), batchEvm, counting(evmAccount, evmAnswer), evmInputs);
+      // The deposit authorization stays payable for the option's maxTimeoutSeconds, past the default ceiling.
+      const ceilings = { "x402/batch-settlement/eip155": E.option.maxTimeoutSeconds };
+      await opensThroughGate(x402Doc(batchEvm, E.option, HA), batchEvm, counting(evmAccount, evmAnswer), evmInputs, ceilings);
       const { hold } = await evmHold();
       expect(hold).toMatchObject({
         pairing: "x402/batch-settlement/eip155",

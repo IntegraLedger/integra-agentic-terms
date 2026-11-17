@@ -9,6 +9,7 @@
 // and the batch-settlement opening's signatures are the lcp vector files'.
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { batchChannelId } from "@integraledger/lcp/x402-batch-settlement";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
 import { BINDINGS, createBuyerServer } from "../src/index.js";
 import { at, connect, REQUEST, summaryPending, transacted } from "./stdio.js";
@@ -378,7 +379,9 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
     expect(at(held, "result.structuredContent.hold")).toMatchObject({
       pairing,
       network: BV.EB6.expectRef.network,
-      channel: BV.EB6.expectRef.channel,
+      // The channel the opening over A makes: the vectors' configuration with A's hash as its salt (EB1's channel id
+      // is the same configuration's with abc's).
+      channel: batchChannelId(EV.chainId, { ...EV.config, salt: H }),
       h: H,
       atr,
       charged: "0",
