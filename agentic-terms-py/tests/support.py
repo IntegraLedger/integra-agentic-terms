@@ -68,21 +68,6 @@ PENDING: frozenset[str] = frozenset(
 # Each family leaves this set when its bindings are brought up to date.
 MIGRATING: frozenset[str] = frozenset(
     {
-        # Solana, XRPL, Algorand, Stacks and Stellar; x402/exact/stellar, mpp/charge/stellar and mpp/session/solana are
-        # retired and leave with their family's migration.
-        "x402/exact/stellar",
-        "mpp/charge/stellar",
-        "mpp/session/solana",
-        "x402/exact/solana",
-        "x402/upto/solana",
-        "x402/batch-settlement/solana",
-        "mpp/charge/solana",
-        "mpp/charge/usdc/solana",
-        "x402/exact/xrpl",
-        "mpp/charge/xrpl",
-        "mpp/session/xrpl",
-        "x402/exact/algorand",
-        "mpp/charge/usdc/stacks",
         # Hedera, NEAR, Tron, TON, Starknet, Casper, Aptos, Polkadot, Concordium, Cardano and Sui.
         "x402/exact/hedera",
         "x402/exact/hedera/transfer-executor",

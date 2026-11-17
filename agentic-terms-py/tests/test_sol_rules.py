@@ -11,7 +11,6 @@ from support import load
 from integraledger_terms import (
     X402_BATCH_SETTLEMENT_SOLANA,
     X402_EXACT_SOLANA,
-    X402_EXACT_STELLAR,
     X402_EXACT_XRPL,
     X402_UPTO_SOLANA,
     Refusal,
@@ -118,7 +117,6 @@ OPTION_OF = {
     "x402-exact-solana.json": "V2",
     "x402-upto-solana.json": "EU4",
     "x402-exact-xrpl.json": "V2",
-    "x402-exact-stellar.json": "V3",
     "x402-batch-settlement.json": "ES4",
 }
 
@@ -132,7 +130,6 @@ BUILDS: list[tuple[Any, str]] = [
     (X402_EXACT_SOLANA, "x402-exact-solana.json"),
     (X402_UPTO_SOLANA, "x402-upto-solana.json"),
     (X402_EXACT_XRPL, "x402-exact-xrpl.json"),
-    (X402_EXACT_STELLAR, "x402-exact-stellar.json"),
     (X402_BATCH_SETTLEMENT_SOLANA, "x402-batch-settlement.json"),
 ]
 
@@ -140,7 +137,7 @@ BUILDS: list[tuple[Any, str]] = [
 @pytest.mark.parametrize(("binding", "name"), BUILDS, ids=[b.id for b, _ in BUILDS])
 @pytest.mark.parametrize("h", ["abc", "0X" + "ab" * 32, None, 5, "ab" * 32], ids=["abc", "0X", "null", "a number", "no 0x"])
 def test_a_build_refuses_an_h_that_is_not_a_hash_first(binding: Any, name: str, h: Any) -> None:
-    """lcp 0.4.0's exact Solana, upto Solana, exact XRPL, exact Stellar and batch Solana builds answer
+    """lcp 0.4.0's exact Solana, upto Solana, exact XRPL and batch Solana builds answer
     x402/payload-malformed when normalHash(h) is null, right after the option's own checks and before the carrier."""
     accepted = _option(name)
     required = {"x402Version": 2, "resource": {"url": "https://example.com/x"}, "accepts": [accepted]}

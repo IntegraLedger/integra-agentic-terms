@@ -828,27 +828,68 @@ def _keys_readable(node: Node) -> bool:
 @dataclass(frozen=True, slots=True)
 class SignedRead:
     """A payment entry both readers read as one asset transfer: the transaction id algod computes, base32 of
-    SHA-512/256 of TX and the transaction's canonical encoding, and the note."""
+    SHA-512/256 of TX and the transaction's canonical encoding, and the note; logic_sig, where a logic signature
+    authorises the entry (its lsig holds a program, which algod reads as not blank); and clawback, where the transfer
+    names an asset sender, asnd, the act of the asset's clawback address."""
 
     txid: str
     note: bytes
+    logic_sig: bool = False
+    clawback: bool = False
+
+
+# Falcon-1024's scheme identifier, f1, the one pqsig scheme algod verifies (go-algorand v5.0.3, protocol/pq_scheme.go:33,
+# crypto/pq_scheme.go:56-63).
+_FALCON_1024 = b"f1"
+# go-codec's bounds on pqsig's key and signature (data/transactions/pqsig.go:46-47 at v5.0.3): a Falcon-1024 public key,
+# 1,793 bytes, and its longest signature in constant-time form, 1,538 (algorand/falcon v0.1.0, deterministic.h:13, :19).
+_FALCON_PUBLIC_KEY = 1793
+_FALCON_SIGNATURE = 1538
+
+
+def _falcon_alone(stxn: dict[str, Any]) -> bool:
+    """Whether a signed transaction that sets pqsig is one algod takes as a Falcon signature: no other signature member
+    set, since algod refuses a signed transaction of more than one signature category (checkTxnSigTypeCounts,
+    data/transactions/verify/txn.go:321-352 at v5.0.3), the scheme Falcon-1024's, and a key and signature within
+    go-codec's bounds. No signature is verified here; the node takes the transaction only with a valid one."""
+    pq = stxn["pqsig"]
+    return (
+        _is_zero(_fixed(64), stxn["sig"])
+        and _is_zero(_MULTISIG, stxn["msig"])
+        and _is_zero(_LOGICSIG, stxn["lsig"])
+        and pq["sch"] == _FALCON_1024
+        and len(pq["pk"] or b"") <= _FALCON_PUBLIC_KEY
+        and len(pq["sig"] or b"") <= _FALCON_SIGNATURE
+    )
 
 
 def read_signed(data: bytes) -> SignedRead | Literal["not-axfer"]:
     """A payment entry read as the x402 path reads it. The entry must be one msgpack value within the caps (unpack).
     algod's reader must decode it as a signed transaction whose type algod knows, with no other type's member at a
     non-zero value; the facilitator's reader must decode it as one asset transfer; and the canonical encodings of the
-    two signed transactions must be equal, so both read the same transaction. So a byte member written as a msgpack
-    string is read as its bytes, whatever they are; a string member (type, gen) is refused when its bytes are not UTF-8;
-    and a map key that does not spell a member's name exactly is refused. Gives "not-axfer" for an entry algod reads as
-    a transaction of another type, and raises Malformed for every other entry either reader refuses or the two read
-    differently. The signatures are not verified."""
+    two signed transactions must be equal, so both read the same transaction. An entry that sets pqsig, which the
+    facilitator's decoder does not read, is read by algod's reader alone (_falcon_alone): a settler submits it as read
+    here, so the node is its second reader. So a byte member written as a msgpack string is read as its bytes,
+    whatever they are; a string member (type, gen) is refused when its bytes are not UTF-8; and a map key that does not
+    spell a member's name exactly is refused. Gives "not-axfer" for an entry algod reads as a transaction of another
+    type, and raises Malformed for every other entry either reader refuses or the two read differently. The signatures
+    are not verified."""
     root = unpack(data)
     stxn = _zero_of(SIGNED_TXN) if root.kind == "nil" else _decode_into(SIGNED_TXN, root, _zero_of(SIGNED_TXN))
     txn = stxn["txn"]
     if _well_typed(txn) != "axfer":
         return "not-axfer"
-    if not _keys_readable(root) or _marshal(SIGNED_TXN, stxn) != _facilitator_encoding(root):
+    if not _keys_readable(root):
+        raise Malformed
+    if not _is_zero(_PQSIG, stxn["pqsig"]):
+        if not _falcon_alone(stxn):
+            raise Malformed
+    elif _marshal(SIGNED_TXN, stxn) != _facilitator_encoding(root):
         raise Malformed
     txid = base64.b32encode(sha512_256(b"TX" + _marshal(TRANSACTION, txn))).decode("ascii").rstrip("=")
-    return SignedRead(txid=txid, note=txn["note"] or b"")
+    return SignedRead(
+        txid=txid,
+        note=txn["note"] or b"",
+        logic_sig=len(stxn["lsig"]["l"] or b"") > 0,
+        clawback=any(txn["asnd"]),
+    )

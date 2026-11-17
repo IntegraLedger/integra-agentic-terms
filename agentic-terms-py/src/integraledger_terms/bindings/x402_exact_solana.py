@@ -10,24 +10,30 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import is_object, normal_hash, to_lcp_string
 from ._svm import (
+    COMPUTE_BUDGET,
+    MEMO_V4,
+    X402_V1,
     SvmBuildInput,
     SvmSigning,
     SvmTx,
     SvmUnsigned,
     build_svm_message,
+    built_version,
     decode_svm_tx,
     integer_of,
     is_key,
     is_payer_input,
     is_solana_network,
+    key_bytes,
     memo_length,
     static_nonce,
     svm_carrier,
+    svm_option_filter,
     to_base64,
-    unbuilt_version,
+    version_not_admitted,
     wire_of,
 )
 from ._x402 import (
@@ -66,10 +72,13 @@ def pairs(option: Mapping[str, Any]) -> bool:
 
 
 def payable(option: Mapping[str, Any]) -> bool:
-    """The amount is a positive u64 in decimal (is_amount) and the timeout a positive safe integer."""
+    """The amount is "0" or a positive amount (is_amount), a u64 in decimal, and the timeout a positive safe integer. A
+    zero TransferChecked lands, and @x402/svm 2.31.0's exact facilitator compares the transfer's amount with the
+    option's by equality, so an option at "0", the pairing's agreement floor, is payable."""
     amount = option.get("amount")
     return (
-        is_amount(amount)
+        (amount == "0" or is_amount(amount))
+        and isinstance(amount, str)
         and _DECIMAL.fullmatch(amount) is not None
         and int(amount) < U64_LIMIT
         and timeout_seconds(option.get("maxTimeoutSeconds")) is not None
@@ -77,17 +86,45 @@ def payable(option: Mapping[str, Any]) -> bool:
 
 
 # The pairing's one option filter, which read, build and bound apply: an option of this pairing whose amount build can
-# pay and whose timeout is a positive safe integer (payable), else x402/option-malformed.
-_THIS = filter_of(pairs, payable)
+# pay and whose timeout is a positive safe integer (payable), else x402/option-malformed; then one that no Solana build
+# honours (unbuilt_option: an extra.transactionVersions that admits neither version, or an extra.splits) is refused.
+_THIS = svm_option_filter(filter_of(pairs, payable))
 _read = read_for(_THIS)
+_MEMO_V4_KEY = key_bytes(MEMO_V4)
+_COMPUTE_BUDGET_KEY = key_bytes(COMPUTE_BUDGET)
+
+
+def not_admitted(tx: SvmTx) -> Refusal | None:
+    """svm/instruction-not-admitted where the transaction holds an instruction @x402/svm 2.31.0's exact facilitator
+    does not admit under any configuration, else None: a Memo v4 instruction, since every verify path of that
+    facilitator requires exactly one Memo instruction of the program MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr, equal
+    to extra.memo, and the carrier admits one memo of either program, so a Memo v4 instruction beside it is no payment
+    that facilitator and this package both take; and, in a version-1 message, a Compute Budget instruction, which it
+    refuses before any other check."""
+    v1 = tx.message[:1] == b"\x81"
+    for ix in tx.instructions:
+        program = tx.keys[ix.program] if ix.program < len(tx.keys) else None
+        if program is None:
+            continue
+        if program == _MEMO_V4_KEY or (v1 and program == _COMPUTE_BUDGET_KEY):
+            return Refusal("svm/instruction-not-admitted")
+    return None
 
 
 def bound_of(accepted: Mapping[str, Any], tx: SvmTx) -> AtrHash | Refusal:
     """The hash in the one memo, which must equal the option's extra.memo, in a message whose durable nonce account, if
-    it uses one, is a static key; the RecentBlockhashes sysvar may come from a lookup table."""
+    it uses one, is a static key (the RecentBlockhashes sysvar may come from a lookup table), whose version the option's
+    extra.transactionVersions admits (version_not_admitted), and which holds no instruction the stock facilitator never
+    admits (not_admitted)."""
     from_table = static_nonce(tx)
     if from_table is not None:
         return from_table
+    version = version_not_admitted(accepted.get("extra"), tx, "x402")
+    if version is not None:
+        return version
+    unadmitted = not_admitted(tx)
+    if unadmitted is not None:
+        return unadmitted
     carrier = svm_carrier(tx)
     if isinstance(carrier, Refusal):
         return carrier
@@ -97,20 +134,25 @@ def bound_of(accepted: Mapping[str, Any], tx: SvmTx) -> AtrHash | Refusal:
     return carrier.h
 
 
+# The agreement this pairing's payment can itself be, as @integraledger/lcp's registry states it.
+AGREEMENT = AgreementData(floor="0")
+
+
 @dataclass(frozen=True, slots=True)
 class X402ExactSolana:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AGREEMENT
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return _read(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> SvmUnsigned | Refusal:
-        """The v0 message the payer signs for the chosen option, whose one memo is the option's extra.memo. H is
-        checked first, then the form of the choice's payer, token program, decimals, blockhash and compute budget
-        (is_payer_input), then its document and option, then the option's extra.transactionVersions (unbuilt_version),
-        then the option's memo against H."""
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> SvmUnsigned | Refusal:
+        """The message the payer signs for the chosen option, whose one memo is the option's extra.memo: version 1
+        where the option's extra.transactionVersions holds 1, as @x402/svm 2.31.0's exact client writes it, else v0
+        (built_version). H is checked first, then the form of the choice's payer, token program, decimals, blockhash and
+        compute budget (is_payer_input), then its document and option, then the option's memo against H."""
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
@@ -125,9 +167,9 @@ class X402ExactSolana:
             return ok
         assert is_object(required) and is_object(accepted)
         extra = accepted["extra"]
-        version = unbuilt_version(extra)
-        if version is not None:
-            return version
+        version = built_version(extra)
+        if version is None:
+            return Refusal("x402/option-malformed")
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")
@@ -149,6 +191,7 @@ class X402ExactSolana:
                 memo=memo,
                 compute_unit_limit=40_000 if limit is None else integer_of(limit),
                 compute_unit_price=1 if price is None else price,
+                v1=X402_V1 if version == 1 else None,
             )
         )
         if isinstance(message, Refusal):
@@ -163,7 +206,7 @@ class X402ExactSolana:
 
         return SvmUnsigned(signing.request, complete)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the one memo of the transaction the payer signed, which must equal the option's extra.memo.
         Neither signature is verified here."""
         if not is_v2(presented):

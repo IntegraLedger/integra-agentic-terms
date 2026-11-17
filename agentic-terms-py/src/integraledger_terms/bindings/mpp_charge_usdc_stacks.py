@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from . import _stacks
 from ._codec import b64_decode
 from ._lcp import is_object, normal_hash
@@ -87,15 +87,20 @@ class StacksUnsigned:
         return credential
 
 
+# The agreement this pairing's payment can itself be, as @integraledger/lcp's registry states it.
+AGREEMENT = AgreementData(floor="1")
+
+
 @dataclass(frozen=True, slots=True)
 class MppChargeUsdcStacks:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AGREEMENT
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> StacksUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> StacksUnsigned | Refusal:
         """The SIP-010 transfer (amount, sender, recipient, (some H)) on the profile's token contract, one SentEq
         post-condition, post-condition mode Deny and anchor mode OnChainOnly, for the profile's chainId."""
         if not is_object(choice):
@@ -128,7 +133,7 @@ class MppChargeUsdcStacks:
         source = f"stacks:{_text(p.get('chainId'))}:{sender}"
         return StacksUnsigned(request=request, _challenge=dict(checked.challenge), _source=source, _chain_id=chain_id)
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """H from the echoed challenge, once its transaction is one a Stacks node decodes and serializes back to the
         same bytes (stacks-core 4.0.5), with no Clarity value nested more than 16 levels and a principal as any
         recipient, one a node of the challenge's network takes (_on_network, else stacks/chain-mismatch), and calls

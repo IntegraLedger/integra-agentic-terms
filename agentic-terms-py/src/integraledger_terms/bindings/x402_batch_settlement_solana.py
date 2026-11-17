@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._batch import SCHEME, batch_broadcaster, is_delay, payable, payload_of
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._lcp import is_list, is_object, normal_hash, safe_int, to_lcp_string
@@ -20,12 +20,14 @@ from ._svm import (
     TOKEN,
     TOKEN_2022,
     U32_LIMIT,
+    X402_V1,
     Carrier,
     ChannelBuildInput,
     ChannelOpen,
     ChannelRequestClose,
     SvmTx,
     build_channel_message,
+    built_version,
     channel_instruction,
     channel_message,
     channel_pda,
@@ -44,8 +46,9 @@ from ._svm import (
     signature_bytes,
     signed_wire,
     static_nonce,
+    svm_option_filter,
     to_base64,
-    unbuilt_version,
+    version_not_admitted,
     wire_of,
 )
 from ._x402 import chosen, filter_of, payment_with, read_for
@@ -98,7 +101,7 @@ def _payable(option: Mapping[str, Any]) -> bool:
 
 
 # The pairing's one option filter, which read, build, build_within, bound and the channel reads apply.
-_THIS = filter_of(pairs, _payable)
+_THIS = svm_option_filter(filter_of(pairs, _payable))
 _read = read_for(_THIS)
 
 
@@ -202,20 +205,22 @@ def _signatures(signatures: object, count: int) -> list[bytes] | None:
 @dataclass(frozen=True, slots=True)
 class X402BatchSettlementSolana:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return _read(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> BatchUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> BatchUnsigned | Refusal:
         """The opening: the open transaction, then the first voucher, each for the payer or its authorizer to sign. The
         transaction ends with two v3 Memo instructions: extra.memo, then x402's binding memo for
         extra.receiverAuthorizer. A payerAuthorizer that is not a point on the Ed25519 curve, which the program's open
         refuses as the authorized signer, is svm/input-malformed. H is checked first, then the form of the choice's
         payer, token program, blockhash and compute budget (is_payer_input), deposit, payerAuthorizer, salt and
-        openSlot, then its document and option, then the option's extra.transactionVersions (unbuilt_version), then the
-        option's memo against H and its token program against the choice's."""
+        openSlot, then its document and option, then the option's memo against H and its token program against the
+        choice's. The transaction is version 1 where the option's extra.transactionVersions holds 1, as @x402/svm
+        2.31.0's batch-settlement client writes it, else v0 (built_version)."""
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
@@ -241,9 +246,9 @@ class X402BatchSettlementSolana:
             return ok
         assert is_object(required) and is_object(accepted)
         extra = accepted["extra"]
-        version = unbuilt_version(extra)
-        if version is not None:
-            return version
+        version = built_version(extra)
+        if version is None:
+            return Refusal("x402/option-malformed")
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")
@@ -279,6 +284,7 @@ class X402BatchSettlementSolana:
                     open_slot=open_slot,
                     recipient=accepted["payTo"],
                 ),
+                v1=X402_V1 if version == 1 else None,
             ),
             [memo, BINDING_MEMO_PREFIX + receiver_authorizer],
         )
@@ -335,8 +341,8 @@ class X402BatchSettlementSolana:
         maxClaimableAmount, signed by the payer authorizer, with expiresAt 0. A refund carries no amount; with
         w's recentBlockhash it also carries a request_close message for the payer, signed first: the Compute Budget
         prefix, request_close with the payer (read-only signer) and the channel (writable), then one Memo v3 with
-        extra.memo when the option carries one. That message is v0, so a refund with recentBlockhash under an option
-        whose extra.transactionVersions does not admit version 0 is svm/version-not-built (unbuilt_version)."""
+        extra.memo when the option carries one. That message is version 1, the Compute Budget prefix carried in its
+        header, where the option's extra.transactionVersions holds 1, else v0 (built_version)."""
         if not is_object(w):
             return Refusal("x402/not-v2")
         required, accepted = w.get("required"), w.get("accepted")
@@ -384,9 +390,9 @@ class X402BatchSettlementSolana:
 
                 return BatchUnsigned([voucher_request], cooperative)
             extra = accepted["extra"]
-            version = unbuilt_version(extra)
-            if version is not None:
-                return version
+            version = built_version(extra)
+            if version is None:
+                return Refusal("x402/option-malformed")
             memo = extra.get("memo")
             limit, price = w.get("computeUnitLimit"), w.get("computeUnitPrice")
             refund_tx = build_channel_message(
@@ -400,6 +406,7 @@ class X402BatchSettlementSolana:
                     compute_unit_limit=200_000 if limit is None else integer_of(limit),
                     compute_unit_price=1 if price is None else price,
                     instruction=ChannelRequestClose(channel=channel),
+                    v1=X402_V1 if version == 1 else None,
                 )
             )
             if isinstance(refund_tx, Refusal):
@@ -484,7 +491,7 @@ class X402BatchSettlementSolana:
                 return Refusal("svm/channel-id-mismatch")
         return ChannelRef(accepted["network"], pda)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the seller memo of the opening the payer signed, which must equal the option's extra.memo, for a
         deposit whose channel instruction is open and whose channel the config names. The opening carries exactly one
         binding memo, whose key is not read, beside that one memo. No signature is verified here."""
@@ -502,6 +509,9 @@ class X402BatchSettlementSolana:
         from_table = static_nonce(tx)
         if from_table is not None:
             return from_table
+        version = version_not_admitted(accepted["extra"], tx, "x402")
+        if version is not None:
+            return version
         ix = channel_instruction(tx)
         if isinstance(ix, Refusal):
             return ix

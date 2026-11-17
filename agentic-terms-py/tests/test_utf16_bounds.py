@@ -56,7 +56,9 @@ def test_stripe_the_control_astral_text_past_each_bound_in_units_is_within_it_in
 
 def stacks(name: str) -> object:
     details = {"type": "stacks", "stacks": {"chainId": "1", "contractAddress": "S" + "P" * 39, "contractName": name}}
-    return _mpp_checks.usdc_charge_pairings({"amount": "1", "recipient": "r"}, details, {})
+    # The recipient is mpp-charge-usdc-stacks.json's, a principal as a Stacks node writes it.
+    recipient = "ST3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8NQXMNRQ"
+    return _mpp_checks.usdc_charge_pairings({"amount": "1", "recipient": recipient}, details, {})
 
 
 def test_a_stacks_contract_name_is_bounded_at_128_units() -> None:

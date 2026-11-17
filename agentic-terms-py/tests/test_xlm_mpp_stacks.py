@@ -13,6 +13,7 @@ import pytest
 
 from integraledger_terms import MPP_CHARGE_USDC_STACKS, AtrHash, Refusal
 from integraledger_terms.bindings import _stacks
+from integraledger_terms.bindings._mpp import pairings_of
 
 from breadth import H, LINK, Pairing, build_and_sign, plant
 from mpp_docs import issued, placed_doc
@@ -824,3 +825,17 @@ def test_mpp_charge_usdc_stacks_bound_and_complete_take_1_to_16384_bytes() -> No
     done = u.complete(largest)
     assert not isinstance(done, Refusal) and base64.b64decode(done["payload"]["transaction"]) == largest
     assert u.complete(M4["wireHex"]) == Refusal("mpp/credential-malformed")
+
+
+RECIPIENTS: list[dict[str, Any]] = V["recipients"]["rows"]
+
+
+@pytest.mark.parametrize("row", RECIPIENTS, ids=[r["case"] for r in RECIPIENTS])
+def test_mpp_charge_usdc_stacks_the_recipient_is_a_principal_as_a_node_writes_it(row: dict[str, Any]) -> None:
+    """The file's request with the row's recipient: pairings_of names the pairing for a principal as a Stacks node
+    writes it, and refuses any other spelling with the row's code."""
+    request = {**F["request"], "recipient": row["recipient"]}
+    asked = issued("usdc", "charge", json.dumps(request, separators=(",", ":")), F["realm"], F["expires"])
+    expect = row["expect"]
+    want = tuple(expect) if isinstance(expect, list) else Refusal(expect["code"])
+    assert pairings_of(asked) == want

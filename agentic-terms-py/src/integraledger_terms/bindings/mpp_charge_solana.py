@@ -10,10 +10,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
 from ._mpp import (
-    Checked,
     MppUnsigned,
     by_type,
     chosen_for,
@@ -28,11 +27,13 @@ from ._mpp_checks import is_solana_external_id, usdc_profile
 from ._svm import (
     MEMO_V3,
     MEMO_V4,
+    MPP_V1,
     Carrier,
     SvmBuildInput,
     SvmTx,
     build_sol_message,
     build_svm_message,
+    built_version,
     canonical_carrier,
     decode_svm_tx,
     integer_of,
@@ -40,7 +41,7 @@ from ._svm import (
     signed_wire,
     static_nonce,
     to_base64,
-    unbuilt_version,
+    version_not_admitted,
     wire_of,
 )
 
@@ -113,32 +114,35 @@ class MppChargeSolana:
     methodDetails.solana and whose only credential is type=transaction."""
 
     id: str
-    details: Callable[[Checked], Mapping[str, Any]]
+    # The Solana details of a challenge's methodDetails: the whole of it for the solana method, usdc's Solana profile.
+    details: Callable[[Mapping[str, Any]], Mapping[str, Any]]
     transaction_only: bool
-    public_proof: bool = True
+    agreement: AgreementData | None
+    coverage: Coverage = "full"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, and the challenges that carry them, in document order."""
         return read(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> MppUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> MppUnsigned | Refusal:
         """The message for the payer to sign: the request's transfer (a token TransferChecked, or a System transfer
         for sol) with the memo the request's externalId carries, which must be this H's LCP string. Splits and
         confidential transfers are not built: the pairing's filter refuses a challenge that asks for them
-        (svm/input-malformed). The checks run in order: the choice, then the challenge, then the Solana details'
-        transactionVersions (unbuilt_version: a list that is present and does not admit version 0, the one version
-        this builds, is svm/version-not-built, with no message to sign), then the request's externalId against H,
-        then the inputs."""
+        (svm/input-malformed). The message is version 1 where the Solana details' transactionVersions holds 1, its
+        header as pay-kit 86400da's charge client writes it (MPP_V1), else v0 (built_version); a field that admits
+        neither is svm/input-malformed, as the challenge's checks refuse it. The checks run in order: the choice, then
+        the challenge, then the request's externalId against H, then the inputs."""
         if not is_object(choice):
             return Refusal("svm/input-malformed")
         checked = chosen_for(choice.get("challenge"), h, self.id)
         if isinstance(checked, Refusal):
             return checked
         r = checked.request
-        d = self.details(checked)
-        version = unbuilt_version(d)
-        if version is not None:
-            return version
+        d = self.details(checked.details)
+        version = built_version(d)
+        if version is None:
+            return Refusal("svm/input-malformed")
+        v1 = MPP_V1 if version == 1 else None
         memo = to_lcp_string(h)
         if r.get("externalId") != memo:
             return Refusal("svm/carrier-mismatch")
@@ -162,7 +166,7 @@ class MppChargeSolana:
         amount = int(r["amount"])
         message: bytes | Refusal
         if r.get("currency") == "sol":
-            message = build_sol_message(fee_payer, payer, r["recipient"], amount, blockhash, memo, limit, price)
+            message = build_sol_message(fee_payer, payer, r["recipient"], amount, blockhash, memo, limit, price, v1)
         else:
             decimals = d["decimals"] if _is_number(d.get("decimals")) else choice.get("decimals")
             token_program = d["tokenProgram"] if isinstance(d.get("tokenProgram"), str) else choice.get("tokenProgram")
@@ -181,6 +185,7 @@ class MppChargeSolana:
                     memo=memo,
                     compute_unit_limit=limit,
                     compute_unit_price=price,
+                    v1=v1,
                 )
             )
         if isinstance(message, Refusal):
@@ -197,8 +202,9 @@ class MppChargeSolana:
 
         return MppUnsigned({"kind": "solana-message", "message": signed_message}, complete)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
-        """H from the echoed challenge, once the signed LCP memo equals the request's externalId and names that H.
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        """H from the echoed challenge, once the signed LCP memo equals the request's externalId and names that H, in
+        a message whose version the Solana details' transactionVersions admits (version_not_admitted: legacy never).
         The externalId is read as pairings_of reads it: absent, or a string of at most 566 bytes, else
         mpp/request-malformed. No signature is verified here."""
         credential = credential_of(presented)
@@ -215,6 +221,9 @@ class MppChargeSolana:
         from_table = static_nonce(tx)
         if from_table is not None:
             return from_table
+        version = version_not_admitted(self.details(e.checked.details), tx, "mpp")
+        if version is not None:
+            return version
         carrier = mpp_svm_carrier(tx)
         if isinstance(carrier, Refusal):
             return carrier
@@ -236,10 +245,20 @@ def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _usdc_details(c: Checked) -> Mapping[str, Any]:
-    profile = usdc_profile(c.details)
+def _usdc_details(details: Mapping[str, Any]) -> Mapping[str, Any]:
+    profile = usdc_profile(details)
     return {} if isinstance(profile, Refusal) else profile[1]
 
 
-MPP_CHARGE_SOLANA = MppChargeSolana(SOLANA_ID, lambda c: c.details, transaction_only=False)
-MPP_CHARGE_USDC_SOLANA = MppChargeSolana(USDC_SOLANA_ID, _usdc_details, transaction_only=True)
+MPP_CHARGE_SOLANA = MppChargeSolana(
+    SOLANA_ID,
+    lambda d: d,
+    transaction_only=False,
+    agreement=AgreementData(floor="1"),
+)
+MPP_CHARGE_USDC_SOLANA = MppChargeSolana(
+    USDC_SOLANA_ID,
+    _usdc_details,
+    transaction_only=True,
+    agreement=AgreementData(floor="1"),
+)

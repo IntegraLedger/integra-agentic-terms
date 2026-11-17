@@ -75,7 +75,7 @@ def test_an_amount_that_is_not_a_u64_of_drops_is_declined_before_the_signer(name
 @pytest.mark.parametrize(("name", "amount"), ACCEPTED, ids=[n for n, _ in ACCEPTED])
 def test_a_u64_of_drops_is_offered_and_the_opening_reaches_the_signer(name: str, amount: str) -> None:
     doc = with_amount(amount)
-    assert pairings_of(issued(doc)) == ("mpp/session/xrpl",)
+    assert pairings_of(issued(doc)) == ("mpp/session/xrpl", "mpp/session/xrpl/stock")
     out = run(lambda c: confirm(doc, MPP_SESSION_XRPL, B2["account"], c, B2["inputs"]), serving(ABC))
     assert isinstance(out, Confirmed), out
     assert out.request is not None and out.request["kind"] == "xrpl-session-open"

@@ -2,7 +2,9 @@
 x402-batch-settlement.json: version-1 transactions (SIMD-0385) as the stock @x402/svm 2.31.0 client writes them. Each
 is decoded, its message held to the file's length and SHA-256 and to the payer's Ed25519 signature, read as H by its
 pairing's bound and by the gate's check, and each changed member answered by bound as the file's row says: the file's
-code, or H for a row within every rule of the version-1 decoder. Every expected value is the file's."""
+code, or H for a row within every rule of the version-1 decoder. The exact build of the file's build input asks the
+payer to sign the stock client's message, and its completion with the payer's signature is the stock client's wire,
+the message and then the signatures (SIMD-0385). Every expected value is the file's."""
 
 import base64
 import copy
@@ -12,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from breadth import ABC
-from ed25519 import verify
+from breadth import ABC, x402_doc
+from ed25519 import sign, verify
 from integraledger_terms import X402_BATCH_SETTLEMENT_SOLANA, X402_EXACT_SOLANA, X402_UPTO_SOLANA, Checked, Refusal, check
 from integraledger_terms.bindings import _svm
 from integraledger_terms.bindings._codec import b58_decode
@@ -110,3 +112,26 @@ def test_the_decoder_alone_gives_each_changed_rows_tx_refusal(file: str, binding
             assert d == Refusal(code), row["case"]
         else:
             assert isinstance(d, _svm.SvmTx), (row["case"], d)
+
+
+def test_the_exact_build_asks_for_the_stock_message_and_completes_the_stock_wire() -> None:
+    """The file's build input, under presented.accepted offered alone, whose extra.transactionVersions holds 1: build
+    asks the payer to sign the stock message, and its completion with the payer's signature over it (the payer's key
+    is the file's seed 01x32) is the stock wire byte for byte, the fee payer's slot left empty for the facilitator."""
+    f = load("x402-exact-solana.json")
+    v = f["transactionV1"]
+    given = v["build"]["input"]
+    accepted = copy.deepcopy(v["presented"]["accepted"])
+    assert 1 in accepted["extra"]["transactionVersions"]
+    doc = x402_doc(accepted, f["fixed"]["resource"], v["expectBound"])
+    choice = {**given, "computeUnitPrice": int(given["computeUnitPrice"]), "required": doc, "accepted": doc["accepts"][0]}
+    unsigned = X402_EXACT_SOLANA.build(choice, v["expectBound"])
+    assert not isinstance(unsigned, Refusal), unsigned
+    stock = base64.b64decode(v["presented"]["payload"]["transaction"])
+    tx = _svm.decode_svm_tx(stock)
+    assert isinstance(tx, _svm.SvmTx), tx
+    message = unsigned.request["message"]
+    assert message == tx.message
+    paid = unsigned.complete(sign(bytes([1]) * 32, message))
+    assert not isinstance(paid, Refusal), paid
+    assert base64.b64decode(paid["payload"]["transaction"]) == stock

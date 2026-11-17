@@ -225,22 +225,37 @@ SUBSIG = b"\x82" + key("pk") + msgpack_str(NOT_UTF8_32) + key("s") + msgpack_str
 MSIG = b"\x83" + key("v") + b"\x01" + key("thr") + b"\x01" + key("subsig") + b"\x91" + SUBSIG
 LSIG = b"\x82" + key("l") + msgpack_str(PROGRAM + b"\xff") + key("arg") + b"\x91" + msgpack_str(b"\xff\xfe")
 BYTE_MEMBERS_AS_STRINGS = [
-    pytest.param(with_txn_member(key("lx") + msgpack_str(NOT_UTF8_32)), id="the lease"),
-    pytest.param(with_txn_member(key("rekey") + msgpack_str(NOT_UTF8_32)), id="the address the account is rekeyed to"),
-    pytest.param(with_txn_member(key("asnd") + msgpack_str(NOT_UTF8_32)), id="the asset sender"),
-    pytest.param(with_txn_member(key("aclose") + msgpack_str(NOT_UTF8_32)), id="the asset close-to address"),
-    pytest.param(with_member(key("sgnr") + msgpack_str(NOT_UTF8_32)), id="the signer"),
-    pytest.param(once(V2_BYTES, SIG, key("msig") + MSIG), id="a subsignature's key and signature"),
-    pytest.param(once(V2_BYTES, SIG, key("lsig") + LSIG), id="a logic signature's program and argument"),
+    pytest.param(with_txn_member(key("lx") + msgpack_str(NOT_UTF8_32)), None, id="the lease"),
+    pytest.param(with_txn_member(key("rekey") + msgpack_str(NOT_UTF8_32)), None, id="the address the account is rekeyed to"),
+    pytest.param(with_txn_member(key("asnd") + msgpack_str(NOT_UTF8_32)), "avm/clawback", id="the asset sender"),
+    pytest.param(with_txn_member(key("aclose") + msgpack_str(NOT_UTF8_32)), None, id="the asset close-to address"),
+    pytest.param(with_member(key("sgnr") + msgpack_str(NOT_UTF8_32)), None, id="the signer"),
+    pytest.param(once(V2_BYTES, SIG, key("msig") + MSIG), None, id="a subsignature's key and signature"),
+    pytest.param(once(V2_BYTES, SIG, key("lsig") + LSIG), "avm/logic-signature", id="a logic signature's program and argument"),
 ]
 
 
-@pytest.mark.parametrize("data", BYTE_MEMBERS_AS_STRINGS)
-def test_x402_exact_algorand_other_byte_members_written_as_strings_are_read(data: bytes) -> None:
+@pytest.mark.parametrize(("data", "refused"), BYTE_MEMBERS_AS_STRINGS)
+def test_x402_exact_algorand_other_byte_members_written_as_strings_are_read(data: bytes, refused: str | None) -> None:
     """V2's entry with a byte member it does not write added as a msgpack str of bytes that are not UTF-8, or with a
     multisignature or logic signature in place of sig whose byte members are such strs: both readers read the bytes,
-    and bound reads H."""
-    assert bound_of_entry(data) == H
+    and bound reads H, but for an entry a logic signature authorises or one that names an asset sender, which bound
+    refuses once it has read H, with the code V3.authorities gives each."""
+    read = _algorand.read_signed(data)
+    assert isinstance(read, _algorand.SignedRead)
+    assert bound_of_entry(data) == (H if refused is None else Refusal(refused))
+
+
+AUTHORITIES: list[dict[str, Any]] = A["V3"]["authorities"]["rows"]
+
+
+@pytest.mark.parametrize("row", AUTHORITIES, ids=[r["authority"] for r in AUTHORITIES])
+def test_x402_exact_algorand_each_authority_is_bound_as_the_file_says(row: dict[str, Any]) -> None:
+    """V2's payment under each authority a payment entry can carry: bound gives H for a key's signature, a
+    multisignature or a rekeyed signer, and refuses a logic signature and a clawback, which no key of the payer signed."""
+    payload = {"paymentIndex": row["paymentIndex"], "paymentGroup": row["paymentGroup"]}
+    expect = row["expectBound"] if "expectBound" in row else Refusal(row["expect"])
+    assert X402_EXACT_ALGORAND.bound(presented(payload)) == expect, row["case"]
 
 
 # Bytes RFC 3629 section 4's syntax refuses: an overlong t, the surrogate U+D800, U+110000 above U+10FFFF, a two-byte
@@ -547,13 +562,15 @@ def test_x402_exact_algorand_v3_entries_holding_a_string_that_is_not_utf8() -> N
         assert X402_EXACT_ALGORAND.bound(presented(payload)) == Refusal(row["expect"]), row["case"]
 
 
-def build_with(genesis_id: str, genesis_hash: str | None = None) -> AvmUnsigned | Refusal:
-    """build of fixed.O for the file's payer and suggested parameters, with genesis_id and genesis_hash written in."""
+def build_with(genesis_id: str, genesis_hash: str | None = None, amount: str | None = None) -> AvmUnsigned | Refusal:
+    """build of fixed.O for the file's payer and suggested parameters, with genesis_id and genesis_hash written in,
+    and the option's amount where one is given."""
     params = {**F["params"], **{k: int(F["params"][k]) for k in ("firstValid", "minFee", "feePerByte")}}
     params["genesisId"] = genesis_id
     if genesis_hash is not None:
         params["genesisHash"] = genesis_hash
-    choice = {"required": x402_doc(F["O"], F["resource"]), "accepted": F["O"], "payer": F["payer"], "params": params}
+    option = F["O"] if amount is None else {**F["O"], "amount": amount}
+    choice = {"required": x402_doc(option, F["resource"]), "accepted": option, "payer": F["payer"], "params": params}
     unsigned: AvmUnsigned | Refusal = X402_EXACT_ALGORAND.build(choice, H)
     return unsigned
 
@@ -621,7 +638,7 @@ def test_x402_exact_algorand_build_rows() -> None:
     rows = A.get("build", {}).get("rows", [])
     assert rows, "x402-exact-algorand.json holds no build rows"
     for row in rows:
-        unsigned = build_with(row["genesisId"], row.get("genesisHash"))
+        unsigned = build_with(row["genesisId"], row.get("genesisHash"), row.get("amount"))
         if "expect" in row:
             assert unsigned == Refusal(row["expect"]), row["case"]
             continue

@@ -21,6 +21,7 @@ members, each named once, in name order as bytes; a list's items have a least co
 UTF-8, a byte-order mark included.
 """
 
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -419,3 +420,69 @@ def transaction(data: bytes) -> Transaction:
     _need(anchor == 1 or kind not in (3, 4, 5, 8))
     _need(r.at == len(data))
     return Transaction(version, chain_id, call)
+
+
+# ── principals ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+_C32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+# A Clarity contract name, as a principal's name part: a letter, then at most 127 letters, digits, - and _.
+_PRINCIPAL_NAME = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]{0,127}")
+
+
+def _c32_encode(data: bytes) -> str:
+    """c32 text of data, as stacks.js's c32encode writes it: five bits a digit from the last byte up, its leading zero
+    digits dropped, then one 0 for each leading zero byte."""
+    digits: list[str] = []
+    carry = carry_bits = 0
+    for b in reversed(data):
+        digits.append(_C32[((b & ((1 << (5 - carry_bits)) - 1)) << carry_bits) + carry])
+        carry_bits += 3
+        carry = b >> (8 - carry_bits)
+        if carry_bits >= 5:
+            digits.append(_C32[carry & 31])
+            carry_bits -= 5
+            carry >>= 5
+    if carry_bits > 0:
+        digits.append(_C32[carry])
+    while digits and digits[-1] == "0":
+        digits.pop()
+    for b in data:
+        if b != 0:
+            break
+        digits.append("0")
+    return "".join(reversed(digits))
+
+
+def c32_address(version: int, hash160: bytes) -> str:
+    """The c32check address of a version from 0 to 31 and a hash160: S, the version's digit, and the c32 text of the
+    hash160 and the first 4 bytes of the double SHA-256 of the version and hash160."""
+    checksum = hashlib.sha256(hashlib.sha256(bytes([version]) + hash160).digest()).digest()[:4]
+    return "S" + _C32[version] + _c32_encode(hash160 + checksum)
+
+
+def is_canonical_principal(value: object) -> bool:
+    """Whether value is a principal exactly as a Stacks node writes it: a standard principal as c32_address writes one,
+    or such a principal, a dot and a Clarity contract name. A principal in lowercase, with a digit c32 decoding reads as
+    an alias (O, I, L), with a leading 0 the encoding does not write, or with a checksum that does not hold is not one:
+    c32 decoding takes the first three for the canonical principal (stacks-core c32.rs:229-295), so they name the
+    account the node writes canonically, and only that spelling is what the API names."""
+    if not isinstance(value, str):
+        return False
+    dot = value.find(".")
+    address = value if dot < 0 else value[:dot]
+    if dot >= 0 and _PRINCIPAL_NAME.fullmatch(value[dot + 1 :]) is None:
+        return False
+    if len(address) < 3 or len(address) > 41 or address[0] != "S":
+        return False
+    version = _C32.find(address[1])
+    if version < 0:
+        return False
+    n = 0
+    for ch in address[2:]:
+        d = _C32.find(ch)
+        if d < 0:
+            return False
+        n = n * 32 + d
+    if n >= 1 << 192:
+        return False
+    return c32_address(version, n.to_bytes(24, "big")[:20]) == address

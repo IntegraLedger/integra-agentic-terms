@@ -11,16 +11,18 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import is_object, normal_hash, safe_int, to_lcp_string
 from ._svm import (
     TOKEN,
     TOKEN_2022,
+    X402_V1,
     ChannelBuildInput,
     ChannelOpen,
     SvmSigning,
     SvmUnsigned,
     build_channel_message,
+    built_version,
     channel_instruction,
     channel_pda,
     decode_svm_tx,
@@ -32,8 +34,9 @@ from ._svm import (
     memo_length,
     static_nonce,
     svm_carrier,
+    svm_option_filter,
     to_base64,
-    unbuilt_version,
+    version_not_admitted,
     wire_of,
 )
 from ._x402 import (
@@ -90,27 +93,29 @@ def payable(option: Mapping[str, Any]) -> bool:
 
 
 # The pairing's one option filter, which read, build and bound apply: an option of this pairing whose amount build can
-# pay (payable), else x402/option-malformed.
-_THIS = filter_of(pairs, payable)
+# pay (payable), else x402/option-malformed; then one that no Solana build honours (unbuilt_option: an
+# extra.transactionVersions that admits neither version, or an extra.splits) is refused.
+_THIS = svm_option_filter(filter_of(pairs, payable))
 _read = read_for(_THIS)
 
 
 @dataclass(frozen=True, slots=True)
 class X402UptoSolana:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""
         return _read(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> SvmUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> SvmUnsigned | Refusal:
         """The open message the payer signs: the channel escrows the option's amount, and its one memo is
-        extra.memo. The payload carries openSlot as a JSON number, so an openSlot above 2^53 - 1 is
-        svm/input-malformed. H is checked first, then the form of the choice's payer, token program, blockhash and
-        compute budget (is_payer_input), nonce, openSlot and now, then its document and option, then the option's
-        extra.transactionVersions (unbuilt_version), then the option's memo against H and its token program against the
-        choice's."""
+        extra.memo; version 1 where the option's extra.transactionVersions holds 1, as @x402/svm 2.31.0's upto client
+        writes it, else v0 (built_version). The payload carries openSlot as a JSON number, so an openSlot above
+        2^53 - 1 is svm/input-malformed. H is checked first, then the form of the choice's payer, token program,
+        blockhash and compute budget (is_payer_input), nonce, openSlot and now, then its document and option, then the
+        option's memo against H and its token program against the choice's."""
         if normal_hash(h) is None:
             return Refusal("x402/payload-malformed")
         if not is_object(choice):
@@ -133,9 +138,9 @@ class X402UptoSolana:
             return ok
         assert is_object(required) and is_object(accepted)
         extra = accepted["extra"]
-        version = unbuilt_version(extra)
-        if version is not None:
-            return version
+        version = built_version(extra)
+        if version is None:
+            return Refusal("x402/option-malformed")
         memo = extra.get("memo")
         if memo != to_lcp_string(h):
             return Refusal("svm/carrier-mismatch")
@@ -170,6 +175,7 @@ class X402UptoSolana:
                     open_slot=open_slot,
                     recipient=accepted["payTo"],
                 ),
+                v1=X402_V1 if version == 1 else None,
             )
         )
         if isinstance(message, Refusal):
@@ -202,9 +208,10 @@ class X402UptoSolana:
 
         return SvmUnsigned(signing.request, complete)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the one memo of the open transaction the payer signed, which must equal the option's
-        extra.memo. No signature is verified here."""
+        extra.memo, in a message whose version the option's extra.transactionVersions admits (version_not_admitted).
+        No signature is verified here."""
         if not is_v2(presented):
             return Refusal("x402/not-v2")
         accepted = accepted_by(presented.get("accepted"), _THIS)
@@ -222,6 +229,9 @@ class X402UptoSolana:
         from_table = static_nonce(tx)
         if from_table is not None:
             return from_table
+        version = version_not_admitted(accepted["extra"], tx, "x402")
+        if version is not None:
+            return version
         carrier = svm_carrier(tx)
         if isinstance(carrier, Refusal):
             return carrier

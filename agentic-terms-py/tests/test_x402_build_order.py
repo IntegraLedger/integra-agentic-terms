@@ -28,7 +28,6 @@ UPTO = load("x402-upto-solana.json")["fixed"]
 NEAR = load("x402-exact-near.json")["fixed"]
 TVM = load("x402-exact-tvm.json")["fixed"]
 AVM = load("x402-exact-algorand.json")["fixed"]
-XLM = load("x402-exact-stellar.json")["fixed"]
 STARK = load("x402-exact-starknet.json")["fixed"]
 TRON = load("x402-exact-tron-lcp-trc20-memo.json")["fixed"]
 HBAR = load("x402-exact-hedera.json")["fixed"]
@@ -157,15 +156,6 @@ ROWS: dict[str, tuple[dict[str, Any], str, list[tuple[str, Any, str]]]] = {
             ("payer", AVM["payer"].lower(), "avm/option-malformed"),
             ("params", {**ALGORAND_PARAMS, "firstValid": -1}, "avm/option-malformed"),
             ("params", {**ALGORAND_PARAMS, "genesisHash": "AAA="}, "avm/network-mismatch"),
-        ],
-    ),
-    "x402/exact/stellar": (
-        {"currentLedger": 988, "payer": XLM["payer"]},
-        "x402/payload-malformed",
-        [
-            ("currentLedger", -1, "stellar/tx-malformed"),
-            ("payer", None, "stellar/payer-mismatch"),
-            ("payer", "x", "stellar/payer-mismatch"),
         ],
     ),
     "x402/exact/starknet": (

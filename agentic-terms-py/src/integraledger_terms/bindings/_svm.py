@@ -1,6 +1,6 @@
 """Solana rail pieces for the buyer half: the legacy, v0 and v1 wire transaction, its one Memo instruction carrying
 the ATR hash in LCP string form, the partially signed wire, program-derived and associated token addresses, and v0
-message compilation with the account order of @solana/kit 8.4.0.
+and version-1 message compilation with the account order of @solana/kit 8.4.0.
 
 Nothing here fetches, hashes an ATR or signs.
 """
@@ -324,23 +324,76 @@ def canonical_carrier(h: AtrHash, memo: str) -> Carrier | Refusal:
     return Carrier(h, memo) if memo == to_lcp_string(h) else Refusal("svm/carrier-not-canonical")
 
 
-def unbuilt_version(fields: object) -> Refusal | None:
-    """svm/version-not-built when fields, an x402 Solana option's extra or an MPP Solana charge challenge's Solana
-    details, holds transactionVersions and it does not admit version 0, the one message version these builders write:
-    the field is the set of versions the sponsor or server accepts, the JSON integers 0 and 1, and a field holding any
-    other entry is invalid (x402: scheme_exact_svm.md §1.5 at x402-foundation/x402 88b66dd4; MPP: the draft
+def _is_number(value: object, of: int) -> bool:
+    """True when value is a JSON number equal to of, as JavaScript's === compares a number: a boolean is none."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == of
+
+
+def built_version(fields: object) -> int | None:
+    """The message version a Solana build writes under fields, an x402 Solana option's extra or an MPP Solana charge
+    challenge's Solana details: the highest version both the field and this package admit, 1 where transactionVersions
+    holds 1, 0 where it holds 0 alone or is absent; None where it is present and is not a non-empty array of the JSON
+    integers 0 and 1, which admits neither. The field is the set of versions the sponsor or server accepts, and absent it
+    is [0] (x402: scheme_exact_svm.md §1.5 at x402-foundation/x402 88b66dd4, and resolveTransactionVersion of @x402/svm
+    2.31.0, which refuses an empty list, a value that is not an array and any entry other than 0 and 1; MPP: the draft
     methodDetails.transactionVersions of tempoxyz/mpp-specs pull request 355, as solana-foundation/pay-kit 86400da reads
-    it in typescript/packages/mpp/src/Methods.ts and src/utils/transaction-versions.ts). Absent, the accepted set is
-    [0]. Else None. A number is compared as JavaScript's === compares it, so a boolean is no version."""
+    it in typescript/packages/mpp/src/utils/transaction-versions.ts, where a present, empty list accepts nothing, and
+    builds it in src/client/Charge.ts:211-220)."""
     if not is_object(fields) or "transactionVersions" not in fields:
-        return None
+        return 0
     versions = fields["transactionVersions"]
+    if not is_list(versions) or not versions or not all(_is_number(v, 0) or _is_number(v, 1) for v in versions):
+        return None
+    return 1 if any(_is_number(v, 1) for v in versions) else 0
 
-    def is_version(v: object) -> bool:
-        return isinstance(v, (int, float)) and not isinstance(v, bool) and v in (0, 1)
 
-    admits_v0 = is_list(versions) and all(is_version(v) for v in versions) and any(v == 0 for v in versions)
-    return None if admits_v0 else Refusal("svm/version-not-built")
+def version_not_admitted(fields: object, tx: SvmTx, on: Literal["x402", "mpp"]) -> Refusal | None:
+    """svm/version-not-admitted where the signed message's version is one the transactionVersions of fields (an x402
+    Solana option's extra, or an MPP Solana charge challenge's Solana details) does not admit, else None: a payment the
+    option does not admit is no answer to it. The version is read as @x402/svm 2.31.0 reads it, from the message's first
+    byte, legacy where its high bit is clear and its low seven bits otherwise (version 1's prefix being 129, SIMD-0385);
+    the list absent is [0], and a list that is not an array admits nothing.
+    - On x402 a version is admitted as the facilitator admits it, legacy where the list holds 0: its server copies the
+      facilitator's list into the option, so a version the option does not list is one its facilitator refuses.
+    - On MPP the server refuses a legacy message whatever the list holds, the list absent being [0]
+      (solana-foundation/pay-kit 86400da, typescript/packages/mpp/src/utils/transaction-versions.ts:15-16 and :218-226),
+      so legacy is refused on every MPP Solana charge challenge."""
+    listed = fields["transactionVersions"] if is_object(fields) and "transactionVersions" in fields else [0]
+    if not is_list(listed) or not tx.message:
+        return Refusal("svm/version-not-admitted")
+    first = tx.message[0]
+    legacy = first & 0x80 == 0
+    if legacy and on == "mpp":
+        return Refusal("svm/version-not-admitted")
+    version = 0 if legacy else first & 0x7F
+    return None if any(_is_number(v, version) for v in listed) else Refusal("svm/version-not-admitted")
+
+
+def unbuilt_option(extra: object) -> Refusal | None:
+    """The refusal an x402 Solana option filter gives an option of its pairing that no Solana build honours, else None:
+    an extra.transactionVersions that admits neither version (built_version), which scheme_exact_svm.md §1.5 makes
+    invalid, is x402/option-malformed; an extra.splits is svm/input-malformed, since no Solana build writes split legs
+    and each pays the whole amount to payTo."""
+    if built_version(extra) is None:
+        return Refusal("x402/option-malformed")
+    if is_object(extra) and "splits" in extra:
+        return Refusal("svm/input-malformed")
+    return None
+
+
+def svm_option_filter(
+    check: Callable[[Mapping[str, Any]], "Literal[True] | Refusal | None"],
+) -> Callable[[Mapping[str, Any]], "Literal[True] | Refusal | None"]:
+    """An x402 Solana pairing's option filter: check, then unbuilt_option over an option it serves."""
+
+    def filtered(option: Mapping[str, Any]) -> "Literal[True] | Refusal | None":
+        f = check(option)
+        if f is not True:
+            return f
+        unbuilt = unbuilt_option(option.get("extra"))
+        return True if unbuilt is None else unbuilt
+
+    return filtered
 
 
 def static_nonce(tx: SvmTx) -> Refusal | None:
@@ -425,9 +478,11 @@ def _compact(value: int) -> bytes:
 
 
 def signed_wire(message: bytes, signer: str, signature: object) -> bytes | Refusal:
-    """The wire for a message and one signer's signature: the compact-u16 signature count, one 64-byte slot per
-    required signer in key order with the signature in the signer's slot and zeros in every other, then the
-    message. A message under 2 bytes is svm/tx-malformed."""
+    """The wire for a message and one signer's signature, with one 64-byte slot per required signer in key order, the
+    signature in the signer's slot and zeros in every other: for a legacy or v0 message, the compact-u16 signature
+    count, the slots, then the message; for a version-1 message, the message, then the slots, as SIMD-0385's Transaction
+    V1 Specification lays the wire out (the message every signer signs is every byte before the signatures). A message
+    under 2 bytes is svm/tx-malformed."""
     if not isinstance(signature, (bytes, bytearray)) or len(signature) != 64:
         return Refusal("svm/input-malformed")
     signer_key = key_bytes(signer)
@@ -436,8 +491,9 @@ def signed_wire(message: bytes, signer: str, signature: object) -> bytes | Refus
     if len(message) < 2:
         return Refusal("svm/tx-malformed")
     required = message[1] if message[0] & 0x80 else message[0]
-    head = _compact(required)
-    wire = bytearray(head + bytes(64 * required) + message)
+    v1 = message[0] == _V1_VERSION_BYTE
+    head = b"" if v1 else _compact(required)
+    wire = bytearray(message + bytes(64 * required)) if v1 else bytearray(head + bytes(64 * required) + message)
     decoded = decode_svm_tx(bytes(wire))
     if isinstance(decoded, Refusal):
         return decoded
@@ -445,7 +501,7 @@ def signed_wire(message: bytes, signer: str, signature: object) -> bytes | Refus
     if signer_key not in signers:
         return Refusal("svm/input-malformed")
     slot = signers.index(signer_key)
-    at = len(head) + 64 * slot
+    at = (len(message) if v1 else len(head)) + 64 * slot
     wire[at : at + 64] = signature
     return bytes(wire)
 
@@ -537,15 +593,41 @@ class _Invalid(Exception):
     pass
 
 
-def compile_v0(fee_payer: str, recent_blockhash: str, instructions: Sequence[Instruction]) -> bytes | Refusal:
-    """The v0 message bytes, with no lookup tables, for instructions under fee_payer and recent_blockhash. The fee
-    payer is the first account; the others follow signers before non-signers, writable before read-only, and by
-    address in collation order within each class. An account's roles across instructions are joined. A program
-    that is the fee payer or is writable is refused, and so are @solana/kit 8.4.0's v0 limits: more than 64 accounts,
-    12 signers or 64 instructions, an instruction naming more than 255 accounts, and data past 65 535 bytes, which
-    the compact-u16 length cannot hold."""
-    blockhash = key_bytes(recent_blockhash)
-    if key_bytes(fee_payer) is None or blockhash is None:
+@dataclass(frozen=True, slots=True)
+class V1Header:
+    """The form of a version-1 message's header, which carries the compute budget in place of Compute Budget
+    instructions: the loaded-account-data limit it carries, in bytes, and whether it carries a priority fee of 0
+    lamports (otherwise a fee of 0 is left out)."""
+
+    loaded_accounts_data_size_limit: int
+    zero_priority_fee: bool
+
+
+# The header @x402/svm 2.31.0's clients write (applyTransactionV1Config): a priority fee only where it is above 0, and
+# DEFAULT_LOADED_ACCOUNTS_DATA_SIZE_LIMIT, 4 MiB.
+X402_V1 = V1Header(4_194_304, False)
+# The header solana-foundation/pay-kit 86400da's MPP charge client writes (typescript/packages/mpp/src/client/
+# Charge.ts:451-464): the priority fee always, and the runtime maximum of 64 MiB, the one value its server admits.
+MPP_V1 = V1Header(67_108_864, True)
+# The largest compute unit limit @solana/kit 8.4.0 writes into a version-1 header.
+_V1_MAX_COMPUTE_UNITS = 1_400_000
+
+
+@dataclass(frozen=True, slots=True)
+class _Accounts:
+    """The accounts a message names, in @solana/kit 8.4.0's order, with each one's joined role."""
+
+    ordered: list[str]
+    roles: dict[str, int]
+    index: dict[str, int]
+
+
+def _accounts(fee_payer: str, instructions: Sequence[Instruction], max_instructions: int) -> _Accounts | Refusal:
+    """The fee payer first; the others signers before non-signers, writable before read-only, and by address in
+    collation order within each class. An account's roles across instructions are joined. A program that is the fee
+    payer or is writable is refused, and so are @solana/kit 8.4.0's limits: more than 64 accounts, 12 signers or
+    max_instructions instructions, an instruction naming more than 255 accounts, and data past 65 535 bytes."""
+    if key_bytes(fee_payer) is None:
         return Refusal("svm/input-malformed")
     roles: dict[str, int] = {fee_payer: WRITABLE_SIGNER}
     invoked: set[str] = set()
@@ -573,33 +655,115 @@ def compile_v0(fee_payer: str, recent_blockhash: str, instructions: Sequence[Ins
         key=lambda a: (0 if roles[a] & READONLY_SIGNER else 1, 0 if roles[a] & WRITABLE else 1, _case_key(a)),
     )
     ordered = [fee_payer, *others]
-    index = {a: i for i, a in enumerate(ordered)}
     signers = [a for a in ordered if roles[a] & READONLY_SIGNER]
     if (
         len(ordered) > 64
         or len(signers) > 12
-        or len(instructions) > 64
+        or len(instructions) > max_instructions
         or any(len(ix.accounts) > 255 or len(ix.data) > 0xFFFF for ix in instructions)
     ):
         return Refusal("svm/input-malformed")
-    readonly_signers = [a for a in signers if not roles[a] & WRITABLE]
-    readonly_unsigned = [a for a in ordered if not roles[a] & READONLY_SIGNER and not roles[a] & WRITABLE]
-    out = bytearray([0x80, len(signers), len(readonly_signers), len(readonly_unsigned)])
-    out += _compact(len(ordered))
-    for a in ordered:
-        key = key_bytes(a)
+    return _Accounts(ordered, roles, {a: i for i, a in enumerate(ordered)})
+
+
+def _header(a: _Accounts) -> bytes:
+    """The legacy header: the signer count, the read-only signers and the read-only unsigned accounts."""
+    signers = [x for x in a.ordered if a.roles[x] & READONLY_SIGNER]
+    readonly_signers = [x for x in signers if not a.roles[x] & WRITABLE]
+    readonly_unsigned = [x for x in a.ordered if not a.roles[x] & READONLY_SIGNER and not a.roles[x] & WRITABLE]
+    return bytes([len(signers), len(readonly_signers), len(readonly_unsigned)])
+
+
+def _keys(a: _Accounts) -> bytes:
+    out = bytearray()
+    for x in a.ordered:
+        key = key_bytes(x)
         assert key is not None
         out += key
+    return bytes(out)
+
+
+def compile_v0(fee_payer: str, recent_blockhash: str, instructions: Sequence[Instruction]) -> bytes | Refusal:
+    """The v0 message bytes, with no lookup tables, for instructions under fee_payer and recent_blockhash, the accounts
+    in @solana/kit 8.4.0's order (_accounts), with its v0 limits: at most 64 instructions, and data within what the
+    compact-u16 length holds."""
+    blockhash = key_bytes(recent_blockhash)
+    if blockhash is None:
+        return Refusal("svm/input-malformed")
+    a = _accounts(fee_payer, instructions, 64)
+    if isinstance(a, Refusal):
+        return a
+    out = bytearray([0x80]) + _header(a)
+    out += _compact(len(a.ordered))
+    out += _keys(a)
     out += blockhash
     out += _compact(len(instructions))
     for ix in instructions:
-        out.append(index[ix.program])
+        out.append(a.index[ix.program])
         out += _compact(len(ix.accounts))
-        out += bytes(index[a] for a, _ in ix.accounts)
+        out += bytes(a.index[x] for x, _ in ix.accounts)
         out += _compact(len(ix.data))
         out += ix.data
     out += _compact(0)
     return bytes(out)
+
+
+def compile_v1(
+    fee_payer: str, recent_blockhash: str, instructions: Sequence[Instruction], limit: int, price: int, v1: V1Header
+) -> bytes | Refusal:
+    """The version-1 message bytes (SIMD-0385) for instructions under fee_payer and recent_blockhash, as @solana/kit
+    8.4.0 compiles one, the budget in the header as v1 names it: the priority fee, the limit times the price per unit in
+    micro-lamports over 10^6, rounded up, left out where it is 0 unless v1.zero_priority_fee (both its mask bits, a
+    u64); the compute unit limit, which must be above 0 and at most 1,400,000 (a u32); and v1's loaded-account-data
+    limit (a u32). The layout: the version byte 129, the legacy header, the config mask as a u32 little-endian, the
+    blockhash, the instruction and address counts as one byte each, the addresses, the config values in mask-bit order,
+    one header per instruction (program index, account count, data length as a u16 little-endian), then each
+    instruction's account indexes and data. Anything else is svm/input-malformed."""
+    if not _is_u32(limit) or limit == 0 or limit > _V1_MAX_COMPUTE_UNITS or not is_u64(price):
+        return Refusal("svm/input-malformed")
+    if not _is_u32(v1.loaded_accounts_data_size_limit) or not isinstance(v1.zero_priority_fee, bool):
+        return Refusal("svm/input-malformed")
+    blockhash = key_bytes(recent_blockhash)
+    if blockhash is None:
+        return Refusal("svm/input-malformed")
+    a = _accounts(fee_payer, instructions, _V1_MAX_INSTRUCTIONS)
+    if isinstance(a, Refusal):
+        return a
+    fee = (limit * price + 999_999) // 1_000_000
+    if fee >= U64_LIMIT:
+        return Refusal("svm/input-malformed")
+    mask = 0b1100
+    values = bytearray()
+    if fee > 0 or v1.zero_priority_fee:
+        mask |= _V1_PRIORITY_FEE_BITS
+        values += u64le(fee)
+    values += u32le(limit) + u32le(v1.loaded_accounts_data_size_limit)
+    out = bytearray([_V1_VERSION_BYTE]) + _header(a) + u32le(mask) + blockhash
+    out += bytes([len(instructions), len(a.ordered)])
+    out += _keys(a)
+    out += values
+    for ix in instructions:
+        out += bytes([a.index[ix.program], len(ix.accounts)]) + struct.pack("<H", len(ix.data))
+    for ix in instructions:
+        out += bytes(a.index[x] for x, _ in ix.accounts)
+        out += ix.data
+    return bytes(out)
+
+
+def compile_budgeted(
+    fee_payer: str,
+    recent_blockhash: str,
+    instructions: Sequence[Instruction],
+    limit: int,
+    price: int,
+    v1: V1Header | None,
+) -> bytes | Refusal:
+    """Instructions compiled with the budget limit and price: as a v0 message led by SetComputeUnitLimit and
+    SetComputeUnitPrice where v1 is None, else as a version-1 message whose header carries the budget in the form v1
+    names (compile_v1)."""
+    if v1 is not None:
+        return compile_v1(fee_payer, recent_blockhash, instructions, limit, price, v1)
+    return compile_v0(fee_payer, recent_blockhash, [*_compute_budget(limit, price), *instructions])
 
 
 def u32le(value: int) -> bytes:
@@ -653,6 +817,8 @@ class SvmBuildInput:
     memo: str
     compute_unit_limit: int
     compute_unit_price: int
+    # Present, a version-1 message (SIMD-0385) whose header carries the compute budget in this form; absent, v0.
+    v1: V1Header | None = None
 
 
 def _is_build_input(i: SvmBuildInput) -> bool:
@@ -670,13 +836,15 @@ def _is_build_input(i: SvmBuildInput) -> bool:
         and isinstance(i.memo, str)
         and _is_u32(i.compute_unit_limit)
         and is_u64(i.compute_unit_price)
+        and (i.v1 is None or isinstance(i.v1, V1Header))
     )
 
 
 def build_svm_message(i: SvmBuildInput) -> bytes | Refusal:
-    """The v0 message bytes for a token payment: SetComputeUnitLimit, SetComputeUnitPrice, TransferChecked from the
-    payer's associated token account to the payee's, then one v3 Memo instruction whose data is the memo's UTF-8
-    bytes. No lookup tables."""
+    """The message bytes for a token payment: SetComputeUnitLimit, SetComputeUnitPrice, TransferChecked from the payer's
+    associated token account to the payee's, then one v3 Memo instruction whose data is the memo's UTF-8 bytes, as a v0
+    message; with v1, the same without the two Compute Budget instructions, as a version-1 message whose header carries
+    the budget (compile_budgeted). No lookup tables."""
     if not _is_build_input(i):
         return Refusal("svm/input-malformed")
     try:
@@ -694,10 +862,13 @@ def build_svm_message(i: SvmBuildInput) -> bytes | Refusal:
         ((source, WRITABLE), (i.mint, READONLY), (destination, WRITABLE), (i.payer, READONLY_SIGNER)),
         b"\x0c" + u64le(i.amount) + bytes([i.decimals]),
     )
-    return compile_v0(
+    return compile_budgeted(
         i.fee_payer,
         i.recent_blockhash,
-        [*_compute_budget(i.compute_unit_limit, i.compute_unit_price), transfer, Instruction(MEMO_V3, (), memo)],
+        [transfer, Instruction(MEMO_V3, (), memo)],
+        i.compute_unit_limit,
+        i.compute_unit_price,
+        i.v1,
     )
 
 
@@ -832,12 +1003,14 @@ class ChannelBuildInput:
     compute_unit_limit: int
     compute_unit_price: int
     instruction: ChannelOpen | ChannelTopUp | ChannelRequestClose
+    v1: V1Header | None = None
 
 
 def build_channel_message(i: ChannelBuildInput) -> bytes | Refusal:
-    """The v0 message for a channel instruction: SetComputeUnitLimit, SetComputeUnitPrice, the payment-channels
-    instruction with its accounts in the program's order, then one v3 Memo instruction when memo is given. The fee
-    payer is also the open's rent payer and payee."""
+    """The message for a channel instruction: SetComputeUnitLimit, SetComputeUnitPrice, the payment-channels
+    instruction with its accounts in the program's order, then one v3 Memo instruction when memo is given, as a v0
+    message; with v1, the same without the two Compute Budget instructions, as a version-1 message whose header carries
+    the budget (compile_budgeted). The fee payer is also the open's rent payer and payee."""
     return channel_message(i, [] if i.memo is None else [i.memo])
 
 
@@ -854,6 +1027,7 @@ def channel_message(i: ChannelBuildInput, memos: Sequence[object]) -> bytes | Re
         or not all(isinstance(m, str) for m in memos)
         or not _is_u32(i.compute_unit_limit)
         or not is_u64(i.compute_unit_price)
+        or (i.v1 is not None and not isinstance(i.v1, V1Header))
         or not isinstance(ix, (ChannelOpen, ChannelTopUp, ChannelRequestClose))
         or not is_key(ix.channel)
     ):
@@ -913,14 +1087,13 @@ def channel_message(i: ChannelBuildInput, memos: Sequence[object]) -> bytes | Re
         )
     else:
         accounts = ((i.payer, READONLY_SIGNER), (ix.channel, WRITABLE))
-    return compile_v0(
+    return compile_budgeted(
         i.fee_payer,
         i.recent_blockhash,
-        [
-            *_compute_budget(i.compute_unit_limit, i.compute_unit_price),
-            Instruction(PAYMENT_CHANNELS, accounts, data),
-            *(Instruction(MEMO_V3, (), m) for m in memo_data),
-        ],
+        [Instruction(PAYMENT_CHANNELS, accounts, data), *(Instruction(MEMO_V3, (), m) for m in memo_data)],
+        i.compute_unit_limit,
+        i.compute_unit_price,
+        i.v1,
     )
 
 
@@ -941,9 +1114,11 @@ def build_sol_message(
     memo: str,
     compute_unit_limit: int,
     compute_unit_price: int,
+    v1: V1Header | None = None,
 ) -> bytes | Refusal:
-    """The v0 message for a native SOL payment: SetComputeUnitLimit, SetComputeUnitPrice, System transfer of lamports
-    from the payer to the recipient, then one v3 Memo instruction carrying memo."""
+    """The message for a native SOL payment: SetComputeUnitLimit, SetComputeUnitPrice, System transfer of lamports from
+    the payer to the recipient, then one v3 Memo instruction carrying memo, as a v0 message; with v1, the same without
+    the two Compute Budget instructions, as a version-1 message whose header carries the budget (compile_budgeted)."""
     if not is_u64(lamports) or not _is_u32(compute_unit_limit) or not is_u64(compute_unit_price):
         return Refusal("svm/input-malformed")
     try:
@@ -951,8 +1126,11 @@ def build_sol_message(
     except UnicodeEncodeError:
         return Refusal("svm/input-malformed")
     transfer = Instruction(SYSTEM, ((payer, WRITABLE_SIGNER), (pay_to, WRITABLE)), u32le(2) + u64le(lamports))
-    return compile_v0(
+    return compile_budgeted(
         fee_payer,
         recent_blockhash,
-        [*_compute_budget(compute_unit_limit, compute_unit_price), transfer, Instruction(MEMO_V3, (), data)],
+        [transfer, Instruction(MEMO_V3, (), data)],
+        compute_unit_limit,
+        compute_unit_price,
+        v1,
     )

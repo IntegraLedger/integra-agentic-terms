@@ -395,8 +395,6 @@ def network(challenge: object) -> str | Refusal:
         return xrpl_network_of(d)
     if key == "session/hedera":
         return hedera_session_network_of(d)
-    if key == "charge/stellar":
-        return str(d["network"])
     if key == "charge/nearintents":
         return str(d["originNetwork"])
     if key == "charge/usdc":

@@ -77,9 +77,15 @@ def test_x402_exact_xrpl_v2_bound_and_blob_hash() -> None:
     assert X402_EXACT_XRPL.bound(presented(V2["blob"])) == V2["expectBound"]
     blob = _xrpl.decode_blob(V2["blob"])
     assert isinstance(blob, _xrpl.Blob)
-    assert blob.hash == V2["expectReference"]["transaction"]
-    assert blob.tx["InvoiceID"] == V2["expectReference"]["expect"]
-    assert blob.tx["LastLedgerSequence"] == V2["expectReference"]["lastLedgerSequence"]
+    ref = V2["expectReference"]
+    assert blob.hash == ref["transaction"]
+    assert blob.tx["InvoiceID"] == _xrpl.x402_invoice_id(ref["h"])
+    signed = ref["signed"]
+    assert (blob.tx["Account"], blob.tx["Sequence"], blob.tx["LastLedgerSequence"]) == (
+        signed["account"],
+        signed["sequence"],
+        signed["lastLedgerSequence"],
+    )
     signing = {k: v for k, v in blob.tx.items() if k not in ("SigningPubKey", "TxnSignature")}
     assert signing == V2["expectTxJson"]
 
@@ -116,7 +122,8 @@ def test_x402_exact_xrpl_agreed_refusals() -> None:
     malformed = codes["a blob that is not an even number of hex digits, or that the codec cannot decode"]
     assert X402_EXACT_XRPL.bound(presented(V2["blob"][:-1])) == Refusal(malformed)
     assert X402_EXACT_XRPL.bound(presented(V2["blob"][:-2])) == Refusal(malformed)
-    assert X402_EXACT_XRPL.bound(presented("12" * 2049)) == Refusal(codes["a blob over 4096 hex characters"])
+    too_large = codes["a blob over 32768 hex characters (16,384 bytes, XRPL_MAX_BLOB_BYTES)"]
+    assert X402_EXACT_XRPL.bound(presented("12" * 16_385)) == Refusal(too_large)
     other = {**OPTION, "extra": {**OPTION["extra"], "areFeesSponsored": True}}
     assert X402_EXACT_XRPL.bound(presented(V2["blob"], other)) == Refusal(
         codes["a payment whose option fails the pairing's filter"]
@@ -187,15 +194,17 @@ def test_x402_exact_xrpl_a_network_above_1024_takes_its_own_network_id() -> None
     assert not isinstance(done, Refusal) and done["payload"] == {"signedTxBlob": blob}
 
 
-def test_x402_exact_xrpl_complete_gives_a_multisigned_blob_the_refusal_bound_gives() -> None:
-    # The build's complete decodes the signed blob as bound does before it reads NetworkID, so each multisigned row's
-    # blob, a Payment signed by several keys, gets the row's code from both.
+def test_x402_exact_xrpl_complete_takes_a_multisigned_blob_as_bound_does() -> None:
+    # The build's complete decodes the signed blob as bound does, so each multisigned row's blob, the V2 Payment signed
+    # by several keys, which the row admits, completes the payment, and bound gives H.
     u = built_on(XRPL.doc)
     rows = X["multisigned"]["rows"]
     assert rows
     for row in rows:
-        want = (row["case"], Refusal(row["expect"]), Refusal(row["expect"]))
-        assert (row["case"], X402_EXACT_XRPL.bound(presented(row["blob"])), u.complete(row["blob"])) == want
+        assert row["expect"] == "admitted"
+        assert X402_EXACT_XRPL.bound(presented(row["blob"])) == H, row["case"]
+        done = u.complete(row["blob"])
+        assert not isinstance(done, Refusal) and done["payload"] == {"signedTxBlob": row["blob"]}, row["case"]
 
 
 def test_x402_exact_xrpl_bound_reads_the_option_s_invoice_id_before_the_blob() -> None:

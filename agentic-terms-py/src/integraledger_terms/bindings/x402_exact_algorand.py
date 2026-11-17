@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from . import _algorand
 from ._codec import b64_decode, b64_encode
 from ._lcp import from_lcp_string, is_list, is_object, is_well_formed, normal_hash, safe_int, to_lcp_string
@@ -40,8 +40,9 @@ def _uint64(value: object) -> int | None:
 def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     """The pairing's option filter: True for an option it serves, a refusal naming why an option on an algorand network
     cannot be served, and None for any other option. It applies the option's scheme, network, asset, payTo and extra
-    (its fee payer, no transfer method, and no flow other than "authorization"), the amount a positive decimal
-    (is_amount) below 2^64 and maxTimeoutSeconds a positive safe integer, which build writes into the asset transfer and
+    (its fee payer, no transfer method, and no flow other than "authorization"), the amount "0" or a positive decimal
+    (is_amount) below 2^64, since the scheme sets no floor and the pairing's agreement floor is zero, and
+    maxTimeoutSeconds a positive safe integer, which build writes into the asset transfer and
     its last valid round. read and build apply it, and bound holds the option a presented payment echoes to it."""
     network = option.get("network") if is_object(option) else None
     if not isinstance(network, str) or not network.startswith("algorand:") or option.get("scheme") != "exact":
@@ -63,7 +64,9 @@ def check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     ):
         return Refusal("avm/option-malformed")
     amount = option.get("amount")
-    if not is_amount(amount) or _uint64(amount) is None or timeout_seconds(option.get("maxTimeoutSeconds")) is None:
+    if not (is_amount(amount) or amount == "0") or _uint64(amount) is None:
+        return Refusal("avm/option-malformed")
+    if timeout_seconds(option.get("maxTimeoutSeconds")) is None:
         return Refusal("avm/option-malformed")
     return True
 
@@ -75,7 +78,10 @@ class Carried:
 
 def carrier(payload: object) -> Carried | Refusal:
     """The hash in paymentGroup[paymentIndex]'s note, the entry read as the x402 path reads it (_algorand.read_signed):
-    as one signed asset transfer that algod and the x402 facilitator both read, and read alike."""
+    as one signed asset transfer that algod and the x402 facilitator both read, and read alike. Then, the note carrying
+    H, an entry a logic signature authorises is avm/logic-signature and one that names an asset sender, asnd, is
+    avm/clawback: under a logic signature no key signs the transaction, and a transfer that names asnd is the act of the
+    asset's clawback address, so neither is the payer's signed act."""
     if not is_object(payload) or not is_list(payload.get("paymentGroup")):
         return Refusal("avm/txn-malformed")
     group = payload["paymentGroup"]
@@ -92,7 +98,13 @@ def carrier(payload: object) -> Carried | Refusal:
     except UnicodeDecodeError:
         return Refusal("avm/note-not-lcp")
     h = from_lcp_string(note)
-    return Refusal("avm/note-not-lcp") if h is None else Carried(h)
+    if h is None:
+        return Refusal("avm/note-not-lcp")
+    if txn.logic_sig:
+        return Refusal("avm/logic-signature")
+    if txn.clawback:
+        return Refusal("avm/clawback")
+    return Carried(h)
 
 
 def _payment_entry(entry: object) -> _algorand.SignedRead | Refusal:
@@ -137,15 +149,20 @@ def _is_uint(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+# The agreement this pairing's payment can itself be, as @integraledger/lcp's registry states it.
+AGREEMENT = AgreementData(floor="0")
+
+
 @dataclass(frozen=True, slots=True)
 class X402ExactAlgorand:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AGREEMENT
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_for(check)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> AvmUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> AvmUnsigned | Refusal:
         """The asset transfer with the hash's LCP string as its note, and the fee payer's zero payment first when the
         option names a fee payer. The suggested parameters' genesis id is written as each transaction's gen, a msgpack
         string, so one holding a lone surrogate, which UTF-8 cannot encode, is avm/option-malformed, checked before the
@@ -231,7 +248,7 @@ class X402ExactAlgorand:
             _accepted=accepted,
         )
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The payment transaction's note, as a hash, under an option the pairing's filter serves: the echoed option's
         scheme, network, asset, payTo and extra, its amount a positive decimal below 2^64 and its maxTimeoutSeconds a
         positive safe integer, as read and build require them. The transaction's amount, receiver, asset, fee payer and

@@ -2,8 +2,11 @@
 vector rows. Expected values are the vector file's; the wallet stub answers with V3's signed blob, as the TypeScript
 gate's test does."""
 
+import copy
 import json
 from typing import Any
+
+import pytest
 
 from integraledger_terms import MPP_CHARGE_XRPL, Declined, Refusal, confirm, transact
 from integraledger_terms.bindings._xrpl import Blob, decode_blob, mpp_invoice_id, network_id_held, same_invoice
@@ -16,6 +19,7 @@ from xlm_support import EVM_ACCOUNT, b16, mpp_b10
 V = load("mpp-charge-xrpl.json")
 F: dict[str, Any] = V["fixed"]
 B: dict[str, Any] = V["build"]
+INPUTS = {"fee": B["fee"], "sequence": B["sequence"], "lastLedgerSequence": B["lastLedgerSequence"]}
 INVOICE = mpp_invoice_id(H)
 
 
@@ -38,7 +42,7 @@ XRPL = Pairing(
     doc=doc_of(V["challenge"]),
     account=f"xrpl:1:{F['account']}",
     answer=answer,
-    inputs={"fee": B["fee"], "sequence": B["sequence"], "lastLedgerSequence": B["lastLedgerSequence"]},
+    inputs=INPUTS,
 )
 
 
@@ -46,23 +50,19 @@ def test_mpp_charge_xrpl_placed_challenge_is_the_vectors() -> None:
     assert XRPL.doc == [V["place"]["expect"]]
 
 def test_mpp_charge_xrpl_b6_payment_carries_v3_fields_and_blob_completes_bound_credential() -> None:
+    # build gives V3's decoded fields other than SigningPubKey and TxnSignature, and SourceTag the stock default, which
+    # V3's blob, signed before, does not carry; complete names the payer by source.
+    v3 = decode_blob(V["V3"]["blob"])
+    assert isinstance(v3, Blob)
+    fields = {k: v for k, v in v3.tx.items() if k not in ("SigningPubKey", "TxnSignature")}
+
     def inspect(request: Any) -> None:
         assert request["kind"] == "xrpl-tx"
-        assert request["txJson"] == {
-            "TransactionType": "Payment",
-            "Flags": 0,
-            "Account": F["account"],
-            "Destination": F["request"]["recipient"],
-            "Amount": F["request"]["amount"],
-            "InvoiceID": F["invoiceId"],
-            "Fee": B["fee"],
-            "Sequence": B["sequence"],
-            "LastLedgerSequence": B["lastLedgerSequence"],
-        }
-        assert "5011" + F["invoiceId"] in V["V3"]["blob"]
+        assert request["txJson"] == {**fields, "SourceTag": B["defaultSourceTag"]}
 
     signed, _ = build_and_sign(XRPL, inspect)
     assert signed["payload"] == {"type": "transaction", "blob": V["V3"]["blob"]}
+    assert signed["source"] == V["completeBlob"]["source"]
 
 
 def test_mpp_charge_xrpl_without_ledger_reads_no_payable_option_before_any_fetch() -> None:
@@ -102,14 +102,7 @@ def test_mpp_charge_xrpl_occupied_and_refusals() -> None:
     rows = {r["case"]: r for r in V["refusals"]}
     hash_row = rows["type=hash not yet fetched"]
     assert MPP_CHARGE_XRPL.bound(credential(hash_row["payload"])) == Refusal(hash_row["expect"])
-    # The pairing's filter refuses a request with memos: the seller's placement and the build alike.
-    memos_refused = Refusal(rows["build on a request with methodDetails.memos"]["expect"])
-    memos = {**F["request"], "methodDetails": {**F["request"]["methodDetails"], "memos": []}}
-    asked = issued("xrpl", "charge", json.dumps(memos), F["realm"], F["expires"])
-    assert doc_of(asked) == memos_refused
-    choice = {"challenge": {**XRPL.doc[0], "request": asked["request"]}, "account": F["account"], **B}
-    assert MPP_CHARGE_XRPL.build(choice, H) == memos_refused
-    good = {"challenge": XRPL.doc[0], "account": F["account"], **B}
+    good = {"challenge": XRPL.doc[0], "account": F["account"], **INPUTS}
     for bad in ({"fee": "-1"}, {"sequence": 2**32}, {"lastLedgerSequence": "1000"}, {"account": 7}):
         assert MPP_CHARGE_XRPL.build({**good, **bad}, H) == Refusal("mpp/input-malformed")
     # The challenge names H2 while its request's invoiceId, and the signed InvoiceID, are H.
@@ -159,7 +152,8 @@ def test_mpp_charge_xrpl_a_payment_carrying_network_id_on_testnet_is_refused_by_
     assert isinstance(base, Blob) and "NetworkID" not in base.tx
     u = MPP_CHARGE_XRPL.build({"challenge": XRPL.doc[0], "account": F["account"], **B}, H)
     assert not isinstance(u, Refusal), u
-    assert u.complete(V["V3"]["blob"]) == credential({"type": "transaction", "blob": V["V3"]["blob"]})
+    completed = {**credential({"type": "transaction", "blob": V["V3"]["blob"]}), "source": V["completeBlob"]["source"]}
+    assert u.complete(V["V3"]["blob"]) == completed
     for row in rows:
         assert set(row) == {"case", "networkIds", "blobs", "expect"}, row["case"]
         for network_id, blob in zip(row["networkIds"], row["blobs"], strict=True):
@@ -171,14 +165,53 @@ def test_mpp_charge_xrpl_a_payment_carrying_network_id_on_testnet_is_refused_by_
             assert (network_id, u.complete(blob)) == (network_id, Refusal(row["expect"]))
 
 
-def test_mpp_charge_xrpl_complete_gives_a_multisigned_blob_the_refusal_bound_gives() -> None:
-    # The build's complete decodes the signed blob as bound does before it reads NetworkID, so each multisigned row's
-    # blob, a Payment signed by several keys, gets the row's code from both.
-    u = MPP_CHARGE_XRPL.build({"challenge": XRPL.doc[0], "account": F["account"], **B}, H)
+def test_mpp_charge_xrpl_complete_takes_a_multisigned_blob_as_bound_does() -> None:
+    # The build's complete decodes the signed blob as bound does, so each multisigned row's blob, a Payment signed by
+    # several keys, which the row admits, completes the credential, and bound gives H.
+    u = MPP_CHARGE_XRPL.build({"challenge": XRPL.doc[0], "account": F["account"], **INPUTS}, H)
     assert not isinstance(u, Refusal), u
     rows = V["multisigned"]["rows"]
     assert rows
     for row in rows:
-        presented = credential({"type": "transaction", "blob": row["blob"]})
-        want = (row["case"], Refusal(row["expect"]), Refusal(row["expect"]))
-        assert (row["case"], MPP_CHARGE_XRPL.bound(presented), u.complete(row["blob"])) == want
+        assert row["expect"] == "admitted"
+        assert MPP_CHARGE_XRPL.bound(credential({"type": "transaction", "blob": row["blob"]})) == H, row["case"]
+        done = u.complete(row["blob"])
+        assert not isinstance(done, Refusal) and done["payload"]["blob"] == row["blob"], row["case"]
+
+
+def _placed(request: dict[str, Any]) -> dict[str, Any]:
+    """The challenge of request, placed under H with the request's invoiceId its carrier."""
+    asked = issued("xrpl", "charge", json.dumps(request), F["realm"], F["expires"])
+    doc = doc_of(asked)
+    assert isinstance(doc, list), doc
+    placed: dict[str, Any] = doc[0]
+    return placed
+
+
+# The build groups whose expectTxJson is the stock client's Payment (xrpl-mpp-sdk 0.1.0-beta.4).
+@pytest.mark.parametrize("group", ["issued", "issuedJson"])
+def test_mpp_charge_xrpl_build_writes_each_currency_as_the_stock_client_does(group: str) -> None:
+    row = B[group]
+    u = MPP_CHARGE_XRPL.build({"challenge": _placed(row["request"]), "account": F["account"], **INPUTS}, H)
+    assert not isinstance(u, Refusal), u
+    assert u.request["txJson"] == row["expectTxJson"]
+
+
+def test_mpp_charge_xrpl_a_currency_or_memos_lcp_does_not_read_whole_is_refused() -> None:
+    """The refused rows the stock schema refuses (xrpl-mpp-sdk 0.1.0-beta.4 dist/chunk-L6LVAN2P.js:17-90): a currency
+    that is not a string, and memos in rippled's {Memo} form. The seller's placement refuses each request, and so does
+    build on a challenge carrying it."""
+    refused = B["refused"]
+    good = _placed(B["issued"]["request"])
+    stock = [r for r in refused["rows"] if "memos" in r or not isinstance(r.get("currency"), str)]
+    assert stock
+    for row in stock:
+        request = copy.deepcopy(B["issued"]["request"])
+        if "currency" in row:
+            request["currency"] = row["currency"]
+        if "memos" in row:
+            request["methodDetails"]["memos"] = row["memos"]
+        asked = issued("xrpl", "charge", json.dumps(request), F["realm"], F["expires"])
+        assert doc_of(asked) == Refusal(refused["expect"]), row
+        choice = {"challenge": {**good, "request": asked["request"]}, "account": F["account"], **INPUTS}
+        assert MPP_CHARGE_XRPL.build(choice, H) == Refusal(refused["expect"]), row

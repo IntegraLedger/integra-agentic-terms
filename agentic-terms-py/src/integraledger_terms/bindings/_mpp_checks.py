@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._types import Refusal
-from . import _stellar
 from ._bolt11 import FIELD
 from ._bolt11 import decode as decode_invoice
 from ._codec import b58_decode, b64u_decode, b64u_encode, canonical_or_none, utf16_key
 from ._jose import js_length, parse_json, within_depth
 from ._lcp import is_address, is_list, is_object, uint256_of
-from ._svm import TOKEN, TOKEN_2022
+from ._stacks import is_canonical_principal
+from ._svm import TOKEN, TOKEN_2022, built_version
 from ._xrpl_codec import account_id_of
 
 Obj = Mapping[str, Any]
@@ -530,17 +530,6 @@ def is_xrpl_invoice_id(d: Obj) -> bool:
     return isinstance(inv, str) and _HEX64.fullmatch(inv) is not None
 
 
-def is_fee_payer(d: Obj) -> bool:
-    """A charge challenge's methodDetails.feePayer: absent or a boolean."""
-    return "feePayer" not in d or isinstance(d["feePayer"], bool)
-
-
-def is_stellar_recipient(value: object) -> bool:
-    """A Stellar account (G...) or its muxed form (M...), as a charge challenge's recipient is: a strkey whose version
-    byte, length and CRC16 checksum hold."""
-    return _stellar.is_account(value) or _stellar.is_muxed(value)
-
-
 def solana_charge_pairings(r: Obj, d: Obj, c: Obj | None = None) -> list[str] | Refusal:
     network = solana_network_of(d, False)
     if isinstance(network, Refusal):
@@ -555,9 +544,13 @@ def solana_charge_pairings(r: Obj, d: Obj, c: Obj | None = None) -> list[str] | 
     if d.get("feePayer") is True and not is_key(d.get("feePayerKey")):
         return Refusal("mpp/request-malformed")
     # What build reads of methodDetails in place of its own inputs, in the form it builds with: no splits and no
-    # confidential transfer, which it does not build; a recentBlockhash that is a string is a key; and, for a mint, a
-    # decimals that is a number is an integer from 0 to 255, and a tokenProgram that is a string is Token or Token-2022.
+    # confidential transfer, which it does not build; a transactionVersions that admits a version (built_version:
+    # absent, or a non-empty array of the integers 0 and 1); a recentBlockhash that is a string is a key; and, for a
+    # mint, a decimals that is a number is an integer from 0 to 255, and a tokenProgram that is a string is Token or
+    # Token-2022.
     if _has(d, "splits") or d.get("confidential") is True:
+        return Refusal("svm/input-malformed")
+    if built_version(d) is None:
         return Refusal("svm/input-malformed")
     if isinstance(d.get("recentBlockhash"), str) and not is_key(d["recentBlockhash"]):
         return Refusal("svm/input-malformed")
@@ -568,7 +561,10 @@ def solana_charge_pairings(r: Obj, d: Obj, c: Obj | None = None) -> list[str] | 
         program = d.get("tokenProgram")
         if isinstance(program, str) and program not in (TOKEN, TOKEN_2022):
             return Refusal("svm/input-malformed")
-    return ["mpp/charge/solana"]
+    # A challenge whose methodDetails.feePayer is true names mpp/charge/solana: the stock client refuses to broadcast
+    # under it from @solana/mpp 0.6.0 (src/client/Charge.ts:79-83 at 0.7.0). Any other names
+    # mpp/charge/solana/unsponsored, whose payer can broadcast.
+    return ["mpp/charge/solana"] if d.get("feePayer") is True else ["mpp/charge/solana/unsponsored"]
 
 
 def _is_byte(value: object) -> bool:
@@ -576,52 +572,54 @@ def _is_byte(value: object) -> bool:
     return (isinstance(value, int) or (isinstance(value, float) and value.is_integer())) and 0 <= value <= 255
 
 
-# The bound of a SEP-41 transfer amount, an i128.
-_I128_LIMIT = 2**127
-
-
-def stellar_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    """charge on stellar: methodDetails.network stellar:pubnet or stellar:testnet, amount a decimal below 2^127 (the
-    token contract's SEP-41 transfer takes an i128, which build writes and the payer signs), currency a contract, and
-    recipient an account, or its muxed form once placed. currency and recipient are read whole, as strkeys whose
-    version byte, length and checksum hold: one whose checksum does not match is stellar/option-malformed, as one of
-    another form is."""
-    if d.get("network") not in ("stellar:pubnet", "stellar:testnet") or not isinstance(d.get("network"), str):
-        return Refusal("stellar/option-malformed")
-    to, currency = r.get("recipient"), r.get("currency")
-    if (
-        not is_decimal(r.get("amount"))
-        or int(r["amount"]) >= _I128_LIMIT
-        or not _stellar.is_contract(currency)
-        or not is_stellar_recipient(to)
-    ):
-        return Refusal("stellar/option-malformed")
-    if not is_fee_payer(d):
-        return Refusal("stellar/option-malformed")
-    return ["mpp/charge/stellar"]
-
-
 def is_xrpl_address(value: object) -> bool:
     return isinstance(value, str) and _XRPL_ADDRESS.fullmatch(value) is not None
 
 
-def is_xrpl_currency(value: object) -> bool:
-    """XRP, an issued currency {currency, issuer}, or an MPT {mpt_issuance_id}."""
-    if value == "XRP" and isinstance(value, str):
-        return True
+# An XRPL asset as a charge request's currency names it: XRP, an issued currency, or an MPT.
+XrplCurrency = str | dict[str, str]
+
+
+def _issued_or_mpt(value: object) -> XrplCurrency | None:
+    """An issued currency {currency, issuer} or an MPT {mpt_issuance_id}, each part held to its form, exactly those
+    members."""
     if not is_object(value):
-        return False
+        return None
     keys = ",".join(sorted(value.keys(), key=utf16_key))
     if keys == "currency,issuer":
-        cur = value.get("currency")
-        return (
-            isinstance(cur, str)
-            and _XRPL_CURRENCY.fullmatch(cur) is not None
-            and cur != "XRP"
-            and is_xrpl_address(value.get("issuer"))
-        )
+        cur, issuer = value.get("currency"), value.get("issuer")
+        ok = isinstance(cur, str) and _XRPL_CURRENCY.fullmatch(cur) is not None and cur != "XRP"
+        return {"currency": cur, "issuer": issuer} if ok and is_xrpl_address(issuer) else None  # type: ignore[dict-item]
     mpt = value.get("mpt_issuance_id")
-    return keys == "mpt_issuance_id" and isinstance(mpt, str) and _XRPL_MPT.fullmatch(mpt) is not None
+    ok = keys == "mpt_issuance_id" and isinstance(mpt, str) and _XRPL_MPT.fullmatch(mpt) is not None
+    return {"mpt_issuance_id": mpt} if ok else None  # type: ignore[dict-item]
+
+
+def xrpl_currency_of(value: object) -> XrplCurrency | None:
+    """A charge request's currency, a string as MPP's XRPL schema has it (xrpl-mpp-sdk 0.1.0-beta.4,
+    dist/chunk-L6LVAN2P.js:17-90, currency: z.string()), in the forms its parseCurrency reads
+    (dist/chunk-JQG7ATQA.js:170-183): "XRP"; a JSON text of an issued currency {currency, issuer} or an MPT
+    {mpt_issuance_id}; or CUR:issuer, one colon. Each part is held to its form. None for any other value, an object
+    among them, which the stock schema refuses."""
+    if not isinstance(value, str):
+        return None
+    if value == "XRP":
+        return "XRP"
+    if value.startswith("{"):
+        return _issued_or_mpt(parse_json(value))
+    parts = value.split(":")
+    return _issued_or_mpt({"currency": parts[0], "issuer": parts[1]}) if len(parts) == 2 else None
+
+
+def is_xrpl_memos(d: Obj) -> bool:
+    """A charge request's methodDetails.memos, as MPP's XRPL schema has it (dist/chunk-L6LVAN2P.js:17-90): absent, or
+    an array of objects whose only members are the optional strings type, format and data."""
+    if "memos" not in d:
+        return True
+    memos = d["memos"]
+    return is_list(memos) and all(
+        is_object(m) and all(k in ("type", "format", "data") and isinstance(v, str) for k, v in m.items()) for m in memos
+    )
 
 
 def _is_uint32(value: object) -> bool:
@@ -636,13 +634,14 @@ def xrpl_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     if isinstance(network, Refusal):
         return network
     amount = r.get("amount")
+    currency = xrpl_currency_of(r.get("currency"))
     if (
         not is_xrpl_address(r.get("recipient"))
-        or not is_xrpl_currency(r.get("currency"))
+        or currency is None
         or not isinstance(amount, str)
         or _XRPL_AMOUNT.fullmatch(amount) is None
         or _XRPL_ZERO.fullmatch(amount) is not None
-        or (r.get("currency") == "XRP" and not is_u64_positive(amount))
+        or (currency == "XRP" and not is_u64_positive(amount))
     ):
         return Refusal("mpp/request-malformed")
     if not is_xrpl_invoice_id(d):
@@ -650,9 +649,9 @@ def xrpl_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     for k in ("destinationTag", "sourceTag"):
         if _has(d, k) and not _is_uint32(d[k]):
             return Refusal("mpp/request-malformed")
-    # build writes no memo but the LCP one.
-    if _has(d, "memos"):
-        return Refusal("xrpl/memos-not-carried")
+    # The stock schema's memos, which build writes.
+    if not is_xrpl_memos(d):
+        return Refusal("mpp/request-malformed")
     return ["mpp/charge/xrpl"]
 
 
@@ -701,7 +700,9 @@ def solana_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 def xrpl_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     """session on xrpl: channelId absent or ""; network named; currency absent or "XRP"; a classic recipient whose
     checksum holds, as the channel id build derives reads it; amount a u64 in drops, written in decimal with no sign,
-    point or leading zero."""
+    point or leading zero. It names both XRPL sessions, which no member of the challenge tells apart: the in-band
+    opening the protocol package's client writes, and the stock client's session, which opens its channel out of
+    band."""
     if r.get("channelId") is not None:
         named = r["channelId"] != ""
     else:
@@ -715,7 +716,7 @@ def xrpl_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         return Refusal("xrpl/currency-not-xrp")
     if not is_xrpl_address(r.get("recipient")) or account_id_of(r["recipient"]) is None or not is_drops(r.get("amount")):
         return Refusal("mpp/request-malformed")
-    return ["mpp/session/xrpl"]
+    return ["mpp/session/xrpl", "mpp/session/xrpl/stock"]
 
 
 # ── card, stripe and usdc.
@@ -773,7 +774,8 @@ def usdc_profile(d: Obj) -> tuple[str, Obj] | Refusal:
 def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     """charge on usdc: the active profile, amount a positive integer string, recipient a string, and what each
     profile's build reads: EVM chainId and addresses; the Solana charge's checks on the Solana details, whose network is
-    required, and on externalId, its carrier; Stacks chainId and the token contract. The Gateway build reads recipient
+    required, and on externalId, its carrier; Stacks chainId, the token contract, and recipient as a Stacks node writes a
+    principal (is_canonical_principal), the spelling the read compares with. The Gateway build reads recipient
     and the request's hash, and none of the Gateway details. No other profile reads externalId. The EVM and Gateway
     derivations hash the request as received, so on those profiles it is in its RFC 8785 form (mpp/request-not-jcs)."""
     profile = usdc_profile(d)
@@ -803,6 +805,8 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         name = p.get("contractName")
         if not isinstance(name, str) or js_length(name) > 128 or _STACKS_NAME.fullmatch(name) is None:
             return Refusal("mpp/request-malformed")
+        if not is_canonical_principal(r.get("recipient")):
+            return Refusal("mpp/request-malformed")
         return ["mpp/charge/usdc/stacks"]
     return ["mpp/charge/usdc/gateway"] if is_jcs_request(c["request"], r) else Refusal("mpp/request-not-jcs")
 
@@ -824,7 +828,6 @@ PAIRING_CHECKS: Mapping[str, PairingCheck] = {
     "charge/lightning": lightning_pairings("mpp/charge/lightning"),
     "session/lightning": lightning_pairings("mpp/session/lightning"),
     "charge/solana": solana_charge_pairings,
-    "charge/stellar": stellar_charge_pairings,
     "charge/xrpl": xrpl_charge_pairings,
     "charge/nearintents": near_intents_charge_pairings,
     "session/hedera": hedera_session_pairings,

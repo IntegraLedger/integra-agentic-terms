@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash, hash_equals
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._channel import BatchUnsigned, ChannelKind, ChannelRef
 from ._lcp import from_lcp_string, is_list, is_object, to_lcp_string
 from ._mpp import EchoedChallenge, chosen_for, credential_of, echoed_for, measured, measuring, read, session_broadcaster
@@ -160,12 +160,13 @@ class XrplSessionUnsigned:
 @dataclass(frozen=True, slots=True)
 class MppSessionXrpl:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)
 
-    def build(self, choice: Any, h: AtrHash) -> XrplSessionUnsigned | Refusal:
+    def build(self, choice: Any, h: AtrHash, act: Act | None = None) -> XrplSessionUnsigned | Refusal:
         """The PaymentChannelCreate with one LCP memo carrying H and no NetworkID (each network the challenge can name
         has an id of at most 1024), and the first claim's bytes on the channel it creates."""
         if not is_object(choice) or not is_object(choice.get("xrpl")):
@@ -224,10 +225,10 @@ class MppSessionXrpl:
             _amount=checked.request.get("amount"),
         )
 
-    def bound(self, presented: Any) -> AtrHash | Refusal:
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """H from an opening's echoed challenge, once the signed PaymentChannelCreate's one LCP memo is that H. Its
         NetworkID is read as rippled reads it (network_id_held): none on each network the challenge can name, else
-        xrpl/network-mismatch. A multi-signed blob is xrpl/multisigned: the payer signs with a single key. The
+        xrpl/network-mismatch. A multisigned blob is admitted: the opening is found by the payer's instrument. The
         signature is not verified here."""
         shaped = credential_of(presented)
         if isinstance(shaped, Refusal):
@@ -250,7 +251,7 @@ class MppSessionXrpl:
     @measuring
     def channel_ref(self, presented: Json) -> ChannelRef | Refusal:
         """The network and the channel: on an open, its id derived from the signed blob of the opening as bound reads
-        it (_opening), with bound's codes in bound's order: single-signed, its NetworkID one the challenge's network
+        it (_opening), with bound's codes in bound's order: its NetworkID one the challenge's network
         takes, a PaymentChannelCreate, and one LCP memo naming H; on a voucher or close, the payload's channelId in
         upper case, with the network read from the payment itself."""
         kind = action_kind(presented, WITHIN_ACTIONS)

@@ -1,7 +1,8 @@
 """The transactionVersions sections of @integraledger/lcp's x402-exact-solana.json, x402-upto-solana.json and
-x402-batch-settlement.json: each Solana build under an option whose extra.transactionVersions is each row's value. A
-row that admits version 0 is built as the file's version-0 message; any other is refused svm/version-not-built before
-anything is signed. Every expected value is the file's."""
+x402-batch-settlement.json: each Solana build under an option whose extra.transactionVersions is each row's value, or
+that has none for the row without the member. A row whose list holds 1 is built as version 1, the message the stock
+client writes; one whose list holds 0 alone, or that has none, as the file's version-0 message; any other is refused
+x402/option-malformed by the option filter, before anything is signed. Every expected value is the file's."""
 
 import copy
 import hashlib
@@ -20,10 +21,18 @@ B = load("x402-batch-settlement.json")
 L = "lcp:sha256:" + H
 
 
+# A row without the member: the option carries no extra.transactionVersions.
+ABSENT = object()
+
+
 def offered(option: dict[str, Any], versions: Any) -> dict[str, Any]:
-    """The option with extra.memo L and extra.transactionVersions set to versions, and a document that offers it
-    alone, as build's required and accepted."""
-    accepted = {**option, "extra": {**option["extra"], "memo": L, "transactionVersions": copy.deepcopy(versions)}}
+    """The option with extra.memo L and extra.transactionVersions set to versions, or without it where versions is
+    ABSENT, and a document that offers it alone, as build's required and accepted."""
+    extra = {k: v for k, v in option["extra"].items() if k != "transactionVersions"}
+    extra["memo"] = L
+    if versions is not ABSENT:
+        extra["transactionVersions"] = copy.deepcopy(versions)
+    accepted = {**option, "extra": extra}
     doc = x402_doc(accepted, E["fixed"]["resource"], H, LINK)
     return {"required": doc, "accepted": doc["accepts"][0]}
 
@@ -103,15 +112,23 @@ CASES: list[tuple[str, list[dict[str, Any]], Callable[[Any], Any]]] = [
 ]
 
 
+def versions_of(row: dict[str, Any]) -> Any:
+    return row["transactionVersions"] if "transactionVersions" in row else ABSENT
+
+
 @pytest.mark.parametrize(("name", "rows", "build"), CASES, ids=[c[0] for c in CASES])
-def test_each_row_is_built_as_version_0_or_refused(name: str, rows: list[dict[str, Any]], build: Callable[[Any], Any]) -> None:
-    assert len(rows) == 10
+def test_each_row_is_built_as_its_version_or_refused(name: str, rows: list[dict[str, Any]], build: Callable[[Any], Any]) -> None:
     for row in rows:
-        assert shown(build(row["transactionVersions"])) == row["expect"], row["transactionVersions"]
+        assert shown(build(versions_of(row))) == row["expect"], row.get("transactionVersions", "absent")
 
 
 def test_a_refund_without_recent_blockhash_builds_no_transaction_under_any_field() -> None:
+    """Without recentBlockhash a refund carries the voucher alone, whatever version the option admits; an option the
+    filter refuses is refused before it, with the row's code."""
     for row in B["transactionVersions"]["refundRows"]:
-        out = refund(row["transactionVersions"], blockhash=False)
+        out = refund(versions_of(row), blockhash=False)
+        if row["expect"].get("refused"):
+            assert out == Refusal(row["expect"]["code"]), row
+            continue
         assert not isinstance(out, Refusal), out
         assert [r["kind"] for r in out.requests] == ["ed25519-raw"]

@@ -70,7 +70,6 @@ from .bindings.x402_evm import (
 )
 from .bindings.x402_exact_eip155_eip3009 import X402ExactEip155Eip3009
 from .bindings.mpp_charge_solana import MPP_CHARGE_SOLANA, MPP_CHARGE_USDC_SOLANA
-from .bindings.mpp_session_solana import MPP_SESSION_SOLANA
 from .bindings.x402_batch_settlement_solana import X402BatchSettlementSolana
 from .bindings.x402_exact_solana import X402ExactSolana
 from .bindings.x402_upto_solana import X402UptoSolana
@@ -85,12 +84,10 @@ from .bindings.x402_exact_polkadot_lcp_assets_remark import X402ExactPolkadotLcp
 from .bindings.x402_exact_ccd import X402ExactCcd
 from .bindings.x402_exact_cardano import X402ExactCardano
 from .bindings.x402_exact_sui import X402ExactSui
-from .bindings.mpp_charge_stellar import MppChargeStellar
 from .bindings.mpp_charge_usdc_stacks import MppChargeUsdcStacks
 from .bindings.mpp_charge_xrpl import MppChargeXrpl
 from .bindings.mpp_session_xrpl import MppSessionXrpl
 from .bindings.x402_exact_algorand import X402ExactAlgorand
-from .bindings.x402_exact_stellar import X402ExactStellar
 from .bindings.x402_exact_xrpl import X402ExactXrpl
 
 # A binding marked type: ignore[assignment] has a build and bound that take no act yet (Binding.build, Binding.bound).
@@ -116,9 +113,9 @@ CARD_MASTERCARD_VI_AUTONOMOUS: Binding = CardMastercardViAutonomous()
 CARD_SELLER_REFERENCE: Binding = CardSellerReference()
 X402_BATCH_SETTLEMENT_EIP155 = X402BatchSettlementEip155()
 X402_BATCH_SETTLEMENT_CLOUDFLARE = X402BatchSettlementCloudflare()
-X402_EXACT_SOLANA: Binding = X402ExactSolana()  # type: ignore[assignment]
-X402_BATCH_SETTLEMENT_SOLANA: Binding = X402BatchSettlementSolana()  # type: ignore[assignment]
-X402_UPTO_SOLANA: Binding = X402UptoSolana()  # type: ignore[assignment]
+X402_EXACT_SOLANA: Binding = X402ExactSolana()
+X402_BATCH_SETTLEMENT_SOLANA: Binding = X402BatchSettlementSolana()
+X402_UPTO_SOLANA: Binding = X402UptoSolana()
 
 MPP_CHARGE_EVM_AUTHORIZATION: Binding = MppChargeEvmAuthorization()
 MPP_CHARGE_EVM_PERMIT2: Binding = MppChargeEvmPermit2()
@@ -141,13 +138,11 @@ X402_EXACT_CCD: Binding = X402ExactCcd()  # type: ignore[assignment]
 X402_EXACT_CARDANO: Binding = X402ExactCardano()  # type: ignore[assignment]
 X402_EXACT_SUI: Binding = X402ExactSui()  # type: ignore[assignment]
 
-X402_EXACT_XRPL: Binding = X402ExactXrpl()  # type: ignore[assignment]
-X402_EXACT_ALGORAND: Binding = X402ExactAlgorand()  # type: ignore[assignment]
-X402_EXACT_STELLAR: Binding = X402ExactStellar()  # type: ignore[assignment]
-MPP_CHARGE_XRPL: Binding = MppChargeXrpl()  # type: ignore[assignment]
-MPP_CHARGE_STELLAR: Binding = MppChargeStellar()  # type: ignore[assignment]
-MPP_CHARGE_USDC_STACKS: Binding = MppChargeUsdcStacks()  # type: ignore[assignment]
-MPP_SESSION_XRPL: Binding = MppSessionXrpl()  # type: ignore[assignment]
+X402_EXACT_XRPL: Binding = X402ExactXrpl()
+X402_EXACT_ALGORAND: Binding = X402ExactAlgorand()
+MPP_CHARGE_XRPL: Binding = MppChargeXrpl()
+MPP_CHARGE_USDC_STACKS: Binding = MppChargeUsdcStacks()
+MPP_SESSION_XRPL: Binding = MppSessionXrpl()
 
 __all__ = [
     "ACK_PAYMENT_REQUEST",
@@ -173,7 +168,6 @@ __all__ = [
     "MPP_CHARGE_USDC_SOLANA",
     "MPP_SESSION_EVM",
     "MPP_SESSION_LIGHTNING",
-    "MPP_SESSION_SOLANA",
     "MPP_SESSION_TEMPO",
     "MPP_SUBSCRIPTION_STRIPE",
     "MPP_SUBSCRIPTION_TEMPO",
@@ -207,9 +201,7 @@ __all__ = [
     "X402_UPTO_SOLANA",
     "X402_EXACT_XRPL",
     "X402_EXACT_ALGORAND",
-    "X402_EXACT_STELLAR",
     "MPP_CHARGE_XRPL",
-    "MPP_CHARGE_STELLAR",
     "MPP_CHARGE_USDC_STACKS",
     "MPP_SESSION_XRPL",
     "Advertised",

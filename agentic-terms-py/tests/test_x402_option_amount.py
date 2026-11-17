@@ -37,7 +37,10 @@ OUTSIDE: list[tuple[str, object]] = [
     ('""', ""),
     ("10000", 10000),
 ]
-ZERO_PRICE = {"x402/batch-settlement/eip155", "x402/batch-settlement/solana"}
+# The pairings that offer "0": the two zero-price batch pairings, and the exact Solana and Algorand pairings, whose
+# stock facilitators compare the transfer's amount with the option's by equality and whose transfer of zero lands
+# (x402-exact-solana.json zeroAmount, the stock @x402/svm 2.31.0 client's payment at "0").
+ZERO_PRICE = {"x402/batch-settlement/eip155", "x402/batch-settlement/solana", "x402/exact/solana", "x402/exact/algorand"}
 
 
 def with_amount(option: dict[str, Any], amount: object) -> dict[str, Any]:

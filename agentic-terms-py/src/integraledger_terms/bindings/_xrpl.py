@@ -12,7 +12,11 @@ from .._types import Refusal
 from . import _xrpl_codec
 from ._lcp import to_lcp_string
 
-MAX_BLOB_HEX = 4096
+# The largest signed blob decoded, in bytes, the protocol package's own bound (XRPL_MAX_BLOB_BYTES): a Payment or a
+# PaymentChannelCreate signed by the 32 signers a signer list admits at most, with the paths a stock client finds and
+# memos of rippled's 1,024 bytes.
+MAX_BLOB_BYTES = 16_384
+MAX_BLOB_HEX = 2 * MAX_BLOB_BYTES
 _NETWORK = re.compile(r"xrpl:(0|[1-9][0-9]{0,9})")
 _HEX = re.compile(r"(?:[0-9A-Fa-f]{2})+")
 _HASH256 = re.compile(r"[0-9A-Fa-f]{64}")
@@ -74,7 +78,7 @@ class Blob:
 
 
 def decode_blob(text: object) -> Blob | Refusal:
-    """A signed blob of at most 4096 hex digits decoded, with its transaction hash as the ledger computes it:
+    """A signed blob of at most MAX_BLOB_BYTES bytes decoded, with its transaction hash as the ledger computes it:
     SHA-512Half over 54584E00 and the blob, in upper case. The blob must be the canonical serialization of what it
     decodes to. A blob with a field deeper than _xrpl_codec.MAX_DEPTH (10 levels, as rippled counts them), or with an
     end marker in an object or array it does not close, is xrpl/blob-malformed, as rippled refuses either."""
@@ -95,13 +99,10 @@ def decode_blob(text: object) -> Blob | Refusal:
 
 
 def decode_presented(text: object) -> Blob | Refusal:
-    """The signed blob a presented payment holds, decoded as decode_blob decodes it. A blob that carries Signers is
-    xrpl/multisigned: the payer signs with a single key, so the transaction hash computed from the blob is the one that
-    can land."""
-    blob = decode_blob(text)
-    if isinstance(blob, Refusal):
-        return blob
-    return Refusal("xrpl/multisigned") if "Signers" in blob.tx else blob
+    """The signed blob a presented payment holds, decoded as decode_blob decodes it. A multisigned blob is admitted: a
+    payment is found by the payer's instrument, its Account with the signed Sequence or ticket, so another quorum's copy,
+    under another hash, is the same payment."""
+    return decode_blob(text)
 
 
 _PAY_CHANNEL_SPACE = bytes.fromhex("0078")

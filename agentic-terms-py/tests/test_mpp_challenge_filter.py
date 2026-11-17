@@ -209,9 +209,9 @@ CASES: list[Case] = [
     ("splits adding up to amount", "mpp/charge/evm/permit2", lambda c: with_request(c, lambda r: details(r).__setitem__("splits", [{"recipient": r["recipient"], "amount": r["amount"]}])), "mpp/input-malformed", None),
     ("amount 0 with permit2 alone listed", "mpp/charge/evm/permit2", lambda c: with_request(c, permit2_alone_for_0), "mpp/input-malformed", None),
     ("amount 0 with authorization listed too", "mpp/charge/evm/permit2", lambda c: with_request(c, set_in(["amount"], "0")), "mpp/not-this-pairing", "mpp/charge/evm/authorization"),
-    # draft-xrpl-charge-00: build writes no memo but the LCP one; the session's channel id derives from the
-    # recipient's AccountID.
-    ("methodDetails.memos", "mpp/charge/xrpl", lambda c: with_request(c, set_in([MD, "memos"], [{"Memo": {"MemoData": "6C6370"}}])), "xrpl/memos-not-carried", None),
+    # xrpl-mpp-sdk 0.1.0-beta.4's schema takes memos as objects of type, format and data, not rippled's {Memo} form
+    # (mpp-charge-xrpl.json's refusals); the session's channel id derives from the recipient's AccountID.
+    ("methodDetails.memos", "mpp/charge/xrpl", lambda c: with_request(c, set_in([MD, "memos"], [{"Memo": {"MemoData": "6C6370"}}])), "mpp/request-malformed", None),
     ("a recipient whose checksum fails", "mpp/session/xrpl", lambda c: with_request(c, recipient_checksum_fails), "mpp/request-malformed", None),
     # draft-tempo-subscription-00: the key authorization's uint64 expiry and period.
     ("periodCount 10^16 - 1 weeks", "mpp/subscription/tempo", lambda c: with_request(c, lambda r: r.update(periodCount="9999999999999999", periodUnit="week")), "mpp/request-malformed", None),

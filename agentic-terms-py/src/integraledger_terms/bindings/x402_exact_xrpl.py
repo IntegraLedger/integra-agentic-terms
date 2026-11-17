@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._core import AtrHash
-from .._types import Advertised, Broadcaster, Json, Refusal
+from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._lcp import from_lcp_string, is_object, normal_hash, to_lcp_string
 from ._x402 import accepted_by, chosen, filter_of, is_amount, payment_with, read_for, timeout_seconds, x402_broadcaster
 from ._xrpl import (
@@ -135,8 +135,8 @@ class XrplUnsigned:
     _accepted: Mapping[str, Any]
 
     def complete(self, signed_blob: object) -> dict[str, Any] | Refusal:
-        """The payment of the wallet's signed blob, hex, read as bound reads it: a blob that does not decode, or is
-        multi-signed, gets the refusal bound gives it, and one whose NetworkID a node of the option's network does not
+        """The payment of the wallet's signed blob, hex, read as bound reads it: a blob that does not decode gets the
+        refusal bound gives it, and one whose NetworkID a node of the option's network does not
         take (network_id_held) is xrpl/network-mismatch."""
         if not is_blob_hex(signed_blob):
             return Refusal("xrpl/blob-malformed")
@@ -179,15 +179,20 @@ def _presented(presented: object) -> tuple[Mapping[str, Any], Blob, AtrHash] | R
     return accepted, blob, h
 
 
+# The agreement this pairing's payment can itself be, as @integraledger/lcp's registry states it.
+AGREEMENT = AgreementData(floor="1")
+
+
 @dataclass(frozen=True, slots=True)
 class X402ExactXrpl:
     id: str = ID
-    public_proof: bool = True
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = AGREEMENT
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_for(_THIS)(doc)
 
-    def build(self, choice: Json, h: AtrHash) -> XrplUnsigned | Refusal:
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> XrplUnsigned | Refusal:
         """The Payment for the wallet to sign, with InvoiceID = SHA-256 of the option's extra.invoiceId, and NetworkID
         the network's id where it is above 1024. complete reads the signed blob's NetworkID as bound does. H is checked
         first, then the form of the choice's account, fee and last ledger sequence, then its document and option, then
@@ -238,10 +243,10 @@ class X402ExactXrpl:
             tx["NetworkID"] = chain
         return XrplUnsigned(request={"kind": "xrpl-tx", "txJson": tx}, _required=required, _accepted=accepted)
 
-    def bound(self, presented: Json) -> AtrHash | Refusal:
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash whose LCP string's SHA-256 is the signed InvoiceID. The blob's NetworkID is read as rippled reads
         it (network_id_held): none on a network whose id is at most 1024, the network's own id above that, else
-        xrpl/network-mismatch. A multi-signed blob is xrpl/multisigned: the payer signs with a single key. The
+        xrpl/network-mismatch. A multisigned blob is admitted: the payment is found by the payer's instrument. The
         signature is not verified here."""
         p = _presented(presented)
         return p if isinstance(p, Refusal) else p[2]

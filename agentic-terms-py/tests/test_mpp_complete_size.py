@@ -407,7 +407,9 @@ def test_complete_blob_complete_reads_the_blob_as_bound_reads_it_after_its_size(
     size = row["blobBytes"]
     blob = _padded(b6["input"]["presented"]["payload"]["blob"], size) if row.get("padded") else "00" * size
     made = _xrpl_complete(s.placed, blob)
-    credential = {"challenge": s.placed, "payload": {"type": "transaction", "blob": blob}}
+    # The credential complete writes names the payer by source, as the row's credential does (completeBlob.source).
+    source = load("mpp-charge-xrpl.json")["completeBlob"]["source"]
+    credential = {"challenge": s.placed, "payload": {"type": "transaction", "blob": blob}, "source": source}
     if row.get("taken"):
         assert made == credential
         assert MPP_CHARGE_XRPL.bound(made) == s.h
