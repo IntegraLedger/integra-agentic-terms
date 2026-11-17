@@ -122,6 +122,7 @@ BINDS_NOTHING = {
     "card/seller-reference": "card/no-signed-place",
     "mpp/session/hedera/stock": "mpp/no-signed-place",
     "mpp/session/xrpl/stock": "mpp/no-signed-place",
+    "mpp/session/solana/stock": "mpp/no-signed-place",
     "x402/upto/xrpl": "x402/no-signed-place",
 }
 PRESENTED_KEYS = ("payload", "allowance", "checkout_mandate", "signatureInput", "l2", "contentDigest", "transactionReferenceId")

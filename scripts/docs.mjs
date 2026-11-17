@@ -72,6 +72,8 @@ const RAILS = {
   "mpp/charge/solana/unsponsored": "Solana",
   "mpp/charge/usdc/solana": "Solana",
   "mpp/session/solana": "Solana",
+  "mpp/session/solana/memo": "Solana",
+  "mpp/session/solana/stock": "Solana",
   "mpp/subscription/solana": "Solana",
   "x402/exact/stellar": "Stellar",
   "mpp/charge/stellar": "Stellar",

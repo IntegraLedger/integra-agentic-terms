@@ -45,7 +45,6 @@ from ._mpp_checks import (
 from ._mpp_evm import address_word, receive_typed_data, uint_word
 from ._rlp import rlp_bytes, rlp_list
 from ._session_within import within_checks, within_unsigned
-from ._svm import key_bytes, key_string
 from ._tempo import (
     OPEN_V1_SELECTOR,
     OPEN_V2_SELECTOR,
@@ -134,8 +133,9 @@ def _voucher_data(name: str, width: str, chain_id: int, escrow: str, channel_id:
 
 def session_resume(c: object) -> ChannelRef | None | Refusal:
     """The network and channel a session challenge names for the client to resume, spelled as the pairing's
-    channel_ref spells it: EVM, Tempo and Hedera in methodDetails.channelId (a bytes32, lower-case), Solana in
-    methodDetails.channelId (a base58 address), XRPL in the request's channelId (64 hex characters, upper case). None
+    channel_ref spells it: EVM, Tempo and Hedera in methodDetails.channelId (a bytes32, lower-case), XRPL in the
+    request's channelId (64 hex characters, upper case). @solana/mpp 0.7.0's session request names no channel
+    (src/Methods.ts:258-301), so a Solana challenge whose request decodes and whose network reads gives None. None
     when the challenge names no channel; refused for a challenge of no session pairing, or a channel or network that
     cannot be read."""
     method = c.get("method") if is_object(c) else None
@@ -157,16 +157,19 @@ _HASH256 = re.compile(r"[0-9A-Fa-f]{64}")
 
 def _rail_session_resume(c: Any) -> ChannelRef | None | Refusal:
     """session_resume on the Hedera, Solana and XRPL sessions: XRPL's request channelId, empty when it names none;
-    the others' methodDetails.channelId."""
+    Hedera's methodDetails.channelId; and none on Solana, whose request names no channel, once its network reads."""
     if c.get("intent") != "session" or not isinstance(c.get("request"), str):
         return Refusal("mpp/not-this-pairing")
     request = decode_object(c["request"])
     if request is None:
         return Refusal("mpp/request-malformed")
+    method = c["method"]
+    if method == "solana":
+        solana = solana_network_of(request, False)
+        return solana if isinstance(solana, Refusal) else None
     md = request.get("methodDetails", {})
     if not is_object(md):
         return Refusal("mpp/request-malformed")
-    method = c["method"]
     if method == "xrpl":
         named = request.get("channelId", "")
         if named == "":
@@ -177,19 +180,11 @@ def _rail_session_resume(c: Any) -> ChannelRef | None | Refusal:
         return xrpl if isinstance(xrpl, Refusal) else ChannelRef(xrpl, named.upper())
     if "channelId" not in md:
         return None
-    if method == "hedera":
-        channel = normal_hash(md["channelId"])
-        if channel is None:
-            return Refusal("mpp/request-malformed")
-        hedera = hedera_session_network_of(md)
-        return hedera if isinstance(hedera, Refusal) else ChannelRef(hedera, channel)
-    key = key_bytes(md["channelId"])
-    if key is None:
+    channel = normal_hash(md["channelId"])
+    if channel is None:
         return Refusal("mpp/request-malformed")
-    solana = solana_network_of(md, True)
-    if solana is None:
-        return Refusal("svm/network-undeclared")
-    return solana if isinstance(solana, Refusal) else ChannelRef(solana, key_string(key))
+    hedera = hedera_session_network_of(md)
+    return hedera if isinstance(hedera, Refusal) else ChannelRef(hedera, channel)
 
 
 def _words(selector: str, parts: list[bytes]) -> str:

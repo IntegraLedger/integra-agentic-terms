@@ -36,8 +36,6 @@ import { CONFIRMING, GATE } from "./support.js";
  * served pairings without a piece, so a piece added here removes its id.
  */
 const PENDING: ReadonlySet<string> = new Set([
-  "mpp/session/solana/memo",
-  "mpp/session/solana/stock",
   "x402/exact/eip155/gateway-batched",
 ]);
 

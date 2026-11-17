@@ -388,8 +388,12 @@ def network(challenge: object) -> str | Refusal:
         return f"eip155:{chain_of(c)}"
     if key in ("session/evm", "session/tempo", "subscription/tempo"):
         return session_network(challenge)
-    if key in ("charge/solana", "subscription/solana", "session/solana"):
-        n = solana_network_of(d, c.intent == "session")
+    if key in ("charge/solana", "subscription/solana"):
+        n = solana_network_of(d, False)
+        return Refusal("svm/network-undeclared") if n is None else n
+    if key == "session/solana":
+        # @solana/mpp 0.7.0's session names its network in the request itself (src/Methods.ts:258-301).
+        n = solana_network_of(c.request, False)
         return Refusal("svm/network-undeclared") if n is None else n
     if key in ("charge/xrpl", "session/xrpl"):
         return xrpl_network_of(d)

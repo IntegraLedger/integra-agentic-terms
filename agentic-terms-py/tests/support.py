@@ -64,8 +64,6 @@ O: dict[str, Any] = D["accepts"][0]
 # binding and piece removes it here.
 PENDING: frozenset[str] = frozenset(
     {
-        "mpp/session/solana/memo",
-        "mpp/session/solana/stock",
         "x402/exact/eip155/gateway-batched",
     }
 )

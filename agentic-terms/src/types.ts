@@ -13,6 +13,7 @@ import type {
   MppUnsigned,
   RailSessionUnsigned,
   SessionUnsigned,
+  SolanaSessionUnsigned,
   UsdcUnsigned,
   WithinSigningRequest,
 } from "@integraledger/lcp/mpp";
@@ -74,6 +75,7 @@ export type SigningRequest =
   | KeyAuthorizationUnsigned["request"]
   | { kind: "eip712"; typedData: SpendPermissionUnsigned["typedData"] }
   | SvmUnsigned["request"]
+  | SolanaSessionUnsigned["request"]
   | XrplUnsigned<unknown>["request"]
   | HederaUnsigned["request"]
   | Extract<Awaited<ReturnType<(typeof exactHederaExecutor)["build"]>>, { request: unknown }>["request"]

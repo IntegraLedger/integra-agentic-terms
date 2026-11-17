@@ -738,27 +738,72 @@ def hedera_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     return ["mpp/session/hedera/stock"]
 
 
+# The stablecoin symbols @solana/mpp 0.7.0 resolves to a mint per network (src/constants.ts:113-131).
+_SOLANA_SYMBOLS = ("USDC", "USDT", "USDG", "PYUSD", "CASH")
+
+
+def _is_int_in(value: object, low: int, high: int) -> bool:
+    """A JSON number holding an integer from low to high, as Number.isInteger reads one: a boolean is none."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return (not isinstance(value, float) or value.is_integer()) and low <= value <= high
+
+
+def _is_u64_like(value: object) -> bool:
+    """A u64 written as a decimal string or a safe integer, as the stock session request's recentSlot is."""
+    if isinstance(value, str):
+        return _DECIMAL.fullmatch(value) is not None and int(value) < U64_LIMIT
+    return _is_int_in(value, 0, MAX_SAFE_INTEGER)
+
+
 def solana_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    if _has(d, "channelId"):
-        return Refusal("mpp/channel-named")
-    network = solana_network_of(d, True)
+    """session on solana, as @solana/mpp 0.7.0's session request holds it, its members in the request itself
+    (src/Methods.ts:258-301): network one of MPP Solana's names (absent: mainnet); cap a positive u64; currency a mint
+    or a stablecoin symbol the stock client resolves, never sol, which a payment channel cannot hold; recipient and
+    operator keys; externalId a string of at most 566 bytes, programId and recentBlockhash keys, recentSlot a u64,
+    minVoucherDelta a u64 string and decimals an integer from 0 to 255, each where present; splits at most 8 entries,
+    each a key and an integer of basis points from 0 to 10,000; modes a non-empty list of push and pull; and
+    pullVoucherStrategy clientVoucher or operatedVoucher. Else mpp/request-malformed. operatedVoucher is
+    svm/operated-voucher: its stock opening is a token delegation, which deposits nothing. modes exactly ["pull"] under
+    clientVoucher names mpp/session/solana/memo, whose opening the seller's server co-signs and submits; any other names
+    mpp/session/solana/stock, whose opening the buyer's client broadcasts."""
+    network = solana_network_of(r, False)
     if isinstance(network, Refusal):
         return network
-    signer = d.get("voucherSigner")
+    currency = r.get("currency")
+    symbol = isinstance(currency, str) and currency.upper() in _SOLANA_SYMBOLS
     if (
-        not is_key(d.get("channelProgram"))
-        or not is_key(r.get("currency"))
+        not is_u64_positive(r.get("cap"))
+        or not (symbol or is_key(currency))
         or not is_key(r.get("recipient"))
-        or not is_key(d.get("recentBlockhash"))
-        or not is_decimal(d.get("recentSlot"))
-        or not (
-            not _has(d, "voucherSigner")
-            or signer == "client"
-            or (signer == "operator" and is_key(d.get("operator")))
-        )
+        or not is_key(r.get("operator"))
+        or not is_solana_external_id(r)
     ):
-        return Refusal("svm/input-malformed")
-    return ["mpp/session/solana"]
+        return Refusal("mpp/request-malformed")
+    if any(_has(r, k) and not is_key(r[k]) for k in ("programId", "recentBlockhash")):
+        return Refusal("mpp/request-malformed")
+    if _has(r, "recentSlot") and not _is_u64_like(r["recentSlot"]):
+        return Refusal("mpp/request-malformed")
+    if _has(r, "minVoucherDelta") and not (isinstance(r["minVoucherDelta"], str) and _is_u64_like(r["minVoucherDelta"])):
+        return Refusal("mpp/request-malformed")
+    if _has(r, "decimals") and not _is_int_in(r["decimals"], 0, 255):
+        return Refusal("mpp/request-malformed")
+    if _has(r, "splits"):
+        splits = r["splits"]
+        if not isinstance(splits, list) or len(splits) > 8:
+            return Refusal("mpp/request-malformed")
+        if not all(is_object(x) and is_key(x.get("recipient")) and _is_int_in(x.get("bps"), 0, 10_000) for x in splits):
+            return Refusal("mpp/request-malformed")
+    modes = r.get("modes")
+    if _has(r, "modes") and (not isinstance(modes, list) or not modes or not all(m in ("push", "pull") for m in modes)):
+        return Refusal("mpp/request-malformed")
+    strategy = r.get("pullVoucherStrategy")
+    if _has(r, "pullVoucherStrategy") and strategy not in ("clientVoucher", "operatedVoucher"):
+        return Refusal("mpp/request-malformed")
+    if strategy == "operatedVoucher":
+        return Refusal("svm/operated-voucher")
+    server_submits = isinstance(modes, list) and modes == ["pull"] and strategy == "clientVoucher"
+    return ["mpp/session/solana/memo" if server_submits else "mpp/session/solana/stock"]
 
 
 def xrpl_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:

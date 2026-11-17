@@ -92,6 +92,7 @@ from .bindings.x402_evm import (
 from .bindings.x402_exact_eip155_eip3009 import X402ExactEip155Eip3009
 from .bindings.mpp_charge_solana import MPP_CHARGE_SOLANA, MPP_CHARGE_SOLANA_UNSPONSORED, MPP_CHARGE_USDC_SOLANA
 from .bindings.mpp_subscription_solana import MppSubscriptionSolana
+from .bindings.mpp_session_solana import MppSessionSolanaMemo, MppSessionSolanaStock
 from .bindings.x402_batch_settlement_solana import X402BatchSettlementSolana
 from .bindings.x402_exact_solana import X402ExactSolana
 from .bindings.x402_upto_solana import X402UptoSolana
@@ -182,6 +183,8 @@ MPP_CHARGE_USDC_STACKS: Binding = MppChargeUsdcStacks()
 MPP_SESSION_XRPL: Binding = MppSessionXrpl()
 MPP_SESSION_XRPL_STOCK: Binding = MppSessionXrplStock()
 MPP_SESSION_HEDERA_STOCK: Binding = MppSessionHederaStock()
+MPP_SESSION_SOLANA_MEMO: Binding = MppSessionSolanaMemo()
+MPP_SESSION_SOLANA_STOCK: Binding = MppSessionSolanaStock()
 X402_UPTO_XRPL: Binding = X402UptoXrpl()
 X402_EXACT_STELLAR_PRECONDITION: Binding = X402ExactStellarPrecondition()
 SPEND_PERMISSIONS_EIP155: Binding = SpendPermissionsEip155()
@@ -216,6 +219,8 @@ __all__ = [
     "MPP_CHARGE_USDC_SOLANA",
     "MPP_SESSION_EVM",
     "MPP_SESSION_LIGHTNING",
+    "MPP_SESSION_SOLANA_MEMO",
+    "MPP_SESSION_SOLANA_STOCK",
     "MPP_SESSION_TEMPO",
     "MPP_SUBSCRIPTION_SOLANA",
     "MPP_SUBSCRIPTION_STRIPE",
