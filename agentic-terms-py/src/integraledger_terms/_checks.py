@@ -144,15 +144,47 @@ DEFAULT_CEILING_S = 600
 
 
 @dataclass(frozen=True, slots=True)
+class _HeightCeiling:
+    """Where a served floor is a height: the network whose blocks it counts, the height served, and how many blocks past
+    it the signed deadline may lie, the service's margin, or, where ceilings raises the pairing to some seconds, the
+    larger of that and the whole blocks those seconds hold at the rail's pace."""
+
+    network: str
+    start: int
+    blocks: int
+
+
+@dataclass(frozen=True, slots=True)
 class _Floor:
     """A rail whose payment service serves a floor: the inputs that carry it, each with whether a value has the form
-    the profile gives it, in the order the gate names a missing one; and, where the ceiling the floor gives is in
-    seconds, that ceiling, the floor plus the service's own margin. A rail whose ceiling is a height (Circle Gateway's
-    burn intent, its maxBlockHeight at the served height plus the margin in blocks) states none here, and its ceiling is
-    read with its request's summary."""
+    the profile gives it, in the order the gate names a missing one; and the ceiling the floor gives, the floor plus the
+    service's own margin: in seconds, or, where the floor is a height (Circle Gateway's burn intent, its maxBlockHeight
+    at the served height plus the margin in blocks), in blocks, which check 11 holds the request's summary to."""
 
     inputs: tuple[tuple[str, Callable[[object], bool]], ...]
     seconds: Callable[[Inputs], int] | None = None
+    height: Callable[[Inputs, int | None], _HeightCeiling] | None = None
+
+
+# The 7 days a Gateway Wallet's withdrawalDelay spans, and the 100 seconds of margin the protocol package's build adds,
+# in seconds.
+_GATEWAY_DELAY_S = 604_800
+_GATEWAY_MARGIN_S = 100
+
+
+def _gateway_height(inputs: Inputs, raised: int | None) -> _HeightCeiling:
+    """mpp/charge/usdc/gateway's ceiling in the source network's blocks: maxBlockHeight at most
+    burnIntentExpirationHeight plus ceil(withdrawalDelay x 100 / 604,800), the margin the protocol package's build adds,
+    or, raised to R seconds, plus floor(R x withdrawalDelay / 604,800), the whole blocks R seconds holds at the pace of
+    the delay's 7 days. Exact integers: a delay of 0, which the build admits, gives a margin of 0 blocks."""
+    delay = int(cast(str, inputs["withdrawalDelay"]))
+    margin = -(-delay * _GATEWAY_MARGIN_S // _GATEWAY_DELAY_S)
+    given = 0 if raised is None else raised * delay // _GATEWAY_DELAY_S
+    return _HeightCeiling(
+        network=cast(str, inputs["sourceNetwork"]),
+        start=int(cast(str, inputs["burnIntentExpirationHeight"])),
+        blocks=max(margin, given),
+    )
 
 
 def _is_uint256_decimal(v: object) -> bool:
@@ -182,7 +214,8 @@ _FLOORS: Mapping[str, _Floor] = {
             ("sourceNetwork", lambda v: isinstance(v, str) and v != ""),
             ("burnIntentExpirationHeight", _is_uint256_decimal),
             ("withdrawalDelay", _is_uint256_decimal),
-        )
+        ),
+        height=_gateway_height,
     ),
 }
 
@@ -364,6 +397,31 @@ def _window(pairing: str, v: Validity, network: str | None, now: int, inputs: In
     return (until - start + (1 if v.unit == "epoch" else 0)) * pace
 
 
+def _height_held(
+    pairing: str,
+    height: Callable[[Inputs, int | None], _HeightCeiling],
+    v: Validity,
+    network: str | None,
+    inputs: Inputs,
+    raised: int | None,
+) -> Declined | None:
+    """Check 11 where the served floor is a height: the summary's deadline less the start the request signs, else the
+    height served, at most the floor's blocks, in exact integers; past-ceiling past them, and where the deadline is not
+    a height in the blocks of the network the floor was read for, which the summary's network must be."""
+    missing = floor_missing(pairing, inputs)
+    if missing is not None:
+        return missing
+    ceiling = height(inputs, raised)
+    until = _big(v.not_after)
+    if v.unit != "block" or until is None or network != ceiling.network:
+        return _declined("past-ceiling", f"The gate cannot read the payment through {pairing} in the blocks of {ceiling.network}.")
+    start = _big(v.not_before)
+    window = until - (ceiling.start if start is None else start)
+    if window > ceiling.blocks:
+        return _declined("past-ceiling", f"The payment through {pairing} stays payable {window} blocks, past its ceiling of {ceiling.blocks} blocks.")
+    return None
+
+
 def within_ceiling(pairing: str, summary: Summary, inputs: Inputs, ceilings: Ceilings | None, now: int) -> Declined | None:
     """Check 11 on a summary: no-end for a payment that signs no end unless ceilings maps the pairing to "no-end", and
     past-ceiling for one payable longer than the pairing's ceiling: 600 seconds, or on a rail with a served floor that
@@ -379,6 +437,9 @@ def within_ceiling(pairing: str, summary: Summary, inputs: Inputs, ceilings: Cei
     if v.unit != "seconds" and v.not_after is not None and v.not_before is None and start_name is not None:
         if start_of(pairing, inputs) is None and not _is_index(inputs.get(start_name)):
             return _declined("no-payable-option", f"{_namespace(summary.network)}/input-missing")
+    floor = _FLOORS.get(pairing)
+    if floor is not None and floor.height is not None:
+        return None if raised == "no-end" else _height_held(pairing, floor.height, v, summary.network, inputs, raised)
     window = _window(pairing, v, summary.network, now, inputs)
     if window == "no-end":
         return None if raised == "no-end" else _declined("no-end", f"The payment through {pairing} signs no end.")

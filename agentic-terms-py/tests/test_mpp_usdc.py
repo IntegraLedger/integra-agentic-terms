@@ -13,9 +13,13 @@ import pytest
 from integraledger_terms import MPP_CHARGE_USDC_EVM, MPP_CHARGE_USDC_GATEWAY, Refusal
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, canonical_json
 from integraledger_terms.bindings._mpp import pairings_of
-from integraledger_terms.bindings.mpp_charge_usdc import usdc_gateway_salt
+from integraledger_terms.bindings.mpp_charge_usdc import usdc_gateway_salt, usdc_request_hash
 
-from breadth import H, LINK, Pairing, build_and_sign, plant
+from integraledger_terms._checks import network_of
+from integraledger_terms._summary import summary_of
+from integraledger_terms._types import Payee, Summary, Validity
+
+from breadth import ABC, H, LINK, Pairing, build_and_sign, plant
 from mpp_docs import issued, placed_doc
 from support import digest, load, sign_typed
 
@@ -23,9 +27,9 @@ USDC_EVM = load("mpp-charge-usdc-evm.json")
 GATEWAY = load("mpp-charge-usdc-gateway.json")
 
 
-def doc_of(v: dict[str, Any], request_json: str) -> list[dict[str, Any]]:
+def doc_of(v: dict[str, Any], request_json: str, h: str = H) -> list[dict[str, Any]]:
     f = v["fixed"]
-    return placed_doc(issued("usdc", "charge", request_json, f["realm"], f["expires"]), H, LINK)
+    return placed_doc(issued("usdc", "charge", request_json, f["realm"], f["expires"]), h, LINK)
 
 
 def eip712(request: Any) -> str:
@@ -112,6 +116,7 @@ GATEWAY_P = Pairing(
     account=M5["source"],
     answer=gateway_answer,
     inputs=SERVED,
+    placed=lambda h: doc_of(GATEWAY, M5["requestJson"], h),
 )
 
 def test_mpp_charge_usdc_gateway_b6_the_clients_salt_is_m5s() -> None:
@@ -119,8 +124,25 @@ def test_mpp_charge_usdc_gateway_b6_the_clients_salt_is_m5s() -> None:
         assert request["kind"] == "gateway-burn-intent"
         assert json.loads(json.dumps(request)) == request
         assert request["preimage"]["requestHash"] == M5["expectRequestHash"]
+        # The request carries the challenge's request as issued, whose hash is the preimage's requestHash.
+        assert request["challengeRequest"] == GATEWAY_P.doc[0]["request"]
+        assert usdc_request_hash(request["challengeRequest"]) == M5["expectRequestHash"]
         assert usdc_gateway_salt({**request["preimage"], **_own_inputs()}) == M5["expectSalt"]
         assert request["maxBlockHeight"] == GATEWAY["ceiling"]["good"]["expectMaxBlockHeight"]
+        # The summary shows M5's request, R_G, with the ceiling's maxBlockHeight counted in the blocks of the network the
+        # signer's account spends from.
+        r = json.loads(M5["requestJson"])
+        g = r["methodDetails"]["gateway"]
+        network = network_of(M5["source"])
+        assert summary_of("mpp/charge/usdc/gateway", request, ABC, network) == Summary(
+            amount=r["amount"],
+            payees=(Payee(account=r["recipient"], amount=r["amount"]),),
+            asset=r["currency"],
+            network=SERVED["sourceNetwork"],
+            validity=Validity(not_before=None, not_after=GATEWAY["ceiling"]["good"]["expectMaxBlockHeight"], unit="block"),
+            grant={"destinationNetwork": g["destinationNetwork"], "maxFee": g["maxFee"]},
+            atr=ABC,
+        )
 
     build_and_sign(GATEWAY_P, inspect)
 

@@ -1,15 +1,18 @@
 """mpp/charge/usdc/gateway's ceiling, as mpp-charge-usdc-gateway.json's ceiling rows state it: build is given the
 network the burn intent spends from, the burnIntentExpirationHeight Circle Gateway's GET /v1/info serves for it and its
 Gateway Wallet's withdrawalDelay(), and writes maxBlockHeight, their ceiling, into the request; complete refuses a
-signed burn intent on another network or at another maxBlockHeight. Every input and expected value is the file's; the
-burn intent is M5's, signed with the file's payer key."""
+signed burn intent on another network or at another maxBlockHeight; and the gate holds the request's summary to that
+ceiling, in the source network's blocks (terms' profile buyer-gate.md, rules 8 and 14). Every input and expected value
+is the file's; the burn intent is M5's, signed with the file's payer key."""
 
 import copy
 from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_CHARGE_USDC_GATEWAY, Refusal
+from integraledger_terms import MPP_CHARGE_USDC_GATEWAY, Declined, Refusal
+from integraledger_terms._checks import shown
+from integraledger_terms._types import Summary, Validity
 
 from test_mpp_usdc import GATEWAY, M5, burn_intent_signature, doc_of
 
@@ -78,3 +81,46 @@ def test_complete_refuses(row: dict[str, Any]) -> None:
     else:
         burn_intent["maxBlockHeight"] = row["set"]
     assert completed(burn_intent) == refusal(row["expect"])
+
+
+def _served(row: dict[str, Any]) -> dict[str, Any]:
+    return {**GOOD, **{k: row[k] for k in ("burnIntentExpirationHeight", "withdrawalDelay")}}
+
+
+# Each built row's request, maxBlockHeight the served height plus the build's own margin, is within the ceiling, the
+# margin compared in exact integers: a delay of 0 gives none, and the last row's ceiling is 2^256 - 1.
+@pytest.mark.parametrize("row", CEILING["built"], ids=[r["case"] for r in CEILING["built"]])
+def test_the_gate_shows_each_built_request_within_the_ceiling(row: dict[str, Any]) -> None:
+    u = build(**_served(row))
+    assert not isinstance(u, Refusal), u
+    out = shown(MPP_CHARGE_USDC_GATEWAY, u.request, b"a", _served(row), None, GOOD["sourceNetwork"])
+    assert isinstance(out, Summary), out
+    assert out.validity == Validity(not_before=None, not_after=row["expectMaxBlockHeight"], unit="block")
+
+
+# A burn intent whose maxBlockHeight lies past the built ceiling, as the stock client's own and the row one block above
+# sign it, is declined past-ceiling before it is signed.
+def _height(row: dict[str, Any]) -> object:
+    return row.get("expectStockMaxBlockHeight") if row.get("stock") is True else row.get("set")
+
+
+ABOVE = [
+    r
+    for r in CEILING["completeRefusals"]
+    if isinstance(_height(r), str)
+    and str(_height(r)).isdigit()
+    and int(str(_height(r))) > int(CEILING["good"]["expectMaxBlockHeight"])
+]
+
+
+def test_the_rows_past_the_ceiling_are_read() -> None:
+    assert ABOVE
+
+
+@pytest.mark.parametrize("row", ABOVE, ids=[r["case"] for r in ABOVE])
+def test_the_gate_declines_a_request_past_the_ceiling(row: dict[str, Any]) -> None:
+    u = build(**GOOD)
+    assert not isinstance(u, Refusal), u
+    request = {**u.request, "maxBlockHeight": _height(row)}
+    out = shown(MPP_CHARGE_USDC_GATEWAY, request, b"a", GOOD, None, GOOD["sourceNetwork"])
+    assert isinstance(out, Declined) and out.code == "past-ceiling", out

@@ -323,7 +323,15 @@ def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
             },
         })
 
-    request = {"kind": "gateway-burn-intent", "preimage": preimage, "maxBlockHeight": max_block_height}
+    # challengeRequest is the chosen challenge's request as issued (base64url): its usdc_request_hash is the preimage's
+    # requestHash, and it holds the amount, the currency, the destination network and the maxFee the burn intent grants,
+    # so a client can show them and hold the hash to them.
+    request = {
+        "kind": "gateway-burn-intent",
+        "preimage": preimage,
+        "maxBlockHeight": max_block_height,
+        "challengeRequest": challenge["request"],
+    }
     return MppUnsigned(request, complete)
 
 

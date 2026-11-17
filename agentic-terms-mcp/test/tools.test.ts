@@ -296,8 +296,10 @@ describe("the MCP server over stdio", () => {
     const placed = (document as unknown as { id: string }[])[0]!;
     const preimage = { id: placed.id, realm: f.realm, requestHash: G.M5.expectRequestHash, recipient: G.M5.saltInput.recipient };
     expect(at(confirmed, "result.structuredContent.atrHash")).toBe(HA);
-    expect(at(confirmed, "result.structuredContent.request")).toEqual({ kind: "gateway-burn-intent", preimage, maxBlockHeight });
-    expect(handed).toEqual([{ kind: "gateway-burn-intent", preimage, maxBlockHeight }]);
+    // The request also carries the challenge's request as issued, which the summary hashes to the preimage's requestHash.
+    const request = { kind: "gateway-burn-intent", preimage, maxBlockHeight, challengeRequest: issued.request };
+    expect(at(confirmed, "result.structuredContent.request")).toEqual(request);
+    expect(handed).toEqual([request]);
     expect(at(m, "result.isError")).toBeUndefined();
     expect(at(m, "result.structuredContent.atrHash")).toBe(HA);
   });

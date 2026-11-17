@@ -1,14 +1,17 @@
 // Circle Gateway's two forms on the buyer's side: x402/exact/eip155/gateway-batched's piece and summary, and the served
-// floor of it and of mpp/charge/usdc/gateway (terms' profile buyer-gate.md, rules 9 and 13). Every input is lcp's:
-// x402-exact-eip155-gateway-batched.json's S rows (the typed data Circle's own client, @circle-fin/x402-batching 4.0.0,
-// handed its signer, the signature it returned and the payment it made) and wallets rows (that client's network table),
-// and mpp-charge-usdc-gateway.json's B2 row and its build's refusal rows.
+// floor of it and of mpp/charge/usdc/gateway, and the latter's ceiling in blocks (terms' profile buyer-gate.md, rules 8,
+// 9, 13 and 14). Every input is lcp's: x402-exact-eip155-gateway-batched.json's S rows (the typed data Circle's own
+// client, @circle-fin/x402-batching 4.0.0, handed its signer, the signature it returned and the payment it made) and
+// wallets rows (that client's network table), and mpp-charge-usdc-gateway.json's B2 row, M5's request and its ceiling
+// rows.
 import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import type { TypedDataDefinition } from "viem";
 import { exactGatewayBatched, type PaymentRequired, type PaymentRequirements } from "@integraledger/lcp/x402";
+import { chargeUsdcGateway, type MppChallenge } from "@integraledger/lcp/mpp";
 import type { AtrHash } from "@integraledger/lcp";
 import { confirm, FLOOR_INPUTS, transact, type Inputs, type SigningRequest } from "../src/index.js";
+import { shown } from "../src/checks.js";
 import { summaryOf } from "../src/summary.js";
 import { AGREEMENT_URL, buildAndSign, CONFIRMING, counting, fromHex, GATE, H, LINK, serving, vectors } from "./support.js";
 
@@ -140,6 +143,68 @@ describe("mpp/charge/usdc/gateway: the served floor (rule 9)", () => {
         expect(changed.length === 1 ? d : { code: d?.code }).toEqual(expected);
       }
       expect([signer.requests.length, fetch.calls]).toEqual([0, changed.length === 1 ? 0 : 2]);
+    });
+  }
+});
+
+describe("mpp/charge/usdc/gateway: the ceiling, in the blocks of the network the burn intent spends from (rules 8 and 14)", () => {
+  type Row = { case: string; burnIntentExpirationHeight: string; withdrawalDelay: string; expectMaxBlockHeight: string };
+  const G = vectors<{
+    fixed: { realm: string; expires: string };
+    M5: { requestJson: string };
+    ceiling: {
+      good: Row & { sourceNetwork: string };
+      built: Row[];
+      completeRefusals: { case: string; stock?: boolean; expectStockMaxBlockHeight?: string; set?: string }[];
+    };
+  }>("mpp-charge-usdc-gateway.json");
+  const good = G.ceiling.good;
+  const issued: MppChallenge = {
+    realm: G.fixed.realm,
+    method: "usdc",
+    intent: "charge",
+    request: Buffer.from(G.M5.requestJson, "utf8").toString("base64url"),
+    expires: G.fixed.expires,
+  } as MppChallenge;
+  const placed = chargeUsdcGateway.advertise([issued], H, LINK, issued, 0);
+  if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
+  const challenge = placed[0]!;
+  const binding = chargeUsdcGateway as never;
+  const servedOf = (r: Row): Inputs => ({
+    sourceNetwork: good.sourceNetwork,
+    burnIntentExpirationHeight: r.burnIntentExpirationHeight,
+    withdrawalDelay: r.withdrawalDelay,
+  });
+
+  /** lcp's build for the served inputs: the request the signer is handed. */
+  async function requestFor(served: Inputs): Promise<SigningRequest> {
+    const u = await chargeUsdcGateway.build({ challenge, ...served } as never, H);
+    if ("refused" in u) throw new Error(u.code);
+    return u.request as SigningRequest;
+  }
+
+  // Each built row's request, maxBlockHeight the served height plus the build's own margin, is within the ceiling, the
+  // margin compared in exact integers: a delay of 0 gives none, and the last row's ceiling is 2^256 - 1.
+  for (const row of G.ceiling.built) {
+    it(`${row.case}: shown, its validity ending at ${row.expectMaxBlockHeight}`, async () => {
+      const out = await shown(binding, await requestFor(servedOf(row)), new Uint8Array([0x61]), servedOf(row), undefined, good.sourceNetwork);
+      expect("decline" in out ? out.decline : out.validity).toEqual({ notBefore: null, notAfter: row.expectMaxBlockHeight, unit: "block" });
+    });
+  }
+
+  // A burn intent whose maxBlockHeight lies past the built ceiling, as the stock client's own and the row one block above
+  // sign it, is declined past-ceiling before it is signed.
+  const above = G.ceiling.completeRefusals.filter((r) => {
+    const height = r.stock === true ? r.expectStockMaxBlockHeight : r.set;
+    return typeof height === "string" && /^[0-9]+$/.test(height) && BigInt(height) > BigInt(good.expectMaxBlockHeight);
+  });
+  it("the rows past the ceiling are read", () => expect(above.length).toBeGreaterThan(0));
+  for (const row of above) {
+    it(`${row.case}: past-ceiling`, async () => {
+      const request = (await requestFor(servedOf(good))) as SigningRequest & { maxBlockHeight: string };
+      request.maxBlockHeight = (row.stock === true ? row.expectStockMaxBlockHeight : row.set)!;
+      const out = await shown(binding, request, new Uint8Array([0x61]), servedOf(good), undefined, good.sourceNetwork);
+      expect("decline" in out && out.decline.code).toBe("past-ceiling");
     });
   }
 });

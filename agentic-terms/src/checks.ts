@@ -369,14 +369,47 @@ export const DEFAULT_CEILING_S = 600;
 type FloorInput = readonly [name: string, form: (v: unknown) => boolean];
 
 /**
+ * Where a served floor is a height: the network whose blocks it counts, the height served, and how many blocks past it
+ * the signed deadline may lie, the service's margin, or, where `ceilings` raises the pairing to `raised` seconds, the
+ * larger of that and the whole blocks `raised` holds at the rail's pace.
+ */
+interface HeightCeiling {
+  readonly network: string;
+  readonly from: bigint;
+  readonly blocks: bigint;
+}
+
+/**
  * A rail whose payment service serves a floor: the inputs that carry it, each with its form, in the order the gate
- * names a missing one; and, where the ceiling the floor gives is in seconds, that ceiling, the floor plus the service's
- * own margin. A rail whose ceiling is a height (Circle Gateway's burn intent, its `maxBlockHeight` at the served height
- * plus the margin in blocks) states none here, and its ceiling is read with its request's summary.
+ * names a missing one; and the ceiling the floor gives, the floor plus the service's own margin: in seconds, or, where
+ * the floor is a height (Circle Gateway's burn intent, its `maxBlockHeight` at the served height plus the margin in
+ * blocks), in blocks, which check 11 holds the request's summary to.
  */
 interface Floor {
   readonly inputs: readonly FloorInput[];
   readonly seconds?: (inputs: Inputs) => number;
+  readonly height?: (inputs: Inputs, raised: number | undefined) => HeightCeiling;
+}
+
+/** The 7 days a Gateway Wallet's `withdrawalDelay` spans, and the 100 seconds of margin the protocol package's build adds, in seconds. */
+const GATEWAY_DELAY_S = 604_800n;
+const GATEWAY_MARGIN_S = 100n;
+
+/**
+ * `mpp/charge/usdc/gateway`'s ceiling in the source network's blocks: `maxBlockHeight` at most
+ * `burnIntentExpirationHeight` plus ceil(`withdrawalDelay` × 100 / 604,800), the margin the protocol package's build
+ * adds, or, raised to R seconds, plus floor(R × `withdrawalDelay` / 604,800), the whole blocks R seconds holds at the
+ * pace of the delay's 7 days. Exact integers: a delay of 0, which the build admits, gives a margin of 0 blocks.
+ */
+function gatewayHeight(inputs: Inputs, raised: number | undefined): HeightCeiling {
+  const delay = BigInt(inputs["withdrawalDelay"] as string);
+  const margin = (delay * GATEWAY_MARGIN_S + GATEWAY_DELAY_S - 1n) / GATEWAY_DELAY_S;
+  const given = raised === undefined ? 0n : (BigInt(raised) * delay) / GATEWAY_DELAY_S;
+  return {
+    network: inputs["sourceNetwork"] as string,
+    from: BigInt(inputs["burnIntentExpirationHeight"] as string),
+    blocks: given > margin ? given : margin,
+  };
 }
 
 /** A decimal string below 2^256, as the protocol package's Gateway build reads `burnIntentExpirationHeight` and `withdrawalDelay`. */
@@ -401,6 +434,7 @@ const FLOORS: ReadonlyMap<string, Floor> = new Map<string, Floor>([
         ["burnIntentExpirationHeight", isUint256Decimal],
         ["withdrawalDelay", isUint256Decimal],
       ],
+      height: gatewayHeight,
     },
   ],
 ]);
@@ -556,6 +590,32 @@ function windowOf(binding: Binding, v: Validity, network: string | null, now: nu
 }
 
 /**
+ * Check 11 where the served floor is a height: the summary's deadline less the start the request signs, else the height
+ * served, at most the floor's blocks, in exact integers; `past-ceiling` past them, and where the deadline is not a
+ * height in the blocks of the network the floor was read for, which the summary's network must be.
+ */
+function heightHeld(
+  pairing: string,
+  height: (inputs: Inputs, raised: number | undefined) => HeightCeiling,
+  v: Validity,
+  network: string | null,
+  inputs: Inputs,
+  raised: number | undefined,
+): Declined | undefined {
+  const missing = floorMissing(pairing, inputs);
+  if (missing !== undefined) return missing;
+  const ceiling = height(inputs, raised);
+  const until = big(v.notAfter);
+  if (v.unit !== "block" || until === undefined || network !== ceiling.network) {
+    return declined("past-ceiling", `The gate cannot read the payment through ${pairing} in the blocks of ${ceiling.network}.`);
+  }
+  const window = until - (big(v.notBefore) ?? ceiling.from);
+  return window > ceiling.blocks
+    ? declined("past-ceiling", `The payment through ${pairing} stays payable ${window} blocks, past its ceiling of ${ceiling.blocks} blocks.`)
+    : undefined;
+}
+
+/**
  * Check 11 on a summary: `no-end` for a payment that signs no end unless `ceilings` maps the pairing to `"no-end"`, and
  * `past-ceiling` for one payable longer than the pairing's ceiling: 600 seconds, or on a rail with a served floor that
  * floor plus the service's margin, raised to `ceilings`' value where it is larger. A deadline signed as a height on a
@@ -579,6 +639,8 @@ export function withinCeiling(
   if (v.unit !== "seconds" && v.notAfter !== null && v.notBefore === null && startName !== undefined) {
     if (startOf(pairing, inputs) === undefined && !isIndex(inputs[startName])) return declined("no-payable-option", `${chain}/input-missing`);
   }
+  const height = FLOORS.get(pairing)?.height;
+  if (height !== undefined) return raised === "no-end" ? undefined : heightHeld(pairing, height, v, summary.network, inputs, raised);
   const window = windowOf(binding, v, summary.network, now, inputs);
   if (window === "no-end") {
     return raised === "no-end" ? undefined : declined("no-end", `The payment through ${pairing} signs no end.`);

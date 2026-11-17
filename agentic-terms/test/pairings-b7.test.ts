@@ -18,6 +18,7 @@ import {
   type MppCredential,
 } from "@integraledger/lcp/mpp";
 import { check, confirm, transact, type Binding, type SigningRequest } from "../src/index.js";
+import { summaryOf } from "../src/summary.js";
 import { A, ABC, AGREEMENT_URL as AGREEMENT, buildAndSign, counting, fromHex, H, HA, isDeclined, LINK, offered, receiptFor, serving, toHex, vectors, type Pairing } from "./support.js";
 
 import { CONFIRMING, GATE } from "./support.js";
@@ -219,12 +220,26 @@ describe("mpp/charge/usdc/gateway", () => {
       return { source: V.M5.source, ...routes, burnIntent, signature };
     },
   };
-  it("B6: the client's salt is M5's, and the signed burn intent is bound to H", async () => {
-    await buildAndSign(p, (r) => {
+  it("B6: the client's salt is M5's, the summary shows M5's request at the built ceiling, and the signed burn intent is bound to H", async () => {
+    await buildAndSign(p, async (r) => {
       if (r.kind !== "gateway-burn-intent") throw new Error(r.kind);
       const { recipient: _r, ...inputs } = own;
       expect(JSON.parse(JSON.stringify(r))).toEqual(r);
       expect(usdcGatewaySalt({ ...r.preimage, ...inputs })).toBe(V.M5.expectSalt);
+      // The request carries the challenge's request, whose hash the summary recomputes: M5's request, R_G, is shown, with
+      // the ceiling's maxBlockHeight counted in the blocks of the network the signer's account spends from.
+      const R = JSON.parse(V.M5.requestJson);
+      const network = V.M5.source.split(":").slice(0, 2).join(":");
+      const shown = await summaryOf("mpp/charge/usdc/gateway", r, ABC, network);
+      expect(shown).toEqual({
+        amount: R.amount,
+        payees: [{ account: R.recipient, amount: R.amount }],
+        asset: R.currency,
+        network: V.ceiling.good.sourceNetwork,
+        validity: { notBefore: null, notAfter: V.ceiling.good.expectMaxBlockHeight, unit: "block" },
+        grant: { destinationNetwork: R.methodDetails.gateway.destinationNetwork, maxFee: R.methodDetails.gateway.maxFee },
+        atr: ABC,
+      });
     });
   });
 });
