@@ -78,8 +78,8 @@ sequenceDiagram
     A->>G: transact(offer, binding, signer, fetch, { approver, resourceRequest })
     G->>S: GET the link (https, no redirect, at most 1 MiB, 10 s)
     S-->>G: The ATR's bytes
-    G->>G: SHA-256(bytes) equals H? Parse; hold the option and the request to the binding slot
-    G->>G: Build with H; summarize; hold to the ceiling
+    G->>G: SHA-256(bytes) equals H? Parse, then hold the option and the request to the binding slot
+    G->>G: Build with H, summarize, hold to the ceiling
     G->>A: approver({ act, pairing, request, summary, step })
     A-->>G: true
     G->>W: sign(request)

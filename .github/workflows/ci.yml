@@ -125,11 +125,11 @@ jobs:
           const tarball = `node-v${v}-linux-x64.tar.xz`;
           const url = `https://nodejs.org/dist/v${v}/${tarball}`;
           // The oldest Node.js the published packages' engines allow, which the floor job runs their tests on: its own
-          // pin and SHA-256, fetched by one step of its own that changes no PATH, and the major each engines.node names.
+          // pin and SHA-256, fetched by one step of its own that changes no PATH, and the version each engines.node names, >= that version.
           const floor = fs.readFileSync(".node-version-floor", "utf8").trim();
           const floorTarball = `node-v${floor}-linux-x64.tar.xz`;
           const floorUrl = `https://nodejs.org/dist/v${floor}/${floorTarball}`;
-          const engines = `>=${floor.split(".")[0]}`;
+          const engines = `>=${floor}`;
           if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(floor)) bad.push(`.node-version-floor names ${floor}, which is no version`);
           for (const m of ["agentic-terms/package.json", "agentic-terms-mcp/package.json"]) {
             const e = JSON.parse(fs.readFileSync(m, "utf8")).engines?.node;
