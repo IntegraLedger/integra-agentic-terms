@@ -36,7 +36,6 @@ import { CONFIRMING, GATE } from "./support.js";
  * served pairings without a piece, so a piece added here removes its id.
  */
 const PENDING: ReadonlySet<string> = new Set([
-  "x402/exact/eip155/gateway-batched",
 ]);
 
 interface Row {
@@ -48,6 +47,7 @@ interface Row {
     account?: string;
     inputs?: Inputs;
     now?: number;
+    minValiditySeconds?: number;
     presented?: unknown;
     fetched?: unknown;
     check?: { bytesHex: string }[];
@@ -130,7 +130,9 @@ describe("every vector file's buyer rows, through the gate", () => {
         Date.now = () => now * 1000;
       }
       const binding = bindingOf(row.pairing);
-      const inputs = row.input.inputs ?? {};
+      // A row that names the served minimum validity its build needs gives it as the gate's floor input.
+      const minimum = row.input.minValiditySeconds;
+      const inputs = { ...(row.input.inputs ?? {}), ...(minimum !== undefined ? { minValiditySeconds: minimum } : {}) };
       const signer = counting(accountOf(row), async () => {
         throw new Error("the signer is never called on a plant");
       });

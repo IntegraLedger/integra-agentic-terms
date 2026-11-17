@@ -5,7 +5,7 @@ served floor (rules 8 and 9), and the approval of each signing (rule 11). The pa
 import copy
 import inspect
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -145,12 +145,50 @@ DEFAULT_CEILING_S = 600
 
 @dataclass(frozen=True, slots=True)
 class _Floor:
-    input: str
-    margin: int
+    """A rail whose payment service serves a floor: the inputs that carry it, each with whether a value has the form
+    the profile gives it, in the order the gate names a missing one; and, where the ceiling the floor gives is in
+    seconds, that ceiling, the floor plus the service's own margin. A rail whose ceiling is a height (Circle Gateway's
+    burn intent, its maxBlockHeight at the served height plus the margin in blocks) states none here, and its ceiling is
+    read with its request's summary."""
+
+    inputs: tuple[tuple[str, Callable[[object], bool]], ...]
+    seconds: Callable[[Inputs], int] | None = None
 
 
-# The rails whose payment service serves a floor: the input that carries it, and the service's own margin.
-_FLOORS: Mapping[str, _Floor] = {"x402/exact/eip155/gateway-batched": _Floor("minValiditySeconds", 100)}
+def _is_uint256_decimal(v: object) -> bool:
+    """A decimal string below 2^256, as the protocol package's Gateway build reads burnIntentExpirationHeight and
+    withdrawalDelay."""
+    return isinstance(v, str) and v.isascii() and v.isdigit() and len(v) <= 78 and int(v) < 1 << 256
+
+
+def _is_minimum(v: object) -> bool:
+    return _is_positive_safe(v)
+
+
+def _minimum_plus_margin(inputs: Inputs) -> int:
+    minimum = inputs["minValiditySeconds"]
+    assert isinstance(minimum, int)
+    return minimum + 100
+
+
+# The rails whose payment service serves a floor (the profile's rule 9 table), by pairing: on gateway-batched the
+# minValiditySeconds Circle Gateway's /supported serves, Circle's margin being 100 seconds; on usdc/gateway the network
+# the burn intent spends from, the height Circle Gateway's GET /v1/info serves for it and that network's Gateway Wallet's
+# withdrawalDelay(), as the protocol package's Gateway build takes them.
+_FLOORS: Mapping[str, _Floor] = {
+    "x402/exact/eip155/gateway-batched": _Floor((("minValiditySeconds", _is_minimum),), _minimum_plus_margin),
+    "mpp/charge/usdc/gateway": _Floor(
+        (
+            ("sourceNetwork", lambda v: isinstance(v, str) and v != ""),
+            ("burnIntentExpirationHeight", _is_uint256_decimal),
+            ("withdrawalDelay", _is_uint256_decimal),
+        )
+    ),
+}
+
+# The floor inputs of the rails whose payment service serves a floor, by pairing (terms' profile buyer-gate.md, rule
+# 9): the names inputs carries them under, which a host reads from the payment service and gives the gate.
+FLOOR_INPUTS: Mapping[str, tuple[str, ...]] = {pairing: tuple(name for name, _ in f.inputs) for pairing, f in _FLOORS.items()}
 
 # Seconds per unit of a deadline signed as a height, by the network's CAIP-2 namespace (the profile's pace table):
 # Cardano's networks are named in the cardano and the cip34 namespaces alike (CIP-34, Chain ID Registry).
@@ -221,11 +259,13 @@ def _seconds_of(pairing: str, inputs: Inputs, raised: int | None) -> int | Decli
     floor = _FLOORS.get(pairing)
     ceiling = DEFAULT_CEILING_S
     if floor is not None:
-        given = inputs.get(floor.input)
-        if not _is_positive_safe(given):
-            return _declined("floor-missing", floor.input)
-        assert isinstance(given, int)
-        ceiling = given + floor.margin
+        missing = floor_missing(pairing, inputs)
+        if missing is not None:
+            return missing
+        # A ceiling that is a height is never 600 seconds: it is read with the request's summary, so none is given here.
+        if floor.seconds is None:
+            return _declined("past-ceiling", f"The ceiling of {pairing} is a height the gate reads with its summary.")
+        ceiling = floor.seconds(inputs)
     return ceiling if raised is None else max(ceiling, raised)
 
 
@@ -239,12 +279,13 @@ def ceiling_of(pairing: str, inputs: Inputs, ceilings: Ceilings | None) -> int |
 
 
 def floor_missing(pairing: str, inputs: Inputs) -> Declined | None:
-    """floor-missing, naming the input, where the pairing's rail serves a floor and inputs does not hold it as a
-    positive safe integer."""
+    """floor-missing, naming the first input, in the table's order, where the pairing's rail serves a floor and inputs
+    does not hold that input in its form."""
     floor = _FLOORS.get(pairing)
-    if floor is None or _is_positive_safe(inputs.get(floor.input)):
-        return None
-    return _declined("floor-missing", floor.input)
+    for name, form in () if floor is None else floor.inputs:
+        if not form(inputs.get(name)):
+            return _declined("floor-missing", name)
+    return None
 
 
 def _namespace(network: str | None) -> str:

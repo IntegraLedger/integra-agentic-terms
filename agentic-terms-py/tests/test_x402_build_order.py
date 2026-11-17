@@ -37,6 +37,19 @@ CCD = load("x402-exact-ccd.json")["fixed"]
 XRPL = load("x402-exact-xrpl.json")["fixed"]
 XLM = load("x402-exact-stellar-precondition.json")
 LN = load("x402-exact-lnbtc.json")["fixed"]
+GW = load("x402-exact-eip155-gateway-batched.json")
+
+
+def _gw_row(case: str) -> tuple[str, Any, str]:
+    """The batched build's own refusal row whose case starts with case: its one member set, and its code."""
+    row = next(r for r in GW["build"] if r["case"].startswith(case))
+    ((member, value),) = row["set"].items()
+    return member, value, row["expect"]
+
+
+# The batched build's members: from as the EVM builds read it, and its file's rows for a served minimum validity of 0
+# and a now of 599, from which no validAfter 600 seconds earlier is signed.
+GW_BAD = [("from", "0x12", "x402/option-malformed"), _gw_row("a served minimum validity of 0"), _gw_row("a now of 599")]
 
 EVM_MEMBERS = {"from": EVM["payer"], "now": EVM["now"]}
 EVM_BAD = [("from", "0x12", "x402/option-malformed"), ("now", -1, "x402/option-malformed")]
@@ -64,6 +77,11 @@ ROWS: dict[str, tuple[dict[str, Any], str, list[tuple[str, Any, str]]]] = {
     "x402/upto/eip155/permit2": (EVM_MEMBERS, "x402/payload-malformed", EVM_BAD),
     "x402/exact/eip155/erc7710": (EVM_MEMBERS, "x402/payload-malformed", EVM_BAD),
     "x402/exact/eip155/erc7710-salt": (EVM_MEMBERS, "x402/payload-malformed", EVM_BAD),
+    "x402/exact/eip155/gateway-batched": (
+        {"from": GW["fixed"]["payer"], "now": GW["fixed"]["now"], "minValiditySeconds": GW["fixed"]["minValiditySeconds"]},
+        "x402/payload-malformed",
+        GW_BAD,
+    ),
     "x402/auth-capture/eip155/eip3009": (EVM_MEMBERS, "x402/payload-malformed", EVM_BAD),
     "x402/auth-capture/eip155/permit2": (EVM_MEMBERS, "x402/payload-malformed", EVM_BAD),
     "x402/batch-settlement/eip155": (

@@ -226,6 +226,7 @@ PIECE_ONLY: Mapping[str, str] = {
     "x402/exact/cardano": "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H",
     "x402/exact/cardano/lock": "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H",
     "x402/exact/ccd": "D3's recorded transaction is bound to H(abc); no signer here makes one for another H",
+    "x402/exact/eip155/gateway-batched": "paid over A through the gate in TypeScript, with lcp's advertise",
     "x402/exact/hedera": _NO_RUN,
     "x402/exact/hedera/transfer-executor": _NO_RUN,
     "x402/exact/polkadot/lcp-assets-remark": "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H",

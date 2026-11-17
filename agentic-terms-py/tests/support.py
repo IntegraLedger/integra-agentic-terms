@@ -64,7 +64,6 @@ O: dict[str, Any] = D["accepts"][0]
 # binding and piece removes it here.
 PENDING: frozenset[str] = frozenset(
     {
-        "x402/exact/eip155/gateway-batched",
     }
 )
 

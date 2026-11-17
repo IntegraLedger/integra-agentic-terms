@@ -6,7 +6,7 @@ The ATR hash rides as the nonce of an EIP-3009 TransferWithAuthorization. Nothin
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from .._core import AtrHash, agreement_value, is_hash
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
@@ -77,8 +77,26 @@ def _payable(option: Mapping[str, Any]) -> bool:
     )
 
 
-# The pairing's one option filter, which read, build and bound apply: an option the pairing names and build can pay.
-_FILTER = filter_of(passes, _payable)
+_SERVED = filter_of(passes, _payable)
+
+
+def _filter(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    """The pairing's one option filter, which read, build and bound apply: an option the pairing names and build can
+    pay. An option it names that is signed under another domain than the token's, Circle Gateway's batched option
+    (extra.name GatewayWalletBatched) or any whose extra.verifyingContract is present and not its asset, compared without
+    regard to case, is x402/batched-not-eip3009: signed under the token's domain it would be valid nowhere."""
+    if passes(option):
+        extra = option.get("extra", {})
+        verifying, asset = extra.get("verifyingContract"), option.get("asset")
+        if extra.get("name") == "GatewayWalletBatched" or (
+            "verifyingContract" in extra
+            and not (isinstance(verifying, str) and isinstance(asset, str) and verifying.lower() == asset.lower())
+        ):
+            return Refusal("x402/batched-not-eip3009")
+    return _SERVED(option)
+
+
+_FILTER = _filter
 _READ = read_for(_FILTER)
 
 

@@ -46,6 +46,7 @@ from ._summary_sol import (
     xrpl_session_open,
 )
 from ._summary_hash import near_delegate, near_start, ton_w5, tron_txid
+from ._summary_gateway import gateway_batched
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
@@ -188,6 +189,7 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "mpp/charge/lightning": SummaryEntry(show=bolt11_pay),
     "mpp/session/lightning": SummaryEntry(show=bolt11_deposit),
     "mpp/session/tempo": SummaryEntry(show=tempo_open),
+    "x402/exact/eip155/gateway-batched": SummaryEntry(show=gateway_batched),
 }
 
 

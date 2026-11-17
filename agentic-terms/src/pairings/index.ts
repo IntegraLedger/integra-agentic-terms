@@ -73,6 +73,7 @@ import { spendPermissionsEip155Piece } from "./spend-permissions-eip155.js";
 import { mppChargeTempoSplitMemo, mppChargeTempoSplitMemoPush } from "./mpp-charge-tempo-split-memo.js";
 import { mppSessionSolanaMemo } from "./mpp-session-solana-memo.js";
 import { mppSessionSolanaStock } from "./mpp-session-solana-stock.js";
+import { x402ExactEip155GatewayBatched } from "./x402-exact-eip155-gateway-batched.js";
 
 /** The buyer piece for each pairing the gate pays, by pairing id. */
 export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiece>([
@@ -152,4 +153,5 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["mpp/charge/tempo/split-memo/push", mppChargeTempoSplitMemoPush],
   ["mpp/session/solana/memo", mppSessionSolanaMemo],
   ["mpp/session/solana/stock", mppSessionSolanaStock],
+  ["x402/exact/eip155/gateway-batched", x402ExactEip155GatewayBatched],
 ]);

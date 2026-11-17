@@ -365,9 +365,44 @@ export async function requestHeld(binding: Binding, atr: unknown, resourceReques
 /** A pairing's ceiling where `ceilings` raises none and no service serves a floor: 600 seconds. */
 export const DEFAULT_CEILING_S = 600;
 
-/** The rails whose payment service serves a floor: the input that carries it, and the service's own margin. */
-const FLOORS: ReadonlyMap<string, { readonly input: string; readonly margin: number }> = new Map([
-  ["x402/exact/eip155/gateway-batched", { input: "minValiditySeconds", margin: 100 }],
+/** A served floor's input: the name `inputs` carries it under, and whether a value has the form the profile gives it. */
+type FloorInput = readonly [name: string, form: (v: unknown) => boolean];
+
+/**
+ * A rail whose payment service serves a floor: the inputs that carry it, each with its form, in the order the gate
+ * names a missing one; and, where the ceiling the floor gives is in seconds, that ceiling, the floor plus the service's
+ * own margin. A rail whose ceiling is a height (Circle Gateway's burn intent, its `maxBlockHeight` at the served height
+ * plus the margin in blocks) states none here, and its ceiling is read with its request's summary.
+ */
+interface Floor {
+  readonly inputs: readonly FloorInput[];
+  readonly seconds?: (inputs: Inputs) => number;
+}
+
+/** A decimal string below 2^256, as the protocol package's Gateway build reads `burnIntentExpirationHeight` and `withdrawalDelay`. */
+function isUint256Decimal(v: unknown): boolean {
+  return typeof v === "string" && /^[0-9]{1,78}$/.test(v) && BigInt(v) < 1n << 256n;
+}
+
+/** The rails whose payment service serves a floor (the profile's rule 9 table), by pairing. */
+const FLOORS: ReadonlyMap<string, Floor> = new Map<string, Floor>([
+  [
+    "x402/exact/eip155/gateway-batched",
+    // Circle Gateway's `/supported` serves `minValiditySeconds`; Circle's margin is 100 seconds.
+    { inputs: [["minValiditySeconds", (v) => isPositiveSafe(v)]], seconds: (inputs) => (inputs["minValiditySeconds"] as number) + 100 },
+  ],
+  [
+    "mpp/charge/usdc/gateway",
+    // The network the burn intent spends from, the height Circle Gateway's `GET /v1/info` serves for it, and that
+    // network's Gateway Wallet's `withdrawalDelay()`, as the protocol package's Gateway build takes them.
+    {
+      inputs: [
+        ["sourceNetwork", (v) => typeof v === "string" && v !== ""],
+        ["burnIntentExpirationHeight", isUint256Decimal],
+        ["withdrawalDelay", isUint256Decimal],
+      ],
+    },
+  ],
 ]);
 
 /**
@@ -375,7 +410,7 @@ const FLOORS: ReadonlyMap<string, { readonly input: string; readonly margin: num
  * 9): the names `inputs` carries them under, which a host reads from the payment service and gives the gate.
  */
 export const FLOOR_INPUTS: ReadonlyMap<string, readonly string[]> = new Map(
-  [...FLOORS].map(([pairing, floor]) => [pairing, Object.freeze([floor.input])] as const),
+  [...FLOORS].map(([pairing, floor]) => [pairing, Object.freeze(floor.inputs.map(([name]) => name))] as const),
 );
 
 /**
@@ -420,9 +455,11 @@ function secondsOf(pairing: string, inputs: Inputs, raised: number | undefined):
   const floor = FLOORS.get(pairing);
   let ceiling = DEFAULT_CEILING_S;
   if (floor !== undefined) {
-    const given = inputs[floor.input];
-    if (!isPositiveSafe(given)) return declined("floor-missing", floor.input);
-    ceiling = given + floor.margin;
+    const missing = floorMissing(pairing, inputs);
+    if (missing !== undefined) return missing;
+    // A ceiling that is a height is never 600 seconds: it is read with the request's summary, so none is given here.
+    if (floor.seconds === undefined) return declined("past-ceiling", `The ceiling of ${pairing} is a height the gate reads with its summary.`);
+    ceiling = floor.seconds(inputs);
   }
   return raised !== undefined ? Math.max(ceiling, raised) : ceiling;
 }
@@ -438,13 +475,12 @@ export function ceilingOf(pairing: string, inputs: Inputs, ceilings: Ceilings | 
 }
 
 /**
- * `floor-missing`, naming the input, where the pairing's rail serves a floor and `inputs` does not hold it as a positive
- * safe integer.
+ * `floor-missing`, naming the first input, in the table's order, where the pairing's rail serves a floor and `inputs`
+ * does not hold that input in its form.
  */
 export function floorMissing(pairing: string, inputs: Inputs): Declined | undefined {
-  const floor = FLOORS.get(pairing);
-  if (floor === undefined || isPositiveSafe(inputs[floor.input])) return undefined;
-  return declined("floor-missing", floor.input);
+  const missing = FLOORS.get(pairing)?.inputs.find(([name, form]) => !form(inputs[name]));
+  return missing === undefined ? undefined : declined("floor-missing", missing[0]);
 }
 
 /**

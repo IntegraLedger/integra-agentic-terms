@@ -5,6 +5,7 @@ from it is that hash, or, for a pairing whose proof is the agreement payment, wi
 from ._agreement import agree
 from ._channels import ChannelHold, Within, open_channel, record_charge, within
 from ._core import MAX_ATR_BYTES, AtrHash, atr_hash, hash_equals
+from ._checks import FLOOR_INPUTS
 from ._gate import check, confirm, finish, transact
 from ._types import (
     Advertised,
@@ -90,6 +91,7 @@ from .bindings.x402_evm import (
     X402_UPTO_EIP155_PERMIT2,
 )
 from .bindings.x402_exact_eip155_eip3009 import X402ExactEip155Eip3009
+from .bindings.x402_exact_eip155_gateway_batched import X402ExactEip155GatewayBatched
 from .bindings.mpp_charge_solana import MPP_CHARGE_SOLANA, MPP_CHARGE_SOLANA_UNSPONSORED, MPP_CHARGE_USDC_SOLANA
 from .bindings.mpp_subscription_solana import MppSubscriptionSolana
 from .bindings.mpp_session_solana import MppSessionSolanaMemo, MppSessionSolanaStock
@@ -122,6 +124,7 @@ from .bindings.mpp_charge_tempo_split_memo import MppChargeTempoSplitMemo, MppCh
 
 # A binding marked type: ignore[assignment] has a build and bound that take no act yet (Binding.build, Binding.bound).
 X402_EXACT_EIP155_EIP3009: Binding = X402ExactEip155Eip3009()
+X402_EXACT_EIP155_GATEWAY_BATCHED: Binding = X402ExactEip155GatewayBatched()
 X402_EXACT_HEDERA: Binding = X402ExactHedera()
 X402_EXACT_HEDERA_TRANSFER_EXECUTOR: Binding = X402ExactHederaExecutor()
 X402_EXACT_NEAR: Binding = X402ExactNear()
@@ -203,6 +206,7 @@ __all__ = [
     "CARD_SELLER_REFERENCE",
     "CARD_VISA_TAP",
     "CARD_VISA_VIC",
+    "FLOOR_INPUTS",
     "MAX_ATR_BYTES",
     "MPP_CHARGE_CARD",
     "MPP_CHARGE_EVM_AUTHORIZATION",
@@ -241,6 +245,7 @@ __all__ = [
     "X402_EXACT_CASPER",
     "X402_EXACT_CCD",
     "X402_EXACT_EIP155_EIP3009",
+    "X402_EXACT_EIP155_GATEWAY_BATCHED",
     "X402_EXACT_EIP155_ERC7710",
     "X402_EXACT_EIP155_ERC7710_SALT",
     "X402_EXACT_EIP155_PERMIT2",

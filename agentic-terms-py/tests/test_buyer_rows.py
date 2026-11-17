@@ -85,7 +85,8 @@ def test_b2_the_plant(file: str, row: dict[str, Any], monkeypatch: pytest.Monkey
     if "now" in given:
         monkeypatch.setattr(_gate, "_now", lambda: given["now"])
     binding = BINDINGS[row["pairing"]]
-    inputs = given.get("inputs", {})
+    # A row that names the served minimum validity its build needs gives it as the gate's floor input.
+    inputs = {**given.get("inputs", {}), **({"minValiditySeconds": given["minValiditySeconds"]} if "minValiditySeconds" in given else {})}
     served = bytes.fromhex(given["servesHex"])
 
     def never(request: Any) -> Any:
