@@ -6,12 +6,14 @@
 // files hold no such rows: their subjects are B2's challenge with the member each pairing's checks read set to a value
 // they refuse (card: `externalId`, absent or a string; Stripe: `methodDetails.metadata`, an object within Stripe's
 // bounds). The link serves `abc`, whose SHA-256 (FIPS 180-2 B.1) is each document's H. Every expected value is lcp's:
-// BX1's decline and `pairingsOf`'s answer for the changed card and Stripe challenges.
+// BX1's decline and `pairingsOf`'s answer for the changed card and Stripe challenges. A row whose pairing has no buyer
+// piece yet (buyer-rows.test.ts's PENDING) is answered pairing-not-supported, before any fetch and with no signer call.
 import { readdirSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { BINDINGS } from "@integraledger/lcp";
 import { pairingsOf, pairingsOfPlaced, type MppChallenge } from "@integraledger/lcp/mpp";
 import { confirm, transact, type Binding, type Inputs } from "../src/index.js";
+import { PIECES } from "../src/pairings/index.js";
 import { ABC, counting, serving, vectors } from "./support.js";
 
 interface B2 {
@@ -56,7 +58,10 @@ afterEach(() => {
   Date.now = realNow;
 });
 
-/** The gate given `challenge` as the sole challenge, with the B2 row's account, inputs and time. */
+/**
+ * The gate given `challenge` as the sole challenge, with the B2 row's account, inputs and time: no payable option, or,
+ * for a pairing with no buyer piece yet, pairing-not-supported.
+ */
 async function offeredAlone(b2: B2, challenge: MppChallenge): Promise<void> {
   const now = b2.input.now;
   if (now !== undefined) Date.now = () => now * 1000;
@@ -67,10 +72,17 @@ async function offeredAlone(b2: B2, challenge: MppChallenge): Promise<void> {
     throw new Error("the signer was called");
   });
   const out = await transact([structuredClone(challenge)], binding, signer, fetch, { inputs });
-  expect("decline" in out && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
-  expect(signer.requests).toEqual([]);
   const confirmed = await confirm([structuredClone(challenge)], binding, b2.input.account, fetch, inputs);
-  expect("decline" in confirmed && confirmed.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
+  if (!PIECES.has(b2.pairing)) {
+    expect(["decline" in out && out.decline.code, "decline" in confirmed && confirmed.decline.code]).toEqual([
+      "pairing-not-supported",
+      "pairing-not-supported",
+    ]);
+  } else {
+    expect("decline" in out && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
+    expect("decline" in confirmed && confirmed.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
+  }
+  expect(signer.requests).toEqual([]);
   expect(fetch.calls).toBe(0);
 }
 

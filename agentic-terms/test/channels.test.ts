@@ -806,7 +806,7 @@ describe("mpp/session/tempo: the channel hold", () => {
     request: Buffer.from(f.requestV2, "utf8").toString("base64url"),
     expires: MC.fixed.expires,
   } as MppChallenge;
-  const doc = sessionTempo.advertise([challenge], H, LINK, challenge) as MppChallenge[];
+  const doc = sessionTempo.advertise([challenge], H, LINK, challenge, 0) as MppChallenge[];
   const account = `eip155:42431:${f.payer}`;
   const num = (n: number | bigint): Hex => (BigInt(n) === 0n ? "0x" : toHex(BigInt(n)));
   async function answer(r: SigningRequest): Promise<Signature> {

@@ -9,7 +9,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { TypedDataDefinition } from "viem";
 import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { transactApproved, vectors } from "./support.js";
+import { coverageNone, transactApproved, vectors } from "./support.js";
 
 const B = vectors<{
   fixed: {
@@ -29,7 +29,7 @@ const PAID_ANSWER_MS = 15_000;
 function withAgreement(): Binding {
   const real = exactEip3009.read(B.fixed.D);
   if ("refused" in real) throw new Error(real.code);
-  return { ...exactEip3009, pattern: { ...exactEip3009.pattern, publicProof: false }, read: () => ({ ...real, agreement: AG.url }) };
+  return { ...coverageNone(exactEip3009), read: () => ({ ...real, agreement: AG.url }) };
 }
 
 /** The ATR at its link; the agreement URL: 402 unpaid, and, paid, 200 with the receipt after 15 s. */

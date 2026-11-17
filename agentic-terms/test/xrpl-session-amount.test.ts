@@ -61,7 +61,8 @@ describe("mpp/session/xrpl: the challenge's amount is a u64 of drops", () => {
   for (const [name, amount] of ACCEPTED) {
     it(`${name}: offered, and the opening reaches the signer as xrpl-session-open`, async () => {
       const doc = withAmount(amount);
-      expect(pairingsOf(issued(doc))).toEqual(["mpp/session/xrpl"]);
+      // The stock session is read from the same challenge, beside the one lcp's client opens.
+      expect(pairingsOf(issued(doc))).toEqual(["mpp/session/xrpl", "mpp/session/xrpl/stock"]);
       const out = await confirm(doc, binding, B2.account, serving(ABC), B2.inputs);
       if ("decline" in out) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
       expect(out.request?.kind).toBe("xrpl-session-open");

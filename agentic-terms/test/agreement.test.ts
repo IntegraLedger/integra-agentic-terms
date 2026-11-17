@@ -2,6 +2,7 @@
 // the bounds of the agreement exchange: each paid request is bounded by min(maxTimeoutSeconds, 120) + 60 + 10 seconds,
 // the whole exchange by the agreement option's maxTimeoutSeconds + 180 seconds, a timeout or a 202 is pending and the
 // same payment is sent again after retry-after, and the end of the bound is `agreement-pending` with the signed agreement payment kept as `moved`.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashTypedData, recoverTypedDataAddress } from "viem";
@@ -28,6 +29,7 @@ import {
   type ToApprove,
   type TransactOptions,
 } from "../src/index.js";
+import { coverageNone } from "./support.js";
 
 const B = JSON.parse(
   readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"),
@@ -49,18 +51,26 @@ const AG = B.fixed.agreement;
 const AGREEMENT_URL: string = AG.url;
 const OPTION: PaymentRequirements = AG.option;
 const B6_SIGNATURE: string = row("B6").expect.signature;
+/**
+ * The agreement's own single-use value for H, which the agreement payment carries as its nonce: SHA-256 over the tag
+ * and H's 32 bytes, as x402-exact-eip155-eip3009.json's AG row defines it (tagHex, with its sha256sum value for its H).
+ */
+const TAG_HEX: string = JSON.parse(
+  readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/x402-exact-eip155-eip3009.json", import.meta.url), "utf8"),
+).AG.tagHex;
+const AGREEMENT_VALUE = `0x${createHash("sha256").update(fromHex(TAG_HEX + H.slice(2))).digest("hex")}`;
 /** The exchange bounds for the agreement option, whose maxTimeoutSeconds is 60: 130 s per paid request, 240 s in all. */
 const PAID_REQUEST_MS = (Math.min(OPTION.maxTimeoutSeconds, 120) + 60 + 10) * 1000;
 const EXCHANGE_MS = (OPTION.maxTimeoutSeconds + 180) * 1000;
 
-/** The pattern of a pairing whose payment is not itself a public proof of the hash. */
-const NO_PUBLIC_PROOF = { ...exactEip3009.pattern, publicProof: false };
+/** The x402/EVM binding as a pairing at coverage `none`, whose payment is not itself a public proof of the hash. */
+const AT_COVERAGE_NONE = coverageNone(exactEip3009);
 
 /** The x402/EVM binding as a pairing with no public proof, with `read` also giving the agreement URL. */
 function withAgreement(url: string): Binding {
   const real = exactEip3009.read(D);
   if ("refused" in real) throw new Error(real.code);
-  return { ...exactEip3009, pattern: NO_PUBLIC_PROOF, read: () => ({ ...real, agreement: url }) };
+  return { ...AT_COVERAGE_NONE, read: () => ({ ...real, agreement: url }) };
 }
 
 /** D with the agreement URL in its legal context, as a challenge mixing public-proof and other offers carries it. */
@@ -189,7 +199,7 @@ describe("confirm", () => {
   it("declines an agreement that is not a string before any fetch", async () => {
     const real = exactEip3009.read(D);
     if ("refused" in real) throw new Error(real.code);
-    const odd = { ...exactEip3009, pattern: NO_PUBLIC_PROOF, read: () => ({ ...real, agreement: 7 }) } as unknown as Binding;
+    const odd = { ...AT_COVERAGE_NONE, read: () => ({ ...real, agreement: 7 }) } as unknown as Binding;
     const fetch = seller([]);
     expect(code(await confirm(D, odd, ACCOUNT, fetch))).toBe("offer-unreadable");
     expect(fetch.calls.length).toBe(0);
@@ -225,7 +235,7 @@ describe("agreement rows", () => {
     expect(paid.length).toBe(r.expect.paidRequests);
     expect(new Set(paid).size).toBe(1);
     const sent = fromBase64Json(paid[0]!) as Eip3009Payment;
-    expect(sent.payload.authorization.nonce).toBe(H);
+    expect(sent.payload.authorization.nonce).toBe(m.nonce);
     expect(sent.payload.authorization.value).toBe(m.value);
     expect(sent.payload.signature).toBe(r.expect.agreementSignature);
     expect(sent.accepted).toEqual(OPTION);
@@ -764,7 +774,7 @@ describe("the agreement payment the agent approves", () => {
     expect(fetch.paid().length).toBe(0);
   });
 
-  it("the approved payment is signed as shown: its option's payTo, amount, asset and network, with H as the nonce", async () => {
+  it("the approved payment is signed as shown: its option's payTo, amount, asset and network, with the agreement's value as the nonce", async () => {
     const fetch = seller(row("BA1").input.agreement);
     const signer = counting();
     const first = await agree(A, AGREEMENT_URL, signer, fetch);
@@ -778,7 +788,7 @@ describe("the agreement payment the agent approves", () => {
       BigInt(first.approve.option.amount),
       first.approve.option.asset,
       first.approve.option.network,
-      H,
+      AGREEMENT_VALUE,
     ]);
     const sent = fromBase64Json(fetch.paid()[0]!) as Eip3009Payment;
     expect(sent.accepted).toEqual(first.approve.option);

@@ -88,11 +88,12 @@ const rows: [string, unknown, (r: SigningRequest) => Promise<`0x${string}`>, (ra
 describe("an EVM transfer the signer completed after the agreement's 200 is returned, not dropped", () => {
   it.each(rows)("%s", (_id, binding, answer, payload) =>
     at(X.fixed.now, async () => {
-      const doc = (binding as { advertise(d: unknown, h: string, l: string, o: unknown, a: string): unknown }).advertise(
+      const doc = (binding as { advertise(d: unknown, h: string, l: string, o: unknown, p: number, a: string): unknown }).advertise(
         [challenge],
         H,
         LINK,
         challenge,
+        0,
         AGREEMENT_URL,
       );
       const answers: `0x${string}`[] = [];

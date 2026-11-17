@@ -1,15 +1,14 @@
-// B2 and B6 for the Casper, Concordium and Lightning pairings. Expected values are their vector files'; the signer
+// B2 and B6 for the Casper, Concordium and MPP Lightning pairings. Expected values are their vector files'; the signer
 // answers with the values those files publish.
-import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { assemble, type AtrHash } from "@integraledger/lcp";
+import type { AtrHash } from "@integraledger/lcp";
 import { exactCasper } from "@integraledger/lcp/casper";
-import { exactCcd } from "@integraledger/lcp/ccd";
-import { chargeLightning, decodeBolt11, exactLnbtc, exactLnbtcNamed, sessionLightning } from "@integraledger/lcp/lightning";
+import { CCD_EXPIRY_MARGIN, exactCcd } from "@integraledger/lcp/ccd";
+import { chargeLightning, sessionLightning } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import { confirm, finish, transact, type Binding } from "../src/index.js";
-import { buildAndSign, code, counting, H, isDeclined, LINK, offered, serving, vectors, type Pairing } from "./support.js";
+import { confirm, type Binding } from "../src/index.js";
+import { buildAndSign, code, H, LINK, serving, vectors, type Pairing } from "./support.js";
 
 const NOW = 1_790_000_000;
 async function at<T>(run: () => Promise<T>): Promise<T> {
@@ -22,9 +21,10 @@ async function at<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-type Advertises = { advertise(doc: unknown, h: string, link: string, offer: unknown): unknown };
-function placed<T>(binding: Binding, doc: unknown, offer: unknown, h: AtrHash = H, link = LINK): T {
-  const out = (binding as unknown as Advertises).advertise(doc, h, link, offer);
+type Advertises = { advertise(doc: unknown, h: string, link: string, offer: unknown, ...rest: unknown[]): unknown };
+/** `rest` is what the pairing's `advertise` takes after the offer: on MPP the challenge's position. */
+function placed<T>(binding: Binding, doc: unknown, offer: unknown, h: AtrHash = H, link = LINK, ...rest: unknown[]): T {
+  const out = (binding as unknown as Advertises).advertise(doc, h, link, offer, ...rest);
   if (typeof out === "object" && out !== null && "refused" in out) throw new Error(JSON.stringify(out));
   return out as T;
 }
@@ -81,77 +81,9 @@ describe("x402/exact/ccd", () => {
         expect(Buffer.from(r.memo).toString("hex")).toBe(V.D1.expectCcdMemo);
         expect(r.sponsor).toBe(f.sponsor);
         expect(r.toAddress).toBe(f.payee);
-        expect(r.expiresBy).toBe(NOW + f.O.maxTimeoutSeconds);
+        // The stock client signs now plus maxTimeoutSeconds less its margin (the vector file's expiresBy, 1790000055).
+        expect(r.expiresBy).toBe(NOW + f.O.maxTimeoutSeconds - CCD_EXPIRY_MARGIN);
       });
-    }));
-});
-
-type Ln = {
-  fixed: { O: PaymentRequirements; resource: object; preimage: string; payee: string };
-  L4: { invoice: string };
-  L7?: { invoice: string; expectAmountMsat: string };
-};
-describe("x402/exact/lnbtc", () => {
-  const V = vectors<Ln>("x402-exact-lnbtc.json");
-  const f = V.fixed;
-  const p: Pairing = {
-    binding: exactLnbtc,
-    doc: x402Doc(exactLnbtc, f.resource, f.O),
-    account: `${f.O.network}:${f.payee}`,
-    // The buyer's own request: x402's lnbtc example, GET of the vector's resource with an empty body.
-    inputs: { request: { method: "GET", url: "https://api.example.com/article/A" } },
-    answer: async () => f.preimage,
-  };
-  it("B6: the node pays the option's invoice, whose m is H; the preimage completes a payment bound to H", () =>
-    at(async () => {
-      await buildAndSign(p, (r) => {
-        expect(r).toEqual({ kind: "bolt11-pay", invoice: (f.O.extra as { invoice: string }).invoice });
-      });
-    }));
-  // L7: L4 with its amount written 1 followed by 4300 zeros of nanobitcoin, its checksum recomputed. The amount is the
-  // file's expectAmountMsat; the signature is not verified, so the other fields are L4's.
-  it("L7: an invoice whose amount has 4,301 digits decodes, its amount that integer times 100 millisatoshi", async () => {
-    expect(V.L7, "x402-exact-lnbtc.json holds L7").toBeDefined();
-    const b = await decodeBolt11(V.L7!.invoice);
-    const l4 = await decodeBolt11(V.L4.invoice);
-    if ("refused" in b || "refused" in l4) throw new Error(JSON.stringify([b, l4]));
-    expect(b.amountMsat?.toString()).toBe(V.L7!.expectAmountMsat);
-    expect({ ...b, amountMsat: l4.amountMsat }).toEqual(l4);
-  });
-});
-
-describe("x402/exact/lnbtc/invoice-named", () => {
-  const V = vectors<{
-    fixed: { O_N: PaymentRequirements; resource: object; atrId: string; request: object; preimage: string; payee: string };
-    L6: { expectAtrLength: number; expectH_N: AtrHash; expectBuild: object };
-  }>("x402-exact-lnbtc-invoice-named.json");
-  const f = V.fixed;
-  async function atrN() {
-    const [slot, value] = exactLnbtcNamed.tie([f.O_N], f.request as never);
-    const a = await assemble(f.atrId, [slot, value], []);
-    if ("refused" in a) throw new Error(a.code);
-    return a;
-  }
-  it("B2 · plant and B6: the ATR that names the invoice; the node pays it; other bytes are declined unsigned", () =>
-    at(async () => {
-      const a = await atrN();
-      expect(a.bytes.length).toBe(V.L6.expectAtrLength);
-      expect(a.atrHash).toBe(V.L6.expectH_N);
-      const link = `https://atr.seller.example/${randomUUID()}`;
-      const doc = x402Doc(exactLnbtcNamed, f.resource, f.O_N, a.atrHash, link);
-      const account = `${f.O_N.network}:${f.payee}`;
-      const signer = counting(account, async () => f.preimage);
-      // The buyer's own request: x402's lnbtc example, GET of the vector's resource with an empty body.
-      const inputs = { request: { method: "GET", url: "https://api.example.com/article/A" } };
-      expect(code(await transact(doc, exactLnbtcNamed, signer, serving(new TextEncoder().encode("abd")), { inputs }))).toBe("hash-mismatch");
-      expect(signer.requests.length).toBe(0);
-
-      const confirmed = await confirm(doc, offered(exactLnbtcNamed), account, serving(a.bytes), inputs);
-      if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
-      expect(confirmed.request).toEqual(V.L6.expectBuild);
-      const done = await finish(a.bytes, JSON.parse(JSON.stringify(confirmed.chosen)), f.preimage, exactLnbtcNamed);
-      if (isDeclined(done) || !("signed" in done)) throw new Error("not signed");
-      expect(done.h).toBe(a.atrHash);
     }));
 });
 
@@ -159,7 +91,7 @@ const b64u = (s: string) => Buffer.from(s, "utf8").toString("base64url");
 type LnMpp = { challenge: Omit<MppChallenge, "request">; request: object };
 function lnChallenges(binding: Binding, row: LnMpp): MppChallenge[] {
   const issued = { ...row.challenge, request: b64u(JSON.stringify(row.request)) } as MppChallenge;
-  return placed<MppChallenge[]>(binding, [issued], issued);
+  return placed<MppChallenge[]>(binding, [issued], issued, H, LINK, 0);
 }
 
 describe("mpp/charge/lightning and mpp/session/lightning", () => {

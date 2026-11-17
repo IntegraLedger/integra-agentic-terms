@@ -17,6 +17,7 @@ import { exactTronMemo } from "@integraledger/lcp/tron";
 import { exactTvm } from "@integraledger/lcp/tvm";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { confirm, transact, type Binding, type Presented, type SigningRequest } from "../src/index.js";
+import { PIECES } from "../src/pairings/index.js";
 import {
   buildAndSign,
   code,
@@ -30,16 +31,22 @@ import {
   type Pairing,
 } from "./support.js";
 
+/** The option a payment answers, as its `accepted` names it: what the protocol package's `reference` takes beside it. */
+const acceptedOf = (payment: unknown): unknown => (payment as { accepted?: unknown }).accepted;
+
 /** U+FEFF in UTF-8. */
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 type Doc = PaymentRequired & { extensions: { legalContext: { info: { legalContextUrl: string } } } };
 
-/** The seller's document for the option, as the pairing's `advertise` places H and the link. */
-function docOf(binding: Binding, option: PaymentRequirements, resource: { url: string }): Doc {
+/**
+ * The seller's document for the option, as the pairing's `advertise` places H and the link. `rest` is what the
+ * pairing's `advertise` takes after the offer: on Cardano the `coinsPerUtxoByte` protocol parameter its floor reads.
+ */
+function docOf(binding: Binding, option: PaymentRequirements, resource: { url: string }, ...rest: unknown[]): Doc {
   const base = { x402Version: 2, resource, accepts: [option] } as PaymentRequired;
-  const placed = (binding as unknown as { advertise(d: PaymentRequired, h: string, l: string, o: unknown): unknown })
-    .advertise(base, H, LINK, option);
+  const placed = (binding as unknown as { advertise(d: PaymentRequired, h: string, l: string, o: unknown, ...r: unknown[]): unknown })
+    .advertise(base, H, LINK, option, ...rest);
   if (typeof placed === "object" && placed !== null && "refused" in placed) throw new Error(JSON.stringify(placed));
   return placed as Doc;
 }
@@ -137,7 +144,7 @@ const nearRow: Row = (() => {
     after: async (signed) => {
       const s = signed as unknown as { payload: { signedDelegateAction: string } };
       expect(s.payload.signedDelegateAction).toBe(NEAR.V2.expectSignedDelegateAction);
-      expect(await exactNear.reference(signed)).toEqual(NEAR.V2.expectReference);
+      expect(await exactNear.reference(signed, acceptedOf(signed) as never)).toEqual(NEAR.V2.expectReference);
     },
     otherNetwork: `near:mainnet:${f.payer}`,
   };
@@ -197,7 +204,7 @@ const tronRow: Row = (() => {
     after: async (signed) => {
       const s = signed as unknown as { payload: { transaction: string } };
       expect(s.payload.transaction).toBe(TRON.V2.expectTransactionHex);
-      expect(await exactTronMemo.reference(signed)).toEqual(TRON.V3.expectReference);
+      expect(await exactTronMemo.reference(signed, acceptedOf(signed) as never)).toEqual(TRON.V3.expectReference);
     },
     otherNetwork: `tron:3448148188:${f.payer}`,
   };
@@ -254,7 +261,7 @@ const tvmRow: Row = (() => {
       expect(sig.startsWith(TVM.V2.expectSignature.prefix) && sig.endsWith(TVM.V2.expectSignature.suffix)).toBe(true);
     },
     after: async (signed) => {
-      expect(await exactTvm.reference(signed)).toEqual(TVM.V3.expectReference);
+      expect(await exactTvm.reference(signed, acceptedOf(signed) as never)).toEqual(TVM.V3.expectReference);
     },
     otherNetwork: `tvm:-3:${f.wallet.replace(":", "%3A")}`,
   };
@@ -279,7 +286,7 @@ const tvmUndeployedRow: Row = (() => {
       expect(ed25519Sign(null, r.hash, key).toString("hex")).toBe(W.expectSignature);
     },
     after: async (signed) => {
-      const ref = await exactTvm.reference(signed as never);
+      const ref = await exactTvm.reference(signed as never, acceptedOf(signed) as never);
       if ("refused" in ref) throw new Error(ref.code);
       expect(ref.transferBodyHash).toBe(`0x${W.expectTransferBodyHash}`);
       // The message carries the state init: its code cell's 32 bits, 0xdeadbeef, are in the BoC.
@@ -331,7 +338,7 @@ const starknetRow: Row = (() => {
     },
     inspect: checkRequest,
     after: async (signed) => {
-      expect(await exactStarknet.reference(signed)).toEqual(SN.S4.expectReference);
+      expect(await exactStarknet.reference(signed, acceptedOf(signed) as never)).toEqual(SN.S4.expectReference);
     },
     otherNetwork: `starknet:SN_MAIN:${f.from}`,
   };
@@ -374,7 +381,7 @@ const polkadotRow: Row = (() => {
       expect(toHex(ss58Decode(DOT_PAYER) as Uint8Array)).toBe(`0x${DOT.V3.extrinsic.slice(10, 74)}`);
     },
     after: async (signed) => {
-      expect(await exactPolkadotRemark.reference(signed as never)).toEqual(DOT.V3.expectReference);
+      expect(await exactPolkadotRemark.reference(signed as never, acceptedOf(signed) as never)).toEqual(DOT.V3.expectReference);
     },
     otherNetwork: `polkadot:67f9723393ef76214df0118c34bbbd3d:${DOT_PAYER}`,
   };
@@ -384,6 +391,7 @@ const polkadotRow: Row = (() => {
 
 const SUI = vectors<{
   fixed: { H: string; sender: string; O: PaymentRequirements; resource: { url: string } };
+  sponsored: { gasStation: string; sent: string; rows: { case: string; returned: string; sent?: null; expect: true | string }[] };
   V2: { tx: { transactionBase64: string }; expectReference: unknown };
   V3: { case: string; tx?: { transactionBase64: string; blake2b: string; digest: string }; expectBound: string }[];
   agreedRefusals: { rows: { case: string; transaction?: unknown; expect: string }[] };
@@ -426,9 +434,26 @@ describe("x402/exact/sui V3: a call whose module name is led by U+FEFF", () => {
       expect(toHex(fromBase58(tx.digest))).toBe(tx.blake2b);
       const payment = { x402Version: 2, accepted: SUI.fixed.O, payload: { signature: "AAAA", transaction: tx.transactionBase64 } };
       expect(await exactSui.bound(payment as never)).toBe(r.expectBound);
-      expect(JSON.parse(JSON.stringify(await exactSui.reference(payment as never)))).toMatchObject({ digest: tx.digest });
+      expect(JSON.parse(JSON.stringify(await exactSui.reference(payment as never, acceptedOf(payment) as never)))).toMatchObject({ digest: tx.digest });
     });
   }
+});
+
+// The sponsored path (extra.gasStation): the wallet answers the transaction it sent to the gas station beside the one
+// the station returned signed, and the piece hands both to the build's complete, which holds the returned transaction to
+// the sent one in everything but the gas data. The rows are x402-exact-sui.json's `sponsored` rows.
+describe("x402/exact/sui sponsored: the piece passes the transaction sent to the gas station to complete", () => {
+  const o = { ...SUI.fixed.O, extra: { gasStation: SUI.sponsored.gasStation } } as PaymentRequirements;
+  const required = docOf(exactSui, o, SUI.fixed.resource);
+  const chosen = { pairing: "x402/exact/sui", choice: { required, accepted: required.accepts[0]! }, ref: "r".repeat(32) } as never;
+  const piece = PIECES.get("x402/exact/sui")!;
+  it.each(SUI.sponsored.rows.map((r) => [r.case, r] as const))("%s", async (_case, row) => {
+    const u = await (exactSui.build as (c: unknown, h: string) => Promise<unknown>)({ required, accepted: required.accepts[0] }, SUI.fixed.H);
+    const sent = row.sent === null ? {} : { sent: SUI.sponsored.sent };
+    const got = (await piece.complete(u, { signature: "AAAA", transaction: row.returned, ...sent }, chosen)) as Record<string, any>;
+    const answer = got["refused"] === true ? got["code"] : got["payload"]["transaction"] === row.returned;
+    expect(answer).toBe(row.expect);
+  });
 });
 
 const suiRow: Row = (() => {
@@ -455,7 +480,7 @@ const suiRow: Row = (() => {
     },
     inspect: checkRequest,
     after: async (signed) => {
-      expect(JSON.parse(JSON.stringify(await exactSui.reference(signed)))).toEqual(SUI.V2.expectReference);
+      expect(JSON.parse(JSON.stringify(await exactSui.reference(signed, acceptedOf(signed) as never)))).toEqual(SUI.V2.expectReference);
     },
     otherNetwork: `sui:mainnet:${f.sender}`,
   };
@@ -495,7 +520,7 @@ describe("x402/exact/aptos agreedRefusals: a transaction beyond the BMP", () => 
       const text = repeated(r.transaction)!;
       expect([text.length % 4, codePoints(text) % 4 !== 0]).toEqual([0, true]);
       const payment = { x402Version: 2, accepted: APT.fixed.O, payload: { transaction: text } };
-      expect(await exactAptos.reference(payment as never)).toEqual({ refused: true, code: r.expect });
+      expect(await exactAptos.reference(payment as never, acceptedOf(payment) as never)).toEqual({ refused: true, code: r.expect });
     });
   }
 });
@@ -580,7 +605,7 @@ const aptosRow: Row = (() => {
       expect(`0x${sha256Hex(raw)}`).toBe(f.fixtureF.rawTransactionSha256);
     },
     after: async (signed) => {
-      expect(JSON.parse(JSON.stringify(await exactAptos.reference(signed)))).toEqual(APT.V2.expectReference);
+      expect(JSON.parse(JSON.stringify(await exactAptos.reference(signed, acceptedOf(signed) as never)))).toEqual(APT.V2.expectReference);
     },
     otherNetwork: `aptos:2:${f.fixtureF.sender}`,
   };
@@ -592,6 +617,7 @@ const ADA = vectors<{
   fixed: { O: PaymentRequirements; nonce: string; resource: { url: string } };
   V1: { auxiliaryDataHex: string };
   V2: { transactionBase64: string; expectReference: unknown };
+  V8: { coinsPerUtxoByte: string };
   agreedRefusals: { rows: { case: string; transaction?: { $repeat: [string, number] }; expect: string }[] };
 }>("x402-exact-cardano.json");
 
@@ -624,7 +650,8 @@ const cardanoRow: Row = (() => {
     now: 1790000000,
     p: {
       binding: exactCardano,
-      doc: docOf(exactCardano, f.O, f.resource),
+      // The offer's floor reads the ledger's coinsPerUtxoByte, V8's published 4,310 lovelace a byte.
+      doc: docOf(exactCardano, f.O, f.resource, BigInt(ADA.V8.coinsPerUtxoByte)),
       account: `${f.O.network}:${address}`,
       // The wallet answers V2, the vectors' transaction whose body commits to V1's auxiliary data.
       answer: async (r) => {
@@ -634,7 +661,7 @@ const cardanoRow: Row = (() => {
     },
     inspect: checkRequest,
     after: async (signed) => {
-      expect(JSON.parse(JSON.stringify(await exactCardano.reference(signed)))).toEqual(ADA.V2.expectReference);
+      expect(JSON.parse(JSON.stringify(await exactCardano.reference(signed, acceptedOf(signed) as never)))).toEqual(ADA.V2.expectReference);
     },
     otherNetwork: `cardano:mainnet:${address}`,
   };

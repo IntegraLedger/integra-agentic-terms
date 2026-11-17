@@ -36,7 +36,7 @@ export const LINK = FIXED.link;
 export const fromHex = (h: string): Uint8Array => Uint8Array.from(Buffer.from(h.replace(/^0x/, ""), "hex"));
 export const toHex = (b: Uint8Array): `0x${string}` => `0x${Buffer.from(b).toString("hex")}`;
 
-/** The agreement URL a `publicProof: false` pairing's offer names, and its receipt once the agreement is recorded. */
+/** The agreement URL a coverage-`none` pairing's offer names, and its receipt once the agreement is recorded. */
 export const AGREEMENT_URL = FIXED.agreementUrl;
 /** The agreement resource's receipt for `h`. */
 export const receiptFor = (h: string) => ({ atrHash: h, agreed: true, network: "eip155:84532", transaction: `0x${"cd".repeat(32)}` });
@@ -74,13 +74,23 @@ export function counting(account: string, answer: (r: SigningRequest) => Promise
   };
 }
 
-/** Whether the pairing's payment is itself a public proof of the hash. */
+/** Whether the pairing's payment is itself a public proof of the hash: its data states coverage `full`. */
 export function isPublicProof(binding: Binding): boolean {
-  return (binding as { pattern?: { publicProof?: unknown } }).pattern?.publicProof === true;
+  return (binding as { data?: { coverage?: unknown } }).data?.coverage === "full";
 }
 
 /**
- * The binding a seller's offer is read through: for a pairing whose payment is not a public proof, the offer also names
+ * The binding as a pairing at coverage `none`, whose payment carries H only as a link, so its agreement is paid first.
+ * Its data holds no `agreement`, which the protocol package states only at coverage `full`; every other member is the
+ * binding's own.
+ */
+export function coverageNone<B>(binding: B): B {
+  const { agreement: _agreement, ...data } = (binding as unknown as { data: Record<string, unknown> }).data;
+  return { ...binding, data: { ...data, coverage: "none", link: "h", agreementOn: "any" } } as B;
+}
+
+/**
+ * The binding a seller's offer is read through: for a pairing at coverage `none`, the offer also names
  * the agreement URL, as the seller's stack places it beside the carriers.
  */
 export function offered(binding: Binding): Binding {

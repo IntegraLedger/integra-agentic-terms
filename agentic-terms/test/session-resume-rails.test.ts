@@ -1,20 +1,11 @@
-// The seller's own within challenge on a held Hedera, Solana or XRPL session: it issues it itself, with its own id, no
-// legal context, and the held channel named where each session draft names a channel in the challenge:
-// - Hedera: `methodDetails.channelId`, "Channel ID if resuming" (draft-hedera-session-00; "Existing channel
-//   (`channelId` provided)"), a bytes32 in hex;
-// - Solana: `methodDetails.channelId`, "Existing channel identifier to resume" (draft-solana-session-00), the base58
-//   channel address, with `recentBlockhash` and `recentSlot` absent "when resuming";
-// - XRPL: the request's `channelId`, "64-hex channel ID, or `""` on an open" (draft-xrpl-session-00), empty "when the
-//   server names no channel", and "two spellings of one channel are one channel".
-// The gate pays such a challenge naming the held channel with one voucher, and declines one naming another channel
-// before any signer call. The openings, channels and challenges are the vector file's SS1, HS1-HS3, SV2 and XS2; the
-// Hedera signer is the published Anvil key #0, and the Solana signer the seed of 32 bytes 0x01, the SV2 opening's
-// signer.
-import { createPrivateKey, sign as edSign } from "node:crypto";
+// The seller's own within challenge on a held XRPL session: it issues it itself, with its own id, no legal context, and
+// the held channel named where the session draft names a channel in the challenge: the request's `channelId`, "64-hex
+// channel ID, or `""` on an open" (draft-xrpl-session-00), empty "when the server names no channel", and "two spellings
+// of one channel are one channel". The gate pays such a challenge naming the held channel with one voucher, and declines
+// one naming another channel before any signer call. The opening, channel and challenge are the vector file's SS1 and
+// XS2.
 import { describe, expect, it } from "vitest";
-import type { TypedDataDefinition } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { sessionHedera, sessionSolana, sessionXrpl, type MppChallenge } from "@integraledger/lcp/mpp";
+import { sessionXrpl, type MppChallenge } from "@integraledger/lcp/mpp";
 import { openChannel, within, type Binding, type ChannelHold, type Presented, type SigningRequest } from "../src/index.js";
 import { ABC, counting, isDeclined, vectors } from "./support.js";
 
@@ -39,106 +30,6 @@ async function held(opening: unknown, binding: Binding, landed?: unknown): Promi
 }
 
 type Signed = { challenge: MppChallenge; payload: { action: string; channelId: string } };
-
-// ── Hedera ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-describe("mpp/session/hedera: the seller's own challenge naming the channel in methodDetails.channelId", () => {
-  const anvil = privateKeyToAccount("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
-  const opening = {
-    challenge: V.SS1.hedera.placed,
-    payload: { action: "open", channelId: V.HS1.expectChannelId, txHash: V.HS3.txHash, cumulativeAmount: "0", signature: "0x00" },
-  };
-  const landed = { transaction: V.HS3.txHash, blockNumber: "47312717", logs: [V.HS3.log] };
-  const naming = (channelId: string) =>
-    own(V.SS1.hedera.challenge, (r) => {
-      r.methodDetails.channelId = channelId;
-      delete r.suggestedDeposit;
-    });
-  const signer = () =>
-    counting(`hedera:testnet:${V.fixed.payer}`, async (r: SigningRequest) =>
-      Promise.all(
-        (r as unknown as { requests: { typedData: TypedDataDefinition & { domain: { verifyingContract: string } } }[] }).requests.map((q) =>
-          anvil.signTypedData({
-            ...q.typedData,
-            domain: { ...q.typedData.domain, verifyingContract: q.typedData.domain.verifyingContract.toLowerCase() as `0x${string}` },
-          }),
-        ),
-      ),
-    );
-
-  it("naming the held channel: paid with one voucher on that channel", async () => {
-    const hold = await held(opening, sessionHedera, landed);
-    const challenge = naming(V.HS1.expectChannelId);
-    const s = signer();
-    const out = await within([challenge], hold, sessionHedera, s);
-    if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
-    expect(s.requests.map((r) => r.kind)).toEqual(["batch"]);
-    const signed = out.signed as unknown as Signed;
-    expect(signed.challenge).toEqual(challenge);
-    expect([signed.payload.action, signed.payload.channelId]).toEqual(["voucher", V.HS1.expectChannelId]);
-  });
-
-  it("naming another channel: declined before any signer call", async () => {
-    const hold = await held(opening, sessionHedera, landed);
-    const s = signer();
-    const out = await within([naming(`0x${"22".repeat(32)}`)], hold, sessionHedera, s);
-    expect(isDeclined(out) && out.decline).toEqual(OTHER_DECLINE);
-    expect(s.requests.length).toBe(0);
-  });
-});
-
-// ── Solana ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-describe("mpp/session/solana: the seller's own challenge naming the channel in methodDetails.channelId", () => {
-  const opening = { challenge: V.SS1.solana.placed, payload: { action: "open", channelId: V.SV2.channel, transaction: V.SV2.wireBase64 } };
-  const naming = (channelId: string) =>
-    own(V.SS1.solana.challenge, (r) => {
-      r.methodDetails.channelId = channelId;
-      delete r.methodDetails.recentBlockhash;
-      delete r.methodDetails.recentSlot;
-    });
-  const seed = Buffer.alloc(32, 1);
-  const key = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]), format: "der", type: "pkcs8" });
-  const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  const base58 = (b: Uint8Array): string => {
-    let n = 0n;
-    for (const x of b) n = (n << 8n) | BigInt(x);
-    let s = "";
-    while (n > 0n) {
-      s = B58[Number(n % 58n)]! + s;
-      n /= 58n;
-    }
-    for (const x of b) {
-      if (x !== 0) break;
-      s = "1" + s;
-    }
-    return s;
-  };
-  const signer = () =>
-    counting(`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:${V.SV3.payer}`, async (r: SigningRequest) =>
-      (r as unknown as { requests: { message: Uint8Array }[] }).requests.map((q) => base58(new Uint8Array(edSign(null, q.message, key)))),
-    );
-
-  it("naming the held channel: paid with one voucher on that channel", async () => {
-    const hold = await held(opening, sessionSolana);
-    const challenge = naming(V.SV2.channel);
-    const s = signer();
-    const out = await within([challenge], hold, sessionSolana, s);
-    if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
-    expect(s.requests.map((r) => r.kind)).toEqual(["batch"]);
-    const signed = out.signed as unknown as Signed;
-    expect(signed.challenge).toEqual(challenge);
-    expect([signed.payload.action, signed.payload.channelId]).toEqual(["voucher", V.SV2.channel]);
-  });
-
-  it("naming another channel: declined before any signer call", async () => {
-    const hold = await held(opening, sessionSolana);
-    const s = signer();
-    const out = await within([naming(V.plants.solana.channel)], hold, sessionSolana, s);
-    expect(isDeclined(out) && out.decline).toEqual(OTHER_DECLINE);
-    expect(s.requests.length).toBe(0);
-  });
-});
 
 // ── XRPL ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 

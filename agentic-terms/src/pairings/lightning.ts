@@ -1,13 +1,12 @@
 /**
- * The buyer pieces for Lightning: the buyer's node pays exactly the invoice the build names, and its answer is the
- * payment preimage, as the build's `complete` takes it. The node moves the payment, so a decline keeps it.
+ * The buyer pieces for MPP's Lightning methods: the buyer's node pays exactly the invoice the build names, and its
+ * answer is the payment preimage, as the build's `complete` takes it. The node moves the payment, so a decline keeps it.
  */
 import type { Refusal } from "@integraledger/lcp/core";
-import { decodeBolt11, type LnMppUnsigned, type LnUnsigned } from "@integraledger/lcp/lightning";
+import { decodeBolt11, type LnMppUnsigned } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature } from "../types.js";
-import { accountOf, choiceOf, firstOption, inputsOf, isObject, isRefusal, refuse, withPaymentIdentifier, x402Chosen } from "./common.js";
-import { checkRequestHash } from "./lnbtc-request.js";
+import { accountOf, choiceOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";
 import { offers, requestOf } from "./mpp.js";
 
 /**
@@ -29,42 +28,6 @@ function invoiceOf(c: MppChallenge, session: boolean): unknown {
   if (session) return request["depositInvoice"];
   const d = request["methodDetails"];
   return isObject(d) ? d["invoice"] : undefined;
-}
-
-async function preimageComplete(unsigned: unknown, signature: Signature, chosen: Chosen): Promise<Presented | Refusal> {
-  if (typeof signature !== "string") return refuse("ln/preimage-malformed");
-  const signed = (unsigned as LnUnsigned).complete(signature);
-  if (isRefusal(signed)) return signed;
-  return withPaymentIdentifier(signed as unknown as Presented, choiceOf(chosen)?.["required"], chosen.ref);
-}
-
-/**
- * The x402 Lightning piece: the first option on the account's `lnbtc` network, whose request hash, recomputed from the
- * buyer's own request (the `request` input), equals both the option's `extra.requestHash` and the invoice's description
- * hash. With `named`, the build reads the ATR the gate compared, which rides beside the choice as the bytes the gate
- * passes.
- */
-export function lnbtcPiece(pairing: string, named: boolean): BuyerPiece {
-  return Object.freeze({
-    async choose(read: Read, account: string, inputs: Inputs, _now: number, ref: string): Promise<Chosen | Refusal> {
-      const o = firstOption(read, account, "lnbtc", pairing);
-      if (isRefusal(o)) return refuse("x402/no-payable-option");
-      const request = isObject(inputs) ? inputs["request"] : undefined;
-      if (request === undefined) return refuse("x402/input-missing");
-      const resource = isObject(o.required) && isObject(o.required.resource) ? o.required.resource["url"] : undefined;
-      const checked = await checkRequestHash(o.accepted, resource, request);
-      if (isRefusal(checked)) return checked;
-      return x402Chosen(pairing, { required: o.required, accepted: o.accepted }, ref);
-    },
-    choice(chosen: Chosen, bytes: Uint8Array): unknown {
-      const c = choiceOf(chosen);
-      if (c === undefined) return refuse("x402/choice-malformed");
-      return named ? { ...c, atr: bytes } : c;
-    },
-    request: (unsigned: unknown) => (unsigned as LnUnsigned).request,
-    complete: preimageComplete,
-    moves: () => true,
-  });
 }
 
 /**
@@ -105,7 +68,5 @@ export function lnMppPiece(pairing: string, session: boolean): BuyerPiece {
   });
 }
 
-export const x402ExactLnbtc = lnbtcPiece("x402/exact/lnbtc", false);
-export const x402ExactLnbtcInvoiceNamed = lnbtcPiece("x402/exact/lnbtc/invoice-named", true);
 export const mppChargeLightning = lnMppPiece("mpp/charge/lightning", false);
 export const mppSessionLightning = lnMppPiece("mpp/session/lightning", true);

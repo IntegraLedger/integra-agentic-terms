@@ -42,11 +42,12 @@ type LnMpp = { challenge: Omit<MppChallenge, "request">; request: { depositInvoi
 const b64u = (s: string) => Buffer.from(s, "utf8").toString("base64url");
 function challengeWith(binding: Binding, row: LnMpp, depositInvoice: string): MppChallenge {
   const issued = { ...row.challenge, request: b64u(JSON.stringify({ ...row.request, depositInvoice })) } as MppChallenge;
-  const out = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown): unknown }).advertise(
+  const out = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null): unknown }).advertise(
     [issued],
     H,
     LINK,
     issued,
+    0,
   );
   if (!Array.isArray(out)) throw new Error(JSON.stringify(out));
   return out[0] as MppChallenge;

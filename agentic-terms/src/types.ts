@@ -5,7 +5,7 @@ import type { TapUnsigned, ViUnsigned } from "@integraledger/lcp/card";
 import type { CardanoUnsigned } from "@integraledger/lcp/cardano";
 import type { CasperUnsigned } from "@integraledger/lcp/casper";
 import type { CcdUnsigned } from "@integraledger/lcp/ccd";
-import type { LnUnsigned } from "@integraledger/lcp/lightning";
+import type { LnMppUnsigned } from "@integraledger/lcp/lightning";
 import type { exactHederaExecutor, HederaUnsigned } from "@integraledger/lcp/hedera";
 import type {
   MPP_BINDINGS,
@@ -19,7 +19,6 @@ import type {
 import type { NearUnsigned } from "@integraledger/lcp/near";
 import type { PolkadotUnsigned } from "@integraledger/lcp/polkadot";
 import type { StarknetUnsigned } from "@integraledger/lcp/starknet";
-import type { StellarUnsigned } from "@integraledger/lcp/stellar";
 import type { SuiUnsigned } from "@integraledger/lcp/sui";
 import type { KeyAuthorizationUnsigned } from "@integraledger/lcp/tempo";
 import type { TronUnsigned } from "@integraledger/lcp/tron";
@@ -56,17 +55,15 @@ export type Fetch = (
  * checkout mandate (`vi-checkout-mandate`), AP2's checkout-mandate content (`ap2-checkout-mandate`), the UCP checkout
  * for the buyer's mandate issuer (`ucp-checkout`) and ACP's allowance (`acp-allowance`). `batch` is several requests,
  * signed in order, as are the requests of an in-channel payment. `ed25519-raw` is raw Ed25519 over the bytes given.
- * `tempo-calls` is a Tempo charge with splits: the calls, in order, of one `0x76` transaction.
  */
 export type SigningRequest =
   | Extract<X402Unsigned, unknown>["request"]
   | Extract<MppUnsigned, unknown>["request"]
   | UsdcUnsigned["request"]
   | SessionUnsigned["funding"]
-  | RailSessionUnsigned["request"]
+  | Exclude<RailSessionUnsigned["request"], { kind: "hedera-session-open" }>
   | KeyAuthorizationUnsigned["request"]
   | SvmUnsigned["request"]
-  | StellarUnsigned["request"]
   | XrplUnsigned<unknown>["request"]
   | HederaUnsigned["request"]
   | Extract<Awaited<ReturnType<(typeof exactHederaExecutor)["build"]>>, { request: unknown }>["request"]
@@ -81,7 +78,7 @@ export type SigningRequest =
   | NearUnsigned["request"]
   | CasperUnsigned["request"]
   | CcdUnsigned["request"]
-  | LnUnsigned["request"]
+  | LnMppUnsigned["request"]
   | ({ kind: "tap-field" } & TapUnsigned)
   | ({ kind: "vi-checkout-mandate" } & ViUnsigned)
   | { kind: "ap2-checkout-mandate"; content: Ap2Unsigned["content"] }
@@ -110,7 +107,8 @@ export type Inputs = { readonly [k: string]: Json };
 
 /**
  * What the gate chose to pay, as plain JSON data, so `finish` can rebuild the same request. `agreement` is the agreement
- * URL the seller's offer names, for a pairing whose payment is not itself a public proof of the ATR hash.
+ * URL the seller's offer names, for a pairing at coverage `none`, whose payment is not itself a public proof of the ATR
+ * hash.
  */
 export interface Chosen {
   pairing: string;
@@ -219,8 +217,11 @@ export interface BuyerPiece {
   choose(...args: Parameters<Choose>): ReturnType<Choose> | Promise<ReturnType<Choose>>;
   /** The build's input, from `chosen` and, where the build reads the ATR itself, the bytes the gate compared. */
   choice(chosen: Chosen, bytes: Uint8Array): unknown;
-  /** The pairing's build over that input, for a binding whose `build` takes other arguments than the input and the hash. */
-  build?(choice: unknown, h: AtrHash): Promise<unknown>;
+  /**
+   * The pairing's build over that input, for a binding whose `build` takes other arguments than the input, the hash and
+   * the act.
+   */
+  build?(choice: unknown, h: AtrHash, act: "payment" | "agreement"): Promise<unknown>;
   /** The request for the signer, or null where the build is itself the payment and nothing is signed. */
   request(unsigned: unknown): SigningRequest | null | Refusal;
   /**
@@ -228,6 +229,11 @@ export interface BuyerPiece {
    * signer again and passes every answer so far, in order, as a list.
    */
   complete(unsigned: unknown, signature: Signature, chosen: Chosen): Promise<Presented | Next | Refusal>;
+  /**
+   * `chosen` with what the build drew itself, such as a random value, so that a rebuild from it gives the request the
+   * signer was handed. Absent where the build is a function of the choice and the hash alone.
+   */
+  kept?(chosen: Chosen, unsigned: unknown): Chosen;
   /** The payment as it is sent, once `bound` has read it, where the completion carries values only `bound` reads. */
   sent?(signed: Presented): Presented;
   /** True when the signer, handed this first request, moves the payment itself before the gate reads what was signed. */

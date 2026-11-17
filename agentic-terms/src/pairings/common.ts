@@ -49,12 +49,6 @@ export function held<T extends object>(c: T, read: unknown): T {
   return { ...c, [FETCHED]: read };
 }
 
-/** The payment without what is held under its own `FETCHED` member: its string-keyed members, as it is sent. */
-export function withoutFetched<T extends object>(c: T): T {
-  const { [FETCHED]: _read, ...sent } = c as T & { [FETCHED]?: unknown };
-  return sent as T;
-}
-
 /** A value as JSON, each bigint as its decimal string; undefined when it is undefined or has no JSON form. */
 export function jsonSafe(v: unknown): Json | undefined {
   if (v === undefined) return undefined;

@@ -1,13 +1,13 @@
-// The agreement is paid through any pairing whose `pattern.publicProof` is true, the one whose `advertise` placed the
+// The agreement is paid through any pairing whose data holds `agreement`, the one whose `advertise` placed the
 // agreement option, and the build is that pairing's. So an agreement challenge placed by `x402/exact/eip155/permit2`
-// (publicProof true) is paid with that pairing's build. The option is the permit2 vector file's; the rest is
+// (whose data holds `agreement`) is paid with that pairing's build. The option is the permit2 vector file's; the rest is
 // buyer.json's.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import type { TypedDataDefinition } from "viem";
 import { exactEip3009, exactPermit2, type PaymentRequired, type PaymentRequirements } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { transactApproved, vectors } from "./support.js";
+import { coverageNone, transactApproved, vectors } from "./support.js";
 
 const B = vectors<{
   fixed: { A: string; D: PaymentRequired; link: string; account: string; payerKey: `0x${string}`; now: number; agreement: { url: string } };
@@ -26,7 +26,7 @@ const key = privateKeyToAccount(B.fixed.payerKey);
 function withAgreement(): Binding {
   const real = exactEip3009.read(B.fixed.D);
   if ("refused" in real) throw new Error(real.code);
-  return { ...exactEip3009, pattern: { ...exactEip3009.pattern, publicProof: false }, read: () => ({ ...real, agreement: URL_ }) };
+  return { ...coverageNone(exactEip3009), read: () => ({ ...real, agreement: URL_ }) };
 }
 
 function seller(): Fetch {
@@ -48,9 +48,9 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-describe("an agreement placed by another public-proof x402 pairing is paid by that pairing", () => {
+describe("an agreement placed by another x402 pairing that can be an agreement is paid by that pairing", () => {
   it("x402/exact/eip155/permit2 as the agreement pairing", async () => {
-    expect(exactPermit2.pattern.publicProof).toBe(true);
+    expect(exactPermit2.data.agreement).toBeDefined();
     const handed: string[] = [];
     const signer = {
       account: B.fixed.account,

@@ -1,18 +1,19 @@
 /**
- * The buyer pieces for MPP's channel pairings. A session is signed in two steps: the funding (a token authorization, an
- * open call the signer broadcasts, or a signed Tempo transaction), then the first voucher, whose channel id depends on
- * the funding. A subscription is one step: the root key signs the key authorization's digest.
+ * The buyer pieces for MPP's channel pairings. A session is signed in two steps: the funding (a token authorization or a
+ * signed Tempo transaction), then the first voucher, whose channel id depends on the funding. An EVM session opening
+ * funded by a transaction the buyer's client broadcasts (`hash`) is no part of `mpp/session/evm`, and none is offered. A
+ * subscription is one step: the root key signs the key authorization's digest.
  */
 import type { Refusal } from "@integraledger/lcp/core";
 import type { Hex } from "@integraledger/lcp/evm";
 import type { SessionUnsigned } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Choose, Chosen, Inputs, Next, Presented, Read, Signature, SigningRequest } from "../types.js";
 import { optionalInputs } from "./batch.js";
-import { broadcasts, isRefusal, refuse } from "./common.js";
+import { isRefusal, refuse } from "./common.js";
 import { mppChoice, mppChoose, mppComplete, mppRequest } from "./mpp.js";
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-const CREDENTIAL_TYPE = /^(authorization|permit2|hash)$/;
+const CREDENTIAL_TYPE = /^(authorization|permit2)$/;
 
 /**
  * The first challenge offering `pairing` on the account's chain, with `deposit` and the optional `authorizedSigner`,
@@ -62,7 +63,6 @@ export function mppSessionPiece(pairing: string): BuyerPiece {
     choice: mppChoice,
     request: fundingRequest,
     complete: sessionComplete,
-    moves: broadcasts,
   });
 }
 

@@ -1,7 +1,7 @@
-// B2, B6, B10 and B16 for the x402 pairings on Solana (exact, upto), Stellar, XRPL, Hedera (exact, transfer-executor)
-// and Algorand. Expected messages, bytes, signatures and payments are the vector files'; the Ed25519 keys come from
+// B2, B6, B10 and B16 for the x402 pairings on Solana (exact, upto), XRPL, Hedera (exact, transfer-executor) and
+// Algorand. Expected messages, bytes, signatures and payments are the vector files'; the Ed25519 keys come from
 // the seeds those files publish as test values.
-import { createPrivateKey, createPublicKey, createHash, sign, verify } from "node:crypto";
+import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Json } from "@integraledger/lcp";
 import { exactAvm } from "@integraledger/lcp/avm";
@@ -10,7 +10,6 @@ import { exactHedera, exactHederaExecutor } from "@integraledger/lcp/hedera";
 import { decodeSvmTx } from "@integraledger/lcp/svm";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { exactSvm } from "@integraledger/lcp/x402-exact-solana";
-import { exactStellar } from "@integraledger/lcp/x402-exact-stellar";
 import { exactXrpl } from "@integraledger/lcp/x402-exact-xrpl";
 import { uptoSvm } from "@integraledger/lcp/x402-upto-solana";
 import { confirm, finish, type Binding, type Signature, type SigningRequest } from "../src/index.js";
@@ -23,7 +22,6 @@ import {
   LINK,
   serving,
   toHex,
-  fromHex,
   vectors,
   type Pairing,
 } from "./support.js";
@@ -62,8 +60,6 @@ function ed25519(seedHex: string) {
     verify: (m: Uint8Array, s: Uint8Array) => verify(null, m, createPublicKey(privateKey), s),
   };
 }
-
-const sha256 = (b: Uint8Array): string => createHash("sha256").update(b).digest("hex");
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58(b: Uint8Array): string {
@@ -332,83 +328,6 @@ describe("x402/upto/solana", () => {
     }
   });
   refusals(p, [EVM_ACCOUNT, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:${f.payer}`]);
-});
-
-// ── x402/exact/stellar ───────────────────────────────────────────────────────────────────────────────────────────
-
-describe("x402/exact/stellar", () => {
-  const T = vectors<{
-    fixed: { payer: string; payerSeed: string; option: Option; resource: { url: string } };
-    V1: { M: string };
-    V2: { simulatedXdr: string; currentLedger: number; expectPreimageLength: number; expectPreimageSha256: string;
-      expectSignaturePrefix: string; expectSignatureSuffix: string; expectEnvelope: string };
-    V3: { accepted: Option; extensions: Record<string, unknown> };
-    agreedRefusals: { rows: { case: string; expect: string; transaction?: string }[] };
-  }>("x402-exact-stellar.json");
-  const f = T.fixed;
-  const payer = ed25519(f.payerSeed);
-  const p: Pairing = {
-    binding: exactStellar,
-    doc: docOf(exactStellar, f.option, f.resource),
-    account: `${f.option.network}:${f.payer}`,
-    inputs: { simulatedXdr: T.V2.simulatedXdr, currentLedger: T.V2.currentLedger },
-    answer: answering((r) => {
-      if (r.kind !== "stellar-auth") throw new Error(r.kind);
-      return toHex(payer.sign(fromHex(sha256(r.preimage))));
-    }),
-  };
-  it("B6: the preimage is V2's; the payer's signature completes V2's envelope as payload.transaction", async () => {
-    expect((p.doc as PaymentRequired).accepts[0]!.payTo).toBe(T.V1.M);
-    const { signed } = await buildAndSign(p, async (r) => {
-      if (r.kind !== "stellar-auth") throw new Error(r.kind);
-      expect(r.preimage.length).toBe(T.V2.expectPreimageLength);
-      expect(sha256(r.preimage)).toBe(T.V2.expectPreimageSha256);
-      const s = (await p.answer(r)) as string;
-      expect(s.startsWith(`0x${T.V2.expectSignaturePrefix}`)).toBe(true);
-      expect(s.endsWith(T.V2.expectSignatureSuffix)).toBe(true);
-    });
-    expect(signed).toMatchObject({
-      x402Version: 2,
-      resource: f.resource,
-      accepted: (p.doc as PaymentRequired).accepts[0],
-      payload: { transaction: T.V2.expectEnvelope },
-      extensions: (p.doc as PaymentRequired).extensions,
-    });
-  });
-  it("the payment identifier is appended to the echoed extension where the challenge advertises it", async () => {
-    const q = { ...p, doc: withIdentifier(p.doc as PaymentRequired) };
-    const { signed } = await buildAndSign(q, () => undefined);
-    const ext = (signed as { extensions: Record<string, { info: { id?: string } }> }).extensions;
-    expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
-  });
-  // A row with a transaction is that envelope string as the payment's payload.transaction, its length counted in UTF-16
-  // code units (the rows' about).
-  it("agreedRefusals: each row with a transaction is refused with the row's code", async () => {
-    const rows = T.agreedRefusals.rows.filter((r) => typeof r.transaction === "string");
-    expect(rows.length, "agreedRefusals rows with a transaction").toBeGreaterThan(0);
-    for (const row of rows) {
-      const presented = {
-        x402Version: 2,
-        resource: f.resource,
-        accepted: T.V3.accepted,
-        payload: { transaction: row.transaction },
-        extensions: T.V3.extensions,
-      };
-      expect(await exactStellar.bound(presented), row.case).toEqual({ refused: true, code: row.expect });
-    }
-  });
-  refusals(p, [EVM_ACCOUNT, `stellar:pubnet:${f.payer}`]);
-  // x402 v2's PaymentRequirements carries `network` as a string, a CAIP-2 network id; the Python gate declines the same
-  // documents with the same code.
-  it.each([[], {}, [["x"]], 1, null, true])("an option whose network is %j has no payable option; nothing is fetched", async (network) => {
-    const doc = p.doc as PaymentRequired;
-    const odd = { ...doc, accepts: [{ ...doc.accepts[0]!, network }] } as unknown as PaymentRequired;
-    let fetched = 0;
-    const fetch = async () => (fetched++, new Response("abc"));
-    const out = await confirm(odd, exactStellar, p.account, fetch, p.inputs);
-    expect(out).toEqual({ decline: { code: "offer-unreadable", detail: "x402/no-payable-option" } });
-    expect(fetched).toBe(0);
-  });
 });
 
 // ── x402/exact/xrpl ──────────────────────────────────────────────────────────────────────────────────────────────

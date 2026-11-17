@@ -26,7 +26,29 @@ import {
   type Presented,
   type Signature,
 } from "../src/index.js";
+import { PIECES } from "../src/pairings/index.js";
 import { counting, vectors } from "./support.js";
+
+/**
+ * PENDING: the pairings the protocol package serves that have no buyer piece yet. Each one's B2 answers
+ * pairing-not-supported before any fetch or signer call, asserted below and never skipped; the set is held equal to the
+ * served pairings without a piece, so a piece added here removes its id.
+ */
+const PENDING: ReadonlySet<string> = new Set([
+  "ap2/checkout-mandate/x402",
+  "card/mastercard-agent-pay",
+  "card/visa-vic",
+  "mpp/charge/solana/unsponsored",
+  "mpp/charge/tempo/split-memo",
+  "mpp/charge/tempo/split-memo/push",
+  "mpp/session/hedera/stock",
+  "mpp/session/solana/memo",
+  "mpp/session/solana/stock",
+  "mpp/session/xrpl/stock",
+  "mpp/subscription/solana",
+  "ucp/checkout/agent-signed",
+  "x402/exact/cardano/lock",
+]);
 
 interface Row {
   name: string;
@@ -80,7 +102,28 @@ describe("every vector file's buyer rows, through the gate", () => {
     expect([...b2].sort()).toEqual(BINDINGS.map((b) => b.id as string).sort());
   });
 
-  for (const { file, row } of rows.filter(({ row }) => row.name === "B2")) {
+  it("PENDING is the served pairings that have no buyer piece", () => {
+    expect(BINDINGS.map((b) => b.id as string).filter((id) => !PIECES.has(id)).sort()).toEqual([...PENDING].sort());
+  });
+
+  for (const { file, row } of rows.filter(({ row }) => row.name === "B2" && PENDING.has(row.pairing))) {
+    it(`${file} B2 ${row.pairing}: pending, pairing-not-supported before any fetch or signer call`, async () => {
+      const binding = bindingOf(row.pairing);
+      const signer = counting(row.input.account!, async () => {
+        throw new Error("the signer is never called for a pairing with no piece");
+      });
+      const fetch = serving(fromHex(row.input.servesHex!));
+      const out = await transact(structuredClone(row.input.doc), binding, signer, fetch, { inputs: row.input.inputs ?? {} });
+      const confirmed = await confirm(structuredClone(row.input.doc), binding, row.input.account!, fetch, row.input.inputs ?? {});
+      expect(["decline" in out && out.decline.code, "decline" in confirmed && confirmed.decline.code]).toEqual([
+        "pairing-not-supported",
+        "pairing-not-supported",
+      ]);
+      expect([signer.requests.length, fetch.calls]).toEqual([0, 0]);
+    });
+  }
+
+  for (const { file, row } of rows.filter(({ row }) => row.name === "B2" && !PENDING.has(row.pairing))) {
     it(`${file} B2 ${row.pairing}: hash-mismatch, and the signer is never called`, async () => {
       if (row.input.now !== undefined) {
         const now = row.input.now;

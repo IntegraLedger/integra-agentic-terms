@@ -31,13 +31,9 @@ function issued(method: string, intent: string, request: unknown, realm: string,
 
 /** The seller's challenges for one issued challenge, as the pairing's `advertise` places H, the link and, when given, the agreement URL. */
 function docOf(binding: unknown, c: MppChallenge, agreementUrl?: string): MppChallenge[] {
-  const placed = (binding as { advertise(d: unknown, h: string, l: string, o: unknown, a?: string): unknown }).advertise(
-    [c],
-    H,
-    LINK,
-    c,
-    ...(agreementUrl === undefined ? [] : [agreementUrl]),
-  );
+  const placed = (
+    binding as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null, a?: string): unknown }
+  ).advertise([c], H, LINK, c, c.intent === "subscription" && c.method === "tempo" ? null : 0, ...(agreementUrl === undefined ? [] : [agreementUrl]));
   if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
   return placed as MppChallenge[];
 }

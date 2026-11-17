@@ -374,7 +374,8 @@ const issued = (method: string, intent: string, request: string): MppChallenge =
 
 /** The seller's 402 challenges for one issued challenge, as the pairing's `advertise` places H and `link`. */
 function mppDoc(binding: Binding, c: MppChallenge, link = LINK): MppChallenge[] {
-  const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown): unknown }).advertise([c], H, link, c);
+  const position = c.intent === "subscription" && c.method === "tempo" ? null : 0;
+  const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null): unknown }).advertise([c], H, link, c, position);
   if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
   return placed as MppChallenge[];
 }
@@ -398,7 +399,6 @@ describe("mpp/session/evm", () => {
   const E = vectors<{
     fixed: Fixed & { request: string; deposit: string; tokenDomain: { name: string; version: string } };
     ES1: { expectChannelId: string };
-    ES2: { expectOpenLength: number; expectOpenSelector: string; expectHOccurrences: number };
     ES3: { expectNonce: string };
     ES4: { expectDigest: string; expectSignature: { prefix: string; suffix: string } };
     ES5: { expectVoucherDigest: string };
@@ -408,11 +408,8 @@ describe("mpp/session/evm", () => {
   const account = `eip155:84532:${f.payer}`;
   const payer = privateKeyToAccount(f.payerKey);
   const seen: SigningRequest[] = [];
-  /** Test value for the hash form's broadcast open: the signer answers a transaction hash. */
-  const TX_HASH = `0x${"ab".repeat(32)}` as const;
   async function answer(r: SigningRequest): Promise<Signature> {
     seen.push(r);
-    if (r.kind === "evm-calls") return TX_HASH;
     if (r.kind !== "eip712") throw new Error(`not eip712: ${r.kind}`);
     return payer.signTypedData(typedDataOf(r.typedData));
   }
@@ -439,17 +436,6 @@ describe("mpp/session/evm", () => {
       expect(payload["channelId"]).toBe(E.ES1.expectChannelId);
       expect(payload["salt"]).toBe(H);
       expect(sessionEvm.channel.kind(signed as never)).toBe("open");
-    }));
-  it("B6 (hash): ES2's open call, broadcast by the signer, then the voucher; bound to H", () =>
-    at(f.now, async () => {
-      await buildAndSign({ ...authorization, inputs: { deposit: f.deposit, credentialType: "hash" } }, (r) => {
-        if (r.kind !== "evm-calls") throw new Error(r.kind);
-        expect(r.broadcast).toBe(true);
-        const open = r.calls[1]!;
-        expect(toBytes(open.data).length).toBe(E.ES2.expectOpenLength);
-        expect(open.data.slice(0, 10)).toBe(E.ES2.expectOpenSelector);
-        expect(open.data.split(H.slice(2)).length - 1).toBe(E.ES2.expectHOccurrences);
-      });
     }));
   it("B10: an http link is unreadable, detail mpp/link-not-https; 0 fetches", () =>
     at(f.now, () => b10(mppHttpLink(doc), sessionEvm, account, "mpp", authorization.inputs)));

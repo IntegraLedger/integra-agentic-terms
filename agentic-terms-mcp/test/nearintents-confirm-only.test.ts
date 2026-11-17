@@ -23,14 +23,19 @@ const MD = N.fixed.request.methodDetails;
 const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} };
 const pairing = "mpp/charge/nearintents";
 
-type Advertises = { advertise(d: object[], h: string, l: string, o: object, agreementUrl: string): object[] };
+type Advertises = {
+  advertise(d: object[], h: string, l: string, o: object, position: number, agreementUrl: string, named: object): object[];
+};
 const binding = BINDINGS.find((b) => b.id === pairing) as unknown as Advertises;
 
-/** The seller's challenges: MPP's example request with a depositMemo, placed for H, LINK and the agreement URL. */
+/**
+ * The seller's challenges: MPP's example request with a depositMemo, placed for H, LINK and the agreement URL, the
+ * challenge the ATR names being that one as issued.
+ */
 function document(): object[] {
   const request = { ...N.fixed.request, methodDetails: { ...MD, depositMemo: "4120" } };
   const issued = { ...N.challenge, request: Buffer.from(JSON.stringify(request), "utf8").toString("base64url") };
-  return binding.advertise([issued], H, LINK, issued, AG.url);
+  return binding.advertise([issued], H, LINK, issued, 0, AG.url, issued);
 }
 
 describe("atr_confirm on mpp/charge/nearintents", () => {

@@ -36,11 +36,14 @@ const binding = chargeNearIntents as unknown as Binding;
 const base64Json = (v: unknown): string => Buffer.from(JSON.stringify(v), "utf8").toString("base64");
 const requestOf = (c: MppChallenge): Loose => JSON.parse(Buffer.from(String(c.request), "base64url").toString("utf8"));
 
-/** The seller's document: MPP's example request with `depositMemo` as given, placed for H, LINK and the agreement URL. */
+/**
+ * The seller's document: MPP's example request with `depositMemo` as given, placed for H, LINK and the agreement URL,
+ * the challenge the ATR names being that one as issued.
+ */
 function documentWith(depositMemo: string | null): MppChallenge[] {
   const request = { ...N.fixed.request, methodDetails: { ...MD, depositMemo } };
   const issued = { ...N.challenge, request: Buffer.from(JSON.stringify(request), "utf8").toString("base64url") };
-  const placed = chargeNearIntents.advertise([issued], H, LINK, issued, AG.url);
+  const placed = chargeNearIntents.advertise([issued], H, LINK, issued, 0, AG.url, issued);
   if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
   return placed;
 }

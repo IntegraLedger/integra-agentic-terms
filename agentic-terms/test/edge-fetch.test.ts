@@ -10,7 +10,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { AtrHash } from "@integraledger/lcp";
 import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
 import { agree, transact, type Binding, type Declined, type Fetch, type SigningRequest } from "../src/index.js";
-import { counting, fromHex, vectors } from "./support.js";
+import { counting, coverageNone, fromHex, vectors } from "./support.js";
 
 type Row = { name: string; input: Record<string, unknown>; expect: Record<string, unknown> };
 type Script = { status: number; paymentRequired?: string; retryAfter?: string; body?: string };
@@ -85,7 +85,7 @@ function signer() {
 function withAgreement(): Binding {
   const real = exactEip3009.read(D);
   if ("refused" in real) throw new Error(real.code);
-  return { ...exactEip3009, pattern: { ...exactEip3009.pattern, publicProof: false }, read: () => ({ ...real, agreement: AGREEMENT_URL }) };
+  return { ...coverageNone(exactEip3009), read: () => ({ ...real, agreement: AGREEMENT_URL }) };
 }
 
 /** Runs `p` to its end under the fake clock, moving the clock to each pending timer until `p` settles. */

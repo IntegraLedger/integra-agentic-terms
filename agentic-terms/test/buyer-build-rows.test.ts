@@ -1,5 +1,5 @@
-// buyer.json's rows named with a pairing (BS1, BS2, BX1), through the gate. Each case gives its own inputs (BX1: its
-// own document) and its own expect: a decline with its detail and no signer call, or one signer call with the
+// buyer.json's row named with a pairing (BX1), through the gate. Each case gives its own inputs and document and its
+// own expect: a decline with its detail and no signer call, or one signer call with the
 // request's kind. A BX1 case's `refusal` is what the protocol package's checks of the placed challenge return (read
 // here through `network`), which leaves the gate no challenge it can pay. The link serves `abc`, whose SHA-256
 // (FIPS 180-2 B.1) is each document's H. Every expected value, and every input, is the row's.
@@ -20,7 +20,7 @@ interface Row {
   input: { pairing: string; doc?: unknown; servesHex: string; account: string; inputs?: Inputs; now?: number; cases: Case[] };
 }
 
-const rows = vectors<{ rows: Row[] }>("buyer.json").rows.filter((r) => ["BS1", "BS2", "BX1"].includes(r.name));
+const rows = vectors<{ rows: Row[] }>("buyer.json").rows.filter((r) => r.name === "BX1");
 const bindingOf = (id: string): Binding => {
   const b = BINDINGS.find((x) => x.id === id);
   if (b === undefined) throw new Error(`no pairing ${id}`);
@@ -33,8 +33,8 @@ afterEach(() => {
 });
 
 describe("buyer.json's build rows, through the gate", () => {
-  it("the file holds BS1, BS2 and BX1", () => {
-    expect(rows.map((r) => r.name)).toEqual(["BS1", "BS2", "BX1"]);
+  it("the file holds BX1", () => {
+    expect(rows.map((r) => r.name)).toEqual(["BX1"]);
   });
 
   for (const row of rows) {

@@ -1,29 +1,21 @@
-// B2 and B6 for MPP's charge pairings. Expected values are the vector files': the challenges
-// C_E and C_T, the digests and signatures of the published Anvil key #0, the Tempo calldata and wire, and the landed
-// receipt of the push form.
+// B2 and B6 for MPP's EVM charge pairings. Expected values are the vector files': the challenge C_E and the digests and
+// signatures of the published Anvil key #0.
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { concat, hashTypedData, toBytes, toHex as viemHex, toRlp, type Hex, type TypedDataDefinition } from "viem";
+import { hashTypedData, toBytes, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   evmAuthorization,
   evmHash,
   evmPermit2,
   evmTransaction,
-  FETCHED,
-  pairingsOf,
   place,
-  tempoMemo,
-  tempoPush,
   type MppChallenge,
-  type MppCredential,
 } from "@integraledger/lcp/mpp";
-import { Account as TempoAccount, Transaction as TempoTransaction } from "viem/tempo";
 import { exactEip3009, type PaymentRequirements } from "@integraledger/lcp/x402";
-import { check, confirm, finish, transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
+import { confirm, finish, transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
 import {
   ABC,
-  ABD,
   buildAndSign,
   code,
   counting,
@@ -40,16 +32,18 @@ import {
 type Challenge = { fixed: { realm: string; expires: string; R_E: string; R_T: string } };
 const V = vectors<Challenge>("mpp-challenge.json");
 const b64u = (s: string) => Buffer.from(s, "utf8").toString("base64url");
+const sha256 = (h: Hex) => `0x${createHash("sha256").update(toBytes(h)).digest("hex")}`;
 const issued = (method: string, request: string): MppChallenge =>
   ({ realm: V.fixed.realm, method, intent: "charge", request: b64u(request), expires: V.fixed.expires }) as MppChallenge;
 
 /** The seller's 402 challenges for one issued challenge, as the pairing's `advertise` places H and the link. */
 function docOf(binding: Binding, c: MppChallenge): MppChallenge[] {
-  const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown): unknown }).advertise(
+  const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null): unknown }).advertise(
     [c],
     H,
     LINK,
     c,
+    0,
   );
   if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
   return placed as MppChallenge[];
@@ -125,308 +119,7 @@ describe("mpp/charge/evm/permit2", () => {
     }));
 });
 
-/**
- * A Tempo signer's `0x76` transaction around the request's call, as MV7's wire: the vectors' fields and signature. With
- * `padding`, a second call to the call's currency with value 0 and `padding` zero bytes as its input follows it.
- */
-function tempoWire(r: SigningRequest, padding?: number): Hex {
-  if (r.kind !== "tempo-call") throw new Error(`not tempo-call: ${r.kind}`);
-  const n = (v: number): Hex => (v === 0 ? "0x" : viemHex(v));
-  const calls: Hex[][] = [[r.call.to, n(0), r.call.data]];
-  if (padding !== undefined) calls.push([r.call.to, n(0), `0x${"00".repeat(padding)}`]);
-  const body = toRlp([
-    n(r.chainId),
-    n(1),
-    n(2),
-    n(100000),
-    calls,
-    [],
-    n(0),
-    n(0),
-    n(r.validBefore),
-    "0x",
-    r.call.to,
-    "0x",
-    [],
-    `0x${"11".repeat(65)}`,
-  ]);
-  return concat(["0x76", body]);
-}
-const sha256 = (h: Hex) => `0x${createHash("sha256").update(toBytes(h)).digest("hex")}`;
-
-/** A row of mpp-charge-tempo-memo.json's agreedRefusals: MV7's wire T with the one change its member names. */
-type MemoRow = { case: string; expect: string; transactionChainId?: number; padding?: number; calldata?: Hex };
-
-describe("mpp/charge/tempo/memo", () => {
-  const M = vectors<{
-    fixed: Fixed;
-    MV7: { expectCalldata: string; expectWireSha256: string };
-    agreedRefusals: { rows: MemoRow[] };
-  }>("mpp-charge-tempo-memo.json");
-  const p: Pairing = {
-    binding: tempoMemo,
-    doc: docOf(tempoMemo, issued("tempo", V.fixed.R_T)),
-    account: account(42431, M.fixed),
-    answer: async (r) => tempoWire(r),
-  };
-  it("B6: the call carries MV7's attribution-memo calldata; the signed wire is bound to H", () =>
-    at(M.fixed.now, async () => {
-      await buildAndSign(p, (r) => {
-        if (r.kind !== "tempo-call") throw new Error(r.kind);
-        expect(r.call.data).toBe(M.MV7.expectCalldata);
-        expect(r.broadcast).toBe(false);
-        expect(sha256(tempoWire(r))).toBe(M.MV7.expectWireSha256);
-      });
-    }));
-  // mpp-charge-tempo-memo.json's agreedRefusals rows, each MV7's wire T with one change, selected by the member that
-  // names it: its chain id, its first field, the row's transactionChainId (draft-tempo-charge-00 binds the transaction
-  // to the challenge's chainId); a second call after its transferWithMemo whose input is the row's padding zero bytes,
-  // so the credential complete would give is over the credential size bound; or the row's calldata as its call's input,
-  // a memo of another challenge. The gate's buyer piece gives the signer's transaction to the build's complete, whose
-  // refusal, the code bound gives the credential it would give, is finish's signed-not-bound detail; so is its refusal
-  // of "0x76" and "0x", which decode as no Tempo transaction (tempo/tx-malformed).
-  it("agreedRefusals: the gate declines a transaction signed for another chain with the row's code", () =>
-    at(M.fixed.now, async () => {
-      const rows = M.agreedRefusals.rows;
-      expect(rows.length).toBeGreaterThan(0);
-      const confirmed = await confirm(p.doc, tempoMemo, p.account, serving(ABC));
-      if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
-      const r = confirmed.request;
-      if (r?.kind !== "tempo-call") throw new Error("not a tempo call");
-      const chosen = JSON.parse(JSON.stringify(confirmed.chosen));
-      expect(sha256(tempoWire(r))).toBe(M.MV7.expectWireSha256);
-      expect(await finish(ABC, chosen, tempoWire(r), tempoMemo)).toHaveProperty("signed");
-      const by = (member: keyof MemoRow) => rows.filter((row) => row[member] !== undefined);
-      const counts = [by("transactionChainId").length, by("padding").length, by("calldata").length, rows.length];
-      expect(counts).toEqual([1, 1, 1, 3]);
-      for (const row of rows) {
-        expect(Object.keys(row).filter((k) => k !== "case" && k !== "expect"), row.case).toHaveLength(1);
-        const call = { ...r.call, data: row.calldata ?? r.call.data };
-        const other = tempoWire({ ...r, chainId: row.transactionChainId ?? r.chainId, call }, row.padding);
-        expect(await finish(ABC, chosen, other, tempoMemo), row.case).toMatchObject({ decline: { code: "signed-not-bound", detail: row.expect } });
-      }
-      for (const undecodable of ["0x76", "0x"]) {
-        const out = await finish(ABC, chosen, undecodable, tempoMemo);
-        expect(out, undecodable).toMatchObject({ decline: { code: "signed-not-bound", detail: "tempo/tx-malformed" } });
-      }
-    }));
-});
-
-type Splits = {
-  splits: {
-    request: string;
-    expectCalls: { to: Hex; data: Hex }[];
-    agreedRefusals: { rows: { case: string; splits: unknown[]; expect: string }[] };
-  };
-};
-const S = vectors<Splits & { fixed: Fixed }>("mpp-charge-tempo-memo.json");
-
-/** The payer's `0x76` transaction around a `tempo-calls` request, signed and serialised by viem's Tempo encoder. */
-async function tempoCallsWire(r: SigningRequest, key: Hex): Promise<Hex> {
-  if (r.kind !== "tempo-calls") throw new Error(`not tempo-calls: ${r.kind}`);
-  return TempoAccount.fromSecp256k1(key).signTransaction({
-    type: "tempo",
-    chainId: r.chainId,
-    nonce: 1,
-    gas: 300000n,
-    maxFeePerGas: 2n,
-    maxPriorityFeePerGas: 1n,
-    validBefore: r.validBefore,
-    feeToken: r.calls[0]!.to,
-    calls: r.calls.map((c) => ({ to: c.to, data: c.data })),
-  } as never) as Promise<Hex>;
-}
-
-describe("mpp/charge/tempo/memo and push with splits", () => {
-  const f = S.fixed;
-  const rows: [Binding, boolean][] = [
-    [tempoMemo, false],
-    [tempoPush, true],
-  ];
-  it.each(rows)("%#: the primary for amount less the splits, carrying the attribution memo, then each split in order", async (binding, broadcast) =>
-    at(f.now, async () => {
-      const R = JSON.parse(S.splits.request);
-      if (broadcast) delete R.methodDetails.supportedModes;
-      const doc = docOf(binding, issued("tempo", JSON.stringify(R)));
-      const fetch = serving(ABC);
-      const out = await confirm(doc, binding, account(42431, f), fetch);
-      if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
-      const r = out.request!;
-      if (r.kind !== "tempo-calls") throw new Error(r.kind);
-      expect(r.calls).toEqual(S.splits.expectCalls);
-      expect(r.broadcast).toBe(broadcast);
-      expect(r.chainId).toBe(42431);
-      // viem's Tempo encoder carries exactly these calls in the payer's signed 0x76 transaction.
-      const wire = await tempoCallsWire(r, f.payerKey);
-      expect(wire.slice(0, 4)).toBe("0x76");
-      const decoded = TempoTransaction.deserialize(wire as `0x76${string}`) as unknown as { calls: { to: Hex; data: Hex }[] };
-      expect(decoded.calls.map((c) => ({ to: c.to.toLowerCase(), data: c.data }))).toEqual(
-        S.splits.expectCalls.map((c) => ({ to: c.to.toLowerCase(), data: c.data })),
-      );
-      if (!broadcast) {
-        const done = await finish(ABC, out.chosen, wire, binding);
-        if (isDeclined(done)) throw new Error(`${done.decline.code}: ${done.decline.detail}`);
-        if (!("signed" in done)) throw new Error("next");
-        expect(done.h).toBe(H);
-        expect(await check(ABC, done.signed, binding)).toEqual({ h: H });
-      }
-    }));
-  // The splits request placed by the pairing's advertise, then its request swapped for one with other splits: the
-  // challenge a seller sends when it places a request the pairing's filter refuses.
-  const withSplits = (binding: Binding, splits: unknown, broadcast: boolean): MppChallenge[] => {
-    const R = JSON.parse(S.splits.request);
-    if (broadcast) delete R.methodDetails.supportedModes;
-    const [placed] = docOf(binding, issued("tempo", JSON.stringify(R)));
-    return [{ ...placed!, request: b64u(JSON.stringify({ ...R, methodDetails: { ...R.methodDetails, splits } })) }];
-  };
-  const rowsOf = S.splits.agreedRefusals.rows;
-  it("the splits rows are read", () => expect(rowsOf.length).toBeGreaterThan(0));
-  it.each(rowsOf.map((row) => [row.case, row] as const))(
-    "%s: the challenge offers no Tempo pairing, by the row's refusal, and the gate declines before any fetch",
-    (_case, row) =>
-      at(f.now, async () => {
-        const doc = withSplits(tempoMemo, row.splits, false);
-        const { id: _id, opaque: _opaque, ...asIssued } = doc[0]!;
-        expect(pairingsOf(asIssued as MppChallenge)).toEqual({ refused: true, code: row.expect });
-        const fetch = serving(ABC);
-        const out = await confirm(doc, tempoMemo, account(42431, f), fetch);
-        expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
-        expect(fetch.calls).toBe(0);
-      }),
-  );
-  // The Tempo charge draft (draft-tempo-charge-00, L223-318): splits, where present, holds at least one entry. A
-  // splits member present as null is no list of entries, so the challenge offers neither Tempo pairing.
-  it.each(rows)("%#: a splits member present as null offers nothing, with no fetch and no signer call", (binding, broadcast) =>
-    at(f.now, async () => {
-      const doc = withSplits(binding, null, broadcast);
-      const fetch = serving(ABC);
-      const signer = counting(account(42431, f), async () => {
-        throw new Error("the signer was called");
-      });
-      expect(await transact(doc, binding, signer, fetch)).toEqual({
-        decline: { code: "no-payable-option", detail: "mpp/no-payable-option" },
-      });
-      expect(fetch.calls).toBe(0);
-      expect(signer.requests.length).toBe(0);
-    }));
-});
-
-// A realm holding a lone surrogate has no UTF-8 form for the attribution memo to hash: the protocol package refuses the
-// challenge mpp/challenge-malformed, so it offers nothing and nothing is fetched or signed. The Python gate answers the
-// same (test_mpp_well_formed_strings.py).
-describe("a Tempo challenge whose realm has no UTF-8 form", () => {
-  const M = vectors<{ fixed: Fixed }>("mpp-charge-tempo-memo.json");
-  it("offers nothing: no-payable-option, mpp/no-payable-option, with no fetch", () =>
-    at(M.fixed.now, async () => {
-      const [placed] = docOf(tempoMemo, issued("tempo", V.fixed.R_T));
-      const fetch = serving(ABC);
-      const out = await confirm([{ ...placed!, realm: `${placed!.realm}\uD800` }], tempoMemo, account(42431, M.fixed), fetch);
-      expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
-      expect(fetch.calls).toBe(0);
-    }));
-});
-
-// The vector files' zeroAmount rows: a Tempo charge of amount "0" or "00", which MPP pays with a proof credential that
-// moves no money, names no pairing (the rows' expectPairings) and the pairing's build answers the rows' code. The gate
-// offers nothing for it: no-payable-option, with no fetch. The Python gate runs the same rows (test_mpp_tempo.py).
-describe("a Tempo charge of amount 0", () => {
-  type Zero = { fixed: Fixed; zeroAmount: { requests: string[]; expectPairings: string[]; expect: unknown } };
-  const rows: [string, Binding][] = [
-    ["mpp-charge-tempo-memo.json", tempoMemo],
-    ["mpp-charge-tempo-push.json", tempoPush],
-  ];
-  it.each(rows)("%s: names no pairing, the build answers the row's code, and the gate offers nothing", (file, binding) => {
-    const Z = vectors<Zero>(file);
-    expect(Z.zeroAmount.requests.length).toBe(3);
-    const [placed] = docOf(tempoMemo, issued("tempo", V.fixed.R_T));
-    const build = (binding as unknown as { build(choice: unknown, h: string): Promise<unknown> }).build;
-    return at(Z.fixed.now, async () => {
-      for (const request of Z.zeroAmount.requests) {
-        expect(pairingsOf(issued("tempo", request))).toEqual(Z.zeroAmount.expectPairings);
-        const challenge = { ...placed!, request: b64u(request) };
-        expect(await build({ challenge, from: Z.fixed.payer, now: Z.fixed.now }, H)).toEqual(Z.zeroAmount.expect);
-        const fetch = serving(ABC);
-        const out = await confirm([challenge], binding, account(42431, Z.fixed), fetch);
-        expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
-        expect(fetch.calls).toBe(0);
-      }
-    });
-  });
-});
-
-describe("mpp/charge/tempo/push", () => {
-  const T = vectors<{
-    fixed: Fixed & { R_TNoModes: string };
-    MV13: { T_P: Hex; receipt: { blockNumber: string; logs: unknown[] } };
-  }>("mpp-charge-tempo-push.json");
-  const p: Pairing = {
-    binding: tempoPush,
-    doc: docOf(tempoPush, issued("tempo", T.fixed.R_TNoModes)),
-    account: account(42431, T.fixed),
-    answer: async () => ({
-      hash: T.MV13.T_P,
-      landed: { transaction: T.MV13.T_P, blockNumber: T.MV13.receipt.blockNumber, logs: T.MV13.receipt.logs as never },
-    }),
-  };
-  it("B6: the call is broadcast by the signer; the landed receipt's memo binds it to H; the payment sent has no landed receipt", () =>
-    at(T.fixed.now, async () => {
-      const confirmed = await confirm(p.doc, p.binding, p.account, serving(ABC));
-      if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
-      const r = confirmed.request!;
-      if (r.kind !== "tempo-call") throw new Error(r.kind);
-      expect(r.broadcast).toBe(true);
-      const answer = await p.answer(r);
-      const done = await finish(ABC, confirmed.chosen, answer, p.binding);
-      if (isDeclined(done)) throw new Error(`${done.decline.code}: ${done.decline.detail}`);
-      if (!("signed" in done)) throw new Error("next");
-      expect(done.h).toBe(H);
-      expect(done.signed).not.toHaveProperty("landed");
-      expect((done.signed as MppCredential).payload).toEqual({ type: "hash", hash: T.MV13.T_P });
-      // The landed receipt comes back beside the payment as JSON, MV13's receipt as the vector writes it (its block
-      // number a decimal string), and `check` reads the payment with it beside the payment, never written into it.
-      const landed = { transaction: T.MV13.T_P, blockNumber: T.MV13.receipt.blockNumber, logs: T.MV13.receipt.logs };
-      expect(done.landed).toEqual(landed);
-      expect(await check(ABC, done.signed, p.binding, done.landed)).toEqual({ h: H });
-      expect(code(await check(ABD, done.signed, p.binding, done.landed))).toBe("signed-not-bound");
-      expect(code(await check(ABC, done.signed, p.binding))).toBe("signed-not-bound");
-      expect(code(await check(ABC, { ...(done.signed as MppCredential), landed: done.landed }, p.binding))).toBe("signed-not-bound");
-      const signer = counting(p.account, p.answer);
-      const whole = await transact(p.doc, p.binding, signer, serving(ABC));
-      if (isDeclined(whole)) throw new Error(whole.decline.code);
-      if ("approve" in whole) throw new Error("an agreement payment to approve");
-      expect(signer.requests.length).toBe(1);
-      expect(whole.signed).toEqual(done.signed);
-      expect(whole.landed).toEqual(landed);
-    }));
-  // finish returns as `landed` only the read held under the signed credential's own `FETCHED` member. The binding here
-  // completes the credential with MV13's receipt as a string-keyed `landed` member and nothing under `FETCHED`, and
-  // its `bound` reads H with MV13's receipt held under `FETCHED`, as the protocol package's `bound` reads it, so
-  // finish completes the payment: no `landed` is returned beside it.
-  it("finish returns no landed for a credential with a string-keyed landed member and nothing under FETCHED", () =>
-    at(T.fixed.now, async () => {
-      const r = T.MV13.receipt;
-      const receipt = { transaction: T.MV13.T_P, blockNumber: BigInt(r.blockNumber), logs: r.logs };
-      const build = tempoPush.build as unknown as (choice: unknown, h: string) => Promise<{ complete(s: Hex): object }>;
-      const binding = {
-        ...tempoPush,
-        async build(choice: unknown, h: string) {
-          const unsigned = await build(choice, h);
-          return { ...unsigned, complete: (s: Hex) => ({ ...unsigned.complete(s), landed: receipt }) };
-        },
-        bound: (c: object) => tempoPush.bound({ ...c, [FETCHED]: receipt } as never),
-      } as unknown as Binding;
-      const confirmed = await confirm(p.doc, binding, p.account, serving(ABC));
-      if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
-      const done = await finish(ABC, confirmed.chosen, { hash: T.MV13.T_P }, binding);
-      if (isDeclined(done)) throw new Error(`${done.decline.code}: ${done.decline.detail}`);
-      if (!("signed" in done)) throw new Error("next");
-      expect(done.h).toBe(H);
-      expect((done.signed as { landed?: unknown }).landed).toEqual(receipt);
-      expect(done).not.toHaveProperty("landed");
-    }));
-});
-
-describe("mpp/charge/evm/transaction and mpp/charge/evm/hash (publicProof false)", () => {
+describe("mpp/charge/evm/transaction and mpp/charge/evm/hash (coverage none)", () => {
   const X = vectors<{
     fixed: Fixed & { R_ENoTypes: string };
     MV11: {
@@ -533,7 +226,7 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
   ];
   it.each(rows)("%s: the agreement is paid first, then the payment completes with the signer's answer", async (_n, binding, answer, type, member) =>
     at(X.fixed.now, async () => {
-      const doc = place([issued("evm", X.fixed.R_ENoTypes)], H, LINK, issued("evm", X.fixed.R_ENoTypes), AGREEMENT_URL);
+      const doc = place([issued("evm", X.fixed.R_ENoTypes)], H, LINK, issued("evm", X.fixed.R_ENoTypes), 0, AGREEMENT_URL);
       if (!Array.isArray(doc)) throw new Error(JSON.stringify(doc));
       const acct = account(84532, X.fixed);
       const signer = counting(acct, async (r) => (r.kind === "eip712" ? privateKeyToAccount(X.fixed.payerKey).signTypedData(typedDataOf(r)) : answer(r)));
@@ -562,10 +255,9 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
 });
 
 // mpp-challenge.json's agreedRefusals row for a build with an H the challenge's id does not derive from. On the
-// challenges placed with H (C_E; C_E's request without credentialTypes, which offers the transaction and hash pairings;
-// C_T; and C_T's request without supportedModes, which offers memo and push), each EVM and Tempo charge build builds
-// with H, and refuses with the row's code H with its last hex digit changed, H without its last digit, and H without
-// 0x.
+// challenges placed with H (C_E; C_E's request without credentialTypes, which offers the transaction and hash pairings),
+// each EVM charge build builds with H, and refuses with the row's code H with its last hex digit changed, H without its
+// last digit, and H without 0x.
 describe("mpp-challenge.json agreedRefusals: a build with an H the challenge's id does not derive from", () => {
   type Row = { case: string; expect: string };
   const rows = vectors<{ agreedRefusals: { rows: Row[] } }>("mpp-challenge.json").agreedRefusals.rows;
@@ -573,15 +265,11 @@ describe("mpp-challenge.json agreedRefusals: a build with an H the challenge's i
   type Domain = { name: string; version: string };
   const A = vectors<{ fixed: Fixed & { tokenDomain: Domain } }>("mpp-charge-evm-authorization.json");
   const R_E = JSON.parse(V.fixed.R_E) as { methodDetails: { chainId: number } };
-  const R_T = JSON.parse(V.fixed.R_T) as { methodDetails: { chainId: number } };
   const calls = issued("evm", JSON.stringify({ ...R_E, methodDetails: { chainId: R_E.methodDetails.chainId } }));
-  const push = issued("tempo", JSON.stringify({ ...R_T, methodDetails: { chainId: R_T.methodDetails.chainId } }));
   const builds: [string, Binding, MppChallenge, Record<string, unknown>][] = [
     [evmAuthorization.id, evmAuthorization, issued("evm", V.fixed.R_E), { tokenDomain: A.fixed.tokenDomain }],
     [evmHash.id, evmHash, calls, {}],
     [evmTransaction.id, evmTransaction, calls, {}],
-    [tempoMemo.id, tempoMemo, issued("tempo", V.fixed.R_T), {}],
-    [tempoPush.id, tempoPush, push, {}],
   ];
   const other = `${H.slice(0, -1)}${H.endsWith("e") ? "f" : "e"}`;
   it.each(builds)("%s builds with H and refuses each other H with the row's code", async (_id, binding, c, extra) => {

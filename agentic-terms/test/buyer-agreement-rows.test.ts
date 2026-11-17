@@ -12,7 +12,7 @@ import { hashTypedData } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { exactEip3009, type Eip3009Payment, type Eip3009TypedData, type PaymentRequired } from "@integraledger/lcp/x402";
 import { agree, transact, type Binding, type Declined, type Fetch, type Signer, type SigningRequest } from "../src/index.js";
-import { vectors } from "./support.js";
+import { coverageNone, vectors } from "./support.js";
 
 type Step = {
   status: number;
@@ -88,7 +88,7 @@ function noPublicProof(url: string | undefined): Binding {
   const real = exactEip3009.read(D);
   if ("refused" in real) throw new Error(real.code);
   const read = url === undefined ? real : { ...real, agreement: url };
-  return { ...exactEip3009, pattern: { ...exactEip3009.pattern, publicProof: false }, read: () => read };
+  return { ...coverageNone(exactEip3009), read: () => read };
 }
 
 /** D with the agreement URL in its legal context after `legalContextUrl`, read through the public-proof pairing. */

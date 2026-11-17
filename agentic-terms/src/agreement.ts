@@ -1,9 +1,9 @@
 /**
  * The agreement payment, in two calls. Called without an approved payment, `agree` asks the agreement URL for its
  * challenge and returns the agreement payment for the buyer's agent to approve, signing nothing: the challenge's first
- * option, in document order, that the signer can pay with a pairing whose payment is itself a public proof of the ATR
- * hash. Called with the payment the agent approved, it signs exactly that payment, sends it, and returns the resource's
- * receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is
+ * option, in document order, that the signer can pay with a pairing whose payment can itself be an agreement (its data
+ * holds `agreement`). Called with the payment the agent approved, it builds and signs exactly that payment as the act
+ * `agreement`, sends it, and returns the resource's receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is
  * sent unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again
  * after each 202, 5xx or timeout, each paid request bounded by min(`maxTimeoutSeconds`, 120) + 60 + 10 seconds and the
  * whole exchange by the paid option's `maxTimeoutSeconds` + 180 seconds; no second agreement payment is signed, and
@@ -256,9 +256,13 @@ function receiptOf(body: Uint8Array | null, h: AtrHash): { receipt: AgreementRec
   return { receipt: { atrHash: atrHash as AtrHash, agreed, network, transaction } };
 }
 
-function isPublicProof(binding: Binding): boolean {
-  const pattern: unknown = (binding as { pattern?: unknown }).pattern;
-  return isObject(pattern) && pattern["publicProof"] === true;
+/**
+ * Whether the pairing's payment can itself be an agreement: its data holds `agreement`, which the protocol package
+ * states only at coverage `full`, for a single-use payment that pays the payee directly and lands whole on one network.
+ */
+function isAgreementPairing(binding: Binding): boolean {
+  const data: unknown = (binding as { data?: unknown }).data;
+  return isObject(data) && data["coverage"] === "full" && isObject(data["agreement"]);
 }
 
 /** The x402 pairings the gate pays, in the protocol package's order. */
@@ -280,7 +284,7 @@ interface Selected {
 
 /**
  * The option the agreement is paid with, by the main payment's rule: the options in document order, and the first one
- * the signer can pay whose pairing's payment is itself a public proof. An option's pairing is the first x402 pairing,
+ * the signer can pay whose pairing's payment can itself be an agreement (`isAgreementPairing`). An option's pairing is the first x402 pairing,
  * in the protocol package's order, whose read accepts the challenge holding only that option. An option whose
  * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it. An `accepts` that is
  * not a list, holds more than 32 entries or holds no object serves no option, and is declined `offer-unreadable` with
@@ -319,7 +323,7 @@ async function select(
       }
       if (read.code !== "x402/no-payable-option") unreadable ??= read.code;
     }
-    if (found === undefined || !isPublicProof(found.binding)) continue;
+    if (found === undefined || !isAgreementPairing(found.binding)) continue;
     const limits = bounds(option as unknown as PaymentRequirements);
     if (limits === undefined) continue;
     const piece = pieceOf(found.binding) as BuyerPiece;
@@ -471,7 +475,7 @@ export async function exchange(
   const found = await paying(approved.required, h, signer.account, inputs, approved.option);
   if ("decline" in found) return found;
   const { selected, limits } = found;
-  const paid = await pay(selected.binding, selected.chosen, signer, bytes);
+  const paid = await pay(selected.binding, selected.chosen, signer, bytes, "agreement");
   if ("decline" in paid) return paid;
   if (paid.signed === null) return declined("offer-unreadable", "The agreement payment gave nothing to sign.");
   if (isEnded(signal)) return ended();

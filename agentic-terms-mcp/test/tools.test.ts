@@ -6,9 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
 import { BINDINGS } from "../src/index.js";
 import { at, connect, type Message } from "./stdio.js";
-import { confirm } from "@integraledger/terms";
-import { chargeHedera, chargeUsdcGateway, evmAuthorization, usdcGatewaySalt, type GatewayPreimage } from "@integraledger/lcp/mpp";
-import { exactLnbtc } from "@integraledger/lcp/lightning";
+import { chargeUsdcGateway, evmAuthorization, usdcGatewaySalt, type GatewayPreimage } from "@integraledger/lcp/mpp";
 
 const B = JSON.parse(
   readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"),
@@ -148,69 +146,6 @@ describe("the MCP server over stdio", () => {
     await c.close();
   });
 
-  // The tools return what the gate returns, and a decline of a payment the signer moved carries `moved`. x402/exact/lnbtc's node pays before the gate reads its answer; an answer that is not a
-  // preimage is declined with the answer kept, beside the ATR's bytes and hash. The offer is the vector file's, placed
-  // with the agreement URL its pairing needs.
-  it("atr_finish of MPP Hedera's push credential returns the landed memo beside the payment, and atr_check reads it beside the payment", async () => {
-    const V = vectors("mpp-charge-hedera.json");
-    const f = V.fixed;
-    const issued = {
-      realm: f.realm,
-      method: "hedera",
-      intent: "charge",
-      request: Buffer.from(JSON.stringify(f.request), "utf8").toString("base64url"),
-      expires: f.expires,
-    };
-    const doc = chargeHedera.advertise([issued] as never, H_ABC as never, ABC_FIXED.link, issued as never);
-    const abc = new TextEncoder().encode("abc");
-    const inputs = { node: f.node, validStart: f.validStart, maxFee: f.maxFee, credentialType: "hash" };
-    const confirmed = await confirm(doc, chargeHedera as never, `hedera:testnet:${f.payer}`, serving(abc), inputs);
-    if ("decline" in confirmed) throw new Error(confirmed.decline.code);
-    const c = connect({ fetch: serving(abc) });
-    const base64 = Buffer.from(abc).toString("base64");
-    const m = await call(c, "atr_finish", {
-      pairing: "mpp/charge/hedera",
-      atr: base64,
-      chosen: confirmed.chosen,
-      signature: { transactionId: V.push.transactionId },
-    });
-    expect(at(m, "result.structuredContent.signed.payload")).toEqual({ type: "hash", transactionId: V.push.transactionId });
-    expect(at(m, "result.structuredContent.landed")).toEqual(V.fetchPresented.expectLanded);
-    const presented = at(m, "result.structuredContent.signed");
-    const landed = at(m, "result.structuredContent.landed");
-    const checked = await call(c, "atr_check", { pairing: "mpp/charge/hedera", atr: base64, presented, landed });
-    // The landed receipt written into the payment is not read: atr_check takes it beside the payment.
-    const inside = await call(c, "atr_check", { pairing: "mpp/charge/hedera", atr: base64, presented: { ...(presented as object), landed } });
-    await c.close();
-    expect(at(checked, "result.structuredContent")).toEqual({ atrHash: H_ABC });
-    expect(at(inside, "result.structuredContent.decline.code")).toBe("signed-not-bound");
-  });
-
-  it("atr_finish of a Lightning payment the node moved, answered with no preimage, keeps the answer as moved", async () => {
-    const L = vectors("x402-exact-lnbtc.json");
-    const abc = new TextEncoder().encode("abc");
-    const link = ABC_FIXED.link;
-    const doc = exactLnbtc.advertise(
-      { x402Version: 2, resource: L.fixed.resource, accepts: [L.fixed.O] },
-      H_ABC as never,
-      link,
-      L.fixed.O,
-      ABC_FIXED.agreementUrl,
-    );
-    const account = `${L.fixed.O.network}:${L.fixed.payee}`;
-    // The buyer's own request: x402's lnbtc example, GET of the vector's resource with an empty body.
-    const inputs = { request: { method: "GET", url: "https://api.example.com/article/A" } };
-    const confirmed = await confirm(doc, exactLnbtc, account, serving(abc), inputs);
-    if ("decline" in confirmed) throw new Error(confirmed.decline.code);
-    const c = connect({ fetch: serving(abc) });
-    const base64 = Buffer.from(abc).toString("base64");
-    const m = await call(c, "atr_finish", { pairing: "x402/exact/lnbtc", atr: base64, chosen: confirmed.chosen, signature: "not-a-preimage" });
-    await c.close();
-    expect(at(m, "result.isError")).toBe(true);
-    expect(at(m, "result.structuredContent.decline.code")).toBe("signed-not-bound");
-    expect(at(m, "result.structuredContent.moved")).toEqual({ signed: "not-a-preimage", atr: { base64, utf8: "abc" }, atrHash: H_ABC });
-  });
-
   it("atr_finish with A, the chosen atr_confirm returned and S; then atr_check with C and that signed", async () => {
     const c = connect({ fetch: serving(A) });
     const base64 = Buffer.from(A).toString("base64");
@@ -271,7 +206,7 @@ describe("the MCP server over stdio", () => {
       request: Buffer.from(V.fixed.R_E, "utf8").toString("base64url"),
       expires: V.fixed.expires,
     };
-    const document = evmAuthorization.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never);
+    const document = evmAuthorization.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never, 0);
     const c = connect({ fetch: serving(new TextEncoder().encode("abc")) });
     const pairing = "mpp/charge/evm/authorization";
     const account = `eip155:84532:${Z.fixed.payer}`;
@@ -299,11 +234,18 @@ describe("the MCP server over stdio", () => {
       request: Buffer.from(G.M5.requestJson, "utf8").toString("base64url"),
       expires: f.expires,
     };
-    const document = chargeUsdcGateway.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never);
+    // The pairing is at coverage none: its offer names the agreement URL, which answers the agreement's receipt for H in
+    // buyer.json's receipt form, and the full payment is built once that receipt is in hand.
+    const document = chargeUsdcGateway.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never, 0, ABC_FIXED.agreementUrl);
+    const receipt = { ...B.fixed.agreement.receipt, atrHash: H_ABC };
+    const sellerAbc: Fetch = async (url) =>
+      url === ABC_FIXED.agreementUrl
+        ? new Response(JSON.stringify(receipt), { status: 200 })
+        : new Response(new TextEncoder().encode("abc"), { status: 200 });
     const pairing = "mpp/charge/usdc/gateway";
     const preimage = { id: f.MV1, realm: f.realm, requestHash: G.M5.expectRequestHash, recipient: G.M5.saltInput.recipient };
-    const c = connect({ fetch: serving(new TextEncoder().encode("abc")) });
-    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source });
+    const c = connect({ fetch: sellerAbc });
+    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source, receipt });
     expect(at(confirmed, "result.structuredContent.atrHash")).toBe(H_ABC);
     expect(at(confirmed, "result.structuredContent.request")).toEqual({ kind: "gateway-burn-intent", preimage });
     await c.close();
@@ -323,7 +265,7 @@ describe("the MCP server over stdio", () => {
         return { source: G.M5.source, ...routes, burnIntent, signature: `0x${"11".repeat(65)}` };
       },
     };
-    const t = connect({ fetch: serving(new TextEncoder().encode("abc")), signer });
+    const t = connect({ fetch: sellerAbc, signer });
     const m = await call(t, "atr_transact", { pairing, document });
     expect(handed).toEqual([{ kind: "gateway-burn-intent", preimage }]);
     expect(at(m, "result.isError")).toBeUndefined();
@@ -400,12 +342,5 @@ describe("the MCP server and the skill", () => {
     const c = connect({ fetch: serving(A), signer: counting() });
     expect(named).toEqual(names(await c.request("tools/list", { _meta: M })));
     await c.close();
-  });
-
-  it("BINDINGS: every entry has a buyer piece in the gate", async () => {
-    for (const b of BINDINGS) {
-      const out = await confirm({}, b, ACCOUNT, serving(A));
-      expect(`${b.id}: ${"decline" in out ? out.decline.code : "ok"}`).not.toBe(`${b.id}: pairing-not-supported`);
-    }
   });
 });

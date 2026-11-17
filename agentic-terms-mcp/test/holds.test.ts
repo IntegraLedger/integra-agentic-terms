@@ -8,7 +8,6 @@
 // `maxClaimableAmount` is the recorded charge plus the option's amount (x402 batch-settlement's client rule:
 // "`chargedCumulativeAmount + amount`"). The ATR, its hash and the batch-settlement opening's signatures are the lcp
 // vector files'.
-import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
@@ -28,7 +27,7 @@ const LINK_ABC: string = vectors("mpp-challenge.json").fixed.link;
 const atr = Buffer.from(ABC).toString("base64");
 
 const pairing = "x402/batch-settlement/eip155";
-type Advertises = { advertise(d: object, h: string, l: string, o: object): object };
+type Advertises = { advertise(d: object, h: string, l: string, o: object, ...rest: unknown[]): object };
 const document = () =>
   (BINDINGS.find((b) => b.id === pairing) as unknown as Advertises).advertise(
     { x402Version: 2, resource: BV.fixed.resource, accepts: [EV.option] },
@@ -325,7 +324,7 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
       request: Buffer.from(SE.fixed.request, "utf8").toString("base64url"),
       expires: MC.fixed.expires,
     };
-    const doc = (BINDINGS.find((b) => b.id === session) as unknown as Advertises).advertise([issued], H_ABC, LINK_ABC, issued);
+    const doc = (BINDINGS.find((b) => b.id === session) as unknown as Advertises).advertise([issued], H_ABC, LINK_ABC, issued, 0);
     const sessionInputs = { deposit: SE.fixed.deposit, credentialType: "authorization", tokenDomain: SE.fixed.tokenDomain };
     /** A 65-byte answer of the form the funding and the voucher take; no signature is verified by the gate. */
     const answer = `0x${"11".repeat(65)}`;
@@ -350,74 +349,5 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
     expect(at(next, "result.structuredContent.next.kind")).toBe("eip712");
     expect(at(opened, "result.isError")).toBeUndefined();
     expect(at(opened, "result.structuredContent.mac")).toMatch(/^0x[0-9a-f]{64}$/);
-  });
-});
-
-// mpp/session/hedera's opening is bound by its escrow log, which only the landed receipt carries, so `atr_transact`
-// returns `landed` beside `signed`, and the opening's `mac` covers the pairing, the opening and that receipt.
-// `atr_channel_open` takes `landed` back with them and passes it to the gate, so the session is held, the hold keeping
-// the opening as signed and the receipt as its own `landed` member; an edited receipt, or the opening passed without
-// the receipt its `mac` covers, is declined `opening-unverified`. The challenge,
-// opening, escrow log and channel id are mpp-session-hedera-solana-xrpl.json's SS1 and HS1 to HS3.
-describe("mpp/session/hedera is held over MCP with its landed receipt", () => {
-  const V = vectors("mpp-session-hedera-solana-xrpl.json");
-  const session = "mpp/session/hedera";
-  const AGREEMENT = `https://api.seller.example/agreement/${randomUUID()}`;
-  const challenge = V.SS1.hedera.challenge;
-  const doc = () =>
-    (BINDINGS.find((b) => b.id === session) as unknown as { advertise(d: object, h: string, l: string, o: object, a: string): object }).advertise(
-      [challenge],
-      H_ABC,
-      LINK_ABC,
-      challenge,
-      AGREEMENT,
-    );
-  const landed = { transaction: V.HS3.txHash, blockNumber: "47312717", logs: [V.HS3.log] };
-  const receipt = { atrHash: H_ABC, agreed: true, network: "eip155:296", transaction: `0x${"cd".repeat(32)}` };
-  const seller = (async (url: string) => {
-    if (url === LINK_ABC) return new Response(new Uint8Array(ABC), { status: 200 });
-    if (url === AGREEMENT) return new Response(JSON.stringify(receipt), { status: 200 });
-    return new Response(null, { status: 404 });
-  }) as unknown as Fetch;
-  /** The payer funds the escrow and signs the first voucher: the opening's hash, a 65-byte signature, the receipt. */
-  const hedera: Signer = {
-    account: `hedera:testnet:${V.fixed.payer}`,
-    async sign() {
-      return { openTx: V.HS3.txHash, signature: `0x${"11".repeat(65)}`, landed } as never;
-    },
-  };
-  type Opened = { signed: unknown; landed: unknown; mac: string };
-  async function opened(c: Connection): Promise<Opened> {
-    const m = await call(c, "atr_transact", { pairing: session, document: doc(), inputs: { deposit: V.HS2.deposit } });
-    expect(at(m, "result.isError")).toBeUndefined();
-    return at(m, "result.structuredContent") as Opened;
-  }
-
-  it("atr_transact returns landed beside the opening, and atr_channel_open holds HS1's channel with it", async () => {
-    const c = connect({ fetch: seller, signer: hedera });
-    const o = await opened(c);
-    const held = await call(c, "atr_channel_open", { pairing: session, atr, signed: o.signed, landed: o.landed, mac: o.mac });
-    await c.close();
-    expect(o.landed).toEqual(landed);
-    expect(at(held, "result.isError")).toBeUndefined();
-    expect(at(held, "result.structuredContent.hold")).toMatchObject({ pairing: session, channel: V.HS1.expectChannelId, h: H_ABC });
-    expect(at(held, "result.structuredContent.hold.opening")).toEqual(o.signed);
-    expect(at(held, "result.structuredContent.hold.landed")).toEqual(landed);
-  });
-
-  it("an edited receipt, or the opening without the receipt its mac covers, is declined opening-unverified", async () => {
-    const c = connect({ fetch: seller, signer: hedera });
-    const o = await opened(c);
-    const edited = await call(c, "atr_channel_open", {
-      pairing: session,
-      atr,
-      signed: o.signed,
-      landed: { ...landed, blockNumber: "47312718" },
-      mac: o.mac,
-    });
-    const without = await call(c, "atr_channel_open", { pairing: session, atr, signed: o.signed, mac: o.mac });
-    await c.close();
-    expect(at(edited, "result.structuredContent.decline.code")).toBe("opening-unverified");
-    expect(at(without, "result.structuredContent.decline.code")).toBe("opening-unverified");
   });
 });
