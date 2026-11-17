@@ -1,6 +1,7 @@
 """Tempo's pieces the MPP pairings read and build: the 0x76 transaction's calls, its sender and the signatures of its
-authorization list, the TIP-20 transferWithMemo calldata, the TIP-20 channel reserve's descriptor and ids, and the
-account keychain's key authorizations."""
+authorization list, each read as well from the 0x78 form a sender's client sends a fee payer, the TIP-20
+transferWithMemo calldata, the TIP-20 channel reserve's descriptor and ids, and the account keychain's key
+authorizations."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -19,6 +20,10 @@ OPEN_V2_SELECTOR = "0xedc53b00"
 OPEN_V1_SELECTOR = "0xc79ea485"
 
 TEMPO_TX_TYPE = 0x76
+# The type byte of the form a sender's client sends a fee payer: the 0x76 list with the sender's 20-byte address in the
+# fee payer's slot, item 11 (ox 0.14.54 tempo/TxEnvelopeTempo.js:15, feePayerMagic, and serialize with format
+# "feePayer", :374-448), which a stock signer sends where the challenge has the fee paid for the sender.
+TEMPO_FEE_PAYER_TX_TYPE = 0x78
 MAX_WIRE_BYTES = 65_536
 _MAX_WIRE_DEPTH = 8
 _MAX_CALLS = 64
@@ -61,13 +66,14 @@ def _is_uint(v: object, bits: int) -> bool:
 
 
 def _envelope(wire: object) -> list[RlpItem] | Refusal:
-    """0x76, then an RLP list of 14 items (13 fields and the sender's signature), or 15 when a key authorization
-    precedes the signature. At most 64 KiB, RLP depth 8."""
+    """0x76 or 0x78, then an RLP list of 14 items (13 fields and the sender's signature), or 15 when a key
+    authorization precedes the signature. A 0x78 envelope's item 11 is a 20-byte address, the sender's. At most 64 KiB,
+    RLP depth 8."""
     if not isinstance(wire, bytes):
         return Refusal("tempo/tx-malformed")
     if len(wire) > MAX_WIRE_BYTES:
         return Refusal("tempo/tx-too-large")
-    if len(wire) < 2 or wire[0] != TEMPO_TX_TYPE:
+    if len(wire) < 2 or wire[0] not in (TEMPO_TX_TYPE, TEMPO_FEE_PAYER_TX_TYPE):
         return Refusal("tempo/tx-malformed")
     top = rlp_decode(wire[1:], _MAX_WIRE_DEPTH)
     if top is None or top.items is None:
@@ -87,6 +93,10 @@ def _envelope(wire: object) -> list[RlpItem] | Refusal:
         return Refusal("tempo/tx-malformed")
     if items[-1].is_list:
         return Refusal("tempo/tx-malformed")
+    if wire[0] == TEMPO_FEE_PAYER_TX_TYPE:
+        slot = items[_FEE_PAYER_SIGNATURE]
+        if slot.is_list or len(slot.data) != 20:
+            return Refusal("tempo/tx-malformed")
     return items
 
 
@@ -154,7 +164,8 @@ def tempo_channel_id(d: Any) -> str | Refusal:
 
 def _sender_signed(items: list[RlpItem]) -> bytes:
     """What the sender signed: 0x76 ‖ rlp(every envelope field before the sender's signature). When a fee payer has
-    signed, fee_token is written as 0x80 and the fee payer's signature as 0x00."""
+    signed, or a 0x78 envelope names the sender in the fee payer's slot, fee_token is written as 0x80 and that slot as
+    0x00, as the sender signed them (ox 0.14.54 tempo/TxEnvelopeTempo.js:479-489, encodeForSigning)."""
     fields = [i.raw for i in items[:-1]]
     fee_payer = items[_FEE_PAYER_SIGNATURE]
     if not (not fee_payer.is_list and fee_payer.raw == b"\x80"):
@@ -202,8 +213,9 @@ def _primitive_signer(signature: bytes, digest: bytes) -> str | Refusal:
 
 
 def tempo_sender(signed_tx: bytes) -> str | Refusal:
-    """The sender of a signed 0x76 transaction, as Tempo recovers it from the sender's signature over what the sender
-    signed (_sender_signed): a primitive signature's signer, or for a keychain signature (0x04, a 20-byte account and a
+    """The sender of a signed 0x76 transaction, or of the 0x78 form, as Tempo recovers it from the sender's signature
+    over what the sender signed (_sender_signed), a 0x78 envelope whose item 11 names another account being
+    tempo/tx-malformed: a primitive signature's signer, or for a keychain signature (0x04, a 20-byte account and a
     primitive signature over keccak256(0x04 ‖ that hash ‖ the account)) that account. A keychain signature of type 0x03
     is tempo/tx-malformed: Tempo's transaction specification rejects that format from T1C onward ("Keychain";
     "Transaction Validation", step 1), and Tempo's node refuses it once T1C is active (tempoxyz/tempo 7d4fd03,
@@ -219,6 +231,15 @@ def tempo_sender(signed_tx: bytes) -> str | Refusal:
     items = _envelope(signed_tx)
     if isinstance(items, Refusal):
         return items
+    sender = _signer_of(items)
+    if isinstance(sender, Refusal) or signed_tx[0] != TEMPO_FEE_PAYER_TX_TYPE:
+        return sender
+    named = to_hex(items[_FEE_PAYER_SIGNATURE].data)
+    return sender if named.lower() == sender.lower() else Refusal("tempo/tx-malformed")
+
+
+def _signer_of(items: list[RlpItem]) -> str | Refusal:
+    """The sender recovered from the envelope's last item over the bytes the sender signed."""
     signature = items[-1].data
     digest = keccak256(_sender_signed(items))
     if len(signature) != _SECP256K1_LENGTH and signature[:1] == bytes([_KEYCHAIN_V2]):

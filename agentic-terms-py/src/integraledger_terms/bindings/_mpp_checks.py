@@ -13,6 +13,7 @@ from ._bolt11 import decode as decode_invoice
 from ._codec import b58_decode, b64u_decode, b64u_encode, canonical_or_none, utf16_key
 from ._jose import js_length, parse_json, within_depth
 from ._lcp import is_address, is_list, is_object, uint256_of
+from ._native_usdc import NATIVE_USDC
 from ._stacks import is_canonical_principal
 from ._svm import TOKEN, TOKEN_2022, built_version
 from ._xrpl_codec import account_id_of
@@ -21,6 +22,8 @@ Obj = Mapping[str, Any]
 PairingCheck = Callable[[Obj, Obj, Obj], "list[str] | Refusal"]
 
 MAX_DECODED = 8192
+# A member's value where the member is absent, as no JSON value is.
+_ABSENT = object()
 # The depth MPP holds a decoded object or an echoed challenge to, as the protocol package's MPP reads hold them.
 MAX_JSON_DEPTH = 16
 MAX_SAFE_INTEGER = 2**53 - 1
@@ -771,9 +774,19 @@ def usdc_profile(d: Obj) -> tuple[str, Obj] | Refusal:
     return kind, details
 
 
+def _only_type(types: object, only: str) -> bool:
+    """A profile's credentialTypes: absent, which implies the one type v00 of the usdc draft admits, or exactly a list
+    holding that type alone (draft-usdc-charge-00 at tempoxyz/mpp-specs 1f0574a, lines 298 and 414)."""
+    return types is _ABSENT or (isinstance(types, list) and len(types) == 1 and types[0] == only)
+
+
 def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     """charge on usdc: the active profile, amount a positive integer string, recipient a string, and what each
-    profile's build reads: EVM chainId and addresses; the Solana charge's checks on the Solana details, whose network is
+    profile's build reads: EVM chainId and addresses, with decimals 6 (else mpp/request-malformed) and credentialTypes
+    absent or ["authorization"], the Gateway profile's absent or ["transfer"] (else mpp/credential-types), as v00 of the
+    draft requires (draft-usdc-charge-00 at tempoxyz/mpp-specs 1f0574a, lines 297-298 and 414), and an EVM currency that
+    is the native USDC Circle publishes for its chainId (NATIVE_USDC; lines 300-301), else mpp/usdc-not-native, a chain
+    the table lacks included; the Solana charge's checks on the Solana details, whose network is
     required, and on externalId, its carrier; Stacks chainId, the token contract, and recipient as a Stacks node writes a
     principal (is_canonical_principal), the spelling the read compares with. The Gateway build reads recipient
     and the request's hash, and none of the Gateway details. No other profile reads externalId. The EVM and Gateway
@@ -786,8 +799,18 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     if not isinstance(amount, str) or _POSITIVE.fullmatch(amount) is None or not isinstance(r.get("recipient"), str):
         return Refusal("mpp/request-malformed")
     if kind == "evm":
-        if positive_int(p.get("chainId")) is None or not is_address(r.get("currency")) or not is_address(r.get("recipient")):
+        chain_id = positive_int(p.get("chainId"))
+        currency = r.get("currency")
+        if chain_id is None or not is_address(currency) or not is_address(r.get("recipient")):
             return Refusal("mpp/request-malformed")
+        decimals = p.get("decimals")
+        if isinstance(decimals, bool) or decimals != 6:
+            return Refusal("mpp/request-malformed")
+        if not _only_type(p.get("credentialTypes", _ABSENT), "authorization"):
+            return Refusal("mpp/credential-types")
+        assert isinstance(currency, str)
+        if NATIVE_USDC.get(chain_id) != currency.lower():
+            return Refusal("mpp/usdc-not-native")
         return ["mpp/charge/usdc/evm"] if is_jcs_request(c["request"], r) else Refusal("mpp/request-not-jcs")
     if kind == "solana":
         network = solana_network_of(p, True)
@@ -808,6 +831,8 @@ def usdc_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
         if not is_canonical_principal(r.get("recipient")):
             return Refusal("mpp/request-malformed")
         return ["mpp/charge/usdc/stacks"]
+    if not _only_type(p.get("credentialTypes", _ABSENT), "transfer"):
+        return Refusal("mpp/credential-types")
     return ["mpp/charge/usdc/gateway"] if is_jcs_request(c["request"], r) else Refusal("mpp/request-not-jcs")
 
 

@@ -435,6 +435,7 @@ class CardVisaTap:
     id: str = VISA_TAP
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_shown(doc)
@@ -457,6 +458,7 @@ class CardMastercardViImmediate:
     id: str = VI_IMMEDIATE
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_checkout_shown(doc)
@@ -486,6 +488,7 @@ class CardMastercardViAutonomous:
     id: str = VI_AUTONOMOUS
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_checkout_shown(doc)
@@ -507,6 +510,7 @@ class CardSellerReference:
     id: str = SELLER_REFERENCE
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return read_shown(doc)

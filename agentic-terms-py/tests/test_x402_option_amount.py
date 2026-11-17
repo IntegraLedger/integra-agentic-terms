@@ -39,8 +39,10 @@ OUTSIDE: list[tuple[str, object]] = [
 ]
 # The pairings that offer "0": the two zero-price batch pairings, and the exact Solana and Algorand pairings, whose
 # stock facilitators compare the transfer's amount with the option's by equality and whose transfer of zero lands
-# (x402-exact-solana.json zeroAmount, the stock @x402/svm 2.31.0 client's payment at "0").
+# (x402-exact-solana.json zeroAmount, the stock @x402/svm 2.31.0 client's payment at "0"); and EIP-3009 exact, whose
+# agreement's floor is "0", which @integraledger/lcp's option filter admits beside a positive amount.
 ZERO_PRICE = {"x402/batch-settlement/eip155", "x402/batch-settlement/solana", "x402/exact/solana", "x402/exact/algorand"}
+ZERO_PRICE |= {"x402/exact/eip155/eip3009"}
 # The pairings whose @integraledger/lcp option filter also admits "0", the agreement's floor being zero by the token and
 # the scheme: x402/exact/casper, x402/exact/ccd and x402/exact/tvm, and x402/exact/sui where the buyer or a sponsor pays
 # the gas (x402-exact-ccd.json stockOptions, x402-exact-sui.json filter).

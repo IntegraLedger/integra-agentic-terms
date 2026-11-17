@@ -1,8 +1,9 @@
 """The buyer half of x402/batch-settlement/eip155: read, build with complete, bound, and the channel members.
 
-The ATR hash is the channel configuration's salt. The channel id is the EIP-712 digest of that configuration, the
-opening's token authorization commits to the channel id, and every voucher signs it. Nothing here fetches, hashes an
-ATR or signs.
+The ATR hash is the channel configuration's salt, or, under an option in the scheme's refund-authorizer mode, the
+opening's deposit authorization's salt (ERC-3009) or its permit's nonce (Permit2). The channel id is the EIP-712 digest
+of that configuration, the opening's token authorization commits to the channel id, and every voucher signs it. Nothing
+here fetches, hashes an ATR or signs.
 """
 
 from collections.abc import Mapping
@@ -60,8 +61,39 @@ def is_pairing(option: Mapping[str, Any]) -> bool:
 
 def _payable(option: Mapping[str, Any]) -> bool:
     """What build can pay: payable, and a payTo and asset that are not the zero address, since the channel contract's
-    deposit refuses a configuration whose receiver or token is."""
-    return payable(option) and non_zero_address(option.get("payTo")) and non_zero_address(option.get("asset"))
+    deposit refuses a configuration whose receiver or token is, and an extra.refundAuthorizer that is absent or an
+    address, which the stock client reads as one (refund_authorizer_of)."""
+    extra = option.get("extra")
+    ra_ok = not is_object(extra) or "refundAuthorizer" not in extra or is_address(extra["refundAuthorizer"])
+    return payable(option) and non_zero_address(option.get("payTo")) and non_zero_address(option.get("asset")) and ra_ok
+
+
+def refund_authorizer_of(option: object) -> str | None:
+    """The refund authorizer of an option in the scheme's refund-authorizer mode, lower-case, or None: the mode is an
+    option whose extra.voucherManager is "facilitator" and whose extra.refundAuthorizer is an address that is not the
+    zero address, as the stock client marks it (@x402/evm 2.31.0 buildChannelConfig,
+    dist/esm/chunk-AEYKXGQA.mjs:238-239) and the stock server announces it
+    (batch-settlement/server/index.mjs:2420-2421). In that mode the channel salt is packed from entropy and the refund
+    authorizer, and H is the deposit authorization's salt (ERC-3009) or the deposit permit's nonce (Permit2)."""
+    extra = option.get("extra") if is_object(option) else None
+    if not is_object(extra):
+        return None
+    ra = extra.get("refundAuthorizer")
+    return ra.lower() if extra.get("voucherManager") == "facilitator" and non_zero_address(ra) else None
+
+
+def packed_salt(entropy: str, refund_authorizer: str) -> str:
+    """The channel salt of the refund-authorizer mode, as the stock client packs it (packRefundAuthorizerSalt,
+    @x402/evm 2.31.0 dist/esm/chunk-7DJ4WEQ5.mjs:218-223): the entropy's first 12 bytes, or, where those are all zero,
+    its last 12, then the refund authorizer's 20 bytes, lower-case."""
+    e = bytes.fromhex(entropy[2:])
+    high = e[:12]
+    return "0x" + ((e[20:32] if not any(high) else high) + bytes.fromhex(refund_authorizer[2:])).hex()
+
+
+def _packs(salt: object, refund_authorizer: str) -> bool:
+    """Whether a channel salt ends in the refund authorizer's 20 bytes, as the mode packs it."""
+    return is_hash32(salt) and salt[26:].lower() == refund_authorizer[2:].lower()
 
 
 # The pairing's one option filter, which read, build, build_within, bound and the channel reads apply.
@@ -122,11 +154,12 @@ def _payload_kind(payload: Mapping[str, Any]) -> ChannelKind | Refusal:
     return Refusal("x402/channel-kind-unknown")
 
 
-def _deposit_of(payload: Mapping[str, Any]) -> Refusal | None:
+def _deposit_of(payload: Mapping[str, Any]) -> str | Refusal:
     """The opening's deposit: its amount, a positive decimal below 2^128, as the channel contract's deposit takes a
     uint128 and refuses 0, and its authorization, exactly one of the ERC-3009 and Permit2 forms. The authorization's
     time bound, the ERC-3009 validBefore or the Permit2 deadline, is a decimal below 2^256, the uint256 the deposit
-    collectors decode it as. Each decimal is read by its value, in at most 78 digits."""
+    collectors decode it as, and so is the Permit2 nonce. Each decimal is read by its value, in at most 78 digits. Gives
+    the authorization's salt: the ERC-3009 salt, or the Permit2 nonce as a 32-byte word, lower-case."""
     deposit = payload.get("deposit")
     if not is_object(deposit):
         return Refusal("x402/payload-malformed")
@@ -143,12 +176,14 @@ def _deposit_of(payload: Mapping[str, Any]) -> Refusal | None:
         valid_before = decimal_below(e.get("validBefore"), UINT256_LIMIT) if is_object(e) else None
         if valid_before is None or not is_hash32(e.get("salt")):
             return Refusal("x402/payload-malformed")
-        return None
+        salt: str = e["salt"]
+        return salt.lower()
     p = authorization["permit2Authorization"]
     deadline = decimal_below(p.get("deadline"), UINT256_LIMIT) if is_object(p) else None
-    if deadline is None:
+    nonce = decimal_below(p.get("nonce"), UINT256_LIMIT) if is_object(p) else None
+    if deadline is None or nonce is None:
         return Refusal("x402/payload-malformed")
-    return None
+    return "0x" + nonce.to_bytes(32, "big").hex()
 
 
 def _salt(payload: Mapping[str, Any]) -> AtrHash:
@@ -160,7 +195,10 @@ def _salt(payload: Mapping[str, Any]) -> AtrHash:
 def bound(presented: object) -> AtrHash | Refusal:
     """The opening's salt, once its config hashes to the voucher's channel id. No signature is verified here. A config
     the channel contract's deposit refuses, or a deposit amount that is not a positive decimal below 2^128, as that
-    deposit takes a uint128 and refuses 0, is x402/payload-malformed."""
+    deposit takes a uint128 and refuses 0, is x402/payload-malformed. Under an accepted option in the refund-authorizer
+    mode (refund_authorizer_of) H is the deposit authorization's salt, or the deposit permit's nonce as a 32-byte word,
+    and a channel salt that does not end in the option's refund authorizer is x402/channel-id-mismatch: that channel is
+    not the mode's."""
     got = payload_of(presented, _FILTER)
     if isinstance(got, Refusal):
         return got
@@ -170,21 +208,32 @@ def bound(presented: object) -> AtrHash | Refusal:
     if not is_deposit_config(payload.get("channelConfig")):
         return Refusal("x402/payload-malformed")
     deposit = _deposit_of(payload)
-    if deposit is not None:
+    if isinstance(deposit, Refusal):
         return deposit
     ref = channel_ref(presented)
     if isinstance(ref, Refusal):
         return ref
-    return _salt(payload)
+    ra = refund_authorizer_of(got[0])
+    if ra is None:
+        return _salt(payload)
+    if not _packs(payload["channelConfig"]["salt"], ra):
+        return Refusal("x402/channel-id-mismatch")
+    h = normal_hash(deposit)
+    assert h is not None
+    return h
 
 
 def bound_within(presented: object) -> AtrHash | Refusal:
-    """A later payment's salt, once its config hashes to its voucher's channel id."""
+    """A later payment's salt, once its config hashes to its voucher's channel id. Under an accepted option in the
+    refund-authorizer mode a later payment carries no H, which only the opening's deposit authorization carries:
+    x402/not-bound-within."""
     ref = channel_ref(presented)
     if isinstance(ref, Refusal):
         return ref
     got = payload_of(presented, _FILTER)
     assert not isinstance(got, Refusal)
+    if refund_authorizer_of(got[0]) is not None:
+        return Refusal("x402/not-bound-within")
     return _salt(got[1])
 
 
@@ -202,9 +251,15 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     voucher's maxClaimableAmount to equal chargedCumulativeAmount + amount, which is 0, and its facilitator ("Not below
     claimed") requires it to be strictly greater than totalClaimed. So a zero price is paid by a later voucher
     (build_within), never by an opening. H is checked first, then the choice's members, then its document and option,
-    then the price and the channel configuration."""
-    salt = normal_hash(h)
-    if salt is None:
+    then the price and the channel configuration.
+
+    The channel salt is H, and authSalt the deposit authorization's salt (ERC-3009) or the permit's nonce (Permit2).
+    Under an option in the refund-authorizer mode (refund_authorizer_of) H is the deposit authorization's salt, or the
+    permit's nonce, and the channel salt is packed from authSalt as the entropy and the option's refund authorizer
+    (packed_salt), as the stock client packs it; so authSalt, drawn at random by the caller, makes each opening a new
+    channel in either mode."""
+    hash_ = normal_hash(h)
+    if hash_ is None:
         return Refusal("x402/option-malformed")
     if not is_object(c):
         return Refusal("x402/not-v2")
@@ -228,6 +283,9 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
     extra = accepted["extra"]
     chain_id = chain_id_of(accepted["network"])
     assert chain_id is not None
+    ra = refund_authorizer_of(accepted)
+    salt = hash_ if ra is None else packed_salt(auth_salt, ra)
+    auth_salt = auth_salt if ra is None else hash_
     config: dict[str, Any] = {
         "payer": payer,
         "payerAuthorizer": payer_authorizer,
@@ -325,8 +383,10 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
 def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
     """A later voucher, or a refund, for a channel opened under h: one request, the voucher. A refund member, whatever
     its value, makes the payment a refund; refund.amount, when the refund is an object holding one, is its amount, a
-    positive integer below 2^128. A channelConfig the channel contract's deposit refuses is
-    x402/payload-malformed."""
+    positive integer below 2^128. A channelConfig the channel contract's deposit refuses is x402/payload-malformed. Its
+    salt must be H, else x402/channel-id-mismatch; under an option in the refund-authorizer mode, where H is in the
+    opening's deposit authorization and in no later payment, its salt must end in the option's refund authorizer
+    instead, else the same code."""
     if not is_object(w):
         return Refusal("x402/not-v2")
     required, accepted = w.get("required"), w.get("accepted")
@@ -337,7 +397,8 @@ def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
     config = w.get("channelConfig")
     if not is_deposit_config(config):
         return Refusal("x402/payload-malformed")
-    if normal_hash(config["salt"]) != normal_hash(h):
+    ra = refund_authorizer_of(accepted)
+    if (normal_hash(config["salt"]) != normal_hash(h)) if ra is None else not _packs(config["salt"], ra):
         return Refusal("x402/channel-id-mismatch")
     max_claimable = w.get("maxClaimableAmount")
     if not _uint(max_claimable, 0):

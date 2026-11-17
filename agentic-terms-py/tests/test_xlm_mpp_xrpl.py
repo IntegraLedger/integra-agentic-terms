@@ -198,14 +198,15 @@ def test_mpp_charge_xrpl_build_writes_each_currency_as_the_stock_client_does(gro
 
 
 def test_mpp_charge_xrpl_a_currency_or_memos_lcp_does_not_read_whole_is_refused() -> None:
-    """The refused rows the stock schema refuses (xrpl-mpp-sdk 0.1.0-beta.4 dist/chunk-L6LVAN2P.js:17-90): a currency
-    that is not a string, and memos in rippled's {Memo} form. The seller's placement refuses each request, and so does
-    build on a challenge carrying it."""
+    """Every refused row: a currency that is not a string, which the stock schema does not take (xrpl-mpp-sdk
+    0.1.0-beta.4 dist/chunk-L6LVAN2P.js:17-90); a CUR:issuer text with two colons and a JSON text with a member beside
+    currency and issuer, which the stock parseCurrency reads by their first two parts and members; and memos in
+    rippled's {Memo} form, which the stock schema's z.object strips of their unknown members rather than refuses. The
+    last three are the protocol package's own stricter reading, so that nothing of the request goes unread. The seller's
+    placement refuses each request, and so does build on a challenge carrying it."""
     refused = B["refused"]
     good = _placed(B["issued"]["request"])
-    stock = [r for r in refused["rows"] if "memos" in r or not isinstance(r.get("currency"), str)]
-    assert stock
-    for row in stock:
+    for row in refused["rows"]:
         request = copy.deepcopy(B["issued"]["request"])
         if "currency" in row:
             request["currency"] = row["currency"]

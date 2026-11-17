@@ -1,7 +1,8 @@
 """BOLT11 invoices: the Bech32 checksum (BIP 173), the human-readable prefix's currency and amount, the amount an
-integer of any length, and the tagged fields, read without BOLT11's length limit up to 8 KiB. The signature is not
-verified."""
+integer of any length, the tagged fields, read without BOLT11's length limit up to 8 KiB, and the signature, verified
+and its signer recovered."""
 
+import hashlib
 import re
 import sys
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from typing import Literal
 from .._core import AtrHash
 from .._types import Refusal
 from ._jose import js_length
+from ._secp256k1 import N as _N
+from ._secp256k1 import compressed, recover, verify
 
 Currency = Literal["bc", "tb", "tbs", "bcrt"]
 
@@ -23,6 +26,9 @@ _CURRENCIES: tuple[Currency, ...] = ("bcrt", "tbs", "tb", "bc")
 _AMOUNT = re.compile(r"([0-9]+)([munp]?)")
 # Tagged field types, as the Bech32 value of their letter.
 FIELD = {"p": 1, "s": 16, "h": 23, "m": 27, "x": 6, "d": 13}
+# The n field's type, as the Bech32 value of its letter, and its length in words: a 33-byte public key.
+_FIELD_N = 19
+_N_WORDS = 53
 # The most decimal digits int() reads at once under every limit sys.set_int_max_str_digits() accepts.
 _INT_DIGITS = sys.int_info.str_digits_check_threshold
 
@@ -39,6 +45,9 @@ class Bolt11:
     metadata: bytes | None
     # Every tagged field's type, in invoice order.
     tags: tuple[int, ...]
+    # The compressed secp256k1 public key that signed the invoice, as 66 lower-case hex digits: the n field's key where
+    # the invoice has one, and otherwise the key recovered from the signature.
+    signer: str
 
 
 def _polymod(values: list[int]) -> int:
@@ -129,8 +138,51 @@ def _fixed_length_wrong(body: list[int]) -> bool:
     return False
 
 
+def _fields_of(body: list[int], field_type: int) -> list[list[int]]:
+    """The data of every tagged field of field_type, in invoice order."""
+    out: list[list[int]] = []
+    i = 7
+    while i + 3 <= len(body):
+        length = body[i + 1] * 32 + body[i + 2]
+        if body[i] == field_type:
+            out.append(body[i + 3 : i + 3 + length])
+        i += 3 + length
+    return out
+
+
+def _padded(words: list[int]) -> bytes:
+    """5-bit words as bytes, with zero bits appended to a byte boundary."""
+    bits = len(words) * 5
+    value = _uint(words) << (-bits % 8)
+    return value.to_bytes((bits + 7) // 8, "big")
+
+
+def _signer(hrp: str, data: list[int]) -> str | None:
+    """The key that signed the invoice, as 66 lower-case hex digits: the signature over SHA-256 of the human-readable
+    part and the data part without the signature, padded with zero bits to a byte, verified by the n key where the
+    invoice has one, a low s required, and otherwise the key recovered from it, either s accepted. None for exactly one s
+    field missing, more than one n field or one not 53 words long, or a signature that neither verifies nor recovers."""
+    body = data[: len(data) - SIGNATURE_WORDS]
+    n = _fields_of(body, _FIELD_N)
+    if len(n) > 1 or any(len(w) != _N_WORDS for w in n):
+        return None
+    digest = hashlib.sha256(hrp.encode("ascii") + _padded(body)).digest()
+    sig = _to_bytes(data[len(data) - SIGNATURE_WORDS :])
+    r, s, recovery = int.from_bytes(sig[:32], "big"), int.from_bytes(sig[32:64], "big"), sig[64]
+    if n:
+        key = _to_bytes(n[0])
+        return key.hex() if s <= _N // 2 and verify(digest, r, s, key) else None
+    if recovery > 3:
+        return None
+    xy = recover(digest, r, s, recovery & 1 == 1, recovery >= 2)
+    return None if xy is None else compressed(xy).hex()
+
+
 def decode(invoice: object) -> Bolt11 | Refusal:
-    """Decodes a BOLT11 invoice of at most 8 KiB. The signature is not verified."""
+    """Decodes a BOLT11 invoice of at most 8,192 characters strictly (BOLT 11 at 19146282): Bech32 past its
+    90-character limit, which BOLT 11 lets an invoice exceed, exactly one p field, p, h and s fields of 52 words,
+    exactly one s field, at most one n field of 53 words, and a signature that verifies (_signer). Any failure is
+    ln/invoice-malformed; an invoice of more characters, or of more than 64 tagged fields, is ln/invoice-too-large."""
     if not isinstance(invoice, str):
         return Refusal("ln/invoice-malformed")
     if js_length(invoice) > MAX_INVOICE:
@@ -195,6 +247,11 @@ def decode(invoice: object) -> Bolt11 | Refusal:
             description = _to_bytes(d).decode("utf-8")
         except UnicodeDecodeError:
             return Refusal("ln/invoice-malformed")
+    if tags.count(FIELD["s"]) != 1:
+        return Refusal("ln/invoice-malformed")
+    signer = _signer(hrp, data)
+    if signer is None:
+        return Refusal("ln/invoice-malformed")
     return Bolt11(
         currency=prefix[0],
         amount_msat=prefix[1],
@@ -205,6 +262,7 @@ def decode(invoice: object) -> Bolt11 | Refusal:
         description=description,
         metadata=None if m is None else _to_bytes(m),
         tags=tuple(tags),
+        signer=signer,
     )
 
 

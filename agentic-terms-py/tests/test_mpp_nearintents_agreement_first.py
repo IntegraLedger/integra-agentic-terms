@@ -20,7 +20,6 @@ from typing import Any, TypeVar
 import httpx
 import pytest
 
-from integraledger_terms._core import agreement_value
 from integraledger_terms import (
     MPP_CHARGE_NEARINTENTS,
     AgreementReceipt,
@@ -37,9 +36,8 @@ from support import A, ACCOUNT, BUYER, C, HASH_A, LINK_A, Link, load, row, sign_
 
 N = load("mpp-charge-nearintents.json")
 AG: dict[str, Any] = BUYER["fixed"]["agreement"]
-# BA1 signs the agreement with nonce H; the agreement carries the agreement's own value for H
-# (x402-exact-eip155-eip3009.json AG).
-AGREEMENT_NONCE: str = agreement_value(row("BA1")["expect"]["agreementMessage"]["nonce"])
+# BA1's agreement nonce, the agreement's own value for H (x402-exact-eip155-eip3009.json AG).
+AGREEMENT_NONCE: str = row("BA1")["expect"]["agreementMessage"]["nonce"]
 MD: dict[str, Any] = N["fixed"]["request"]["methodDetails"]
 WALLET_ACCOUNT = f"{MD['originNetwork']}:{MD['refundTo']}"
 

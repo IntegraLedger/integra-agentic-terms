@@ -160,6 +160,12 @@ def test_x402_exact_hedera_v2_build_complete_bound() -> None:
     assert X402_EXACT_HEDERA.bound(presented(wire)) == E["V2"]["expectBound"]
 
 
+def test_x402_exact_hedera_life_the_chains_longest_valid_duration_is_bound() -> None:
+    """The one row that holds the chain's longest valid duration, 180 seconds, as accepted: V2's transaction with that
+    duration, beside the refusal row for 181."""
+    assert X402_EXACT_HEDERA.bound(presented(E["life"]["transactionBase64"])) == E["life"]["expectBound"]
+
+
 @pytest.mark.parametrize("row", E["validStartChecked"]["rows"], ids=lambda r: r["case"])
 def test_x402_exact_hedera_valid_start_checked_by_bound(row: dict[str, Any]) -> None:
     want = Refusal(row["expect"]["code"]) if isinstance(row["expect"], dict) else row["expect"]

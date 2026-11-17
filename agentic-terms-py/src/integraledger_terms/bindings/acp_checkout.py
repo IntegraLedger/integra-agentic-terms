@@ -143,6 +143,7 @@ class AcpCheckoutDelegated:
     id: str = DELEGATED
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read(doc)
@@ -212,6 +213,7 @@ class AcpCheckoutUndelegated:
     id: str = UNDELEGATED
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read(doc)

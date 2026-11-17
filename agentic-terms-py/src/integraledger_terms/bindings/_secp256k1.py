@@ -1,5 +1,6 @@
 """The secp256k1 curve (SEC 2, 2.4.1) as the bindings read it: its field prime and group order, the point a compressed
-key's x and parity name (SEC 1, 2.3.4), and the public key an ECDSA signature recovers to (SEC 1, 4.1.6)."""
+key's x and parity name (SEC 1, 2.3.4), the public key an ECDSA signature recovers to (SEC 1, 4.1.6), and an ECDSA
+signature's verification by a compressed key (SEC 1, 4.1.4)."""
 
 P = 2**256 - 2**32 - 977
 N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -49,13 +50,14 @@ def _mul(k: int, a: Point) -> Point:
     return out
 
 
-def recover(digest: bytes, r: int, s: int, odd: bool) -> bytes | None:
+def recover(digest: bytes, r: int, s: int, odd: bool, overflow: bool = False) -> bytes | None:
     """The 64 bytes x || y of the public key the signature (r, s) over the 32-byte digest recovers to, R's y of parity
-    odd: r^-1 (sR - eG), e the digest read as an integer modulo the group order. None when r or s is not from 1 to the
-    group order less one, when no point has x r, or when the key is the point at infinity."""
+    odd and R's x r, or r plus the group order where overflow: r^-1 (sR - eG), e the digest read as an integer modulo the
+    group order. None when r or s is not from 1 to the group order less one, when no point has that x, or when the key
+    is the point at infinity."""
     if not (0 < r < N and 0 < s < N):
         return None
-    big_r = point_of(r, odd)
+    big_r = point_of(r + N if overflow else r, odd)
     if big_r is None:
         return None
     inverse = pow(r, -1, N)
@@ -64,3 +66,23 @@ def recover(digest: bytes, r: int, s: int, odd: bool) -> bytes | None:
     if q is None:
         return None
     return q[0].to_bytes(32, "big") + q[1].to_bytes(32, "big")
+
+
+def compressed(xy: bytes) -> bytes:
+    """The 33-byte compressed form of a public key's 64 coordinate bytes: 02 or 03 by y's parity, then x."""
+    return bytes([2 + xy[63] % 2]) + xy[:32]
+
+
+def verify(digest: bytes, r: int, s: int, key: bytes) -> bool:
+    """Whether (r, s) is an ECDSA signature over the 32-byte digest by the compressed key: r and s from 1 to the group
+    order less one, the key 02 or 03 and the x of a point, and the x of e s^-1 G + r s^-1 Q, modulo the group order, r,
+    e the digest read as an integer modulo the group order."""
+    if not (0 < r < N and 0 < s < N) or len(key) != 33 or key[0] not in (2, 3):
+        return False
+    q = point_of(int.from_bytes(key[1:], "big"), key[0] == 3)
+    if q is None:
+        return False
+    w = pow(s, -1, N)
+    e = int.from_bytes(digest, "big") % N
+    x = _add(_mul(e * w % N, _G), _mul(r * w % N, q))
+    return x is not None and x[0] % N == r

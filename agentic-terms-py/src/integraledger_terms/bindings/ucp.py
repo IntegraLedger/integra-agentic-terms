@@ -14,9 +14,10 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
+from ._codec import b64u_encode, canonical_or_none, text_encode
 from ._jose import MIB, js_length, json_bytes
 from ._lcp import agreement_fault, from_lcp_string, is_agreement_url, is_https_link, is_list, is_object, is_other_scheme_link
-from .ap2_checkout_mandate import checkout_binding, checkout_jwt_of
+from .ap2_checkout_mandate import CHECKOUT_VCT, checkout_binding, checkout_hash_of
 
 CHECKOUT_AP2_MANDATE = "ucp/checkout/ap2-mandate"
 CHECKOUT_UNSIGNED = "ucp/checkout/unsigned"
@@ -118,22 +119,47 @@ def _read_shown(doc: object, require_ap2: bool) -> Advertised | Refusal:
     return r if agreement is None else Advertised(h=r.h, link=r.link, offer=r.offer, agreement=agreement)
 
 
+def checkout_jwt(c: object) -> str | Refusal:
+    """The checkout JWT a buyer's checkout mandate commits to, for a checkout the business signed: its detached
+    ap2.merchant_authorization with the payload reinserted, header.payload.signature, the payload being the base64url of
+    the RFC 8785 form of the checkout without its ap2 member, the bytes that signature covers (UCP 2026-08-25, the AP2
+    Mandates extension, Business Authorization). UCP does not say which bytes are the checkout JWT; this is the second
+    of the two readings its open issue 905 sets out, as the protocol package reads it. A checkout with no
+    ap2.merchant_authorization of the form header..signature is ucp/ap2-not-active; one with no RFC 8785 form is
+    ucp/checkout-malformed. No signature is verified."""
+    checkout = _checkout_of(c)
+    if isinstance(checkout, Refusal):
+        return checkout
+    ap2 = checkout.get("ap2")
+    auth = ap2.get("merchant_authorization") if is_object(ap2) else None
+    if not isinstance(auth, str) or _MERCHANT_AUTHORIZATION.fullmatch(auth) is None:
+        return Refusal("ucp/ap2-not-active")
+    payload = canonical_or_none({k: v for k, v in checkout.items() if k != "ap2"})
+    if payload is None:
+        return Refusal("ucp/checkout-malformed")
+    header, _, signature = auth.split(".")
+    return f"{header}.{b64u_encode(text_encode(payload))}.{signature}"
+
+
 @dataclass(frozen=True, slots=True)
 class UcpUnsigned:
-    """The checkout unchanged, for the buyer's mandate issuer."""
+    """The checkout unchanged, for the buyer's mandate issuer, and the claims its checkout mandate carries: the
+    checkout JWT checkout_jwt gives, and its hash."""
 
     checkout: Mapping[str, Any]
+    content: Mapping[str, str]
 
     def complete(self, checkout_mandate: str) -> dict[str, Any] | Refusal:
-        """The mandate as issued, with the checkout_jwt it discloses."""
-        checkout_jwt = checkout_jwt_of(checkout_mandate)
-        if isinstance(checkout_jwt, Refusal):
-            return checkout_jwt
-        return {"checkout_mandate": checkout_mandate, "checkout_jwt": checkout_jwt}
+        """The signed mandate beside the checkout JWT; a mandate that commits to another JWT is refused as bound would
+        refuse it, so complete never hands back a presentation bound refuses for that."""
+        presented = {"checkout_mandate": checkout_mandate, "checkout_jwt": self.content["checkout_jwt"]}
+        bound = checkout_binding(presented)
+        return bound if isinstance(bound, Refusal) else presented
 
 
 def _build_ap2(offer: object, h: AtrHash) -> UcpUnsigned | Refusal:
-    """The checkout unchanged, once its link carries h."""
+    """The claims the buyer's checkout mandate carries for a checkout the business signed, once its link carries h: the
+    checkout JWT checkout_jwt gives, and its hash."""
     if not is_object(offer):
         return Refusal("ucp/checkout-malformed")
     checkout = offer.get("checkout")
@@ -143,7 +169,10 @@ def _build_ap2(offer: object, h: AtrHash) -> UcpUnsigned | Refusal:
     if not hash_equals(r.h, h):
         return Refusal("ucp/hash-not-in-checkout")
     assert is_object(checkout)
-    return UcpUnsigned(checkout)
+    jwt = checkout_jwt(checkout)
+    if isinstance(jwt, Refusal):
+        return jwt
+    return UcpUnsigned(checkout, {"vct": CHECKOUT_VCT, "checkout_jwt": jwt, "checkout_hash": checkout_hash_of(jwt)})
 
 
 def _bound_ap2(presented: object) -> AtrHash | Refusal:
@@ -161,6 +190,7 @@ class UcpAp2Mandate:
     id: str
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read_shown(doc, True)
@@ -182,6 +212,7 @@ class UcpUnsignedPairing:
     id: str
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return _read_shown(doc, False)

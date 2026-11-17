@@ -131,9 +131,10 @@ def check_executor(o: Mapping[str, Any]) -> Literal[True] | Refusal | None:
 
 
 def starts_later(seconds: int, nanos: int) -> bool:
-    """Whether a valid start is later than the time of the check: the network takes no valid start later than its
-    consensus time (HAPI ResponseCode INVALID_TRANSACTION_START)."""
-    return seconds * 1_000_000_000 + nanos > time.time_ns()
+    """Whether a valid start is later than the time of the check, read in whole milliseconds as the protocol package
+    reads its clock: the network takes no valid start later than its consensus time (HAPI ResponseCode
+    INVALID_TRANSACTION_START)."""
+    return seconds * 1_000_000_000 + nanos > time.time_ns() // 1_000_000 * 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,6 +290,7 @@ class X402ExactHederaExecutor:
     id: str = EXECUTOR
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when named, and the options this pairing pays, in document order."""

@@ -105,6 +105,7 @@ class MppLightning:
     id: str
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         return mpp_read(doc)

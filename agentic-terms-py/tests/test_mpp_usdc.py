@@ -103,11 +103,15 @@ def gateway_answer(request: Any) -> dict[str, Any]:
     return {"source": M5["source"], **routes, "burnIntent": burn_intent, "signature": burn_intent_signature(burn_intent)}
 
 
+# The buyer's inputs for M5's burn intent: the network it spends from, the served height and the wallet's delay.
+SERVED = {k: v for k, v in GATEWAY["ceiling"]["good"].items() if k != "expectMaxBlockHeight"}
+
 GATEWAY_P = Pairing(
     binding=MPP_CHARGE_USDC_GATEWAY,
     doc=doc_of(GATEWAY, M5["requestJson"]),
     account=M5["source"],
     answer=gateway_answer,
+    inputs=SERVED,
 )
 
 def test_mpp_charge_usdc_gateway_b6_the_clients_salt_is_m5s() -> None:
@@ -116,6 +120,7 @@ def test_mpp_charge_usdc_gateway_b6_the_clients_salt_is_m5s() -> None:
         assert json.loads(json.dumps(request)) == request
         assert request["preimage"]["requestHash"] == M5["expectRequestHash"]
         assert usdc_gateway_salt({**request["preimage"], **_own_inputs()}) == M5["expectSalt"]
+        assert request["maxBlockHeight"] == GATEWAY["ceiling"]["good"]["expectMaxBlockHeight"]
 
     build_and_sign(GATEWAY_P, inspect)
 

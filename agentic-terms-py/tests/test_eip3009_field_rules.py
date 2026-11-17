@@ -66,13 +66,15 @@ def test_an_eip155_network_has_no_leading_zero_and_is_not_zero() -> None:
 
 
 def test_an_amount_is_a_positive_decimal_below_2_256_and_is_signed_as_its_text() -> None:
+    """Or "0", the agreement's floor, which the option filter admits beside a positive amount
+    (test_x402_option_amount)."""
     largest = {**O, "amount": str(2**256 - 1)}
     unsigned = X402_EXACT_EIP155_EIP3009.build(choice(doc(largest), largest), H)
     assert not isinstance(unsigned, Refusal)
     presented = unsigned.complete("0x" + "11" * 65)
     assert not isinstance(presented, Refusal)
     assert presented["payload"]["authorization"]["value"] == str(2**256 - 1)
-    for amount in ("0001000", "0", "0" * 78 + "1", str(2**256)):
+    for amount in ("0001000", "0" * 78 + "1", str(2**256)):
         option = {**O, "amount": amount}
         built = X402_EXACT_EIP155_EIP3009.build(choice(doc(option), option), H)
         assert built == Refusal("x402/option-malformed"), amount

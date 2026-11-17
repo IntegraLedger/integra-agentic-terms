@@ -20,7 +20,6 @@ from typing import Any
 import httpx
 import pytest
 
-from integraledger_terms._core import agreement_value
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from integraledger_terms import Advertised, Declined, ToApprove, _agreement, _gate, agree, transact
 
@@ -247,9 +246,12 @@ def compare(inputs: dict[str, Any], e: dict[str, Any], run: Run) -> None:
     if "agreementMessage" in e:
         assert agreement is not None
         message = agreement["message"]
-        assert {k: str(message[k]) for k in e["agreementMessage"]} == agreement_message(e["agreementMessage"])
+        assert {k: str(message[k]) for k in e["agreementMessage"]} == e["agreementMessage"]
+    if "agreementDigest" in e:
+        assert agreement is not None and digest(agreement) == e["agreementDigest"]
     if "agreementSignature" in e:
         assert len(set(paid)) == 1
+        assert json.loads(base64.b64decode(paid[0]))["payload"]["signature"] == e["agreementSignature"]
     signed = getattr(out, "signed", None)
     for key in ("paymentSignature", "signed"):
         if key in e:
@@ -280,14 +282,6 @@ def runs_of(r: dict[str, Any]) -> list[RowRun]:
         for entry in inputs.get("entries", [inputs.get("entry", "transact")]):
             out.append(RowRun(c["case"], entry, inputs, {**r["expect"], **c.get("expect", {})}))
     return out
-
-
-def agreement_message(m: dict[str, Any]) -> dict[str, Any]:
-    """The row's agreement message as the agreement act signs it. buyer.json's BA rows sign the agreement payment's
-    EIP-3009 authorization with nonce H, the payment's own nonce; the agreement carries the agreement's own value for H
-    (x402-exact-eip155-eip3009.json AG, agreement_value), so the message is compared with that nonce, and the rows'
-    agreementDigest and agreementSignature, which are over nonce H, are not compared."""
-    return {**m, "nonce": agreement_value(m["nonce"])}
 
 
 def play(name: str, run: RowRun, clock: Clock) -> None:

@@ -712,6 +712,8 @@ class X402EvmBinding:
     id: str
     coverage: Coverage
     agreement: AgreementData | None = None
+    # Which agreement a coverage-none charge can follow: "any", "same-network" or a pairing's id; None where unstated.
+    agreement_on: str | None = None
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when the legal context names one, and the options the pairing's filter
@@ -748,7 +750,7 @@ class X402EvmBinding:
 
 X402_EXACT_EIP155_PERMIT2 = X402EvmBinding(EXACT_PERMIT2, "full", AgreementData(floor="1"))
 X402_UPTO_EIP155_PERMIT2 = X402EvmBinding(UPTO_PERMIT2, "full")
-X402_EXACT_EIP155_ERC7710 = X402EvmBinding(EXACT_ERC7710, "none")
+X402_EXACT_EIP155_ERC7710 = X402EvmBinding(EXACT_ERC7710, "none", agreement_on="any")
 X402_EXACT_EIP155_ERC7710_SALT = X402EvmBinding(EXACT_ERC7710_SALT, "full")
 X402_AUTH_CAPTURE_EIP155_EIP3009 = X402EvmBinding(AUTH_CAPTURE_EIP3009, "full")
 X402_AUTH_CAPTURE_EIP155_PERMIT2 = X402EvmBinding(AUTH_CAPTURE_PERMIT2, "full")

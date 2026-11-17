@@ -8,6 +8,7 @@ from typing import Any
 
 from .._core import AtrHash, hash_equals
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
+from ._jose import js_length
 from ._lcp import is_object
 from ._mpp import by_type, chosen_for, credential_of, echoed_for, fetched_of, measured, mpp_broadcaster, read
 from ._mpp_checks import is_xrpl_invoice_id, xrpl_currency_of, xrpl_network_of
@@ -54,7 +55,7 @@ def _presented_blob(credential: Mapping[str, Any], payload: Mapping[str, Any]) -
     blob = payload.get("blob")
     if not isinstance(blob, str):
         return Refusal("xrpl/blob-malformed")
-    return Refusal("xrpl/blob-too-large") if len(blob) > CHARGE_BLOB_HEX else blob
+    return Refusal("xrpl/blob-too-large") if js_length(blob) > CHARGE_BLOB_HEX else blob
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +79,7 @@ class XrplChargeUnsigned:
         credential = measured({"challenge": self._challenge, "payload": payload, "source": self._source})
         if isinstance(credential, Refusal):
             return credential
-        if isinstance(signed_blob, str) and len(signed_blob) > CHARGE_BLOB_HEX:
+        if isinstance(signed_blob, str) and js_length(signed_blob) > CHARGE_BLOB_HEX:
             return Refusal("xrpl/blob-too-large")
         if not is_blob_hex(signed_blob):
             return Refusal("xrpl/blob-malformed")
@@ -152,8 +153,8 @@ class MppChargeXrpl:
         if send_max:
             tx["SendMax"] = amount
         if "destinationTag" in d:
-            tx["DestinationTag"] = d["destinationTag"]
-        tx["SourceTag"] = d["sourceTag"] if "sourceTag" in d else MPP_SOURCE_TAG
+            tx["DestinationTag"] = int(d["destinationTag"])
+        tx["SourceTag"] = int(d["sourceTag"]) if "sourceTag" in d else MPP_SOURCE_TAG
         if memos:
             tx["Memos"] = [
                 {

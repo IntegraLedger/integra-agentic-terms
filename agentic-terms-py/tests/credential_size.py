@@ -314,7 +314,7 @@ PAIRINGS: dict[str, Pairing] = {
     "mpp/charge/usdc/gateway": Pairing(
         "mpp-charge-usdc-gateway.json",
         terms.MPP_CHARGE_USDC_GATEWAY,
-        _evm(terms.MPP_CHARGE_USDC_GATEWAY, _no_inputs, _gateway),
+        _evm(terms.MPP_CHARGE_USDC_GATEWAY, _inputs, _gateway),
     ),
     "mpp/session/evm": Pairing("mpp-session-evm.json", terms.MPP_SESSION_EVM, _session_evm),
     "mpp/session/tempo": Pairing("mpp-session-tempo.json", terms.MPP_SESSION_TEMPO, _session_tempo),

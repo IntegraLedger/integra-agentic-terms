@@ -68,10 +68,15 @@ def decoded(invoice: str) -> Bolt11:
     return b
 
 
+# BOLT 11's examples are signed by one node, whose key it publishes ("Examples", at 19146282).
+BOLT11_EXAMPLE_NODE = "03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"
+
+
 def test_bolt11_l1_published_h_example() -> None:
     b = decoded(V["L1"]["invoice"])
     assert b.description_hash is not None and b.description_hash.hex() == V["L1"]["expectDescriptionHash"]
     assert hashlib.sha256(V["L1"]["description"].encode("utf-8")).hexdigest() == V["L1"]["expectDescriptionHash"]
+    assert b.signer == BOLT11_EXAMPLE_NODE
 
 
 def test_bolt11_l4_request_hash_in_h_and_h_in_m() -> None:
@@ -89,6 +94,7 @@ def test_bolt11_l4_request_hash_in_h_and_h_in_m() -> None:
     } == e
     assert invoice_h(b, "m") == F["H"]
     assert invoice_h(b, "h") == "0x" + e["descriptionHash"]
+    assert b.signer == V["L4"]["expectPayee"]
 
 
 # BIP-173's checksum, to write an invoice whose human-readable part differs from a vector's.
@@ -116,31 +122,42 @@ def test_bolt11_an_amount_past_ints_digit_limit_decodes(digits: int) -> None:
     invoice = bech32_with_hrp(V["L4"]["invoice"], "lnbc1" + "0" * (digits - 1) + "n")
     b, l4 = decoded(invoice), decoded(V["L4"]["invoice"])
     assert b.amount_msat == 10 ** (digits + 1)
-    assert dataclasses.replace(b, amount_msat=l4.amount_msat) == l4
+    assert dataclasses.replace(b, amount_msat=l4.amount_msat, signer=l4.signer) == l4
 
 
-# BOLT 11's d field is "UTF-8 encoded". This invoice is written and signed by bolt11 1.4.1 with BOLT 11's example
-# private key, its d field EF BB BF then "coffee"; bolt11's decode reads U+FEFF then "coffee". Strict UTF-8 reads EF BB BF
-# as U+FEFF, a character of the text.
-BOM_DESCRIPTION_INVOICE = "lnbc10u1p4tzwuqpp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsdq0a7am7cm0venx2egxqrrsscqpfjhxnxlmzw3nq29r9jq8rweq8unw77yu64wzlpm3025qnkhxm2aexpc6j6qx55n9cwzz24w2vua8cs2w6jckznektf28re3w0mf229qqqn4826u"
+# BOLT 11's d field is "UTF-8 encoded". These invoices are written and signed by bolt11 1.4.1 with BOLT 11's example
+# private key, at timestamp 1790000000, for 1000 satoshi, with payment hash 11 x 32 and the d field EF BB BF then
+# "coffee"; bolt11's decode reads U+FEFF then "coffee". Strict UTF-8 reads EF BB BF as U+FEFF, a character of the text.
+# The first carries payment secret 22 x 32 as its s field; the second, written without one, has none.
+BOM_DESCRIPTION_INVOICE = "lnbc10u1p4tzwuqpp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygssp5yg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3qdq0a7am7cm0venx2eg9qypqsqxqrrsscqpff8g8dw78744vkhjalngfyvulp5y065jazt5kydhrfnmmrpjytp8jkwxjxg37zvj0nt2urh6e2fmhh6nl7lza9zhk8phqjxhxtgg3n6cpjdmspy"
+NO_SECRET_INVOICE = "lnbc10u1p4tzwuqpp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsdq0a7am7cm0venx2egxqrrsscqpfjhxnxlmzw3nq29r9jq8rweq8unw77yu64wzlpm3025qnkhxm2aexpc6j6qx55n9cwzz24w2vua8cs2w6jckznektf28re3w0mf229qqqn4826u"
 
 
 def test_bolt11_a_description_that_begins_with_a_byte_order_mark_keeps_it() -> None:
     b = decoded(BOM_DESCRIPTION_INVOICE)
     assert b.description == "\ufeffcoffee"
     assert b.tags.count(13) == 1
+    assert b.signer == BOLT11_EXAMPLE_NODE
+
+
+def test_bolt11_an_invoice_without_an_s_field_is_malformed() -> None:
+    """BOLT 11: a reader "MUST fail the payment if" the invoice has no s field, the payment secret. The invoice is
+    bolt11's, signed by BOLT 11's example key, which its signature recovers to."""
+    assert decode(NO_SECRET_INVOICE) == Refusal("ln/invoice-malformed")
 
 
 def test_bolt11_l7_an_amount_of_4301_digits_decodes() -> None:
     """L7: L4 with its amount written 1 followed by 4300 zeros of nanobitcoin, its checksum recomputed. The amount is
-    the file's expectAmountMsat, read digit by digit; the signature is not verified, so the other fields are L4's."""
+    the file's expectAmountMsat, read digit by digit. L4 has no n field, so its signer is recovered from the signature,
+    and over the changed amount the recovered key is another than L4's; the other fields are L4's."""
     assert "L7" in V, "x402-exact-lnbtc.json holds L7"
     b, l4 = decoded(V["L7"]["invoice"]), decoded(V["L4"]["invoice"])
     expected = 0
     for digit in V["L7"]["expectAmountMsat"]:
         expected = expected * 10 + "0123456789".index(digit)
     assert b.amount_msat == expected
-    assert dataclasses.replace(b, amount_msat=l4.amount_msat) == l4
+    assert b.signer != l4.signer
+    assert dataclasses.replace(b, amount_msat=l4.amount_msat, signer=l4.signer) == l4
 
 
 C = load("mpp-charge-lightning.json")
@@ -221,6 +238,7 @@ def test_mpp_charge_lightning_l2_invoice_carries_h_as_its_description_hash() -> 
         "descriptionHash": None if b.description_hash is None else b.description_hash.hex(),
         "metadata": None if b.metadata is None else b.metadata.hex(),
     } == C["L2"]["expect"]
+    assert b.signer == C["L2"]["expectPayee"]
 
 
 def test_mpp_charge_lightning_l3_build_complete_and_bound() -> None:

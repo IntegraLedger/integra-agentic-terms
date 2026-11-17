@@ -14,6 +14,8 @@ from ._lcp import chain_id_of, is_address, safe_int, uint256_of
 from ._x402 import accepted_by, carried_as, chosen, filter_of, is_amount, read_for, timeout_seconds, x402_broadcaster
 
 ID = "x402/exact/eip155/eip3009"
+# The agreement's floor: an agreement payment on this pairing may move zero of the token.
+FLOOR = "0"
 
 MIN_SIGNATURE_BYTES = 65
 MAX_SIGNATURE_BYTES = 8192
@@ -56,7 +58,8 @@ def passes(option: object) -> bool:
 
 def _payable(option: Mapping[str, Any]) -> bool:
     """True for an option build can turn into typed data: the token's EIP-712 name and version, the asset and payee
-    addresses, a positive amount (is_amount) below 2^256, and a time bound that is a safe integer above zero."""
+    addresses, an amount below 2^256 that is positive (is_amount) or the agreement's floor, "0", and a time bound that
+    is a safe integer above zero."""
     extra = option.get("extra")
     if not isinstance(extra, Mapping):
         return False
@@ -68,7 +71,7 @@ def _payable(option: Mapping[str, Any]) -> bool:
         and version != ""
         and is_address(option.get("asset"))
         and is_address(option.get("payTo"))
-        and is_amount(option.get("amount"))
+        and (is_amount(option.get("amount")) or option.get("amount") == FLOOR)
         and uint256_of(option.get("amount")) is not None
         and timeout_seconds(option.get("maxTimeoutSeconds")) is not None
     )
@@ -108,7 +111,7 @@ class _Unsigned:
 class X402ExactEip155Eip3009:
     id: str = ID
     coverage: Coverage = "full"
-    agreement: AgreementData | None = AgreementData(floor="0")
+    agreement: AgreementData | None = AgreementData(floor=FLOOR)
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """H, the link, the agreement URL when the legal context names one, and the options the pairing's filter

@@ -29,6 +29,7 @@ class _ConfirmOnly:
     id: str
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)

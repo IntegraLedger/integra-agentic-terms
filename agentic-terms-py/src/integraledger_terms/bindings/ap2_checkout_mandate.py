@@ -203,6 +203,7 @@ class Ap2CheckoutMandate:
     id: str = ID
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """The hash, the link and, when present, the agreement URL from the checkout_jwt's legalContext, and the

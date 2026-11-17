@@ -250,9 +250,9 @@ class X402ExactAlgorand:
 
     def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The payment transaction's note, as a hash, under an option the pairing's filter serves: the echoed option's
-        scheme, network, asset, payTo and extra, its amount a positive decimal below 2^64 and its maxTimeoutSeconds a
-        positive safe integer, as read and build require them. The transaction's amount, receiver, asset, fee payer and
-        sender are not read, and no signature is verified here."""
+        scheme, network, asset, payTo and extra, its amount "0" or a positive decimal below 2^64 and its
+        maxTimeoutSeconds a positive safe integer, as read and build require them. The transaction's amount, receiver,
+        asset, fee payer and sender are not read, and no signature is verified here."""
         p = presented_with(presented, check)
         if isinstance(p, Refusal):
             return p

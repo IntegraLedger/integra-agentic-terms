@@ -63,6 +63,7 @@ class AckPaymentRequest:
     id: str = ID
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Json) -> Advertised | Refusal:
         """The hash from the signed token's id, which the body's legalContext must match; the link and, when present,

@@ -1,8 +1,11 @@
 """The buyer pieces for mpp/charge/usdc/evm and mpp/charge/usdc/gateway. On EVM, the first challenge offering the
 pairing on the signer's chain, with the token's EIP-712 name and version as the buyer's input. On Gateway, the first
-challenge offering the pairing that accepts the account's network as a Gateway source: the request hands the buyer's
-Gateway client the salt's preimage; the client adds its own values, computes usdc_gateway_salt and sets the result as
-spec.salt before signing, then answers {source, sourceNetwork, destinationNetwork, maxFee, burnIntent, signature}."""
+challenge offering the pairing that accepts the account's network as a Gateway source; the choice carries the buyer's
+inputs the build takes beside the challenge, as given: sourceNetwork, the network the next two were read for; the
+burnIntentExpirationHeight Circle Gateway's GET /v1/info serves for it; and its Gateway Wallet's withdrawalDelay(). The
+request hands the buyer's Gateway client the salt's preimage from the challenge and the maxBlockHeight the build
+computed from those two; the client adds its own values, computes usdc_gateway_salt and sets the result as spec.salt
+before signing, then answers {source, sourceNetwork, destinationNetwork, maxFee, burnIntent, signature}."""
 
 from collections.abc import Mapping
 from typing import Any
@@ -14,6 +17,8 @@ from ._common import account_of
 from ._mpp import MppChargePiece, built_request, challenges_of, pairings_of_placed, request_of
 
 EVM_PIECE = MppChargePiece(EVM, {"tokenDomain": "object"})
+# The buyer's inputs the Gateway build takes beside the challenge, by the names it takes them under.
+_GATEWAY_INPUTS = ("sourceNetwork", "burnIntentExpirationHeight", "withdrawalDelay")
 
 
 def _accepted_sources(c: Mapping[str, Any]) -> list[Any]:
@@ -37,7 +42,9 @@ class MppChargeUsdcGatewayPiece(BasePiece):
         )
         if challenge is None:
             return Refusal("mpp/no-payable-option")
-        return Chosen(pairing=GATEWAY, choice={"challenge": challenge, "from": a.address, "now": now}, ref=ref)
+        given = {k: inputs[k] for k in _GATEWAY_INPUTS if k in inputs}
+        choice = {"challenge": challenge, "from": a.address, "now": now, **given}
+        return Chosen(pairing=GATEWAY, choice=choice, ref=ref)
 
     def choice(self, chosen: Chosen, atr_bytes: bytes) -> Any:
         c = chosen.choice if isinstance(chosen, Chosen) and isinstance(chosen.choice, dict) else None

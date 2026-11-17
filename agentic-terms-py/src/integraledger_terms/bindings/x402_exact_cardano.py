@@ -15,6 +15,7 @@ from typing import Any, Literal
 from .._core import AtrHash
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
 from ._cbor_spans import CborError, Item, SpanReader
+from ._codec import canonical_or_none
 from ._lcp import from_lcp_string, is_object, normal_hash
 from ._rail_bytes import base64_bytes
 from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
@@ -310,14 +311,20 @@ def _bound(presented: object) -> AtrHash | Refusal:
 
 
 def _reference_refuses(presented: object) -> bool:
-    """Whether the payment's reference, as the protocol package makes it, refuses it or names no TTL: its transaction
-    does not decode, carries no hash, or spends no input payload.nonce names, or its body has no TTL."""
+    """Whether the payment's reference, as the protocol package makes it for the option the payment accepted, refuses
+    it or names no TTL: its transaction does not decode, carries no hash, or spends no input payload.nonce names; the
+    option's payTo is not a non-empty string; the option has no RFC 8785 form to compare the payment's accepted with;
+    or the body has no TTL."""
     tx = _presented_tx(presented)
     if isinstance(tx, Refusal) or isinstance(tx.h, Refusal) or tx.ttl_slot is None or tx.inputs is None:
         return True
     payload = presented.get("payload") if is_object(presented) else None
     m = _INPUT_NONCE.fullmatch(payload["nonce"]) if is_object(payload) else None
-    return m is None or f"{m.group(1).lower()}#{m.group(2)}" not in tx.inputs
+    if m is None or f"{m.group(1).lower()}#{m.group(2)}" not in tx.inputs:
+        return True
+    accepted = presented.get("accepted") if is_object(presented) else None
+    pay_to = accepted.get("payTo") if is_object(accepted) else None
+    return not isinstance(pay_to, str) or pay_to == "" or canonical_or_none(accepted) is None
 
 
 @dataclass(frozen=True, slots=True)

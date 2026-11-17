@@ -184,7 +184,7 @@ _READS_ONLY_WHAT_IS_BUILT: list[tuple[str, str, dict[str, Any], tuple[str, ...] 
     ("card", "externalId 7", {"amount": "1", "currency": "usd", "externalId": 7}, "mpp/request-malformed"),
     ("stripe", "externalId 7, no currency", {"amount": "1", "externalId": 7}, ("mpp/charge/stripe",)),
     ("usdc", "evm, credentialTypes x", {**_EVM, "amount": "1", "methodDetails": {"type": "evm", "evm": {"chainId": 1, "credentialTypes": ["x"]}}},
-     ("mpp/charge/usdc/evm",)),
+     "mpp/request-malformed"),
     ("usdc", "gateway, no details", {"amount": "1", "recipient": "r", "methodDetails": {"type": "gateway", "gateway": {}}},
      ("mpp/charge/usdc/gateway",)),
     ("nearintents", "origin network only", {"methodDetails": _NEAR}, ("mpp/charge/nearintents",)),

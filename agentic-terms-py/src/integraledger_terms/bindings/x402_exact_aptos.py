@@ -244,6 +244,7 @@ class X402ExactAptos:
     id: str = ID
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Any) -> Advertised | Refusal:
         """H, the link, and the options this pairing can pay, in document order."""

@@ -183,9 +183,8 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
 
     assert len(signer.requests) == r["expect"]["signCalls"]
     agreement, payment = signer.requests
-    # BA1 signs the agreement with nonce H, the payment's own nonce; the agreement carries the agreement's own value for
-    # H (x402-exact-eip155-eip3009.json AG), so the message holds that nonce, and BA1's digest and signature, over nonce
-    # H, are not compared.
+    # BA1's agreement message carries the agreement's own value for H as its nonce (x402-exact-eip155-eip3009.json AG),
+    # never the payment's nonce H.
     m = r["expect"]["agreementMessage"]
     assert agreement["typedData"]["message"] == {
         "from": m["from"],
@@ -193,7 +192,7 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
         "value": int(m["value"]),
         "validAfter": int(m["validAfter"]),
         "validBefore": int(m["validBefore"]),
-        "nonce": agreement_value(m["nonce"]),
+        "nonce": m["nonce"],
     }
     assert payment["typedData"]["message"]["nonce"] == HASH_A
     assert payment["typedData"]["message"]["value"] == int(D["accepts"][0]["amount"])
@@ -370,8 +369,8 @@ def test_an_answer_that_does_not_complete_the_agreement_payment_sends_nothing() 
 
 
 def test_an_agreement_placed_by_another_public_proof_pairing_is_paid_by_that_pairing() -> None:
-    """The agreement pairing is any pairing with publicProof true, and the build is that pairing's. The option is
-    the permit2 vector file's; the rest is buyer.json's."""
+    """The agreement pairing is any pairing whose registry data holds an agreement, and the build is that pairing's.
+    The option is the permit2 vector file's; the rest is buyer.json's."""
     option = load("x402-exact-eip155-permit2.json")["fixed"]["option"]
     required = {**AG["required"], "accepts": [option]}
     seller = Seller([{"status": 402, "paymentRequired": "required"}, {"status": 200, "body": "receipt"}])

@@ -10,7 +10,7 @@ from typing import Any
 from .._core import AtrHash
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from ._evm import PERMIT2, Witness, permit2_typed_data
-from ._lcp import is_address, is_list, is_object, normal_hash
+from ._lcp import is_address, is_list, is_object, normal_hash, uint256_of
 from ._mpp import (
     MppUnsigned,
     by_type,
@@ -232,6 +232,13 @@ def _permit2_bound(presented: Any) -> AtrHash | Refusal:
     expect = challenge_hash(c["challenge"]["id"], c["challenge"]["realm"])
     if not same_bytes(w["challengeHash"], expect):
         return Refusal("mpp/witness-not-challenge-hash")
+    # The read keys on the Permit2 bit at the challenge hash: a permit signed under any other nonce is refused.
+    permit = e.payload.get("permit")
+    nonce = uint256_of(permit.get("nonce")) if is_object(permit) else None
+    if nonce is None:
+        return Refusal("mpp/credential-malformed")
+    if nonce != int(expect, 16):
+        return Refusal("mpp/nonce-not-challenge-hash")
     return e.h
 
 
@@ -335,10 +342,14 @@ def _call_build(pairing: str, choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
 
 
 def _no_signed_place(presented: Any, pairing: str) -> AtrHash | Refusal:
-    """The echoed challenge, held to pairing's filter (echoed_for); then mpp/no-signed-place: nothing the payer signed
-    carries H."""
+    """The echoed challenge, held to pairing's filter (echoed_for); then a payload type other than transaction and hash
+    is mpp/credential-type, before anything else of the payload is read; then mpp/no-signed-place: nothing the payer
+    signed carries H."""
     e = echoed_for(presented, pairing)
-    return e if isinstance(e, Refusal) else Refusal("mpp/no-signed-place")
+    if isinstance(e, Refusal):
+        return e
+    t = e.payload.get("type")
+    return Refusal("mpp/no-signed-place" if isinstance(t, str) and t in _CALL_TYPES else "mpp/credential-type")
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,6 +357,7 @@ class MppChargeEvmTransaction:
     id: str = TRANSACTION
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return _read(doc)
@@ -359,8 +371,9 @@ class MppChargeEvmTransaction:
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
         """By the credential's type, as the read keys take either: transaction, "payee", a signed transaction the
         seller's server broadcasts; hash, "payer", a transaction the payer broadcast. A credential of any other type
-        gets mpp/no-signed-place, the code bound gives every credential within its shape gate."""
-        return mpp_broadcaster(presented, by_type(_CALL_TYPES, "mpp/no-signed-place"))
+        gets mpp/credential-type, as bound refuses it; bound gives every credential of either type
+        mpp/no-signed-place."""
+        return mpp_broadcaster(presented, by_type(_CALL_TYPES))
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,6 +381,7 @@ class MppChargeEvmHash:
     id: str = HASH
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return _read(doc)
@@ -381,5 +395,5 @@ class MppChargeEvmHash:
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
         """By the credential's type, as the read keys take either: hash, "payer", a transaction the payer broadcast;
         transaction, "payee", a signed transaction the seller's server broadcasts. A credential of any other type gets
-        mpp/no-signed-place, the code bound gives every credential within its shape gate."""
-        return mpp_broadcaster(presented, by_type(_CALL_TYPES, "mpp/no-signed-place"))
+        mpp/credential-type, as bound refuses it; bound gives every credential of either type mpp/no-signed-place."""
+        return mpp_broadcaster(presented, by_type(_CALL_TYPES))

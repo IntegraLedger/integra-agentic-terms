@@ -12,7 +12,7 @@ from .._keccak import keccak256
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Refusal
 from ._codec import b58_encode, b64u_decode, canonical_or_none, to_hex
 from ._jose import UNPARSED, parse_json
-from ._lcp import is_address, is_object, normal_hash
+from ._lcp import UINT256_LIMIT, is_address, is_object, normal_hash, uint256_of
 from ._mpp import (
     Checked,
     MppUnsigned,
@@ -251,14 +251,42 @@ def _decimal_of(v: object) -> str | None:
     return None
 
 
+# The 100 seconds of margin a Gateway burn intent's maxBlockHeight adds, and the 7 days withdrawalDelay spans, in seconds.
+_MARGIN_SECONDS = 100
+_DELAY_SECONDS = 604_800
+
+
+def gateway_max_block_height(height: object, delay: object) -> str | None:
+    """The maxBlockHeight a Gateway burn intent signs: burnIntentExpirationHeight plus 100 seconds counted in blocks at
+    the pace of withdrawalDelay's 7 days, ceil(withdrawalDelay x 100 / 604,800), as a decimal string; None where an
+    input is not a decimal string below 2^256 or the sum exceeds 2^256 - 1."""
+    h, d = uint256_of(height), uint256_of(delay)
+    if h is None or d is None:
+        return None
+    ceiling = h + (d * _MARGIN_SECONDS + _DELAY_SECONDS - 1) // _DELAY_SECONDS
+    return str(ceiling) if ceiling < UINT256_LIMIT else None
+
+
 def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
-    """The chosen challenge's values of the salt's preimage, as data: the buyer's Gateway client adds its own values,
-    computes usdc_gateway_salt and sets the result as spec.salt before signing. complete wraps the signed burn intent."""
+    """The chosen challenge's values of the salt's preimage, as data, and the maxBlockHeight the burn intent signs,
+    gateway_max_block_height of the choice's burnIntentExpirationHeight and withdrawalDelay: the buyer's Gateway client
+    adds its own values, computes usdc_gateway_salt, sets the result as spec.salt and maxBlockHeight as given, then
+    signs. A sourceNetwork that is absent or empty, or a height or delay that is absent, not a decimal string below
+    2^256, or whose ceiling exceeds 2^256 - 1, is mpp/input-malformed. complete wraps the signed burn intent; it refuses
+    a sourceNetwork other than the choice's, the network the height was read for, mpp/input-malformed, and a burn intent
+    whose maxBlockHeight, read as a decimal string or a safe integer, is not the one built,
+    mpp/max-block-height-changed."""
     if not is_object(choice):
         return Refusal("mpp/input-malformed")
     o = chosen_for(choice.get("challenge"), h, GATEWAY)
     if isinstance(o, Refusal):
         return o
+    source_network = choice.get("sourceNetwork")
+    if not isinstance(source_network, str) or source_network == "":
+        return Refusal("mpp/input-malformed")
+    max_block_height = gateway_max_block_height(choice.get("burnIntentExpirationHeight"), choice.get("withdrawalDelay"))
+    if max_block_height is None:
+        return Refusal("mpp/input-malformed")
     challenge = dict(o.challenge)
     request_hash = usdc_request_hash(challenge["request"])
     if isinstance(request_hash, Refusal):
@@ -276,6 +304,10 @@ def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
         for k in ("source", "sourceNetwork", "destinationNetwork", "maxFee"):
             if not isinstance(c.get(k), str) or c[k] == "":
                 return Refusal("mpp/credential-malformed")
+        if c["sourceNetwork"] != source_network:
+            return Refusal("mpp/input-malformed")
+        if _decimal_of(c["burnIntent"].get("maxBlockHeight")) != max_block_height:
+            return Refusal("mpp/max-block-height-changed")
         return measured({
             "challenge": challenge,
             "source": c["source"],
@@ -291,7 +323,8 @@ def _gateway_build(choice: Any, h: AtrHash) -> MppUnsigned | Refusal:
             },
         })
 
-    return MppUnsigned({"kind": "gateway-burn-intent", "preimage": preimage}, complete)
+    request = {"kind": "gateway-burn-intent", "preimage": preimage, "maxBlockHeight": max_block_height}
+    return MppUnsigned(request, complete)
 
 
 def _gateway_bound(presented: Any) -> AtrHash | Refusal:
@@ -366,6 +399,7 @@ class MppChargeUsdcGateway:
     id: str = GATEWAY
     coverage: Coverage = "none"
     agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
 
     def read(self, doc: Any) -> Advertised | Refusal:
         return read(doc)

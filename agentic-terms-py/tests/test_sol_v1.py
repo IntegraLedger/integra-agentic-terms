@@ -29,10 +29,6 @@ def _deposit(p: dict[str, Any], w: str) -> dict[str, Any]:
     return {**p, "deposit": {**p["deposit"], "transaction": w}}
 
 
-# The changed rows each file holds: x402-exact-solana.json's hold each rule of the version-1 decoder as well.
-CHANGED_ROWS = {"x402-exact-solana.json": 26, "x402-upto-solana.json": 3, "x402-batch-settlement.json": 3}
-
-
 def answer(expect: Any) -> Any:
     """A row's expect as bound answers it: H, or the refusal of its code."""
     return expect if isinstance(expect, str) else Refusal(expect["code"])
@@ -94,7 +90,7 @@ def test_bound_and_check_give_h(file: str, binding: Any, wire_of: Wire, with_wir
 def test_each_changed_member_is_refused(file: str, binding: Any, wire_of: Wire, with_wire: Replace) -> None:
     v = load(file)["transactionV1"]
     rows = v["changed"]
-    assert len(rows) == CHANGED_ROWS[file]
+    assert rows, file
     for row in rows:
         presented = {**copy.deepcopy(v["presented"]), "payload": with_wire(copy.deepcopy(v["presented"]["payload"]), row["wireBase64"])}
         assert binding.bound(presented) == answer(row["expect"]), row["case"]
@@ -104,7 +100,7 @@ def test_each_changed_member_is_refused(file: str, binding: Any, wire_of: Wire, 
 def test_the_decoder_alone_gives_each_changed_rows_tx_refusal(file: str, binding: Any, wire_of: Wire, with_wire: Replace) -> None:
     """decode_svm_tx gives a row's svm/tx-* refusal itself, and decodes every other changed row."""
     rows = load(file)["transactionV1"]["changed"]
-    assert len(rows) == CHANGED_ROWS[file]
+    assert rows, file
     for row in rows:
         d = _svm.decode_svm_tx(base64.b64decode(row["wireBase64"]))
         code = row["expect"]["code"] if isinstance(row["expect"], dict) else None

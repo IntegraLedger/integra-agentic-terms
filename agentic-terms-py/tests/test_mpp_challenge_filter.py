@@ -209,8 +209,9 @@ CASES: list[Case] = [
     ("splits adding up to amount", "mpp/charge/evm/permit2", lambda c: with_request(c, lambda r: details(r).__setitem__("splits", [{"recipient": r["recipient"], "amount": r["amount"]}])), "mpp/input-malformed", None),
     ("amount 0 with permit2 alone listed", "mpp/charge/evm/permit2", lambda c: with_request(c, permit2_alone_for_0), "mpp/input-malformed", None),
     ("amount 0 with authorization listed too", "mpp/charge/evm/permit2", lambda c: with_request(c, set_in(["amount"], "0")), "mpp/not-this-pairing", "mpp/charge/evm/authorization"),
-    # xrpl-mpp-sdk 0.1.0-beta.4's schema takes memos as objects of type, format and data, not rippled's {Memo} form
-    # (mpp-charge-xrpl.json's refusals); the session's channel id derives from the recipient's AccountID.
+    # xrpl-mpp-sdk 0.1.0-beta.4's schema reads memos as objects of type, format and data, and strips rippled's {Memo}
+    # form of its members; the protocol package refuses that form, its own stricter reading (mpp-charge-xrpl.json's
+    # build.refused); the session's channel id derives from the recipient's AccountID.
     ("methodDetails.memos", "mpp/charge/xrpl", lambda c: with_request(c, set_in([MD, "memos"], [{"Memo": {"MemoData": "6C6370"}}])), "mpp/request-malformed", None),
     ("a recipient whose checksum fails", "mpp/session/xrpl", lambda c: with_request(c, recipient_checksum_fails), "mpp/request-malformed", None),
     # draft-tempo-subscription-00: the key authorization's uint64 expiry and period.
@@ -266,7 +267,8 @@ def test_a_placed_challenge_whose_opaque_does_not_read(pairing: str) -> None:
 
 
 # The EVM transaction and hash charges' bound, which no signed place carries H in, holds the echoed challenge to the
-# filter first: a challenge it does not name for the pairing is refused with its code.
+# filter first: a challenge it does not name for the pairing is refused with its code. A challenge it names reaches the
+# credential's type, and this credential, of type authorization, is mpp/credential-type.
 @pytest.mark.parametrize("pairing", ["mpp/charge/evm/transaction", "mpp/charge/evm/hash"])
 def test_the_evm_charges_without_a_signed_place_hold_the_filter(pairing: str) -> None:
     v = load("mpp-charge-evm-authorization.json")
@@ -274,7 +276,7 @@ def test_the_evm_charges_without_a_signed_place_hold_the_filter(pairing: str) ->
     r = decoded(credential["challenge"])
     r[MD] = {k: x for k, x in r[MD].items() if k != "credentialTypes"}
     offered = {**credential, "challenge": {**credential["challenge"], "request": b64u_encode(canonical_json(r).encode("utf-8"))}}
-    assert BINDINGS[pairing].bound(offered) == Refusal("mpp/no-signed-place")
+    assert BINDINGS[pairing].bound(offered) == Refusal("mpp/credential-type")
     del r["amount"]
     changed = {**credential, "challenge": {**credential["challenge"], "request": b64u_encode(canonical_json(r).encode("utf-8"))}}
     assert pairings_of(issued(changed["challenge"])) == Refusal("mpp/request-malformed")
