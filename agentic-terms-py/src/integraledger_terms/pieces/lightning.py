@@ -1,21 +1,22 @@
-"""The buyer pieces for Lightning on MPP: the buyer's node pays exactly the invoice the build names, and its
-answer is the payment preimage, as the build's complete takes it. The node moves the payment, so a decline keeps
-it."""
+"""The buyer pieces for Lightning: the buyer's node pays exactly the invoice the build names, and its answer is the
+payment preimage, as the build's complete takes it. The node moves the payment, so a decline keeps it."""
 
+import re
 from typing import Any
 
 from collections.abc import Mapping
 
 from .._types import Advertised, Chosen, Inputs, Json, Refusal, Signature
 from ..bindings._bolt11 import decode
-from ..bindings.lightning import MPP_CHARGE, MPP_SESSION
+from ..bindings.lightning import LNBTC, MPP_CHARGE, MPP_SESSION
 from ._base import BasePiece
-from ._common import InputKind, account_of, choice_of, inputs_of
+from ._common import InputKind, account_of, bytes_of, choice_of, inputs_of
 from ._mpp import challenges_of, pairings_of_placed, request_of
+from ._x402_rail import Rail, RailPiece
 
 # The BOLT11 currency of each lnbtc network, the CAIP-2 reference being the first 32 hex characters of the network's
 # genesis block hash: bc mainnet; tb testnet3 and testnet4; tbs signet; bcrt regtest.
-_LN_CURRENCY = {
+LN_CURRENCY = {
     "lnbtc:000000000019d6689c085ae165831e93": "bc",
     "lnbtc:000000000933ea01ad0ee984209779ba": "tb",
     "lnbtc:00000000da84f2bafbbc53dee25a72ae": "tb",
@@ -47,7 +48,7 @@ class LnMppPiece(BasePiece):
 
     def choose(self, read: Advertised, account: str, inputs: Inputs, now: int, ref: str, doc: Json) -> Chosen | Refusal:
         a = account_of(account)
-        currency = _LN_CURRENCY.get(a.network) if a is not None else None
+        currency = LN_CURRENCY.get(a.network) if a is not None else None
         if a is None or a.namespace != "lnbtc" or currency is None:
             return Refusal("mpp/no-payable-option")
         challenge = next(
@@ -86,3 +87,56 @@ class LnMppPiece(BasePiece):
 
 MPP_CHARGE_PIECE = LnMppPiece(MPP_CHARGE, False)
 MPP_SESSION_PIECE = LnMppPiece(MPP_SESSION, True)
+
+
+# ── x402/exact/lnbtc/payment-hash ──
+
+
+def _lnbtc_inputs(accepted: Mapping[str, Any], given: Inputs) -> dict[str, Any]:
+    """The buyer's request, where inputs gives it as an object; else nothing, the build declining it."""
+    request = given.get("request") if isinstance(given, Mapping) else None
+    return {"request": request} if isinstance(request, Mapping) else {}
+
+
+def _lnbtc_revive(c: dict[str, Any]) -> dict[str, Any] | Refusal:
+    """The choice as the build takes it: the request's body, on http:1, as bytes; a choice without the request, or
+    with a body that is not 0x hex, is x402/input-missing."""
+    request = c.get("request")
+    if not isinstance(request, Mapping):
+        return Refusal("x402/input-missing")
+    if request.get("profile") != "http:1":
+        return c
+    body = bytes_of(request["body"] if "body" in request else "0x")
+    return Refusal("x402/input-missing") if body is None else {**c, "request": {**request, "body": body}}
+
+
+def _preimage(signature: Signature) -> str | Refusal:
+    return signature if isinstance(signature, str) else Refusal("ln/preimage-malformed")
+
+
+class LnbtcPaymentHashPiece(RailPiece):
+    """x402/exact/lnbtc/payment-hash: the buyer signs nothing; its node pays the BOLT 11 invoice the seller's node
+    issued after the agreement for the payment hash the ATR commits, and its answer is the payment preimage. The
+    binding's build makes the client's checks of the option and its invoice before it hands over the invoice to pay
+    (lcp profile x402-exact-lnbtc.md, rules 6 and 7). The buyer's request is the input request, the request the buyer
+    means to make: over HTTP {profile: "http:1", method, url, body?, headers?}, body the content bytes as 0x hex (absent
+    for no body); over MCP {profile: "mcp:1", server, name, arguments?, meta?}. It is read at the build, once the ATR's
+    hash is held, so an offer is chosen without it. The node moves the payment, so a decline after it keeps it."""
+
+    def moves(self, request: Json) -> bool:
+        return True
+
+
+LNBTC_PIECE = LnbtcPaymentHashPiece(
+    Rail(
+        pairing=LNBTC,
+        namespace="lnbtc",
+        # The payer is named in nothing the node pays, so the account's address is not read.
+        address=re.compile(r".*", re.DOTALL),
+        payer=None,
+        now=True,
+        inputs=_lnbtc_inputs,
+        revive=_lnbtc_revive,
+        answer=_preimage,
+    )
+)

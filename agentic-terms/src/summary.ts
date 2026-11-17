@@ -26,6 +26,7 @@ import { nearDelegate, nearStart } from "./summary/near-delegate.js";
 import { tronTxid } from "./summary/tron-txid.js";
 import { tonW5 } from "./summary/ton-w5.js";
 import { spendPermission } from "./summary/spend-permission.js";
+import { bolt11Deposit, bolt11Pay } from "./summary/bolt11-pay.js";
 
 /** A summary without the ATR's bytes, which the gate adds. */
 export type Shown = Omit<Summary, "atr">;
@@ -168,6 +169,9 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/tron/lcp-trc20-memo", { show: tronTxid }],
   ["x402/exact/tvm", { show: tonW5 }],
   ["spend-permissions/eip155", { show: spendPermission }],
+  ["x402/exact/lnbtc/payment-hash", { show: bolt11Pay }],
+  ["mpp/charge/lightning", { show: bolt11Pay }],
+  ["mpp/session/lightning", { show: bolt11Deposit }],
 ]);
 
 /**

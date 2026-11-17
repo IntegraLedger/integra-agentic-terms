@@ -96,6 +96,7 @@ const RAILS = {
   "mpp/charge/usdc/stacks": "Stacks",
   "x402/exact/lnbtc": "Lightning",
   "x402/exact/lnbtc/invoice-named": "Lightning",
+  "x402/exact/lnbtc/payment-hash": "Lightning",
   "mpp/charge/lightning": "Lightning",
   "mpp/session/lightning": "Lightning",
   "x402/batch-settlement/cloudflare": "Cloudflare",

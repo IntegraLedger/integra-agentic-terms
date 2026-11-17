@@ -182,7 +182,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `card/seller-reference` | | | | | | |
     | `vic-reference`, the transaction reference `transactionReferenceId` for the agent's Visa Intelligent Commerce credential request: `card/visa-vic` | none: the card charge is the seller's, and the request names no amount | `[]`: the request names no payee | `""`, the empty string: the request names no currency | `null`: the payment moves on no ledger | none to none, seconds: the request names no expiry | none |
     | `mpp/charge/card` | | | | | | |
-    | `mpp/charge/lightning` | | | | | | |
+    | `bolt11-pay`, a BOLT 11 invoice the buyer's node pays, read with the protocol package's strict decoder (`decodeBolt11`): `x402/exact/lnbtc/payment-hash`, `mpp/charge/lightning`, `mpp/session/lightning` | `amount`: the invoice's amount, in millisatoshis | the key that signed the invoice, its `n` field's where it has one and otherwise the one its signature recovers, as 66 lowercase hex digits, with the amount | `BTC` | the signer's account's network, where the invoice's currency is that network's (BOLT 11's prefix: `bc` mainnet, `tb` testnet3 and testnet4, `tbs` signet, `bcrt` regtest) | the invoice's creation time to that time plus its expiry, `seconds` | `deposit`: the amount, on `mpp/session/lightning`, whose deposit invoice it is. An invoice the decoder refuses, one that names no amount, or one whose currency is not the account's network's gives no summary |
     | `mpp/charge/nearintents` | | | | | | |
     | `mpp/charge/stripe` | | | | | | |
     | `mpp/charge/tempo/split-memo` | | | | | | |
@@ -190,7 +190,6 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `mpp/charge/usdc/gateway` | | | | | | |
     | `mpp/session/evm` | | | | | | |
     | `mpp/session/hedera/stock` | | | | | | |
-    | `mpp/session/lightning` | | | | | | |
     | `mpp/session/solana/stock` | | | | | | |
     | `mpp/session/tempo` | | | | | | |
     | `mpp/session/xrpl/stock` | | | | | | |

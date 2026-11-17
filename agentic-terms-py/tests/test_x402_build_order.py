@@ -36,6 +36,7 @@ CASPER = load("x402-exact-casper.json")["fixed"]
 CCD = load("x402-exact-ccd.json")["fixed"]
 XRPL = load("x402-exact-xrpl.json")["fixed"]
 XLM = load("x402-exact-stellar-precondition.json")
+LN = load("x402-exact-lnbtc.json")["fixed"]
 
 EVM_MEMBERS = {"from": EVM["payer"], "now": EVM["now"]}
 EVM_BAD = [("from", "0x12", "x402/option-malformed"), ("now", -1, "x402/option-malformed")]
@@ -220,6 +221,7 @@ ROWS: dict[str, tuple[dict[str, Any], str, list[tuple[str, Any, str]]]] = {
     "x402/exact/cardano": ({}, "x402/payload-malformed", []),
     "x402/exact/cardano/lock": ({}, "x402/payload-malformed", []),
     "x402/exact/polkadot/lcp-assets-remark": ({}, "x402/payload-malformed", []),
+    "x402/exact/lnbtc/payment-hash": ({"now": LN["now"]}, "x402/payload-malformed", [("now", -1, "ln/time-malformed")]),
 }
 
 H_ROWS = [(pairing, BAD_H) for pairing in ROWS]

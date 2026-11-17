@@ -13,7 +13,7 @@ import { offers, requestOf } from "./mpp.js";
  * The BOLT11 currency of each `lnbtc` network, the CAIP-2 reference being the first 32 hex characters of the network's
  * genesis block hash: `bc` mainnet; `tb` testnet3 and testnet4; `tbs` signet; `bcrt` regtest.
  */
-const LN_CURRENCY: { readonly [network: string]: string } = {
+export const LN_CURRENCY: { readonly [network: string]: string } = {
   "lnbtc:000000000019d6689c085ae165831e93": "bc",
   "lnbtc:000000000933ea01ad0ee984209779ba": "tb",
   "lnbtc:00000000da84f2bafbbc53dee25a72ae": "tb",

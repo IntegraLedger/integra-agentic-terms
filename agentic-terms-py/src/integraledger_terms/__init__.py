@@ -68,6 +68,7 @@ from .bindings.lightning import (
     MPP_CHARGE,
     MppLightning,
     MppLightningSession,
+    X402ExactLnbtcPaymentHash,
 )
 from .bindings.ucp import (
     BOOKING_AP2_MANDATE,
@@ -137,6 +138,7 @@ UCP_BOOKING_AP2_MANDATE: Binding = UcpAp2Mandate(BOOKING_AP2_MANDATE)
 UCP_BOOKING_UNSIGNED: Binding = UcpUnsignedPairing(BOOKING_UNSIGNED)
 MPP_CHARGE_LIGHTNING: Binding = MppLightning(MPP_CHARGE)
 MPP_SESSION_LIGHTNING: Binding = MppLightningSession()
+X402_EXACT_LNBTC_PAYMENT_HASH: Binding = X402ExactLnbtcPaymentHash()
 CARD_MASTERCARD_VI_IMMEDIATE: Binding = CardMastercardViImmediate()
 CARD_MASTERCARD_VI_AUTONOMOUS: Binding = CardMastercardViAutonomous()
 CARD_SELLER_REFERENCE: Binding = CardSellerReference()
@@ -236,6 +238,7 @@ __all__ = [
     "X402_EXACT_EIP155_PERMIT2",
     "X402_EXACT_HEDERA",
     "X402_EXACT_HEDERA_TRANSFER_EXECUTOR",
+    "X402_EXACT_LNBTC_PAYMENT_HASH",
     "X402_EXACT_NEAR",
     "X402_EXACT_POLKADOT_LCP_ASSETS_REMARK",
     "X402_EXACT_SOLANA",

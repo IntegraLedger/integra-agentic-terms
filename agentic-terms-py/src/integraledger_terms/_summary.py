@@ -10,6 +10,7 @@ from typing import Any
 
 from ._summary_evm import erc20_transfer, exact_permit2, key_authorization, mpp_permit2, upto_permit2
 from ._types import Inputs, Payee, Summary, Validity
+from ._summary_bolt11 import bolt11_deposit, bolt11_pay
 from ._summary_card import tap_field, vi_checkout_mandate, vi_immediate, vic_reference
 from ._summary_checkout import acp_allowance, ap2_checkout_mandate, ucp_checkout, ucp_legal_context
 from ._summary_spend import spend_permission
@@ -170,6 +171,9 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/tron/lcp-trc20-memo": SummaryEntry(show=tron_txid),
     "x402/exact/tvm": SummaryEntry(show=ton_w5),
     "spend-permissions/eip155": SummaryEntry(show=spend_permission),
+    "x402/exact/lnbtc/payment-hash": SummaryEntry(show=bolt11_pay),
+    "mpp/charge/lightning": SummaryEntry(show=bolt11_pay),
+    "mpp/session/lightning": SummaryEntry(show=bolt11_deposit),
 }
 
 

@@ -69,7 +69,6 @@ PENDING: frozenset[str] = frozenset(
         "mpp/session/solana/memo",
         "mpp/session/solana/stock",
         "x402/exact/eip155/gateway-batched",
-        "x402/exact/lnbtc/payment-hash",
     }
 )
 

@@ -1,5 +1,6 @@
 import type { BuyerPiece } from "../types.js";
 import { mppChargeLightning, mppSessionLightning } from "./lightning.js";
+import { x402ExactLnbtcPaymentHash } from "./x402-exact-lnbtc-payment-hash.js";
 import { x402ExactCasper } from "./x402-exact-casper.js";
 import { x402ExactCcd } from "./x402-exact-ccd.js";
 import { ackPaymentRequest } from "./ack-payment-request.js";
@@ -107,6 +108,7 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["x402/exact/ccd", x402ExactCcd],
   ["mpp/charge/lightning", mppChargeLightning],
   ["mpp/session/lightning", mppSessionLightning],
+  ["x402/exact/lnbtc/payment-hash", x402ExactLnbtcPaymentHash],
   ["card/visa-tap", cardVisaTap],
   ["card/mastercard-vi/immediate", cardMastercardViImmediate],
   ["card/mastercard-vi/autonomous", cardMastercardViAutonomous],

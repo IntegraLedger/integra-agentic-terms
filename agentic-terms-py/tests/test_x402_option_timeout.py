@@ -32,6 +32,12 @@ TIMEOUTS: list[tuple[str, object, bool]] = [
 ]
 
 
+# x402/exact/lnbtc/payment-hash's filter also holds maxTimeoutSeconds equal to its invoice's expiry (the protocol
+# package's x402-exact-lnbtc.md, rule 6j), and the option it offers under 60 carries the vectors' invoice whose expiry is
+# 60 s: of the timeouts offered, only those equal to 60.
+EXPIRY_HELD = {"x402/exact/lnbtc/payment-hash"}
+
+
 def with_timeout(option: dict[str, Any], timeout: object) -> dict[str, Any]:
     changed = {k: v for k, v in option.items() if k != "maxTimeoutSeconds"}
     if timeout is not ABSENT:
@@ -50,7 +56,8 @@ def test_an_x402_option_is_offered_only_with_a_positive_safe_integer_timeout(pai
     answer = read(offering(*accepts))
     assert not isinstance(answer, Refusal), answer
     labels = {id(o): label for o, (label, _, _) in zip(accepts, TIMEOUTS)}
-    assert [labels[id(o)] for o in answer.offer["options"]] == [label for label, _, offers in TIMEOUTS if offers]
+    offered = [label for label, value, offers in TIMEOUTS if offers and (pairing not in EXPIRY_HELD or value == 60)]
+    assert [labels[id(o)] for o in answer.offer["options"]] == offered
     for (label, _, offers), changed in zip(TIMEOUTS, accepts):
         if not offers:
             assert (label, read(offering(changed))) == (label, Refusal("x402/no-payable-option"))
