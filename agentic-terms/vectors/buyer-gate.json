@@ -1,0 +1,388 @@
+{
+  "about": "Vectors for the terms profile buyer-gate.md, every input a published row or a specification's own example. rows: each decline code the profile adds that such an input shows, the declining case and the accepted case it differs from in one member (of names it), each run through transact with the row's pairing. A row's document is fixed.documents[pairing] with extensions.legalContext.info.value set to the row's atr.sha256; the link fixed.link serves atr.hex's bytes with status 200 and no content coding; the account is fixed.account and the clock reads fixed.now. approves is what the approver answers. An accepted case whose approver answers false ends at the approver having called no signer, which shows every earlier check passed; floor-given ends earlier, at agreement-not-offered, x402/exact/eip155/gateway-batched being paid only after its agreement and its document naming no agreement URL. In approved the payer key fixed.payerKey signs, and the approver is handed act, pairing and step as asked lists them, its request equal to what the signer is handed and its summary's atr the ATR's bytes. expect counts the calls of the signer and of the approver. Sources: fixed.now, account, payerKey, link and the eip3009 document are lcp's buyer.json fixed (D), and A, the ATR every row but atr-malformed serves, is its fixed.A; atr-malformed serves lcp's core-vectors.json refusals row V5b's bytes, two JSON values; resourceRequest is lcp's x402-request-commitment.json http[0].request, bodyUtf8 being the body's bytes as UTF-8; the erc7710-salt document is lcp's x402-exact-eip155-erc7710-salt.json buyer row B2's, a delegation, which signs no bound (lcp profile x402-exact-eip155-erc7710-salt.md, rule 9); the gateway-batched document is lcp's x402-exact-eip155-gateway-batched.json fixed resource, extensions and O2, and minValiditySeconds its fixed 604800, whose oracle is Circle's own client. Every atr.sha256 is GNU coreutils sha256sum, which Python's hashlib matches. Nothing here is terms' output.",
+  "fixed": {
+    "now": 1790000000,
+    "account": "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "payerKey": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+    "link": "https://atr.seller.example/4a57a46d-5bd4-4a60-a92e-2229874df072",
+    "documents": {
+      "x402/exact/eip155/eip3009": {
+        "x402Version": 2,
+        "resource": {
+          "url": "https://api.seller.example/v1/quote"
+        },
+        "accepts": [
+          {
+            "scheme": "exact",
+            "network": "eip155:84532",
+            "amount": "10000",
+            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "maxTimeoutSeconds": 60,
+            "extra": {
+              "name": "USDC",
+              "version": "2"
+            }
+          }
+        ],
+        "extensions": {
+          "legalContext": {
+            "info": {
+              "type": "sha256",
+              "value": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+              "legalContextUrl": "https://atr.seller.example/4a57a46d-5bd4-4a60-a92e-2229874df072"
+            },
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "sha256"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^0x[0-9a-f]{64}$"
+                },
+                "legalContextUrl": {
+                  "type": "string",
+                  "pattern": "^https://"
+                }
+              },
+              "required": [
+                "type",
+                "value",
+                "legalContextUrl"
+              ]
+            }
+          }
+        }
+      },
+      "x402/exact/eip155/erc7710-salt": {
+        "x402Version": 2,
+        "resource": {
+          "url": "https://api.seller.example/v1/quote"
+        },
+        "accepts": [
+          {
+            "scheme": "exact",
+            "network": "eip155:84532",
+            "amount": "10000",
+            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "maxTimeoutSeconds": 60,
+            "extra": {
+              "name": "USDC",
+              "version": "2",
+              "assetTransferMethod": "erc7710"
+            }
+          }
+        ],
+        "extensions": {
+          "legalContext": {
+            "info": {
+              "type": "sha256",
+              "value": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+              "legalContextUrl": "https://atr.seller.example/4a57a46d-5bd4-4a60-a92e-2229874df072"
+            },
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "sha256"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^0x[0-9a-f]{64}$"
+                },
+                "legalContextUrl": {
+                  "type": "string",
+                  "pattern": "^https://"
+                }
+              },
+              "required": [
+                "type",
+                "value",
+                "legalContextUrl"
+              ]
+            }
+          }
+        }
+      },
+      "x402/exact/eip155/gateway-batched": {
+        "x402Version": 2,
+        "resource": {
+          "url": "https://api.seller.example/v1/quote"
+        },
+        "accepts": [
+          {
+            "scheme": "exact",
+            "network": "eip155:84532",
+            "amount": "10000",
+            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "maxTimeoutSeconds": 604900,
+            "extra": {
+              "name": "GatewayWalletBatched",
+              "version": "2",
+              "verifyingContract": "0x0077777d7EBA4688BDeF3E311b846F25870A19B9"
+            }
+          }
+        ],
+        "extensions": {
+          "legalContext": {
+            "info": {
+              "type": "sha256",
+              "value": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+              "legalContextUrl": "https://atr.seller.example/4a57a46d-5bd4-4a60-a92e-2229874df072"
+            },
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "sha256"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^0x[0-9a-f]{64}$"
+                },
+                "legalContextUrl": {
+                  "type": "string",
+                  "pattern": "^https://"
+                }
+              },
+              "required": [
+                "type",
+                "value",
+                "legalContextUrl"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "rows": [
+    {
+      "name": "approved",
+      "pairing": "x402/exact/eip155/eip3009",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2230663866616435622d643963622d343639662d613136352d373038363737323839353065222c2278343032223a7b227a223a312e302c2261223a226361665c7530306539227d2c2273656c6c6572223a7b226e6f7465223a22436166c3a920e280942033302064c3ad617320e29c93227d7d",
+        "sha256": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+        "from": "lcp buyer.json fixed.A"
+      },
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": true,
+      "inputs": {},
+      "expect": {
+        "decline": null,
+        "signerCalls": 1,
+        "approverCalls": 1,
+        "asked": [
+          {
+            "act": "payment",
+            "pairing": "x402/exact/eip155/eip3009",
+            "step": {
+              "index": 0,
+              "count": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "not-approved",
+      "of": "approved",
+      "pairing": "x402/exact/eip155/eip3009",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2230663866616435622d643963622d343639662d613136352d373038363737323839353065222c2278343032223a7b227a223a312e302c2261223a226361665c7530306539227d2c2273656c6c6572223a7b226e6f7465223a22436166c3a920e280942033302064c3ad617320e29c93227d7d",
+        "sha256": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+        "from": "lcp buyer.json fixed.A"
+      },
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "not-approved",
+        "signerCalls": 0,
+        "approverCalls": 1
+      }
+    },
+    {
+      "name": "atr-malformed",
+      "of": "not-approved",
+      "pairing": "x402/exact/eip155/eip3009",
+      "atr": {
+        "hex": "7b2261223a317d207b2262223a327d",
+        "sha256": "0xb3583052341ed170ea8562a471af03e16ec9c256320c606f52a67736d1192409",
+        "from": "lcp core-vectors.json refusals V5b contentHex"
+      },
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "atr-malformed",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "no-end-raised",
+      "pairing": "x402/exact/eip155/erc7710-salt",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2230663866616435622d643963622d343639662d613136352d373038363737323839353065222c2278343032223a7b227a223a312e302c2261223a226361665c7530306539227d2c2273656c6c6572223a7b226e6f7465223a22436166c3a920e280942033302064c3ad617320e29c93227d7d",
+        "sha256": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+        "from": "lcp buyer.json fixed.A"
+      },
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "ceilings": {
+        "x402/exact/eip155/erc7710-salt": "no-end"
+      },
+      "expect": {
+        "decline": "not-approved",
+        "signerCalls": 0,
+        "approverCalls": 1
+      }
+    },
+    {
+      "name": "no-end",
+      "of": "no-end-raised",
+      "pairing": "x402/exact/eip155/erc7710-salt",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2230663866616435622d643963622d343639662d613136352d373038363737323839353065222c2278343032223a7b227a223a312e302c2261223a226361665c7530306539227d2c2273656c6c6572223a7b226e6f7465223a22436166c3a920e280942033302064c3ad617320e29c93227d7d",
+        "sha256": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+        "from": "lcp buyer.json fixed.A"
+      },
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "no-end",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "floor-given",
+      "pairing": "x402/exact/eip155/gateway-batched",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2230663866616435622d643963622d343639662d613136352d373038363737323839353065222c2278343032223a7b227a223a312e302c2261223a226361665c7530306539227d2c2273656c6c6572223a7b226e6f7465223a22436166c3a920e280942033302064c3ad617320e29c93227d7d",
+        "sha256": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+        "from": "lcp buyer.json fixed.A"
+      },
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {
+        "minValiditySeconds": 604800
+      },
+      "expect": {
+        "decline": "agreement-not-offered",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "floor-missing",
+      "of": "floor-given",
+      "pairing": "x402/exact/eip155/gateway-batched",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2230663866616435622d643963622d343639662d613136352d373038363737323839353065222c2278343032223a7b227a223a312e302c2261223a226361665c7530306539227d2c2273656c6c6572223a7b226e6f7465223a22436166c3a920e280942033302064c3ad617320e29c93227d7d",
+        "sha256": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938",
+        "from": "lcp buyer.json fixed.A"
+      },
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "floor-missing",
+        "signerCalls": 0,
+        "approverCalls": 0,
+        "detail": "minValiditySeconds"
+      }
+    }
+  ],
+  "parse": {
+    "about": "The parse refuses exactly what lcp's assemble refuses in a party's bytes, its check 8 (core/content-not-json). lcp's core-vectors.json rows are the parse's rows too: refusals V5b (two JSON values) and V5c (bytes not UTF-8), refused, and jsonDepth's rows, accepted where accept is true. These rows are the cases that file does not hold, each a specification's own example: RFC 7493 section 2.2's integer and its range, read with Python's int, and its 1E400; RFC 8259 section 6's NaN and Infinity; RFC 8259 section 8.3's two spellings of one name; and RFC 8259 section 8.1's byte-order mark. hex is the text's bytes; accept says whether the parse takes it.",
+    "rows": [
+      {
+        "name": "JP1",
+        "case": "9007199254740991, RFC 7493 section 2.2's largest exact integer",
+        "hex": "39303037313939323534373430393931",
+        "accept": true
+      },
+      {
+        "name": "JP2",
+        "case": "2^53, past the range RFC 7493 section 2.2 gives, [-(2**53)+1, (2**53)-1]",
+        "hex": "39303037313939323534373430393932",
+        "accept": false
+      },
+      {
+        "name": "JP3",
+        "case": "-(2^53), past that range",
+        "hex": "2d39303037313939323534373430393932",
+        "accept": false
+      },
+      {
+        "name": "JP4",
+        "case": "1E400, RFC 7493 section 2.2's example of a number past a double's magnitude",
+        "hex": "3145343030",
+        "accept": false
+      },
+      {
+        "name": "JP5",
+        "case": "NaN, which RFC 8259 section 6 does not permit",
+        "hex": "4e614e",
+        "accept": false
+      },
+      {
+        "name": "JP6",
+        "case": "Infinity, which RFC 8259 section 6 does not permit",
+        "hex": "496e66696e697479",
+        "accept": false
+      },
+      {
+        "name": "JP7",
+        "case": "an object holding the two names of RFC 8259 section 8.3's example, \"a\\\\b\" and \"a\\u005Cb\", one name once its escapes are decoded (RFC 7493 section 2.3)",
+        "hex": "7b22615c5c62223a312c22615c753030354362223a327d",
+        "accept": false
+      },
+      {
+        "name": "JP8",
+        "case": "JP1 after a byte-order mark, U+FEFF in UTF-8, which RFC 8259 section 8.1 forbids a sender to add",
+        "hex": "efbbbf39303037313939323534373430393931",
+        "accept": false
+      }
+    ]
+  }
+}

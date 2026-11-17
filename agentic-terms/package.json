@@ -37,6 +37,8 @@
   },
   "files": [
     "dist",
+    "profiles",
+    "vectors",
     "LICENSE"
   ],
   "scripts": {
