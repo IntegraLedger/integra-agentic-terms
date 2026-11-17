@@ -23,7 +23,7 @@ Most MCP clients take a configuration like this:
 ```
 
 `npx` runs the package's `terms-mcp` binary, which serves the tools over stdio with no signer. It needs Node.js
-`>=24`. Its `serverInfo` name is `integraledger-terms`.
+`>=24.22.1`. Its `serverInfo` name is `integraledger-terms`.
 
 ## Install the skill
 
@@ -43,9 +43,14 @@ request advertises an ATR hash.
 With `terms-mcp`, the agent's own wallet signs. For one payment:
 
 1. **Confirm.** Call `atr_confirm` with the `pairing`, the seller's `document` (the parsed `PAYMENT-REQUIRED` document,
-   or the MPP challenges) and the payer `account` in CAIP-10 form. On a match, the result carries the ATR, its hash,
-   `chosen`, and `request`, the exact thing to sign.
-2. **Sign.** Have the wallet sign `request` unchanged. The [signers guide](./signers.md) lists every kind.
+   or the MPP challenges), the payer `account` in CAIP-10 form and `resourceRequest`, the request the 402 answered:
+   over HTTP `{ method, target, body, headers? }`, `body` the body's bytes as padded standard base64 (`""` for none),
+   over MCP `{ name, arguments? }`. Where the ATR holds a commitment to the request, the gate declines
+   `request-mismatch` for any other. On a match, the result carries the ATR, its hash, `chosen`, `request`, the exact
+   thing to sign, and `summary`, every authority signing it grants.
+2. **Read the summary, then sign.** Read `summary` (the amount, the payees, the asset, the network, how long the payment
+   stays payable), and only if the agent approves it, have the wallet sign `request` unchanged. The
+   [signers guide](./signers.md) lists every kind.
 3. **Finish.** Call `atr_finish` with the `pairing`, `atr.base64`, `chosen` unchanged, and the wallet's answer as
    `signature`. The result is `signed`, the payment to send, only when the pairing reads H from the completed payment,
    or, where the proof is the agreement payment, without that reading.
@@ -79,16 +84,25 @@ A confirmed result, abridged (the long `typedData.types` and the echoed document
         "nonce": "0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938"
       }
     }
+  },
+  "summary": {
+    "amount": "10000",
+    "payees": [{ "account": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C", "amount": "10000" }],
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "network": "eip155:84532",
+    "validity": { "notBefore": "0", "notAfter": "1790438406", "unit": "seconds" },
+    "atr": { "base64": "eyJhdHJWZXJzaW9uIjoiMSIs…", "utf8": "{\"atrVersion\":\"1\",…" }
   }
 }
 ```
 
-The signed `nonce` is `atrHash`. The agent passes `chosen` back to `atr_finish` exactly as it came.
+The signed `nonce` is `atrHash`, and `summary` is read from the typed data the wallet signs. The agent passes `chosen` back to `atr_finish` exactly as it came.
 
 ### Payments signed in steps
 
-If `atr_finish` returns `next`, the wallet signs `next`, and the agent calls `atr_finish` again with every answer so
-far, in order, as a list.
+If `atr_finish` returns `next`, it returns its `summary` beside it, which names every authority signing it grants: the
+agent reads it, the wallet signs `next`, and the agent calls `atr_finish` again with every answer so far, in order, as a
+list.
 
 ### Nothing to sign
 
@@ -106,7 +120,9 @@ agent approves it as it approves any payment:
 - where the host offers `atr_agree`, call it with `atr.base64` and `chosen`, exactly as returned, `mac` included (a
   changed `chosen` is declined `chosen-unverified`, and nothing is fetched or signed). It returns `approve`, the
   agreement payment, and signs nothing: `approve.option` is its `amount`, `asset`, `payTo` and `network`. Where the
-  agreement is already recorded, it returns the `receipt`. To approve the payment, call `atr_agree` again with
+  agreement is already recorded, it returns the `receipt`; where the agreement URL offers only MPP agreement
+  challenges, it returns them as `agreementChallenges`, signing nothing, for the agent's own MPP client to pay there.
+  To approve the payment, call `atr_agree` again with
   `approved` set to `approve`, exactly as returned; it returns the `receipt`;
 - otherwise, request `chosen.agreement`. It answers `402` with an x402 payment request. Pay it through `atr_confirm`
   and `atr_finish` with the pairing of an option for which `atr_confirm` returns a `request` and no
@@ -160,16 +176,27 @@ The `fetch` you pass is the server's whole network policy. The binary's public-a
 server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses loopback,
 private-use, link-local and unique-local addresses.
 
-With a host signer, the agent never sees a request: `atr_transact` returns the payment to send and the ATR to keep, and
-declines exactly as the gate does. The agreement payment is shown before it is signed: where the pairing needs one,
-`atr_transact` first returns it as `approve`, with its amount, asset, payee and network, signs nothing, and pays it only
-when called again with `approved` set to `approve`. The payment for the resource is handed to the host's signer
-directly; approving it is the agent's step before it calls `atr_transact`. The gate applies no spending limit.
+With a host signer, `atr_transact` signs only what the agent approved. Before each signing it returns `approve`,
+`{ agreement?, signings }`, and signs nothing: the last of `signings` is the signing asked now,
+`{ act, pairing, request, summary, step }`, and the ones before it are those already approved. The agent reads the
+summary and, to approve, calls `atr_transact` again with the same arguments and `approved` set to `approve`, unchanged:
+the tool signs a signing only where it equals one of `approved.signings`, and returns the next one to approve the same
+way. Where the pairing pays an agreement first, the first `approve` holds the agreement payment as
+`approve.agreement`, with its amount, asset, payee and network; its signing is approved like any other, then, once the
+agreement is recorded, the payment's. It returns the payment to send and the ATR to keep, and declines exactly as the
+gate does. The gate applies no spending limit.
+
+The ceilings and the served floors are the host's: pass `ceilings` and `floors` to `createBuyerServer`. No tool input
+raises a ceiling or names a floor, so no text the agent reads, the seller's among it, can. Without `floors`, a pairing
+whose rail has a served floor is declined `floor-missing`, and without `ceilings`, one that signs no end is declined
+`no-end`.
 
 ## What the server guarantees
 
-- `atr_confirm` returns a `request` only after SHA-256 of the served bytes equals the advertised H, built with the hash
-  it computed.
+- `atr_confirm` returns a `request` only after SHA-256 of the served bytes equals the advertised H and every check on it
+  has passed, built with the hash it computed, and returns it with its `summary`.
+- With a host signer, `atr_transact` and `atr_agree` sign only a signing the agent was shown and approved, unchanged.
+  `atr_channel_within` signs a later voucher in a channel whose opening was approved, with no approval of its own.
 - `atr_finish` returns `signed` only when the pairing reads the hash of the bytes it was given from the completed
   payment, or, where the proof is the agreement payment, without that reading.
 - `terms-mcp` holds no keys. With a host signer, only the host's code signs, and only after a match.

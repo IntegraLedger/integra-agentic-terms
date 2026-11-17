@@ -10,12 +10,17 @@ agreement is made at the opening, and every voucher pays under it.
 The gate follows that shape:
 
 1. **Open.** `transact` (or `confirm` and `finish`) compares the ATR and signs the opening, whose signed contents carry
-   H. It is a payment like any other.
+   H. It is a payment like any other: `transact` shows your approver its summary, with the channel's `deposit` and,
+   where the form states it, who may close it (`closableBy`), at each of its steps, and holds it to the pairing's
+   ceiling. An EVM or Tempo session's opening shows its payee, its deposit and, as `grant`, the escrow that holds the
+   deposit and the key it names to sign the channel's vouchers. Its first voucher, which names only the channel, is
+   shown with the opening's payee, asset, network and validity, once the gate has recomputed the channel that opening
+   opens for your account; a voucher of another channel has no summary and is declined `summary-missing`.
 2. **Hold.** `openChannel(bytes, opened, binding, landed?)` checks that the opening is an opening, that the pairing
    reads the hash of the bytes from it and that it names its channel, and returns a **hold**: the bytes, the opening and
    the channel, as JSON you keep. `landed` is the landed receipt `transact` returned beside the opening, where it
-   returned one. Pass it: a pairing such as `mpp/session/hedera` binds its opening by a log only that receipt carries,
-   and the hold keeps it as its own `landed` member, beside the opening as signed. The caller passes as `landed` only
+   returned one. Pass it where there is one: the hold keeps it as its own `landed` member, beside the opening as signed.
+   The caller passes as `landed` only
    the receipt its own reader read for the opening, as `transact` returned it, never a value another party sent. An
    opening that holds its read under its own `FETCHED` member, as `@integraledger/lcp`'s `fetchPresented` returns it,
    is read with that read without `landed`, and the hold keeps it the same way.
@@ -23,7 +28,8 @@ The gate follows that shape:
    takes the bytes, the hash and the channel from the hold, and the amount from the seller's new challenge. On x402's
    batch channels it signs only when that challenge advertises the held H and the payment it builds names the held
    channel. On an MPP session it declines a challenge that names another channel or another H, and signs one with no
-   legal context under the held H.
+   legal context under the held H. `within` takes no approver: the opening was shown and approved, and a caller that
+   wants each later voucher shown shows it before it calls `within`.
 4. **Record the charge.** When the seller reports its cumulative charge, `recordCharge(hold, charged)` records it. The
    charge may not fall below the last one recorded, nor rise above the largest amount you signed.
 
@@ -35,13 +41,22 @@ The gate follows that shape:
 | `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch` | A voucher (`ed25519-raw`) |
 | `mpp/session/evm` | The funding, then the first voucher | A voucher |
 | `mpp/session/tempo` | The signed open transaction, then the first voucher | A voucher |
-| `mpp/session/solana` | The session opening | A voucher |
-| `mpp/session/hedera` | The session opening, broadcast by the signer | A voucher |
 | `mpp/session/xrpl` | A `PaymentChannelCreate` and the first claim | A claim |
 
-`within` signs in-channel payments for these seven pairings. For any other pairing it declines
+`within` signs in-channel payments for these five pairings. For any other pairing it declines
 `pairing-not-supported`. It hands your signer every in-channel payment as a `batch`: answer a `batch` with a list, one
 answer per request, in order.
+
+`mpp/session/solana/memo` opens through the gate: `transact` shows its opening (`solana-session-open`) and signs it.
+terms builds none of its vouchers, since the protocol package gives that pairing no in-channel build, so `within`
+declines it `pairing-not-supported`. Write the 50 bytes a voucher signs with the protocol package's `solanaVoucher`
+(`@integraledger/lcp/svm`) and sign them yourself.
+
+The stock MPP sessions, `mpp/session/hedera/stock`, `mpp/session/xrpl/stock` and `mpp/session/solana/stock`, open
+through the buyer's own stock client, whose opening carries no H. They are at coverage `none`: each is paid after an
+agreement payment on its own network, and the gate's part is the comparison and that agreement (`confirm` returns
+`request: null`, and `transact` returns `signed: null` with the agreement's receipt). Their openings and vouchers are
+the stock client's.
 
 ## Example
 
@@ -96,11 +111,21 @@ const signer: Signer = {
   },
 };
 
-// Open: compare the ATR once, sign the deposit and the first voucher.
+// Open: compare the ATR once, show the opening, sign the deposit and the first voucher.
 const opened = await transact(offer, batchEvm, signer, fetch, {
+  resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
+  approver: ({ summary }) => {
+    console.log("opening  deposit", summary.deposit, "to", summary.payees[0]?.account);
+    return true;
+  },
   inputs: { payerAuthorizer: authorizer.address, deposit: "100000" },
+  // The deposit's authorization stays payable for the option's 3600 seconds: raise this pairing's 600-second ceiling.
+  ceilings: { "x402/batch-settlement/eip155": 3600 },
 });
-if ("decline" in opened || "approve" in opened || opened.signed === null) throw new Error("the channel did not open");
+if ("decline" in opened) throw new Error(`${opened.decline.code}: ${opened.decline.detail}`);
+if ("approve" in opened || "charge" in opened || "agreementChallenges" in opened || opened.signed === null) {
+  throw new Error("the channel did not open");
+}
 let hold = await openChannel(opened.bytes, opened.signed, batchEvm);
 if ("decline" in hold) throw new Error(hold.decline.code);
 console.log("channel ", hold.channel);
@@ -118,6 +143,7 @@ for (const charged of ["1000", "2000"]) {
 ```
 
 ```text output
+opening  deposit 100000 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C
 channel  0x9c2d7031768ecb3fe688ae307c45f2e3a3d98b0d9ce1a6afcd27131fabb67e56
 voucher up to 1000
 voucher up to 2000

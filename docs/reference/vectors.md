@@ -10,7 +10,8 @@ or a value computed with independent tools such as GNU coreutils `sha256sum`, `o
 each named in the file's `about`.
 
 The TypeScript gate and the Python gate both run them. Where a vector names an expected hash, request, payment or decline,
-both gates must produce exactly that.
+both gates must produce exactly that. The gate's own checks, which the terms profile `buyer-gate.md` states, have a file
+of their own, shipped by `@integraledger/terms`: [`vectors/buyer-gate.json`](#the-gates-checks).
 
 ## What they fix
 
@@ -70,11 +71,24 @@ document `D` advertising `hash(A)`, the published Anvil development key as the p
 | BA19 | A `PAYMENT-REQUIRED` whose final character carries a non-zero pad bit (`requiredPadBit`): `agreement-failed` after one request to the agreement URL, with nothing signed or paid. |
 | BE1 | The ATR served under a content coding (gzip, x-gzip, deflate, br, stacked, two gzip members, `identity, gzip`): `atr-unfetchable` before anything is hashed or signed; every request asks for `Accept-Encoding: identity`. |
 | BE2 | The agreement URL's `402` or `200` answered under a content coding: `agreement-failed`; after the agreement payment is signed, the main payment never is. |
-| BS1, BS2 | `x402/exact/stellar` and `mpp/charge/stellar`: a simulated transfer of another amount, on another token contract, or from another account than the payer is declined `offer-unreadable` (`stellar/amount-mismatch`, `stellar/asset-mismatch`, `stellar/payer-mismatch`) before the signer is called; the transfer the option asks for reaches the signer as `stellar-auth`. |
-| BX1 | `mpp/session/xrpl`: a challenge whose `amount` is not a u64 of drops written in decimal (an array, a boolean, a number, a decimal point, a sign, 2^64) is `mpp/request-malformed`, so the gate declines `no-payable-option` and signs nothing; the amount `"100"` reaches the signer as `xrpl-session-open`. |
+| BX1 | `mpp/session/xrpl`, over a JSON ATR the gate parses: a challenge whose `amount` is not a u64 of drops written in decimal (an array, a boolean, a number, a decimal point, a sign, 2^64) is `mpp/request-malformed`, so the gate declines `no-payable-option` and signs nothing; the amount `"100"` reaches the signer as `xrpl-session-open`, its inputs carrying the `ledgerIndex` the ceiling check reads. |
 | BW1, BW2 | `within` on a held `mpp/session/tempo` channel, over a challenge whose opaque is not a flat string-to-string map: `offer-unreadable` (`mpp/opaque-malformed`), and nothing is signed. BW1's control, a well-formed opaque naming the held H, signs one voucher for the held channel. |
 | BW3 | `within` for a refund of a held `x402/batch-settlement/solana` channel, with a `computeUnitLimit`, `computeUnitPrice` or `recentBlockhash` given and malformed: `no-payable-option` (`x402/input-malformed`), before the build and the signer call. Its control, with each value well formed, signs once. |
 | BW4 | `within` with `inputs` given and not an object: `no-payable-option` (`x402/input-malformed`), before the build and the signer call. |
+
+## The gate's checks
+
+`vectors/buyer-gate.json`, in `@integraledger/terms`, holds the rows of the gate's own checks, which both languages run.
+Every input in it is a published row or a specification's own example, each source named in the file's `about`, and each
+ATR's SHA-256 is GNU coreutils `sha256sum`, checked with Python's `hashlib`. Nothing in it is the gate's own output.
+
+| Section | What it fixes |
+| --- | --- |
+| `rows` | For each decline code the profile adds that a published input shows, the declining case and the accepted case it differs from in one member, each run through `transact`, with the decline expected and how many times the approver and the signer are called: an approver that answers `false` (`not-approved`), an ATR the parse refuses (`atr-malformed`), a form that signs no end with and without `ceilings` mapping it to `"no-end"` (`no-end`), and a served floor given and missing (`floor-missing`). |
+| `parse` | The parse's rows that the protocol package's `core-vectors.json` lacks, each RFC 8259's or RFC 7493's own example; `core-vectors.json`'s check-8 rows are the parse's rows too. |
+
+`option-not-in-atr`, `request-mismatch`, `past-ceiling` and `summary-missing` have no row: no published input shows them,
+and the profile's rules alone hold them.
 
 ## Running them
 

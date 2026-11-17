@@ -15,14 +15,20 @@ carries that hash, that approval is the buyer's acceptance of that exact record;
 `proves` says so.
 
 That only holds if the hash in the payment is the hash of the record you can read. This package is the check that makes
-sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, and only on a
-match hands your signer a request built with that hash. After your signer answers, the pairing reads the hash back from
-the completed payment, and the payment is returned only if it is the hash of the bytes you received, or, where the proof
-is the agreement payment, without that reading.
+sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, parses the bytes,
+holds the option you pay and the request you make to what the record's binding slot commits to, and only then builds a
+request with that hash. Before your signer is called, it shows your approver what the signature grants (the amount, the
+payees, the asset, the network and how long the payment stays payable) and declines a payment that would stay payable
+past its ceiling. After your signer answers, the pairing reads the hash back from the completed payment, and the payment
+is returned only if it is the hash of the bytes you received, or, where the proof is the agreement payment, without
+that reading.
 
-It runs in your process, with your HTTP client and your signer. It holds no keys and never reads the record's content:
-what the record says is for you and your principal to judge. The one payment it sends is the agreement payment your
-agent approved, to the agreement URL.
+It runs in your process, with your HTTP client, your signer and your approver. It holds no keys and judges none of the
+record's terms: what the record says is for you and your principal to judge. The one payment it sends is the agreement
+payment your approver approved, to the agreement URL.
+
+The checks, their order, the decline each answers and the names of their arguments are fixed, for this package and the
+Python gate alike, by the profile [`profiles/buyer-gate.md`](./profiles/buyer-gate.md), which ships in this package.
 
 ## Key concepts
 
@@ -36,7 +42,15 @@ agent approved, to the agreement URL.
 - **Binding:** how H rides in a pairing's payment: the field of that payment, as the protocol's own specification
   defines the payment, that carries H. For `x402/exact/eip155/eip3009` it is the EIP-3009 `nonce`. Bindings are exported
   by [`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol), one per pairing.
-- **Buyer gate:** this package: the buyer-side check that compares the served bytes with H before anything is signed.
+- **Coverage:** whether a pairing's payment is itself a public proof of H, as the protocol package's registry states it
+  for each pairing (`data.coverage`): `full` where the payer's own signed act on a public ledger binds all of H, and
+  `none` otherwise. A pairing at `none` is paid only after an **agreement payment**, a payment at `full` carrying H, to
+  the seller's agreement URL.
+- **Buyer gate:** this package: the buyer-side check that compares the served bytes with H, and holds what is about to
+  be signed to the ATR, before anything is signed.
+- **Approver:** your callback, which `transact` asks about each signing, with its **summary**: every authority the
+  signature grants, read from the request the signer is handed.
+- **Ceiling:** the longest a signed payment may stay payable, 600 seconds unless you raise it for a pairing.
 - **Seller:** the party serving the resource.
 - **Facilitator:** the x402 role that verifies and settles. The gate never talks to one. It returns the payment to you,
   except the approved agreement payment, which it sends to the agreement URL.
@@ -50,7 +64,7 @@ agent approved, to the agreement URL.
 npm install @integraledger/terms@0.4.1 @integraledger/lcp@0.5.1
 ```
 
-- Node.js `>=24`. ESM only.
+- Node.js `>=24.22.1`. ESM only.
 - `@integraledger/lcp` is a peer dependency of this package (`~0.5.0`): install it beside it, so your application and
   the gate share one copy, and import from it the bindings you pass in.
 - Chain libraries are optional peers of `@integraledger/lcp`: `@mysten/sui`, `@solana/kit`, `@stellar/stellar-sdk`,
@@ -68,7 +82,7 @@ import { transact, type Fetch, type Signer } from "@integraledger/terms";
 import { exactEip3009, type Eip3009Payment } from "@integraledger/lcp/x402";
 import { privateKeyToAccount } from "viem/accounts";
 
-// The ATR, exactly as the seller's link serves it. The gate hashes these bytes and never parses them.
+// The ATR, exactly as the seller's link serves it. The gate hashes and parses these bytes, never a copy.
 const atr = new TextEncoder().encode(
   '{"atrVersion":"1","id":"0f8fad5b-d9cb-469f-a165-70867728950e","x402":{"z":1.0,"a":"caf\\u00e9"},"seller":{"note":"Café — 30 días ✓"}}',
 );
@@ -108,9 +122,20 @@ const signer: Signer = {
   },
 };
 
-const result = await transact(offer, exactEip3009, signer, fetch);
+const result = await transact(offer, exactEip3009, signer, fetch, {
+  // The request the seller's 402 answered, as your agent made it.
+  resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
+  // Asked once for each signing, before the signer is called, with what the signature grants.
+  approver: (toSign) => {
+    const { amount, payees, network } = toSign.summary;
+    console.log("approve     ", toSign.act, amount, "to", payees[0]?.account, "on", network);
+    return true;
+  },
+});
 if ("decline" in result) throw new Error(`${result.decline.code}: ${result.decline.detail}`);
-if ("approve" in result) throw new Error("this pairing pays no agreement first");
+if ("approve" in result || "charge" in result || "agreementChallenges" in result) {
+  throw new Error("this pairing pays no agreement first");
+}
 
 const payment = result.signed as Eip3009Payment;
 console.log("H           ", result.h);
@@ -123,17 +148,20 @@ console.log("header      ", header.length > 0 ? "ready" : "empty");
 ```
 
 ```text output
+approve      payment 10000 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C on eip155:84532
 H            0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 signed nonce 0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 kept bytes   138
 header       ready
 ```
 
-The nonce your wallet signed is the hash of the 138 bytes the link served. Keep `result.bytes` with the payment: they
-are your copy of the record.
+Your approver was shown what the signature grants, read from the request the wallet signed, and the nonce your wallet
+signed is the hash of the 138 bytes the link served. Keep `result.bytes` with the payment: they are your copy of the
+record.
 
 If the link had served one byte more, less or different, `transact` would have returned
-`{ decline: { code: "hash-mismatch", … } }` and never called the signer.
+`{ decline: { code: "hash-mismatch", … } }` and never called the approver or the signer. Had the approver answered
+anything but `true`, it would have returned `{ decline: { code: "not-approved", … } }` and never called the signer.
 
 ## How it works
 
@@ -143,37 +171,45 @@ sequenceDiagram
     participant G as Buyer gate
     participant S as Seller
     participant W as Your signer
-    A->>G: confirm(offer, binding, account, fetch)
+    A->>G: transact(offer, binding, signer, fetch, { approver, resourceRequest })
     G->>S: GET the link (https, identity coding, no redirect, at most 1 MiB, 10 s)
     S-->>G: The ATR's bytes
-    G->>G: SHA-256(bytes) equals H?
-    G-->>A: The signing request, built with H
-    A->>W: sign(request)
-    W-->>A: The signature
-    A->>G: finish(bytes, chosen, signature)
+    G->>G: SHA-256(bytes) equals H? The bytes parse? The option and the request are the ones the ATR commits to?
+    G->>G: Build the request with H, summarize it, hold it to the ceiling
+    G->>A: approver({ act, pairing, request, summary, step })
+    A-->>G: true
+    G->>W: sign(request)
+    W-->>G: The signature
     G-->>A: The payment, only when the pairing reads H from it, or the proof is the agreement payment
 ```
 
 1. **Read.** The pairing's binding reads the seller's document: H, the link, and the payment options.
 2. **Compare.** The gate fetches the link once and hashes the bytes it received. No match: a decline, and no signer
    call.
-3. **Build.** On a match, the gate builds the payment with the hash it computed, not the string the seller advertised.
-4. **Finish.** The gate joins your signer's answer and returns the payment only when the pairing reads H back from the
-   completed payment as the hash of the compared bytes, or, where the proof is the agreement payment, without that
-   reading.
+3. **Parse and hold.** The gate parses the bytes it hashed, by one grammar both languages read alike. Where the ATR's
+   binding slot lists the options offered, the option chosen must be one of them; where it holds a commitment to the
+   buyer's request, `resourceRequest` must be that request.
+4. **Build.** The gate builds the payment with the hash it computed, not the string the seller advertised.
+5. **Show.** The gate computes the summary of the request your signer would be handed, declines a payment that would
+   stay payable past its ceiling, and asks your approver.
+6. **Sign and finish.** Only on `true` does it call your signer. It joins the answer and returns the payment only when
+   the pairing reads H back from the completed payment as the hash of the compared bytes, or, where the proof is the
+   agreement payment, without that reading.
 
-Every function returns a value, never throws for a protocol outcome: either its result, or
-`{ decline: { code, detail } }`.
+`confirm` and `finish` split this order at the signer: `confirm` makes steps 1 to 5 but the approver, and returns the
+request and its summary. Every function returns a value, never throws for a protocol outcome: either its result, or
+`{ decline: { code, detail } }`; nothing the seller serves and nothing your approver answers makes it throw.
 
 ## Guides
 
 ### Pay with `transact`
 
-`transact(doc, binding, signer, fetch, options?)` runs the whole order: compare, pay the agreement your agent approved
-where the pairing needs one, sign, finish. For most pairings that is one call. For a pairing that needs an agreement
-payment, the first call returns that payment for your agent's approval, and a second call, with `approved`, pays it and
-then the resource. The payment for the resource is handed to your signer directly: approving it is your agent's step
-before it calls `transact`, and the gate applies no spending limit. Its result is:
+`transact(doc, binding, signer, fetch, options)` runs the whole order: compare, check, pay the agreement where the
+pairing needs one, ask your approver, sign, finish. For most pairings that is one call. For a pairing that needs an
+agreement payment, the first call returns that payment for your agent's approval, and a second call, with `approved`,
+pays it and then the resource. Every signing, the agreement payment's among them, is asked of your `approver` before the
+signer is called for it; the gate judges no term and applies no spending limit, so what to approve is your approver's
+decision. Its result is:
 
 | Member | What it is |
 | --- | --- |
@@ -184,30 +220,99 @@ before it calls `transact`, and the gate applies no spending limit. Its result i
 | `landed` | A landed receipt to keep beside the payment, for the few pairings that return one. |
 
 Where the pairing needs an agreement payment that is not yet recorded, the result is instead
-`{ approve, bytes, h }`, and nothing has been signed: see [Pay the agreement first](#pay-the-agreement-first).
+`{ approve, bytes, h }`, and nothing has been signed: see [Pay the agreement first](#pay-the-agreement-first). Where the
+pairing is paid after its agreement and the first response offers the agreement alone, the result is `ToReturn`: see
+[Paid after its agreement](#paid-after-its-agreement). Where the agreement URL offers only MPP agreement challenges, the
+result is `AgreementChallenges`, `{ agreementChallenges, bytes, h }`, and nothing has been signed: see
+[Pay the agreement first](#pay-the-agreement-first).
 
 `options` takes:
 
 | Member | What it is |
 | --- | --- |
-| `inputs` | The buyer's own values a build needs, such as a recent blockhash. |
+| `approver` | Required. Your approval callback: `(toSign: ToSign) => boolean \| Promise<boolean>`. It is called once for each signing, after every check and before the signer, and approves only by answering `true`. Anything else, a throw or a rejection declines `not-approved`. |
+| `resourceRequest` | Required. The request the seller's offer answered: over HTTP `{ method, target, body, headers? }` (`body` a `Uint8Array`), over MCP the tool call `{ name, arguments? }`. Where the ATR's binding slot holds a request commitment, the gate holds this request to it. |
+| `inputs` | The buyer's own values a build needs, such as a recent blockhash, and the floor a rail's payment service serves. |
+| `ceilings` | The raised ceilings: a pairing id mapped to seconds, or to `"no-end"`. See [Ceilings and floors](#ceilings-and-floors). |
+| `legalContext` | The first response's `Legal-Context` value, as received, where it carried one. |
 | `agreementSigner` | The wallet that pays the agreement, where it is not `signer`. |
 | `approved` | The agreement payment your agent approved, exactly as a previous call returned it in `approve`. |
 | `signal` | An `AbortSignal` that ends the agreement exchange. |
+| `chosen` | The payment `confirm` chose, unchanged: `transact` then builds that exact request rather than choosing anew. |
 
-Any other member, or a member of the wrong kind, is declined before any fetch.
+Any other member, or a member of the wrong kind, is declined `no-payable-option` with `<namespace>/input-malformed`
+before any fetch.
+
+### What the approver is shown
+
+`toSign` holds the act, the pairing, the request the signer will be handed, its `summary` and the `step` (`index` from
+0, of `count` signings, the number the pairing's payment takes, at most two). The act is `"payment"`, the payment for
+the resource, or `"agreement"`: the agreement payment, and every payment through a pairing whose agreement is never a
+charge (its data in the protocol package's registry holds `agreement.only`, as `spend-permissions/eip155`'s and
+`x402/exact/stellar/precondition`'s do). The `summary` is computed from the request handed to the signer, never from the
+seller's option, so a request that grants more than the offer is shown granting it:
+
+| Member | What it holds |
+| --- | --- |
+| `amount` or `maximum` | What the payee is paid, or the most the payee may charge (`upto`), in the asset's base units. |
+| `payees` | Every payee, `{ account, amount }`. On an authorization and capture, the fee's payee too, with the most it may take of the maximum. |
+| `asset` | The asset, as the form names it. |
+| `network` | The CAIP-2 network, or `null` where the payment moves on no ledger (a card network, a fiat checkout). |
+| `validity` | `{ notBefore, notAfter, unit }`: from and until when the signed payment is payable, in Unix seconds or the chain's unit. |
+| `period`, `limitPerPeriod`, `end` | A recurring grant: a subscription's key authorization or a Spend Permission. |
+| `operator`, `authorizationExpiry`, `refundExpiry` | An authorization and capture. |
+| `deposit`, `closableBy` | A session's or a channel's deposit, and who may close it. |
+| `grant` | What a delegation, a checkout, a session's opening (its escrow and the key that signs its vouchers) or a Circle Gateway burn intent (the network the payee is paid on, and the most Gateway may take as its fee) grants, as JSON. |
+| `atr` | The ATR's bytes the gate hashed, parsed and compared. |
+
+A request of a kind the gate has no summary for is declined `summary-missing`: nothing is signed unshown. The profile's
+rule 13 has the table of which signed field fills each member, for every request kind. A pairing whose build hands the
+signer no request, one with nothing for the buyer to sign or whose build is itself the payment, has no summary: nothing
+is signed, and its agreement payment is shown by its own pairing's row. A later step that names only its channel, such
+as a session's voucher, is shown with the payees, asset, network and validity of the opening, once the gate has
+recomputed the channel the opening opens for your account; a voucher of another channel has no summary.
+
+### Ceilings and floors
+
+The gate declines a payment that would stay payable longer than its pairing's ceiling, `past-ceiling`, and one that
+signs no end, such as a delegation or a card checkout, `no-end`. A pairing's ceiling is 600 seconds unless `ceilings`
+raises it: `{ "x402/exact/sui": 86400 }` raises one pairing's ceiling to a day, and `{ "card/visa-tap": "no-end" }`
+admits a form that signs no end. An id the call does not pay is not read. A deadline signed as a height, a slot, a
+round, a ledger or an epoch is counted at the chain's pace, which the profile states with its source; on the XRP Ledger
+the caller gives `ledgerIndex` in `inputs`, the validated ledger it read, and on Cardano and Sui `currentSlot` and
+`currentEpoch`, since those requests sign no start.
+
+Where a rail's payment service refuses a shorter validity, the caller reads the floor that service serves and gives it
+in `inputs`, under the name the build takes; the gate reads no service of its own, and a missing floor input is
+declined `floor-missing`, its detail the input's name. `FLOOR_INPUTS` maps each such pairing to the names of its floor
+inputs. That rail's ceiling is the served floor plus the service's margin:
+
+| Pairing | Floor inputs | Ceiling |
+| --- | --- | --- |
+| `x402/exact/eip155/gateway-batched` | `minValiditySeconds`, the minimum Circle Gateway's `/supported` serves for the network | `minValiditySeconds` plus 100 seconds |
+| `mpp/charge/usdc/gateway` | `sourceNetwork`, the CAIP-2 network the burn intent spends from; `burnIntentExpirationHeight`, the height Circle Gateway's `GET /v1/info` serves for it; `withdrawalDelay`, that network's Gateway Wallet's `withdrawalDelay()`, in blocks | the burn intent's `maxBlockHeight` at `burnIntentExpirationHeight` plus 100 seconds counted in that network's blocks |
+
+A Gateway burn intent's deadline is a block height on the network it spends from, so the gate holds it in whole blocks:
+its `maxBlockHeight` less `burnIntentExpirationHeight` is at most `withdrawalDelay` × 100 / 604,800, rounded up, the
+Gateway Wallet's withdrawal delay being 7 days; a raised ceiling of R seconds admits R × `withdrawalDelay` / 604,800
+blocks, rounded down, where that is more. A burn intent shown on another network than `sourceNetwork` is declined
+`past-ceiling`.
 
 ### Sign elsewhere: `confirm`, then `finish`
 
-When the key lives in a hardware wallet or a signing service, split the order. `chosen` is plain JSON, so it crosses
-process boundaries with the bytes. `finish` recomputes H from the bytes you hand back and rebuilds the payment from
-`chosen`; it trusts both. Keep `chosen` and the bytes on your side of the boundary, or seal them, and carry `request`
-to the signer over a channel you trust.
+When the key lives in a hardware wallet or a signing service, split the order. `confirm` makes every check up to the
+signing (1 to 11 of the profile) and returns the request with its `summary`; it calls no approver and no signer, so
+showing that summary before the request is signed is your step. `chosen` is plain JSON, so it crosses process
+boundaries with the bytes. `finish` recomputes H from the bytes you hand back and rebuilds the payment from `chosen`; it
+trusts both. Keep `chosen` and the bytes on your side of the boundary, or seal them, and carry `request` to the signer
+over a channel you trust.
 
 `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. When `chosen.agreement` is
 set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
-`agree(bytes, chosen.agreement, signer, fetch)`, have your agent approve the `approve` it returns, call `agree` again
-with `{ approved }`, and sign `request` only with its `receipt` in hand.
+`agree(bytes, chosen.agreement, signer, fetch, { chosen })`, have your agent approve the `approve` it returns, call
+`agree` again with `{ approved, chosen }`, and sign `request` only with its `receipt` in hand. Given `chosen`, `agree`
+pays only an agreement option the charge's pairing admits (its `agreementOn` in the protocol package's registry: any
+network, or the charge's own).
 
 ```ts
 import { confirm, finish, type Fetch } from "@integraledger/terms";
@@ -237,10 +342,14 @@ const offer = {
 };
 const fetch: Fetch = async (url) => (url === link ? new Response(atr) : new Response(null, { status: 404 }));
 
-// 1. Compare, and build the request with H.
-const confirmed = await confirm(offer, exactEip3009, "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", fetch);
+// 1. Compare, check, and build the request with H. confirm calls no approver: show the summary yourself.
+const account = "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const confirmed = await confirm(offer, exactEip3009, account, fetch, {
+  resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
+});
 if ("decline" in confirmed) throw new Error(confirmed.decline.code);
 if (confirmed.request === null || confirmed.request.kind !== "eip712") throw new Error("expected an EIP-712 request");
+console.log("to approve:", confirmed.summary?.amount, confirmed.summary?.asset, confirmed.summary?.validity.unit);
 
 // What crosses to the signing side and back: plain JSON and the bytes.
 const handOff = JSON.stringify({ chosen: confirmed.chosen, atr: Buffer.from(confirmed.bytes).toString("base64") });
@@ -261,11 +370,15 @@ console.log("nonce is H:", (done.signed as Eip3009Payment).payload.authorization
 ```
 
 ```text output
+to approve: 10000 0x036CbD53842c5426634e7929541eC2318f3dCF7e seconds
 nonce is H: true
 ```
 
-A pairing signed in two steps (a channel funding, then its first voucher) makes `finish` return `{ next, h }`: sign
-`next` and call `finish` again with every answer so far, in order, as a list. `transact` does this for you.
+A pairing signed in two steps (a channel funding, then its first voucher) makes `finish` return `{ next, summary, h }`:
+show `summary`, sign `next` and call `finish` again with every answer so far, in order, as a list. `finish` holds each
+later step to its summary and its ceiling before returning it (`finish(bytes, chosen, signature, binding, { ceilings })`
+takes the raised ceilings); a voucher is shown for the account `confirm` chose. `transact` does all of this for you,
+asking your approver at each step.
 
 ### Pay the agreement first
 
@@ -278,9 +391,10 @@ before anything is signed:
    `approve.option` is the option it would pay: its `amount`, `asset`, `payTo` and `network`. `approve.url` is the
    agreement URL, and `approve.required` the payment request as served.
 2. Your agent approves it as it approves any payment. To pay it, call `transact` again with the same arguments and
-   `{ approved: approve }`.
-3. The second call signs exactly that payment, sends it, and signs the main payment only after the agreement URL
-   answers with its receipt:
+   `approved: approve` added to the options.
+3. The second call holds that payment to its own pairing's ceiling, asks your approver about it with `act`
+   `"agreement"`, signs exactly that payment, sends it, and asks about and signs the main payment only after the
+   agreement URL answers with its receipt:
 
 ```json
 {
@@ -292,7 +406,11 @@ before anything is signed:
 ```
 
 - The option paid is the first, in document order, that your signer can pay with a pairing whose payment is itself a
-  public proof: the same rule as for the main payment's options.
+  public proof (coverage `full` in the protocol package's registry, with an agreement form) and that the main
+  payment's pairing admits: its `agreementOn` says whether an agreement on any network will do, or only one on the
+  payment's own network.
+- The agreement payment is built with the act `agreement`: on a pairing whose agreement has its own single-use value,
+  the payment carries that value, computed from H, where a payment for the resource would carry H itself.
 - The agreement URL's `402` must advertise the same H, or nothing is signed (`hash-mismatch`).
 - Once the agreement payment is sent, the gate sends the same payment again after each `202`, `5xx` or timeout, within
   the paid option's `maxTimeoutSeconds` plus 180 seconds. Within one call it never signs a second agreement payment.
@@ -301,14 +419,52 @@ before anything is signed:
   look up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded,
   and the first call goes straight on to the main payment.
 - A pairing that needs an agreement and whose offer names none is declined with `agreement-not-offered`.
-- `agree(bytes, url, signer, fetch, { approved, inputs, signal })` runs the exchange on its own, in the same two calls,
-  for an agent that drives each step.
+- Where the agreement URL answers with no x402 payment request and with MPP agreement challenges
+  (`WWW-Authenticate: Payment`), the gate signs nothing and returns `AgreementChallenges`, `{ agreementChallenges,
+  bytes, h }`, the challenges in the seller's order: terms does not send an MPP credential to the agreement URL, so
+  your own MPP client pays one there, and a later call finds the agreement recorded and pays the charge.
+- `agree(bytes, url, signer, fetch, { approved, inputs, signal, chosen })` runs the exchange on its own, in the same
+  two calls, for an agent that drives each step. It takes no approver: showing the agreement payment before it is
+  signed is then your step.
 
 Once the agreement payment is sent, every decline carries it as `moved`: `agreement-pending` when it may settle yet,
 and `agreement-failed` when the agreement URL answered otherwise. Either way, it has left your wallet. To collect the
 receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it answers `200` with
 the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. Never call again with
 `approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
+
+### Paid after its agreement
+
+A seller may answer first with the agreement alone (the protocol package's profile `legal-context-return.md`): its
+first response offers the agreement option and no charge, each agreement option naming, by its `serves`
+(`extra.legalContextServes` on x402, the `opaque` member `legalContextServes` of an MPP agreement challenge), the
+charges it is for. `transact` then chooses the charge from the options the ATR's binding slot holds, pays the agreement
+option that serves it, asked of your approver with `act` `"agreement"`, ends at the agreement's receipt, signs no
+charge, and returns `ToReturn`.
+
+Where the slot holds the charge in the form the first response would offer it, the charge is built with H and held to
+its summary and its ceiling before its agreement is paid. Where the seller writes part of it only when it serves the charge, the charge
+is chosen by the option's own checks, and the call that pays it makes the rest: an `x402/exact/lnbtc/payment-hash`
+option, whose invoice comes later, and every MPP challenge, which the slot holds as issued.
+
+On MPP, `transact` follows the agreement URL the agreement challenges carry and reads its one `402`: it pays an x402
+agreement option there as on x402. Where that `402` offers only MPP agreement challenges, `transact` signs nothing and
+`ToReturn` holds them as `agreementChallenges`, in place of `agreement`, for your own MPP client to pay at the
+agreement URL:
+
+| Member | What it is |
+| --- | --- |
+| `agreement` | The agreement's receipt, where `transact` paid the agreement. |
+| `agreementChallenges` | The agreement resource's MPP agreement challenges, in the seller's order, where it offers no x402 agreement option. |
+| `legalContext` | The `Legal-Context` value to send when you repeat your request: H's LCP string, with `rv`, the return value, where the first response carried one. |
+| `charge` | The charge chosen, `<slot>/<i>`, such as `x402/0`. |
+| `bytes` | The ATR's bytes the gate compared. |
+| `h` | Their SHA-256. |
+
+Pass the first response's `Legal-Context` header (over MCP, its `_meta["com.integraledger.lcp/legal-context"]`), as
+received, as `legalContext`: a value the protocol package refuses is declined `offer-unreadable`, and one whose H is not
+the ATR's `hash-mismatch`. Repeat your request with the returned `legalContext`, and call `transact` again with the
+second response, which offers the charge: the agreement being recorded, that call pays the charge as any other.
 
 ### Channels and sessions
 
@@ -363,11 +519,21 @@ const signer: Signer = {
   },
 };
 
-// Open: compare the ATR once, sign the deposit and the first voucher.
+// Open: compare the ATR once, show the opening, sign the deposit and the first voucher.
 const opened = await transact(offer, batchEvm, signer, fetch, {
+  resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
+  approver: ({ summary }) => {
+    console.log("opening  deposit", summary.deposit, "to", summary.payees[0]?.account);
+    return true;
+  },
   inputs: { payerAuthorizer: authorizer.address, deposit: "100000" },
+  // The deposit's authorization stays payable for the option's 3600 seconds: raise this pairing's 600-second ceiling.
+  ceilings: { "x402/batch-settlement/eip155": 3600 },
 });
-if ("decline" in opened || "approve" in opened || opened.signed === null) throw new Error("the channel did not open");
+if ("decline" in opened) throw new Error(`${opened.decline.code}: ${opened.decline.detail}`);
+if ("approve" in opened || "charge" in opened || "agreementChallenges" in opened || opened.signed === null) {
+  throw new Error("the channel did not open");
+}
 let hold = await openChannel(opened.bytes, opened.signed, batchEvm);
 if ("decline" in hold) throw new Error(hold.decline.code);
 console.log("channel ", hold.channel);
@@ -385,6 +551,7 @@ for (const charged of ["1000", "2000"]) {
 ```
 
 ```text output
+opening  deposit 100000 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C
 channel  0x9c2d7031768ecb3fe688ae307c45f2e3a3d98b0d9ce1a6afcd27131fabb67e56
 voucher up to 1000
 voucher up to 2000
@@ -393,20 +560,26 @@ voucher up to 2000
 The hold is plain JSON: store it, and pass the latest one to each call. `within` takes the bytes, H and the channel
 from the hold, and the amount from the new challenge. On x402's batch channels it signs only when that challenge
 advertises the held H and the payment it builds names the held channel. On an MPP session it declines a challenge that
-names another channel or another H, and signs one with no legal context under the held H.
+names another channel or another H, and signs one with no legal context under the held H. `within` takes no approver:
+the opening was shown to yours and approved, and a caller that wants each later voucher shown shows it before it calls
+`within`. `mpp/session/solana/memo` opens through the gate, but terms builds none of its vouchers, the protocol package giving
+that pairing no in-channel build: `within` declines it `pairing-not-supported`, and its buyer writes the 50 bytes a
+voucher signs with the protocol package's `solanaVoucher` (`@integraledger/lcp/svm`) and signs them itself.
 
 ### Confirm a payment later: `check`
 
-`check(bytes, presented, binding, landed?)` confirms that the ATR hash the pairing reads from a payment you hold is the
-SHA-256 of the bytes you kept. A payment from which the pairing reads no ATR hash is declined `signed-not-bound`. Where
-`finish` or `transact` returned `landed`, pass it as `landed`, beside the payment: a `landed` member written into the
-payment is not read. The caller passes as `landed` only the receipt its own reader read for the payment, as `finish` or
-`transact` returned it, never a value another party sent.
+`check(bytes, presented, binding, landed?, act?)` confirms that the ATR hash the pairing reads from a payment you hold
+is the SHA-256 of the bytes you kept. A payment from which the pairing reads no ATR hash is declined `signed-not-bound`.
+Where `finish` or `transact` returned `landed`, pass it as `landed`, beside the payment (or `null` for none): a `landed`
+member written into the payment is not read. The caller passes as `landed` only the receipt its own reader read for the
+payment, as `finish` or `transact` returned it, never a value another party sent. `act` is the act the payment was paid
+as: `"payment"`, the default, or `"agreement"` for an agreement payment, which carries the agreement's own value
+computed from H where a payment would carry H, and is read as such.
 
 ### Declines and `moved`
 
-A decline is `{ decline: { code, detail } }`. `code` is one of twelve values; `detail` is a sentence or the protocol
-package's refusal code. Where your signer moved the payment itself before the gate declined (a Lightning node paid the
+A decline is `{ decline: { code, detail } }`. `code` is a `DeclineCode`, one of the values in the table below; `detail`
+is a sentence or the protocol package's refusal code. Where your signer moved the payment itself before the gate declined (a Lightning node paid the
 invoice, a signer broadcast a transaction), the decline also carries `moved: { signed, bytes, h }`. Keep it, and present
 that same payment again rather than signing a new one. Where `moved` is an agreement payment, collect its receipt by
 calling again without `approved`, as [Pay the agreement first](#pay-the-agreement-first) says.
@@ -425,6 +598,17 @@ calling again without `approved`, as [Pay the agreement first](#pay-the-agreemen
 | `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
 | `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
 | `agreement-failed` | The agreement URL could not be reached, answered `200` or `402` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. |
+| `not-approved` | Your approver answered anything but `true`, threw or rejected, for the signing it was asked about. The signer was not called for it. |
+| `atr-malformed` | The ATR's bytes are not one JSON text the gate reads alike in both languages: not UTF-8, a byte-order mark, a repeated member name, a number past a double or an integer past 2^53 − 1, or nesting past 64 levels. |
+| `option-not-in-atr` | The ATR's binding slot lists the options offered, and none is the option chosen. |
+| `request-mismatch` | The ATR's binding slot holds a request commitment that is not your request's. |
+| `summary-missing` | The request for the signer is of a kind the gate cannot summarize, so it is not signed unshown. |
+| `past-ceiling` | The signed payment would stay payable longer than its pairing's ceiling. |
+| `no-end` | The form signs no end, and `ceilings` does not map its pairing to `"no-end"`. |
+| `floor-missing` | The rail has a served floor and `inputs` lacks its input; `detail` is the input's name. |
+
+The profile [`profiles/buyer-gate.md`](./profiles/buyer-gate.md) states when each of the last eight is returned and
+whether the signer was called.
 
 ## API reference
 
@@ -434,14 +618,21 @@ Everything below is exported from `@integraledger/terms`.
 
 | Export | Signature | What it does |
 | --- | --- | --- |
-| `transact` | `(doc, binding, signer, fetch, options?) => Promise<{ signed, bytes, h, agreement?, landed? } \| ToApprove \| Declined>` | Compare, pay the approved agreement first where needed, sign, finish. |
-| `confirm` | `(doc, binding, account, fetch, inputs?) => Promise<{ chosen, request, bytes, h } \| Declined>` | Read, fetch, compare, and build the signing request with H. `request` is `null` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
-| `finish` | `(bytes, chosen, signature, binding) => Promise<{ signed, h, landed? } \| { next, h } \| Declined>` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. |
-| `check` | `(bytes, presented, binding) => Promise<{ h } \| Declined>` | Confirm a held payment carries the hash of the kept bytes. |
-| `agree` | `(bytes, url, signer, fetch, options?) => Promise<ToApprove \| { receipt } \| Declined>` | Without `options.approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt. |
+| `transact` | `(doc, binding, signer, fetch, options) => Promise<{ signed, bytes, h, agreement?, landed? } \| ToApprove \| AgreementChallenges \| ToReturn \| Declined>` | Compare and check, pay the approved agreement first where needed, ask the approver, sign, finish. `options` holds `approver` and `resourceRequest`. |
+| `confirm` | `(doc, binding, account, fetch, options) => Promise<{ chosen, request, summary?, bytes, h } \| Declined>` | Read, fetch, compare and check, and build the signing request with H, with its summary. `options` holds `resourceRequest`, and `inputs` and `ceilings` where given. `request` is `null` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
+| `finish` | `(bytes, chosen, signature, binding, options?) => Promise<{ signed, h, landed? } \| { next, summary, h } \| Declined>` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. A later step is returned with its summary, held to the ceiling (`options.ceilings`). |
+| `check` | `(bytes, presented, binding, landed?, act?) => Promise<{ h } \| Declined>` | Confirm a held payment carries the hash of the kept bytes, as the act it was paid as. |
+| `agree` | `(bytes, url, signer, fetch, options?) => Promise<ToApprove \| AgreementChallenges \| { receipt } \| Declined>` | Without `options.approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
 | `openChannel` | `(bytes, opened, binding, landed?) => Promise<ChannelHold \| Declined>` | Hold a channel opened for the compared ATR. |
 | `within` | `(doc, hold, binding, signer, refund?, inputs?) => Promise<{ signed, hold } \| Declined>` | Sign a later voucher, or a refund with `refund`, in a held channel. |
 | `recordCharge` | `(hold, chargedCumulativeAmount) => ChannelHold \| Declined` | Record the seller's cumulative charge, between the last recorded and the most signed. |
+| `viJson` | `(value) => string \| undefined` | The JSON text a Mastercard Verifiable Intent signer signs for a value (the protocol package's profile `card-mastercard-vi.md`, rule 7): compact, every character outside space to `~` escaped, members in the order the object holds them. Undefined for a value that is not JSON. |
+
+### Constants
+
+| Export | What it is |
+| --- | --- |
+| `FLOOR_INPUTS` | A `ReadonlyMap` from each pairing whose rail has a served floor to the names of its floor inputs in `inputs`. |
 
 ### Types
 
@@ -453,99 +644,123 @@ Everything below is exported from `@integraledger/terms`.
 | `Signature` | The signer's answer, as JSON, in the form the [signers guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/signers.md) names for its kind. |
 | `Fetch` | WHATWG `fetch`, or anything with its call shape. |
 | `Inputs` | The buyer's own values a build needs: `{ [name]: Json }`. |
-| `TransactOptions` | `{ inputs?, agreementSigner?, approved?, signal? }`. |
-| `AgreeOptions` | `{ approved?, inputs?, signal? }`. |
-| `Chosen` | What the gate chose to pay, as plain JSON: `{ pairing, choice, ref, agreement? }`. |
+| `TransactOptions` | `{ approver, resourceRequest, inputs?, ceilings?, legalContext?, agreementSigner?, approved?, signal?, chosen? }`. |
+| `ConfirmOptions` | `{ resourceRequest, inputs?, ceilings? }`. |
+| `FinishOptions` | `{ ceilings? }`. |
+| `AgreeOptions` | `{ approved?, inputs?, signal?, chosen? }`. |
+| `Approver` | `(toSign: ToSign) => boolean \| Promise<boolean>`. |
+| `ToSign` | `{ act, pairing, request, summary, step }`: what the approver is asked about. |
+| `SigningStep` | `{ index, count }`: which signing of the payment, from 0, of the number the pairing's payment takes. |
+| `Summary` | Every authority the signature grants: `amount?`, `maximum?`, `payees`, `period?`, `limitPerPeriod?`, `end?`, `operator?`, `authorizationExpiry?`, `refundExpiry?`, `deposit?`, `closableBy?`, `grant?`, `asset`, `network`, `validity`, `atr`. |
+| `Payee` | `{ account, amount }`. |
+| `Validity` | `{ notBefore, notAfter, unit }`, each bound `null` where the form signs none. |
+| `ResourceRequest` | The buyer's own request: `HttpRequest` (`{ method, target, body, headers? }`) or `ToolCall` (`{ name, arguments? }`), the protocol package's types. |
+| `Ceilings` | `{ [pairing]: number \| "no-end" }`: the raised ceilings, in seconds. |
+| `Chosen` | What the gate chose to pay, as plain JSON: `{ pairing, choice, ref, agreement?, deadline? }`. `deadline` is the latest deadline handed to a wallet that picks its expiry. |
 | `Presented` | A payment in its protocol's form. |
 | `AgreementPayment` | The agreement payment to approve: `{ url, option, required }`. |
 | `ToApprove` | `{ approve: AgreementPayment; bytes; h }`. |
+| `ToReturn` | `{ agreement?, agreementChallenges?, legalContext, charge, bytes, h }`: the agreement paid, or its MPP agreement challenges, for a pairing paid after its agreement. Exactly one of the two is present. |
+| `AgreementChallenges` | `{ agreementChallenges, bytes, h }`: the agreement resource's MPP agreement challenges, for your own MPP client to pay; nothing is signed. |
 | `AgreementReceipt` | `{ atrHash, agreed: true, network, transaction }`. |
 | `ChannelHold` | `{ pairing, network, channel, h, atr, opening, landed?, charged, signedMax }`, all JSON. |
 | `Declined` | `{ decline: Reason; moved?: { signed, bytes, h } }`. |
 | `Reason` | `{ code: DeclineCode; detail: string }`. |
-| `DeclineCode` | The twelve codes in the table above. |
+| `DeclineCode` | The codes in the table above. |
 
 The full reference, with every request kind and the answer it takes, is in the
 [documentation](https://github.com/IntegraLedger/integra-agentic-terms/tree/main/docs).
 
 ## Supported pairings
 
-Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. "Agreement payment first" marks the
-pairings whose payment is not itself a public proof of H. The
+Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. "Coverage" is `full` where the payment is itself a public proof of H and `none` otherwise; "Agreement payment first"
+marks the pairings paid after an agreement payment, and on which network that agreement may be; "Pays an agreement"
+marks the pairings whose own payment can be that agreement payment (`only` where it is never a charge). Each is read
+from the pairing's registry data in `@integraledger/lcp`. The
 [pairings reference](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/reference/pairings.md) adds
 what each payment proves, and the [rails guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/rails.md)
 the inputs each build reads.
 
 <!-- pairings:typescript:start -->
-| Rail | Pairing | Binding export | Buyer signs H | Agreement payment first |
-| --- | --- | --- | --- | --- |
-| EVM | `mpp/charge/evm/authorization` | `evmAuthorization` from `@integraledger/lcp/mpp` | yes | no |
-| EVM | `mpp/charge/evm/hash` | `evmHash` from `@integraledger/lcp/mpp` | no | yes |
-| EVM | `mpp/charge/evm/permit2` | `evmPermit2` from `@integraledger/lcp/mpp` | yes | no |
-| EVM | `mpp/charge/evm/transaction` | `evmTransaction` from `@integraledger/lcp/mpp` | no | yes |
-| EVM | `mpp/charge/usdc/evm` | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | yes | no |
-| EVM | `mpp/charge/usdc/gateway` | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | yes | no |
-| EVM | `mpp/session/evm` | `sessionEvm` from `@integraledger/lcp/mpp` | yes | no |
-| EVM | `x402/auth-capture/eip155/eip3009` | `authCaptureEip3009` from `@integraledger/lcp/x402` | yes | no |
-| EVM | `x402/auth-capture/eip155/permit2` | `authCapturePermit2` from `@integraledger/lcp/x402` | yes | no |
-| EVM | `x402/batch-settlement/eip155` | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | yes | no |
-| EVM | `x402/exact/eip155/eip3009` | `exactEip3009` from `@integraledger/lcp/x402` | yes | no |
-| EVM | `x402/exact/eip155/erc7710` | `exactErc7710` from `@integraledger/lcp/x402` | no | yes |
-| EVM | `x402/exact/eip155/erc7710-salt` | `exactErc7710Salt` from `@integraledger/lcp/x402` | yes | no |
-| EVM | `x402/exact/eip155/permit2` | `exactPermit2` from `@integraledger/lcp/x402` | yes | no |
-| EVM | `x402/upto/eip155/permit2` | `uptoPermit2` from `@integraledger/lcp/x402` | yes | no |
-| Tempo | `mpp/charge/tempo/memo` | `tempoMemo` from `@integraledger/lcp/mpp` | no | no |
-| Tempo | `mpp/charge/tempo/push` | `tempoPush` from `@integraledger/lcp/mpp` | no | no |
-| Tempo | `mpp/session/tempo` | `sessionTempo` from `@integraledger/lcp/mpp` | yes | no |
-| Tempo | `mpp/subscription/tempo` | `subscriptionTempo` from `@integraledger/lcp/mpp` | yes | no |
-| Solana | `mpp/charge/solana` | `chargeSolana` from `@integraledger/lcp/mpp` | yes | no |
-| Solana | `mpp/charge/usdc/solana` | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | yes | no |
-| Solana | `mpp/session/solana` | `sessionSolana` from `@integraledger/lcp/mpp` | no | no |
-| Solana | `x402/batch-settlement/solana` | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | yes | no |
-| Solana | `x402/exact/solana` | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | yes | no |
-| Solana | `x402/upto/solana` | `uptoSvm` from `@integraledger/lcp/x402-upto-solana` | yes | no |
-| Stellar | `mpp/charge/stellar` | `chargeStellar` from `@integraledger/lcp/mpp` | no | no |
-| Stellar | `x402/exact/stellar` | `exactStellar` from `@integraledger/lcp/x402-exact-stellar` | no | no |
-| XRP Ledger | `mpp/charge/xrpl` | `chargeXrpl` from `@integraledger/lcp/mpp` | yes | no |
-| XRP Ledger | `mpp/session/xrpl` | `sessionXrpl` from `@integraledger/lcp/mpp` | yes | no |
-| XRP Ledger | `x402/exact/xrpl` | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | yes | no |
-| Hedera | `mpp/charge/hedera` | `chargeHedera` from `@integraledger/lcp/hedera` | no | no |
-| Hedera | `mpp/session/hedera` | `sessionHedera` from `@integraledger/lcp/mpp` | yes | no |
-| Hedera | `x402/exact/hedera` | `exactHedera` from `@integraledger/lcp/hedera` | yes | no |
-| Hedera | `x402/exact/hedera/transfer-executor` | `exactHederaExecutor` from `@integraledger/lcp/hedera` | no | yes |
-| Algorand | `x402/exact/algorand` | `exactAvm` from `@integraledger/lcp/avm` | yes | no |
-| Aptos | `x402/exact/aptos` | `exactAptos` from `@integraledger/lcp/aptos` | no | yes |
-| Sui | `x402/exact/sui` | `exactSui` from `@integraledger/lcp/sui` | yes | no |
-| NEAR | `mpp/charge/nearintents` | `chargeNearIntents` from `@integraledger/lcp/mpp` | no | yes |
-| NEAR | `x402/exact/near` | `exactNear` from `@integraledger/lcp/near` | yes | no |
-| Starknet | `x402/exact/starknet` | `exactStarknet` from `@integraledger/lcp/starknet` | yes | no |
-| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `exactPolkadotRemark` from `@integraledger/lcp/polkadot` | yes | no |
-| TRON | `x402/exact/tron/lcp-trc20-memo` | `exactTronMemo` from `@integraledger/lcp/tron` | yes | no |
-| TON | `x402/exact/tvm` | `exactTvm` from `@integraledger/lcp/tvm` | yes | no |
-| Cardano | `x402/exact/cardano` | `exactCardano` from `@integraledger/lcp/cardano` | yes | no |
-| Casper | `x402/exact/casper` | `exactCasper` from `@integraledger/lcp/casper` | yes | no |
-| Concordium | `x402/exact/ccd` | `exactCcd` from `@integraledger/lcp/ccd` | yes | no |
-| Stacks | `mpp/charge/usdc/stacks` | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | yes | no |
-| Lightning | `mpp/charge/lightning` | `chargeLightning` from `@integraledger/lcp/lightning` | no | yes |
-| Lightning | `mpp/session/lightning` | `sessionLightning` from `@integraledger/lcp/lightning` | no | yes |
-| Lightning | `x402/exact/lnbtc` | `exactLnbtc` from `@integraledger/lcp/lightning` | no | yes |
-| Lightning | `x402/exact/lnbtc/invoice-named` | `exactLnbtcNamed` from `@integraledger/lcp/lightning` | no | yes |
-| Cloudflare | `x402/batch-settlement/cloudflare` | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | yes | yes |
-| Card | `card/mastercard-vi/autonomous` | `viAutonomous` from `@integraledger/lcp/card` | yes | yes |
-| Card | `card/mastercard-vi/immediate` | `viImmediate` from `@integraledger/lcp/card` | yes | yes |
-| Card | `card/seller-reference` | `sellerReference` from `@integraledger/lcp/card` | no | yes |
-| Card | `card/visa-tap` | `visaTap` from `@integraledger/lcp/card` | yes | yes |
-| Card | `mpp/charge/card` | `chargeCard` from `@integraledger/lcp/mpp` | no | yes |
-| Stripe | `mpp/charge/stripe` | `chargeStripe` from `@integraledger/lcp/mpp` | no | yes |
-| Stripe | `mpp/subscription/stripe` | `subscriptionStripe` from `@integraledger/lcp/mpp` | no | yes |
-| Mandate | `ap2/checkout-mandate` | `checkoutMandate` from `@integraledger/lcp/ap2` | yes | yes |
-| Mandate | `ucp/booking/ap2-mandate` | `bookingAp2Mandate` from `@integraledger/lcp/ucp` | yes | yes |
-| Mandate | `ucp/checkout/ap2-mandate` | `ap2Mandate` from `@integraledger/lcp/ucp` | yes | yes |
-| Checkout | `ack/payment-request` | `paymentRequest` from `@integraledger/lcp/ack` | no | yes |
-| Checkout | `acp/checkout/delegated` | `delegated` from `@integraledger/lcp/acp` | no | yes |
-| Checkout | `acp/checkout/undelegated` | `undelegated` from `@integraledger/lcp/acp` | no | yes |
-| Checkout | `ucp/booking/unsigned` | `bookingUnsigned` from `@integraledger/lcp/ucp` | no | yes |
-| Checkout | `ucp/checkout/unsigned` | `unsigned` from `@integraledger/lcp/ucp` | no | yes |
+| Rail | Pairing | Binding export | Coverage | Agreement payment first | Pays an agreement |
+| --- | --- | --- | --- | --- | --- |
+| EVM | `mpp/charge/evm/authorization` | `evmAuthorization` from `@integraledger/lcp/mpp` | full | no | yes |
+| EVM | `mpp/charge/evm/hash` | `evmHash` from `@integraledger/lcp/mpp` | none | yes, any network | no |
+| EVM | `mpp/charge/evm/permit2` | `evmPermit2` from `@integraledger/lcp/mpp` | full | no | yes |
+| EVM | `mpp/charge/evm/transaction` | `evmTransaction` from `@integraledger/lcp/mpp` | none | yes, any network | no |
+| EVM | `mpp/charge/usdc/evm` | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | full | no | yes |
+| EVM | `mpp/charge/usdc/gateway` | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | none | yes, any network | no |
+| EVM | `mpp/session/evm` | `sessionEvm` from `@integraledger/lcp/mpp` | full | no | no |
+| EVM | `spend-permissions/eip155` | `spendPermissionsEip155` from `@integraledger/lcp/spend-permissions` | full | no | only |
+| EVM | `x402/auth-capture/eip155/eip3009` | `authCaptureEip3009` from `@integraledger/lcp/x402` | full | no | no |
+| EVM | `x402/auth-capture/eip155/permit2` | `authCapturePermit2` from `@integraledger/lcp/x402` | full | no | no |
+| EVM | `x402/batch-settlement/eip155` | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no |
+| EVM | `x402/exact/eip155/eip3009` | `exactEip3009` from `@integraledger/lcp/x402` | full | no | yes |
+| EVM | `x402/exact/eip155/erc7710` | `exactErc7710` from `@integraledger/lcp/x402` | none | yes, any network | no |
+| EVM | `x402/exact/eip155/erc7710-salt` | `exactErc7710Salt` from `@integraledger/lcp/x402` | full | no | no |
+| EVM | `x402/exact/eip155/gateway-batched` | `exactGatewayBatched` from `@integraledger/lcp/x402` | none | yes, its network | no |
+| EVM | `x402/exact/eip155/permit2` | `exactPermit2` from `@integraledger/lcp/x402` | full | no | yes |
+| EVM | `x402/upto/eip155/permit2` | `uptoPermit2` from `@integraledger/lcp/x402` | full | no | no |
+| Tempo | `mpp/charge/tempo/split-memo` | `tempoSplitMemo` from `@integraledger/lcp/mpp` | full | no | yes |
+| Tempo | `mpp/charge/tempo/split-memo/push` | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | full | no | no |
+| Tempo | `mpp/session/tempo` | `sessionTempo` from `@integraledger/lcp/mpp` | full | no | no |
+| Tempo | `mpp/subscription/tempo` | `subscriptionTempo` from `@integraledger/lcp/mpp` | full | no | no |
+| Solana | `mpp/charge/solana` | `chargeSolana` from `@integraledger/lcp/mpp` | full | no | yes |
+| Solana | `mpp/charge/solana/unsponsored` | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | full | no | no |
+| Solana | `mpp/charge/usdc/solana` | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | full | no | yes |
+| Solana | `mpp/session/solana/memo` | `sessionSolanaMemo` from `@integraledger/lcp/mpp` | full | no | no |
+| Solana | `mpp/session/solana/stock` | `sessionSolanaStock` from `@integraledger/lcp/mpp` | none | yes, its network | no |
+| Solana | `mpp/subscription/solana` | `subscriptionSolana` from `@integraledger/lcp/mpp` | full | no | no |
+| Solana | `x402/batch-settlement/solana` | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no |
+| Solana | `x402/exact/solana` | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | full | no | yes |
+| Solana | `x402/upto/solana` | `uptoSvm` from `@integraledger/lcp/x402-upto-solana` | full | no | no |
+| Stellar | `x402/exact/stellar/precondition` | `exactStellarPrecondition` from `@integraledger/lcp/x402-exact-stellar` | full | no | only |
+| XRP Ledger | `mpp/charge/xrpl` | `chargeXrpl` from `@integraledger/lcp/mpp` | full | no | no |
+| XRP Ledger | `mpp/session/xrpl` | `sessionXrpl` from `@integraledger/lcp/mpp` | full | no | no |
+| XRP Ledger | `mpp/session/xrpl/stock` | `sessionXrplStock` from `@integraledger/lcp/mpp` | none | yes, its network | no |
+| XRP Ledger | `x402/exact/xrpl` | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | full | no | yes |
+| XRP Ledger | `x402/upto/xrpl` | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | none | yes, its network | no |
+| Hedera | `mpp/charge/lcp/hedera` | `chargeLcpHedera` from `@integraledger/lcp/mpp` | full | no | yes |
+| Hedera | `mpp/session/hedera/stock` | `sessionHederaStock` from `@integraledger/lcp/mpp` | none | yes, its network | no |
+| Hedera | `x402/exact/hedera` | `exactHedera` from `@integraledger/lcp/hedera` | full | no | yes |
+| Hedera | `x402/exact/hedera/transfer-executor` | `exactHederaExecutor` from `@integraledger/lcp/hedera` | none | yes, any network | no |
+| Algorand | `x402/exact/algorand` | `exactAvm` from `@integraledger/lcp/avm` | full | no | yes |
+| Aptos | `x402/exact/aptos` | `exactAptos` from `@integraledger/lcp/aptos` | none | yes, any network | no |
+| Sui | `x402/exact/sui` | `exactSui` from `@integraledger/lcp/sui` | full | no | yes |
+| NEAR | `mpp/charge/nearintents` | `chargeNearIntents` from `@integraledger/lcp/mpp` | none | yes, any network | no |
+| NEAR | `x402/exact/near` | `exactNear` from `@integraledger/lcp/near` | full | no | yes |
+| Starknet | `x402/exact/starknet` | `exactStarknet` from `@integraledger/lcp/starknet` | full | no | yes |
+| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `exactPolkadotRemark` from `@integraledger/lcp/polkadot` | full | no | yes |
+| TRON | `x402/exact/tron/lcp-trc20-memo` | `exactTronMemo` from `@integraledger/lcp/tron` | full | no | yes |
+| TON | `x402/exact/tvm` | `exactTvm` from `@integraledger/lcp/tvm` | full | no | yes |
+| Cardano | `x402/exact/cardano` | `exactCardano` from `@integraledger/lcp/cardano` | full | no | yes |
+| Cardano | `x402/exact/cardano/lock` | `exactCardanoLock` from `@integraledger/lcp/cardano` | full | no | no |
+| Casper | `x402/exact/casper` | `exactCasper` from `@integraledger/lcp/casper` | full | no | yes |
+| Concordium | `x402/exact/ccd` | `exactCcd` from `@integraledger/lcp/ccd` | full | no | no |
+| Stacks | `mpp/charge/usdc/stacks` | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | full | no | yes |
+| Lightning | `mpp/charge/lightning` | `chargeLightning` from `@integraledger/lcp/lightning` | none | yes, any network | no |
+| Lightning | `mpp/session/lightning` | `sessionLightning` from `@integraledger/lcp/lightning` | none | yes, any network | no |
+| Lightning | `x402/exact/lnbtc/payment-hash` | `exactLnbtcPaymentHash` from `@integraledger/lcp/lightning` | none | yes, any network | no |
+| Cloudflare | `x402/batch-settlement/cloudflare` | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | none | yes, any network | no |
+| Card | `card/mastercard-agent-pay` | `agentPay` from `@integraledger/lcp/card` | none | yes, any network | no |
+| Card | `card/mastercard-vi/autonomous` | `viAutonomous` from `@integraledger/lcp/card` | none | yes, any network | no |
+| Card | `card/mastercard-vi/immediate` | `viImmediate` from `@integraledger/lcp/card` | none | yes, any network | no |
+| Card | `card/seller-reference` | `sellerReference` from `@integraledger/lcp/card` | none | yes, any network | no |
+| Card | `card/visa-tap` | `visaTap` from `@integraledger/lcp/card` | none | yes, any network | no |
+| Card | `card/visa-vic` | `visaVic` from `@integraledger/lcp/card` | none | yes, any network | no |
+| Card | `mpp/charge/card` | `chargeCard` from `@integraledger/lcp/mpp` | none | yes, any network | no |
+| Stripe | `mpp/charge/stripe` | `chargeStripe` from `@integraledger/lcp/mpp` | none | yes, any network | no |
+| Stripe | `mpp/subscription/stripe` | `subscriptionStripe` from `@integraledger/lcp/mpp` | none | yes, any network | no |
+| Mandate | `ap2/checkout-mandate` | `checkoutMandate` from `@integraledger/lcp/ap2` | none | yes, any network | no |
+| Mandate | `ap2/checkout-mandate/x402` | `checkoutMandateX402` from `@integraledger/lcp/ap2` | none | yes, any network | no |
+| Mandate | `ucp/booking/ap2-mandate` | `bookingAp2Mandate` from `@integraledger/lcp/ucp` | none | yes, any network | no |
+| Mandate | `ucp/checkout/ap2-mandate` | `ap2Mandate` from `@integraledger/lcp/ucp` | none | yes, any network | no |
+| Checkout | `ack/payment-request` | `paymentRequest` from `@integraledger/lcp/ack` | none | yes, any network | no |
+| Checkout | `acp/checkout/delegated` | `delegated` from `@integraledger/lcp/acp` | none | yes, any network | no |
+| Checkout | `acp/checkout/undelegated` | `undelegated` from `@integraledger/lcp/acp` | none | yes, any network | no |
+| Checkout | `ucp/booking/unsigned` | `bookingUnsigned` from `@integraledger/lcp/ucp` | none | yes, any network | no |
+| Checkout | `ucp/checkout/agent-signed` | `agentSigned` from `@integraledger/lcp/ucp` | none | yes, any network | no |
+| Checkout | `ucp/checkout/unsigned` | `unsigned` from `@integraledger/lcp/ucp` | none | yes, any network | no |
 <!-- pairings:typescript:end -->
 
 ## Security model
@@ -560,21 +775,29 @@ What the gate guarantees, in the code:
   pairing whose payment is not a public proof, `transact` signs the payment only after the agreement's receipt for that
   hash. `confirm` and `finish` neither pay nor check the agreement: a caller that drives them signs `request` only with
   the receipt `agree` returns.
-- **Every payment is shown before it is signed.** The agreement payment is returned for your agent's approval, with its
-  amount, asset, payee and network, and is signed only when a second call carries it back.
+- **`transact` shows every payment before it is signed.** Each signing, the agreement payment's and each later step's
+  among them, is asked of your approver with its summary, computed from the request the signer is handed, and the
+  signer is called only on `true`. This holds of `transact` alone: a payment you sign yourself from `confirm` and
+  `finish`, and the payments `agree` and `within` sign, which take no approver, are shown only where you show them.
+- **The option and the request are the ones the ATR commits to.** Where the ATR's binding slot lists the options
+  offered, the option paid is one of them; where it holds a commitment to the buyer's request, the request is the
+  buyer's own.
+- **A bounded window.** A payment that would stay payable past its pairing's ceiling is declined before it is signed,
+  as is a form that signs no end, unless you raise that pairing's ceiling.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB read. A declared or streamed length over the bound cancels the body.
-- **Exact bytes.** The ATR is hashed as received and returned as received. It is never parsed. Every request asks for
-  `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding is declined unread, so nothing is
+- **Exact bytes.** The ATR is hashed as received and returned as received, and the bytes parsed are the bytes hashed,
+  never a re-serialised copy. Every request asks for `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding is declined unread, so nothing is
   decompressed: the bytes hashed are the bytes sent.
 - **No keys.** The gate hands requests to your signer and holds nothing that could sign.
 - **Your network policy.** Every request goes through the `fetch` you pass.
 
 What it does not do:
 
-- It does not read or judge the ATR's content.
-- It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit. A
-  discrepancy is between the parties; what to approve is your agent's decision.
+- It judges none of the ATR's terms: it parses the bytes, and reads only the binding slot's options and request
+  commitment.
+- It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit. It shows
+  them; a discrepancy is between the parties, and what to approve is your approver's decision.
 - It does not authenticate the agreement's receipt. The receipt is the agreement URL's statement: the gate checks its
   form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the first, unpaid
   request is taken as an agreement already recorded. The public proof is the transaction the receipt names, on its
@@ -582,19 +805,21 @@ What it does not do:
 - It carries no business or legal logic.
 - It does not store the ATR, talk to a facilitator, or settle a payment.
 
-A seller's statement of what each pairing's payment proves is its binding's `pattern.proves`, in
-`@integraledger/lcp`.
+What each pairing's payment proves is stated by its binding's registry data, `data.proves`, in `@integraledger/lcp`, and
+printed in the [pairings reference](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/reference/pairings.md).
 
 ## Test vectors and conformance
 
 The rules are fixed by the shared vectors that `@integraledger/lcp` ships in its `vectors/` directory: the buyer rows
 of `buyer.json` (the hash, a record changed by one byte, the fetch bounds, the agreement exchange) and each pairing's
-file (the request it builds and the payment it completes). This package's tests run every one, and the Python gate runs
-the same files, so both languages compute the same hashes, build the same requests and give the same declines.
+file (the request it builds and the payment it completes). The gate's own checks are fixed by this package's
+`vectors/buyer-gate.json`, whose every input is a published row or a specification's own example, under the profile
+`profiles/buyer-gate.md`. This package's tests run every one, and the Python gate runs the same files, so both
+languages compute the same hashes, build the same requests and give the same declines.
 
 ## Requirements
 
-- Node.js `>=24`.
+- Node.js `>=24.22.1`.
 - An HTTP client with WHATWG `fetch`'s call shape (Node's global `fetch` is one).
 - Cloudflare Workers, with or without the `nodejs_compat` flag: pass the Worker's own `fetch`, and install
   `@integraledger/lcp`'s optional peer dependencies before bundling. See

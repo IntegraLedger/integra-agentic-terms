@@ -29,7 +29,9 @@ tools make the link exact. What the record says is for you and your principal to
    field the challenge selects, `Authorization` by default, after `Payment `).
 
    Where the seller's first response offers only the agreement, naming the charges it serves, `atr_transact` pays the
-   agreement and returns its `agreement` receipt, `legalContext` and the `charge` it chose, signing no charge. Repeat
+   agreement and returns its `agreement` receipt, `legalContext` and the `charge` it chose, signing no charge. If it
+   returns `agreementChallenges` instead of a receipt, nothing was signed: these are MPP agreement challenges, which
+   your own MPP client pays at the agreement URL; once one is paid, call `atr_transact` again. Repeat
    your request with `legalContext`: over HTTP as its `Legal-Context` header; over MCP in your tool call's
    `params._meta` under `com.integraledger.lcp/legal-context`. Then call `atr_transact` with the second response. Where
    the first response carried a `Legal-Context` header, or `_meta["com.integraledger.lcp/legal-context"]` in its result,
@@ -43,7 +45,8 @@ tools make the link exact. What the record says is for you and your principal to
    approve it as you would any payment. If this host offers `atr_agree`, call it with `atr.base64` and `chosen`,
    exactly as `atr_confirm` returned it, `mac` included; a changed `chosen` is declined `chosen-unverified` and nothing
    is paid. It returns `approve`, whose `option` is the agreement payment's `amount`, `asset`, payee (`payTo`) and
-   `network`, and signs nothing; or, where the agreement is already recorded, the `receipt`. To approve it, call
+   `network`, and signs nothing; or, where the agreement is already recorded, the `receipt`; or `agreementChallenges`,
+   MPP agreement challenges your own MPP client pays at the agreement URL, with nothing signed. To approve it, call
    `atr_agree` again with the same arguments and `approved` set to `approve`, exactly as returned; it returns the
    agreement's `receipt`. Otherwise request `chosen.agreement` yourself. It answers 402 with an x402 payment request.
    Pay it through these tools (steps 2, 4 and 5), with the x402 pairing of the option you pay, choosing an option for
@@ -63,8 +66,8 @@ tools make the link exact. What the record says is for you and your principal to
    invoice, handed over as given, with byte values as `0x` hex. A request marked `broadcast`, and a Lightning invoice,
    move the payment when your wallet acts on it. Then call `atr_finish` with the pairing, `atr.base64`, `chosen` exactly
    as returned and your wallet's answer as `signature`.
-5. If `atr_finish` returns `next`, have your wallet sign exactly `next`, then call `atr_finish` again with every answer
-   so far, in order, as a list. When it returns `signed`, send only that payment. If it also returns `landed`, keep it
+5. If `atr_finish` returns `next`, it returns `summary` beside it: read it as you read `atr_confirm`'s, then have your
+   wallet sign exactly `next`, and call `atr_finish` again with every answer so far, in order, as a list. When it returns `signed`, send only that payment. If it also returns `landed`, keep it
    with the payment.
 6. If `request` is `null`, there is nothing for your wallet to sign. For `x402/batch-settlement/cloudflare`, whose
    build is itself the payment, call `atr_finish` with `atr.base64`, `chosen` unchanged and `signature` set to `null`,

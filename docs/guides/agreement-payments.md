@@ -11,7 +11,8 @@ and only then signs the payment for the resource. `confirm` and `finish` do none
 [Driving the steps yourself](#driving-the-steps-yourself).
 
 The [pairings reference](../reference/pairings.md) marks each pairing whose payment is not a public proof. In the
-registry, it is `pattern.publicProof === false`.
+protocol package's registry, its data states coverage `none` (`binding.data.coverage === "none"`), and its
+`agreementOn` says which agreement it can follow: one on any network, or one on the payment's own network.
 
 ## The exchange
 
@@ -29,16 +30,22 @@ sequenceDiagram
     G-->>Ag: approve: the agreement payment (nothing signed)
     Ag->>G: transact(offer, { approved })
     G->>S: GET the ATR link, compare with H
+    G->>Ag: approver: the agreement payment, act "agreement"
+    Ag-->>G: true
     G->>W: sign the approved agreement payment (it carries H)
     W-->>G: signature
     G->>A: GET with PAYMENT-SIGNATURE
     A-->>G: 202, Retry-After (still settling)
     G->>A: the same payment again
     A-->>G: 200, the receipt
+    G->>Ag: approver: the payment, act "payment"
+    Ag-->>G: true
     G->>W: sign the payment for the resource
 ```
 
-1. **Compare.** The gate fetches and compares the ATR as for any pairing. A mismatch ends here.
+1. **Compare and check.** The gate fetches and compares the ATR, parses it, holds the option and the request to it, and
+   builds the payment for the resource, its summary and its ceiling, as for any pairing. A decline ends here, before
+   any agreement is asked or paid: no agreement is paid for a payment the gate would then decline.
 2. **Ask.** The gate sends one `GET` to the agreement URL, with no payment, no redirect and a 10-second deadline. This
    request and every paid one ask for `Accept-Encoding: identity`; a `200` or a `402` with any other `Content-Encoding` is
    `agreement-failed`, its body unread.
@@ -47,9 +54,15 @@ sequenceDiagram
    - `202`: another agreement payment for this ATR is settling. The gate declines `agreement-pending` and signs nothing.
    - `402`: the `PAYMENT-REQUIRED` header, padded standard base64 (RFC 4648 section 4) of an x402 document, is the
      agreement's payment request.
+   - `402` with no `PAYMENT-REQUIRED` and with MPP agreement challenges for this H (`WWW-Authenticate: Payment`, as
+     the protocol package's MPP read finds them): the call returns `AgreementChallenges`, `{ agreementChallenges,
+     bytes, h }` (in Python `AgreementChallenges(agreement_challenges, atr_bytes, h)`), the challenges in the seller's
+     order, and signs nothing. terms does not send an MPP credential to the agreement URL: your own MPP client pays one
+     of them there, and a later call finds the agreement recorded (the `200` above) and pays the charge.
    - anything else: `agreement-failed`.
 3. **Choose the option.** The gate reads the request's options in document order and takes the first one your signer
-   can pay with a pairing whose payment is itself a public proof, the same rule as for the payment's own options. An
+   can pay with a pairing at coverage `full` whose registry data holds an agreement form (`agreement`), and that the
+   payment's pairing admits by its `agreementOn`: any network, or only the payment's own. An
    option is payable only if its `maxTimeoutSeconds` is a JSON number with an integral value from 1 to
    2<sup>53</sup> − 1 (`60` and `60.0` are the same value): the gate passes any other over, and declines
    `no-payable-option` when it finds no option it can pay. The request's legal context must advertise the same H:
@@ -70,9 +83,12 @@ sequenceDiagram
    code, as the unpaid request declines it, and nothing is fetched or signed. Its `option` must then be one of
    `required.accepts`, compared as the protocol package compares JSON values, by RFC 8785 form: member order does not
    count, and `60.0` is `60`. Any other option is declined `offer-unreadable` with `x402/option-not-in-document`, and
-   nothing is fetched or signed. The gate then builds exactly that payment with H and hands it to your signer (or to
-   `agreementSigner`, where you gave one). It sends it in the `PAYMENT-SIGNATURE` header, with no second unpaid
-   request.
+   nothing is fetched or signed. The gate then builds exactly that payment with H and the act `agreement`, holds it to
+   its own pairing's ceiling, asks your approver about it with `act` `"agreement"`, and only on `true` hands it to your
+   signer (or to `agreementSigner`, where you gave one). It sends it in the `PAYMENT-SIGNATURE` header, with no second
+   unpaid request. On a pairing whose agreement has its own single-use value (an EIP-3009 or Permit2 nonce, among
+   others), the agreement payment carries that value, the agreement's value of H, where a payment for the resource
+   would carry H itself, so the one H cannot be spent as both.
    A signed payment nested past 64 levels, or one JSON cannot write, is declined `signed-not-bound`, "The agreement
    payment is not plain JSON.", and is not sent.
 6. **Wait for the receipt.** After a `202`, the gate waits the `Retry-After` seconds (one to nine digits, surrounding
@@ -99,9 +115,9 @@ sequenceDiagram
    first, unpaid request is taken as an agreement already recorded. The public proof is that transaction on `network`,
    which anyone can read.
 
-7. **Pay the resource.** Only then does the gate sign the payment the offer asked for, which it built, unsigned, at the
-   comparison: a build that refuses declines before any agreement is asked. `transact` returns the receipt beside the
-   payment as `agreement`.
+7. **Pay the resource.** Only then does the gate ask your approver about the payment the offer asked for, which it built,
+   unsigned, at the comparison, and sign it on `true`. `transact` returns the receipt beside the payment as
+   `agreement`.
 
 Every decline after the agreement payment is sent carries it as `moved`: keep it, and call again without `approved` to
 learn whether it is recorded (see [Once the agreement payment is sent](#once-the-agreement-payment-is-sent)).
@@ -127,14 +143,55 @@ the receipt, or declines `agreement-pending` again while it answers `202`, signi
 agreement payment for approval again, and whether to pay a second time is your agent's decision. Never call again with
 `approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
 
+## Paid after its agreement
+
+A seller may answer first with the agreement alone (the protocol package's profile `legal-context-return.md`): its first
+response offers the agreement option and no charge, and each agreement option names, by its `serves`
+(`extra.legalContextServes` on x402, the `opaque` member `legalContextServes` of an MPP agreement challenge), the
+charges it is for, `<slot>/<i>`, such as `x402/0` or `mpp/1`, the option at that index of the ATR's binding slot.
+`transact` then:
+
+1. compares and parses the ATR, and holds the buyer's request to its request commitment, as for any payment;
+2. for each agreement option in document order and each charge it serves, takes the first charge the pairing reads,
+   your account can pay and checks 9 to 11 pass on (its build with H, its summary and its ceiling). Where the slot
+   holds the charge without what its read needs, because the seller writes it only when it serves the charge, the
+   charge is chosen by the option's own checks and checks 9 to 11 are left to the call that pays it: an
+   `x402/exact/lnbtc/payment-hash` option, whose invoice the seller writes after the agreement (the protocol package's
+   profile `x402-exact-lnbtc.md`), and every MPP challenge, which the slot holds as issued, without the id and the
+   members the seller places when it serves it;
+3. pays that agreement option, asked of your approver with `act` `"agreement"`, and waits for its receipt as above. On
+   MPP, it follows the agreement URL the agreement challenges carry and reads that resource's one `402`, its
+   `PAYMENT-REQUIRED` and every `WWW-Authenticate: Payment` challenge, in the seller's order, and pays an x402
+   agreement option there exactly as on x402; where it offers only MPP agreement challenges, it signs nothing and
+   returns them, for your own MPP client to pay at the agreement URL;
+4. signs no charge, and returns `ToReturn`:
+
+| Member | What it is |
+| --- | --- |
+| `agreement` | The agreement's receipt, where `transact` paid the agreement; absent (in Python `None`) where it returns MPP agreement challenges. |
+| `agreementChallenges` | The agreement resource's MPP agreement challenges, in the seller's order, where it offers no x402 agreement option; else absent. In Python, `agreement_challenges`, `None` when absent. |
+| `legalContext` | The `Legal-Context` value the caller sends when it repeats its request: H's LCP string, with `rv`, the return value, where the first response carried one (the profile `legal-context-return.md`, rules 2 and 4). In Python, `legal_context`. |
+| `charge` | The charge chosen, `<slot>/<i>`. |
+| `bytes` | The ATR's bytes the gate compared. In Python, `atr_bytes`. |
+| `h` | Their SHA-256. |
+
+The return value reaches the gate as an input you copy from the first response: `legalContext` (in Python
+`legal_context`), its `Legal-Context` header value as received over HTTP, or its
+`_meta["com.integraledger.lcp/legal-context"]` over MCP. A value the protocol package's `fromLegalContextHeader`
+refuses is declined `offer-unreadable` with its code (`return/header-malformed`), and one whose H is not the ATR's
+`hash-mismatch`. Repeat your request with the returned `legalContext`, and call `transact` again with the second
+response, which offers the charge: the agreement being recorded, that call pays the charge as any other. A response
+that offers no charge the gate can choose is `no-payable-option`.
+
 ## Example
 
 The seller offers an ERC-7710 payment, whose signed form does not carry H, and names an agreement URL beside the link.
 The seller builds the agreement URL from a random token, as it builds the link, not from H: unpaid, the agreement URL
-answers with a challenge that advertises the link. A local stand-in plays the seller and the agreement URL:
+answers with a challenge that advertises the link. A delegation signs no end, so the caller raises that pairing's
+ceiling to `"no-end"`. A local stand-in plays the seller and the agreement URL:
 
 ```ts
-import { transact, type Fetch, type Signature, type Signer, type SigningRequest } from "@integraledger/terms";
+import { transact, type Fetch, type Signature, type Signer, type SigningRequest, type ToSign } from "@integraledger/terms";
 import { exactErc7710 } from "@integraledger/lcp/x402";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -162,7 +219,8 @@ const offer = {
     legalContext: { ...legalContext, info: { ...legalContext.info, legalContextAgreementUrl: agreementUrl } },
   },
 };
-// The agreement URL's own payment request: one unit, paid with an EIP-3009 authorization whose nonce is H.
+// The agreement URL's own payment request: one unit, paid with an EIP-3009 authorization whose nonce is the agreement's
+// value of H.
 const agreementRequest = {
   x402Version: 2,
   resource: { url: agreementUrl },
@@ -199,17 +257,30 @@ const signer: Signer = {
   },
 };
 
+const options = {
+  resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
+  // Each signing is asked of the approver first: the agreement payment, then the payment for the resource.
+  approver: (toSign: ToSign) => {
+    seen.push(`approver: ${toSign.act} ${toSign.pairing}, ${toSign.summary.amount} to ${toSign.summary.payees[0]?.account}`);
+    return true;
+  },
+  // A delegation signs no end: admit it for this pairing.
+  ceilings: { "x402/exact/eip155/erc7710": "no-end" },
+} as const;
+
 // The first call returns the agreement payment for approval, and signs nothing.
-const first = await transact(offer, exactErc7710, signer, fetch);
+const first = await transact(offer, exactErc7710, signer, fetch, options);
 if ("decline" in first) throw new Error(`${first.decline.code}: ${first.decline.detail}`);
 if (!("approve" in first)) throw new Error("this pairing pays an agreement first");
 const { amount, asset, payTo, network } = first.approve.option;
 seen.push(`approve: ${amount} of ${asset} to ${payTo} on ${network}`);
 
 // Your agent approves it like any other payment; the second call carries it back unchanged.
-const result = await transact(offer, exactErc7710, signer, fetch, { approved: first.approve });
+const result = await transact(offer, exactErc7710, signer, fetch, { ...options, approved: first.approve });
 if ("decline" in result) throw new Error(`${result.decline.code}: ${result.decline.detail}`);
-if ("approve" in result) throw new Error("the approved agreement payment is paid in this call");
+if ("approve" in result || "charge" in result || "agreementChallenges" in result) {
+  throw new Error("the approved agreement payment is paid in this call");
+}
 console.log(seen.join("\n"));
 console.log("receipt for H:", result.agreement?.atrHash === H);
 ```
@@ -217,27 +288,33 @@ console.log("receipt for H:", result.agreement?.atrHash === H);
 ```text output
 agreement URL: 402
 approve: 1 of 0x036CbD53842c5426634e7929541eC2318f3dCF7e to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C on eip155:84532
+approver: agreement x402/exact/eip155/eip3009, 1 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C
 signer: eip712
 agreement URL: paid, 200
+approver: payment x402/exact/eip155/erc7710, 10000 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C
 signer: erc7710
 receipt for H: true
 ```
 
-The first call asked the agreement URL for its payment request and returned it, with no signer call. The second call
-signed the approved agreement payment (EIP-712, carrying H), and asked for the ERC-7710 delegation only after the
-receipt.
+The first call asked the agreement URL for its payment request and returned it, with no approver or signer call. The
+second call asked the approver about the agreement payment, signed it (EIP-712, carrying the agreement's value of H),
+and asked about and requested the ERC-7710 delegation only after the receipt.
 
 ## Driving the steps yourself
 
-`agree(bytes, url, signer, fetch, { approved, inputs, signal })` runs steps 2 to 6 on their own, for an agent that
-confirms with `confirm` and finishes with `finish`. `confirm` and `finish` neither pay nor check the agreement; only
-`transact` and `agree` do. When `chosen.agreement` is set, the pairing's payment is not itself a public proof of H: do
-not sign yet. Call `agree(bytes, chosen.agreement, signer, fetch)`, have your agent approve the `approve` it returns,
-call `agree` again with `{ approved }`, and sign `request` only with its `receipt` in hand:
+`agree(bytes, url, signer, fetch, { approved, inputs, signal, chosen })` runs steps 2 to 6 on their own, for an agent
+that confirms with `confirm` and finishes with `finish`. It takes no approver: showing the agreement payment before it
+is signed is then your step. `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do.
+When `chosen.agreement` is set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
+`agree(bytes, chosen.agreement, signer, fetch, { chosen })`, have your agent approve the `approve` it returns, call
+`agree` again with `{ approved, chosen }`, and sign `request` only with its `receipt` in hand. Given `chosen`, the
+charge the agreement is for, exactly as `confirm` returned it, `agree` pays only an agreement option that charge's
+pairing admits by its `agreementOn`:
 
 1. `confirm` returns `chosen.agreement`, the URL, beside the request. Do not sign the request yet.
 2. Call `agree` with `confirmed.bytes`, that URL and your signer. It returns `{ approve, bytes, h }` and signs nothing,
-   or `{ receipt }` where the agreement is already recorded.
+   or `{ receipt }` where the agreement is already recorded, or, where the agreement URL offers only MPP agreement
+   challenges, `{ agreementChallenges, bytes, h }`, signing nothing, for your own MPP client to pay there.
 3. Once your agent approves it, call `agree` again with `approved: approve`. It returns `{ receipt }`.
 4. Only with the receipt in hand, sign `confirmed.request` and call `finish`. `finish` takes no receipt: it completes
    the payment whether or not the agreement is paid.
@@ -247,7 +324,8 @@ returns it as `signed`, and after `confirm` you get it with `finish(bytes, chose
 in hand.
 
 The MCP tools keep the same order: `atr_confirm` returns no `request` until you pass a `receipt` for H, and `atr_agree`
-returns the agreement payment to approve before it signs anything. As with `transact`, the receipt is the agreement
+returns the agreement payment to approve before it signs anything, or the agreement resource's MPP agreement challenges
+as `agreementChallenges`, signing nothing. As with `transact`, the receipt is the agreement
 URL's statement: `atr_confirm` checks its form and that its `atrHash` is H, and does not look up the transaction it
 names.
 

@@ -9,7 +9,7 @@ they run offline and print the same values every time.
 
 ## Requirements
 
-- **TypeScript:** Node.js `>=24`. The package is ESM only.
+- **TypeScript:** Node.js `>=24.22.1`. The package is ESM only.
 - **Python:** Python `>=3.11`.
 
 ## Install
@@ -40,7 +40,7 @@ import { transact, type Fetch, type Signer } from "@integraledger/terms";
 import { exactEip3009, type Eip3009Payment } from "@integraledger/lcp/x402";
 import { privateKeyToAccount } from "viem/accounts";
 
-// The ATR, exactly as the seller's link serves it. The gate hashes these bytes and never parses them.
+// The ATR, exactly as the seller's link serves it. The gate hashes and parses these bytes, never a copy.
 const atr = new TextEncoder().encode(
   '{"atrVersion":"1","id":"0f8fad5b-d9cb-469f-a165-70867728950e","x402":{"z":1.0,"a":"caf\\u00e9"},"seller":{"note":"Café — 30 días ✓"}}',
 );
@@ -80,9 +80,20 @@ const signer: Signer = {
   },
 };
 
-const result = await transact(offer, exactEip3009, signer, fetch);
+const result = await transact(offer, exactEip3009, signer, fetch, {
+  // The request the seller's 402 answered, as your agent made it.
+  resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
+  // Asked once for each signing, before the signer is called, with what the signature grants.
+  approver: (toSign) => {
+    const { amount, payees, validity } = toSign.summary;
+    console.log("approve    ", amount, "to", payees[0]?.account, "payable in", validity.unit);
+    return true;
+  },
+});
 if ("decline" in result) throw new Error(`${result.decline.code}: ${result.decline.detail}`);
-if ("approve" in result) throw new Error("this pairing pays no agreement first");
+if ("approve" in result || "charge" in result || "agreementChallenges" in result) {
+  throw new Error("this pairing pays no agreement first");
+}
 
 const payment = result.signed as Eip3009Payment;
 console.log("H          ", result.h);
@@ -95,6 +106,7 @@ console.log("header     ", header.length > 0 ? "ready" : "empty");
 ```
 
 ```text output
+approve     10000 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C payable in seconds
 H           0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 signed nonce 0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 kept bytes  138
@@ -106,9 +118,13 @@ What happened:
 1. `transact` read the offer through the `x402/exact/eip155/eip3009` binding and chose the option on the signer's
    network.
 2. It fetched the link and computed SHA-256 over the 138 bytes it received. The result matched the advertised H.
-3. It built an EIP-3009 `TransferWithAuthorization` whose `nonce` is that hash, and handed it to your signer.
-4. It completed the payment with the signature, read the nonce back out of what was signed, and returned the payment
-   because the nonce is the hash of the bytes it compared.
+3. It parsed those bytes. Their `x402` member, the binding slot, lists no options and holds no request commitment, so
+   there was nothing to hold the option or `resourceRequest` to.
+4. It built an EIP-3009 `TransferWithAuthorization` whose `nonce` is that hash, computed its summary from the typed data
+   (the amount, the payee, the asset, the network and the `validAfter` to `validBefore` window), found the window
+   within the 600-second ceiling, and asked your approver.
+5. On `true`, it handed the request to your signer, completed the payment with the signature, read the nonce back out
+   of what was signed, and returned the payment because the nonce is the hash of the bytes it compared.
 
 Keep `result.bytes` with the payment. They are your copy of the record, and the hash in the payment shows which record
 it was.
@@ -155,17 +171,26 @@ const signer: Signer = {
   },
 };
 
-const result = await transact(offer, exactEip3009, signer, fetch);
+let asked = 0;
+const result = await transact(offer, exactEip3009, signer, fetch, {
+  resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
+  approver: () => {
+    asked++;
+    return true;
+  },
+});
 console.log("decline     ", "decline" in result ? result.decline.code : "none");
+console.log("approver    ", asked);
 console.log("signer calls", calls);
 ```
 
 ```text output
 decline      hash-mismatch
+approver     0
 signer calls 0
 ```
 
-The signer was never called. A decline is a value, never an exception: every gate function returns either its result
+Neither the approver nor the signer was called. A decline is a value, never an exception: every gate function returns either its result
 or `{ decline: { code, detail } }`. The [declines reference](./reference/declines.md) lists every code.
 
 ## Pay a seller, in Python
@@ -180,7 +205,7 @@ import httpx
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 
-from integraledger_terms import X402_EXACT_EIP155_EIP3009, Declined, transact
+from integraledger_terms import X402_EXACT_EIP155_EIP3009, Declined, ToSign, Transacted, transact
 
 # The ATR, exactly as the seller's link serves it.
 ATR = (
@@ -226,12 +251,26 @@ def seller(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, content=ATR) if str(request.url) == LINK else httpx.Response(404)
 
 
+def approver(to_sign: ToSign) -> bool:
+    """Asked once for each signing, before the signer is called, with what the signature grants."""
+    summary = to_sign.summary
+    print("approve     ", summary.amount, "to", summary.payees[0].account, "payable in", summary.validity.unit)
+    return True
+
+
 async def main() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(seller)) as client:
-        result = await transact(OFFER, X402_EXACT_EIP155_EIP3009, Wallet(), client)
+        result = await transact(
+            OFFER,
+            X402_EXACT_EIP155_EIP3009,
+            Wallet(),
+            client,
+            approver=approver,
+            resource_request={"method": "GET", "target": "/v1/quote", "body": b""},
+        )
     if isinstance(result, Declined):
         raise SystemExit(f"{result.code}: {result.detail}")
-    assert result.signed is not None
+    assert isinstance(result, Transacted) and result.signed is not None
     print("H           ", result.h)
     print("signed nonce", result.signed["payload"]["authorization"]["nonce"])
     print("kept bytes  ", len(result.atr_bytes))
@@ -241,6 +280,7 @@ asyncio.run(main())
 ```
 
 ```text output
+approve      10000 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C payable in seconds
 H            0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 signed nonce 0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 kept bytes   138

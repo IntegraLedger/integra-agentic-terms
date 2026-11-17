@@ -60,7 +60,7 @@ Add the server to your MCP client. Most clients take a configuration like this:
 }
 ```
 
-The server speaks MCP over stdio and needs Node.js `>=24`. Its `serverInfo` name is `integraledger-terms`.
+The server speaks MCP over stdio and needs Node.js `>=24.22.1`. Its `serverInfo` name is `integraledger-terms`.
 
 Then give your agent the skill. The package ships it at
 `skills/confirming-the-atr-hash-before-paying/SKILL.md`. Copy that folder into your agent's skills directory (for
@@ -222,8 +222,8 @@ fetches and signs nothing.
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
 | `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `resourceRequest`, `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request` and `summary`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
-| `atr_finish` | `pairing`, `atr` (base64), `chosen` (exactly as returned), `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash` and `next` for a pairing signed in steps | read-only |
-| `atr_check` | `pairing`, `atr` (base64), `presented`, `landed?` (exactly as returned beside the payment) | `atrHash` when the payment carries the hash of those bytes | read-only |
+| `atr_finish` | `pairing`, `atr` (base64), `chosen` (exactly as returned), `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash`, `next` and its `summary` for a pairing signed in steps | read-only |
+| `atr_check` | `pairing`, `atr` (base64), `presented`, `landed?` (exactly as returned beside the payment), `act?` (`"payment"`, the default, or `"agreement"` for an agreement payment) | `atrHash` when the payment carries the hash of those bytes, as the act it was paid as | read-only |
 | `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening), `landed?` and `mac`, exactly as returned | `atrHash` and `hold`, with its `mac` | read-only |
 | `atr_channel_record_charge` | `hold` (exactly as returned), `charged` (decimal) | `atrHash` and the updated `hold` | read-only |
 
@@ -243,8 +243,8 @@ receipt is the agreement URL's statement, and its proof is the transaction it na
 
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
-| `atr_transact` | `pairing`, `document`, `resourceRequest`, `inputs?`, `approved?`, `legalContext?` | `atrHash`, `atr`, `signed` (with `landed` where there is one, and `mac` for a channel opening), and `agreement` (the receipt) where the pairing needs one; or `atrHash`, `atr` and `approve`, what to approve, with nothing signed; or, where the first response offers only the agreement, `atrHash`, `atr`, `agreement`, `legalContext` and `charge` | not read-only, not destructive, not idempotent, open-world |
-| `atr_agree` | `atr` (base64), `chosen` (from `atr_confirm`, exactly as returned), `approved?`, `inputs?` | `atrHash` and `approve`, the agreement payment to approve, with nothing signed, or `atrHash` and `receipt` where the agreement is already recorded; with `approved`, `atrHash` and `receipt` | not read-only, not destructive, not idempotent, open-world |
+| `atr_transact` | `pairing`, `document`, `resourceRequest`, `inputs?`, `approved?`, `legalContext?` | `atrHash`, `atr`, `signed` (with `landed` where there is one, and `mac` for a channel opening), and `agreement` (the receipt) where the pairing needs one; or `atrHash`, `atr` and `approve`, what to approve, with nothing signed; or, where the first response offers only the agreement, `atrHash`, `atr`, `agreement` (or `agreementChallenges`), `legalContext` and `charge`; or, where the agreement URL offers only MPP agreement challenges, `atrHash`, `atr` and `agreementChallenges`, with nothing signed | not read-only, not destructive, not idempotent, open-world |
+| `atr_agree` | `atr` (base64), `chosen` (from `atr_confirm`, exactly as returned), `approved?`, `inputs?` | `atrHash` and `approve`, the agreement payment to approve, with nothing signed, or `atrHash` and `receipt` where the agreement is already recorded, or `atrHash` and `agreementChallenges` where the agreement URL offers only MPP agreement challenges, with nothing signed; with `approved`, `atrHash` and `receipt` | not read-only, not destructive, not idempotent, open-world |
 | `atr_channel_within` | `pairing`, `hold` (exactly as returned), `document`, `refund?`, `inputs?` | `atrHash`, `signed` and the updated `hold` | not read-only, not destructive, not idempotent, open-world |
 
 `atr_agree` is offered when the host wires a signer or an agreement signer. It reads the agreement URL from `chosen`,
@@ -264,7 +264,11 @@ never signed. A payment signed in several steps returns each step; where the pai
 
 Where the seller's first response offers only the agreement, naming the charges it serves (the protocol package's
 profile `legal-context-return.md`), `atr_transact` pays the agreement and returns its `agreement` receipt,
-`legalContext` and `charge`, the charge chosen, signing no charge. The agent repeats its request with `legalContext`,
+`legalContext` and `charge`, the charge chosen, signing no charge. On MPP it follows the agreement URL the agreement
+challenges carry and pays an x402 agreement option there; where that resource offers only MPP agreement challenges, it
+returns them as `agreementChallenges`, in place of `agreement`, and signs nothing: the agent's own MPP client pays one
+at the agreement URL. `atr_transact` and `atr_agree` return `agreementChallenges` the same way, with nothing signed,
+where the agreement URL a charge names offers only MPP agreement challenges. The agent repeats its request with `legalContext`,
 over HTTP as its `Legal-Context` header and over MCP in its tool call's `params._meta` under
 `com.integraledger.lcp/legal-context`, then calls `atr_transact` with the second response. `legalContext` is the first
 response's return value, its `Legal-Context` header or its result's `_meta["com.integraledger.lcp/legal-context"]`,
@@ -362,78 +366,91 @@ The binary `terms-mcp` serves `createBuyerServer` over stdio, with a `fetch` tha
 ## Supported pairings
 
 Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. Pass the id as the `pairing` argument.
-"Agreement payment first" marks the pairings for which `atr_confirm` names an agreement URL.
+"Coverage" is `full` where the payment is itself a public proof of H and `none` otherwise; "Agreement payment first"
+marks the pairings paid after an agreement payment, and on which network that agreement may be; "Pays an agreement"
+marks the pairings whose own payment can be that agreement payment (`only` where it is never a charge). Each is read
+from the pairing's registry data in `@integraledger/lcp`. For a pairing paid after an agreement payment, `atr_confirm` names the agreement URL.
 
 <!-- pairings:mcp:start -->
-| Rail | Pairing | `pairing` argument | Buyer signs H | Agreement payment first |
-| --- | --- | --- | --- | --- |
-| EVM | `mpp/charge/evm/authorization` | `"mpp/charge/evm/authorization"` | yes | no |
-| EVM | `mpp/charge/evm/hash` | `"mpp/charge/evm/hash"` | no | yes |
-| EVM | `mpp/charge/evm/permit2` | `"mpp/charge/evm/permit2"` | yes | no |
-| EVM | `mpp/charge/evm/transaction` | `"mpp/charge/evm/transaction"` | no | yes |
-| EVM | `mpp/charge/usdc/evm` | `"mpp/charge/usdc/evm"` | yes | no |
-| EVM | `mpp/charge/usdc/gateway` | `"mpp/charge/usdc/gateway"` | yes | no |
-| EVM | `mpp/session/evm` | `"mpp/session/evm"` | yes | no |
-| EVM | `x402/auth-capture/eip155/eip3009` | `"x402/auth-capture/eip155/eip3009"` | yes | no |
-| EVM | `x402/auth-capture/eip155/permit2` | `"x402/auth-capture/eip155/permit2"` | yes | no |
-| EVM | `x402/batch-settlement/eip155` | `"x402/batch-settlement/eip155"` | yes | no |
-| EVM | `x402/exact/eip155/eip3009` | `"x402/exact/eip155/eip3009"` | yes | no |
-| EVM | `x402/exact/eip155/erc7710` | `"x402/exact/eip155/erc7710"` | no | yes |
-| EVM | `x402/exact/eip155/erc7710-salt` | `"x402/exact/eip155/erc7710-salt"` | yes | no |
-| EVM | `x402/exact/eip155/permit2` | `"x402/exact/eip155/permit2"` | yes | no |
-| EVM | `x402/upto/eip155/permit2` | `"x402/upto/eip155/permit2"` | yes | no |
-| Tempo | `mpp/charge/tempo/memo` | `"mpp/charge/tempo/memo"` | no | no |
-| Tempo | `mpp/charge/tempo/push` | `"mpp/charge/tempo/push"` | no | no |
-| Tempo | `mpp/session/tempo` | `"mpp/session/tempo"` | yes | no |
-| Tempo | `mpp/subscription/tempo` | `"mpp/subscription/tempo"` | yes | no |
-| Solana | `mpp/charge/solana` | `"mpp/charge/solana"` | yes | no |
-| Solana | `mpp/charge/usdc/solana` | `"mpp/charge/usdc/solana"` | yes | no |
-| Solana | `mpp/session/solana` | `"mpp/session/solana"` | no | no |
-| Solana | `x402/batch-settlement/solana` | `"x402/batch-settlement/solana"` | yes | no |
-| Solana | `x402/exact/solana` | `"x402/exact/solana"` | yes | no |
-| Solana | `x402/upto/solana` | `"x402/upto/solana"` | yes | no |
-| Stellar | `mpp/charge/stellar` | `"mpp/charge/stellar"` | no | no |
-| Stellar | `x402/exact/stellar` | `"x402/exact/stellar"` | no | no |
-| XRP Ledger | `mpp/charge/xrpl` | `"mpp/charge/xrpl"` | yes | no |
-| XRP Ledger | `mpp/session/xrpl` | `"mpp/session/xrpl"` | yes | no |
-| XRP Ledger | `x402/exact/xrpl` | `"x402/exact/xrpl"` | yes | no |
-| Hedera | `mpp/charge/hedera` | `"mpp/charge/hedera"` | no | no |
-| Hedera | `mpp/session/hedera` | `"mpp/session/hedera"` | yes | no |
-| Hedera | `x402/exact/hedera` | `"x402/exact/hedera"` | yes | no |
-| Hedera | `x402/exact/hedera/transfer-executor` | `"x402/exact/hedera/transfer-executor"` | no | yes |
-| Algorand | `x402/exact/algorand` | `"x402/exact/algorand"` | yes | no |
-| Aptos | `x402/exact/aptos` | `"x402/exact/aptos"` | no | yes |
-| Sui | `x402/exact/sui` | `"x402/exact/sui"` | yes | no |
-| NEAR | `mpp/charge/nearintents` | `"mpp/charge/nearintents"` | no | yes |
-| NEAR | `x402/exact/near` | `"x402/exact/near"` | yes | no |
-| Starknet | `x402/exact/starknet` | `"x402/exact/starknet"` | yes | no |
-| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `"x402/exact/polkadot/lcp-assets-remark"` | yes | no |
-| TRON | `x402/exact/tron/lcp-trc20-memo` | `"x402/exact/tron/lcp-trc20-memo"` | yes | no |
-| TON | `x402/exact/tvm` | `"x402/exact/tvm"` | yes | no |
-| Cardano | `x402/exact/cardano` | `"x402/exact/cardano"` | yes | no |
-| Casper | `x402/exact/casper` | `"x402/exact/casper"` | yes | no |
-| Concordium | `x402/exact/ccd` | `"x402/exact/ccd"` | yes | no |
-| Stacks | `mpp/charge/usdc/stacks` | `"mpp/charge/usdc/stacks"` | yes | no |
-| Lightning | `mpp/charge/lightning` | `"mpp/charge/lightning"` | no | yes |
-| Lightning | `mpp/session/lightning` | `"mpp/session/lightning"` | no | yes |
-| Lightning | `x402/exact/lnbtc` | `"x402/exact/lnbtc"` | no | yes |
-| Lightning | `x402/exact/lnbtc/invoice-named` | `"x402/exact/lnbtc/invoice-named"` | no | yes |
-| Cloudflare | `x402/batch-settlement/cloudflare` | `"x402/batch-settlement/cloudflare"` | yes | yes |
-| Card | `card/mastercard-vi/autonomous` | `"card/mastercard-vi/autonomous"` | yes | yes |
-| Card | `card/mastercard-vi/immediate` | `"card/mastercard-vi/immediate"` | yes | yes |
-| Card | `card/seller-reference` | `"card/seller-reference"` | no | yes |
-| Card | `card/visa-tap` | `"card/visa-tap"` | yes | yes |
-| Card | `mpp/charge/card` | `"mpp/charge/card"` | no | yes |
-| Stripe | `mpp/charge/stripe` | `"mpp/charge/stripe"` | no | yes |
-| Stripe | `mpp/subscription/stripe` | `"mpp/subscription/stripe"` | no | yes |
-| Mandate | `ap2/checkout-mandate` | `"ap2/checkout-mandate"` | yes | yes |
-| Mandate | `ucp/booking/ap2-mandate` | `"ucp/booking/ap2-mandate"` | yes | yes |
-| Mandate | `ucp/checkout/ap2-mandate` | `"ucp/checkout/ap2-mandate"` | yes | yes |
-| Checkout | `ack/payment-request` | `"ack/payment-request"` | no | yes |
-| Checkout | `acp/checkout/delegated` | `"acp/checkout/delegated"` | no | yes |
-| Checkout | `acp/checkout/undelegated` | `"acp/checkout/undelegated"` | no | yes |
-| Checkout | `ucp/booking/unsigned` | `"ucp/booking/unsigned"` | no | yes |
-| Checkout | `ucp/checkout/unsigned` | `"ucp/checkout/unsigned"` | no | yes |
+| Rail | Pairing | `pairing` argument | Coverage | Agreement payment first | Pays an agreement |
+| --- | --- | --- | --- | --- | --- |
+| EVM | `mpp/charge/evm/authorization` | `"mpp/charge/evm/authorization"` | full | no | yes |
+| EVM | `mpp/charge/evm/hash` | `"mpp/charge/evm/hash"` | none | yes, any network | no |
+| EVM | `mpp/charge/evm/permit2` | `"mpp/charge/evm/permit2"` | full | no | yes |
+| EVM | `mpp/charge/evm/transaction` | `"mpp/charge/evm/transaction"` | none | yes, any network | no |
+| EVM | `mpp/charge/usdc/evm` | `"mpp/charge/usdc/evm"` | full | no | yes |
+| EVM | `mpp/charge/usdc/gateway` | `"mpp/charge/usdc/gateway"` | none | yes, any network | no |
+| EVM | `mpp/session/evm` | `"mpp/session/evm"` | full | no | no |
+| EVM | `spend-permissions/eip155` | `"spend-permissions/eip155"` | full | no | only |
+| EVM | `x402/auth-capture/eip155/eip3009` | `"x402/auth-capture/eip155/eip3009"` | full | no | no |
+| EVM | `x402/auth-capture/eip155/permit2` | `"x402/auth-capture/eip155/permit2"` | full | no | no |
+| EVM | `x402/batch-settlement/eip155` | `"x402/batch-settlement/eip155"` | full | no | no |
+| EVM | `x402/exact/eip155/eip3009` | `"x402/exact/eip155/eip3009"` | full | no | yes |
+| EVM | `x402/exact/eip155/erc7710` | `"x402/exact/eip155/erc7710"` | none | yes, any network | no |
+| EVM | `x402/exact/eip155/erc7710-salt` | `"x402/exact/eip155/erc7710-salt"` | full | no | no |
+| EVM | `x402/exact/eip155/gateway-batched` | `"x402/exact/eip155/gateway-batched"` | none | yes, its network | no |
+| EVM | `x402/exact/eip155/permit2` | `"x402/exact/eip155/permit2"` | full | no | yes |
+| EVM | `x402/upto/eip155/permit2` | `"x402/upto/eip155/permit2"` | full | no | no |
+| Tempo | `mpp/charge/tempo/split-memo` | `"mpp/charge/tempo/split-memo"` | full | no | yes |
+| Tempo | `mpp/charge/tempo/split-memo/push` | `"mpp/charge/tempo/split-memo/push"` | full | no | no |
+| Tempo | `mpp/session/tempo` | `"mpp/session/tempo"` | full | no | no |
+| Tempo | `mpp/subscription/tempo` | `"mpp/subscription/tempo"` | full | no | no |
+| Solana | `mpp/charge/solana` | `"mpp/charge/solana"` | full | no | yes |
+| Solana | `mpp/charge/solana/unsponsored` | `"mpp/charge/solana/unsponsored"` | full | no | no |
+| Solana | `mpp/charge/usdc/solana` | `"mpp/charge/usdc/solana"` | full | no | yes |
+| Solana | `mpp/session/solana/memo` | `"mpp/session/solana/memo"` | full | no | no |
+| Solana | `mpp/session/solana/stock` | `"mpp/session/solana/stock"` | none | yes, its network | no |
+| Solana | `mpp/subscription/solana` | `"mpp/subscription/solana"` | full | no | no |
+| Solana | `x402/batch-settlement/solana` | `"x402/batch-settlement/solana"` | full | no | no |
+| Solana | `x402/exact/solana` | `"x402/exact/solana"` | full | no | yes |
+| Solana | `x402/upto/solana` | `"x402/upto/solana"` | full | no | no |
+| Stellar | `x402/exact/stellar/precondition` | `"x402/exact/stellar/precondition"` | full | no | only |
+| XRP Ledger | `mpp/charge/xrpl` | `"mpp/charge/xrpl"` | full | no | no |
+| XRP Ledger | `mpp/session/xrpl` | `"mpp/session/xrpl"` | full | no | no |
+| XRP Ledger | `mpp/session/xrpl/stock` | `"mpp/session/xrpl/stock"` | none | yes, its network | no |
+| XRP Ledger | `x402/exact/xrpl` | `"x402/exact/xrpl"` | full | no | yes |
+| XRP Ledger | `x402/upto/xrpl` | `"x402/upto/xrpl"` | none | yes, its network | no |
+| Hedera | `mpp/charge/lcp/hedera` | `"mpp/charge/lcp/hedera"` | full | no | yes |
+| Hedera | `mpp/session/hedera/stock` | `"mpp/session/hedera/stock"` | none | yes, its network | no |
+| Hedera | `x402/exact/hedera` | `"x402/exact/hedera"` | full | no | yes |
+| Hedera | `x402/exact/hedera/transfer-executor` | `"x402/exact/hedera/transfer-executor"` | none | yes, any network | no |
+| Algorand | `x402/exact/algorand` | `"x402/exact/algorand"` | full | no | yes |
+| Aptos | `x402/exact/aptos` | `"x402/exact/aptos"` | none | yes, any network | no |
+| Sui | `x402/exact/sui` | `"x402/exact/sui"` | full | no | yes |
+| NEAR | `mpp/charge/nearintents` | `"mpp/charge/nearintents"` | none | yes, any network | no |
+| NEAR | `x402/exact/near` | `"x402/exact/near"` | full | no | yes |
+| Starknet | `x402/exact/starknet` | `"x402/exact/starknet"` | full | no | yes |
+| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `"x402/exact/polkadot/lcp-assets-remark"` | full | no | yes |
+| TRON | `x402/exact/tron/lcp-trc20-memo` | `"x402/exact/tron/lcp-trc20-memo"` | full | no | yes |
+| TON | `x402/exact/tvm` | `"x402/exact/tvm"` | full | no | yes |
+| Cardano | `x402/exact/cardano` | `"x402/exact/cardano"` | full | no | yes |
+| Cardano | `x402/exact/cardano/lock` | `"x402/exact/cardano/lock"` | full | no | no |
+| Casper | `x402/exact/casper` | `"x402/exact/casper"` | full | no | yes |
+| Concordium | `x402/exact/ccd` | `"x402/exact/ccd"` | full | no | no |
+| Stacks | `mpp/charge/usdc/stacks` | `"mpp/charge/usdc/stacks"` | full | no | yes |
+| Lightning | `mpp/charge/lightning` | `"mpp/charge/lightning"` | none | yes, any network | no |
+| Lightning | `mpp/session/lightning` | `"mpp/session/lightning"` | none | yes, any network | no |
+| Lightning | `x402/exact/lnbtc/payment-hash` | `"x402/exact/lnbtc/payment-hash"` | none | yes, any network | no |
+| Cloudflare | `x402/batch-settlement/cloudflare` | `"x402/batch-settlement/cloudflare"` | none | yes, any network | no |
+| Card | `card/mastercard-agent-pay` | `"card/mastercard-agent-pay"` | none | yes, any network | no |
+| Card | `card/mastercard-vi/autonomous` | `"card/mastercard-vi/autonomous"` | none | yes, any network | no |
+| Card | `card/mastercard-vi/immediate` | `"card/mastercard-vi/immediate"` | none | yes, any network | no |
+| Card | `card/seller-reference` | `"card/seller-reference"` | none | yes, any network | no |
+| Card | `card/visa-tap` | `"card/visa-tap"` | none | yes, any network | no |
+| Card | `card/visa-vic` | `"card/visa-vic"` | none | yes, any network | no |
+| Card | `mpp/charge/card` | `"mpp/charge/card"` | none | yes, any network | no |
+| Stripe | `mpp/charge/stripe` | `"mpp/charge/stripe"` | none | yes, any network | no |
+| Stripe | `mpp/subscription/stripe` | `"mpp/subscription/stripe"` | none | yes, any network | no |
+| Mandate | `ap2/checkout-mandate` | `"ap2/checkout-mandate"` | none | yes, any network | no |
+| Mandate | `ap2/checkout-mandate/x402` | `"ap2/checkout-mandate/x402"` | none | yes, any network | no |
+| Mandate | `ucp/booking/ap2-mandate` | `"ucp/booking/ap2-mandate"` | none | yes, any network | no |
+| Mandate | `ucp/checkout/ap2-mandate` | `"ucp/checkout/ap2-mandate"` | none | yes, any network | no |
+| Checkout | `ack/payment-request` | `"ack/payment-request"` | none | yes, any network | no |
+| Checkout | `acp/checkout/delegated` | `"acp/checkout/delegated"` | none | yes, any network | no |
+| Checkout | `acp/checkout/undelegated` | `"acp/checkout/undelegated"` | none | yes, any network | no |
+| Checkout | `ucp/booking/unsigned` | `"ucp/booking/unsigned"` | none | yes, any network | no |
+| Checkout | `ucp/checkout/agent-signed` | `"ucp/checkout/agent-signed"` | none | yes, any network | no |
+| Checkout | `ucp/checkout/unsigned` | `"ucp/checkout/unsigned"` | none | yes, any network | no |
 <!-- pairings:mcp:end -->
 
 ## Security model
@@ -444,6 +461,11 @@ Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. Pa
   the completed payment, or, where the proof is the agreement payment, without that reading.
 - **No keys in `terms-mcp`.** The binary has no signer. With a host signer, only the host's code signs, and only after a
   match.
+- **What is signed is shown first.** `atr_confirm` returns every request with its `summary`. With a host signer,
+  `atr_transact` and `atr_agree` sign only a signing the agent was shown and approved, unchanged; `atr_channel_within`
+  signs a later voucher in a channel whose opening was approved, with no approval of its own.
+- **The ceilings and floors are the host's.** No tool input raises a ceiling or names a floor, so no text the agent
+  reads, the seller's among it, can.
 - **One bounded fetch per confirmation:** `https` only, no redirect, 10 seconds, at most 1 MiB, asking for
   `Accept-Encoding: identity`. A response with any other `Content-Encoding` is declined unread, so the bytes hashed are
   the bytes sent.
@@ -469,7 +491,7 @@ expect the gate's own results.
 
 ## Requirements
 
-- Node.js `>=24`.
+- Node.js `>=24.22.1`.
 - An MCP client that speaks stdio.
 
 ## Contributing

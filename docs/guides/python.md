@@ -21,7 +21,11 @@ Python `>=3.11`. It depends on `httpx` and `cryptography`, and is fully typed.
 | HTTP client | `fetch`, WHATWG's call shape | an `httpx.AsyncClient` |
 | Result | an object, or `{ decline: { code, detail }, moved? }` | a dataclass (`Transacted`, `Confirmed`, `Finished`, …), or `Declined(code, detail, moved)` |
 | ATR bytes | `bytes: Uint8Array` | `atr_bytes: bytes` |
-| `transact`'s options | `{ inputs, agreementSigner, approved, signal }` | keyword arguments `inputs=`, `agreement_signer=`, `approved=`, `signal=` |
+| `transact`'s options | `{ approver, resourceRequest, inputs, ceilings, legalContext, agreementSigner, approved, signal, chosen }` | keyword arguments `approver=`, `resource_request=`, `inputs=`, `ceilings=`, `legal_context=`, `agreement_signer=`, `approved=`, `signal=`, `chosen=` |
+| The approver | `(toSign: ToSign) => boolean \| Promise<boolean>`; approves with `true` | `Callable[[ToSign], bool \| Awaitable[bool]]`; approves with `True` |
+| The buyer's request | `ResourceRequest`, the protocol package's `HttpRequest` (`body` a `Uint8Array`) or `ToolCall` | `ResourceRequest`, the `TypedDict`s `HttpRequest` (`body` as `bytes`) and `ToolCall`, with the same member names |
+| `ToSign`, `Summary`, `ToReturn`, `AgreementChallenges` | objects, members in camel case (`limitPerPeriod`, `closableBy`, `legalContext`, `agreementChallenges`) | frozen dataclasses, members in snake case (`limit_per_period`, `closable_by`, `legal_context`, `agreement_challenges`) |
+| A later step of a payment signed in steps | `{ next, summary, h }` | `Next(next, summary, h)` |
 | Ending the agreement exchange | `signal`, an `AbortSignal` | `signal=`, an `asyncio.Event` that you set |
 | The agreement payment to approve | `{ approve, bytes, h }` | `ToApprove(approve, atr_bytes, h)` |
 | Byte strings in a signing request | `Uint8Array`, as built | `0x` and lower-case hex |
@@ -32,9 +36,11 @@ that is not valid Punycode, such as `xn--zz`, and a label IDNA 2008 does not all
 the Python gate, an ATR link on such a host is declined `atr-unfetchable`, and an agreement URL on one is declined
 `agreement-failed`; nothing is fetched. The TypeScript gate passes such a link to its `fetch`.
 
-Everything else is the same: the order of the steps, the bounds of the fetch, the identity-only content coding, the
-twelve decline codes, the agreement
-exchange and its timings, the channel hold's members.
+Everything else is the same: the order of the steps and the checks, the parse of the ATR, the bounds of the fetch, the
+identity-only content coding, the summaries, the ceilings and their paces, the decline codes, the agreement exchange and
+its timings, the channel hold's members. Both are held to the profile
+[`buyer-gate.md`](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms/profiles/buyer-gate.md)
+and its vectors.
 
 ## A signer
 
@@ -68,15 +74,21 @@ A signer that raises is a `Declined("signer-failed", …)`.
 
 ## The flows
 
-- **One call:** `await transact(doc, binding, signer, client, inputs=…, agreement_signer=…)`. Where the pairing needs
-  an agreement payment, the call returns `ToApprove` and signs nothing; once your agent approves `result.approve`, call
-  again with `approved=result.approve`.
-- **Two calls:** `await confirm(doc, binding, account, client, inputs)`, then your signer, then
-  `finish(atr_bytes, chosen, signature, binding)`.
-- **Later:** `check(atr_bytes, presented, binding, landed=…)`. The caller passes as `landed` only the receipt its own
+- **One call:** `await transact(doc, binding, signer, client, approver=…, resource_request=…, inputs=…)`. Each signing
+  is asked of `approver` first. Where the pairing needs an agreement payment, the call returns `ToApprove` and signs
+  nothing; once your agent approves `result.approve`, call again with `approved=result.approve`. Where the seller offers
+  the agreement alone, it returns `ToReturn` once the agreement is paid. Where the agreement URL offers only MPP
+  agreement challenges, it returns `AgreementChallenges` and signs nothing. Given `chosen=confirmed.chosen`, it builds
+  the exact request `confirm` returned.
+- **Two calls:** `await confirm(doc, binding, account, client, resource_request=…, inputs=…)`, which returns the request
+  with its `summary` and calls no approver, then your signer, then `finish(atr_bytes, chosen, signature, binding)`,
+  which returns `Next(next, summary, h)` for a later step to show and sign.
+- **Later:** `check(atr_bytes, presented, binding, landed=…, act=…)`, `act` being `"agreement"` for an agreement
+  payment. The caller passes as `landed` only the receipt its own
   reader read for the payment, as `finish` or `transact` returned it, never a value another party sent.
-- **Agreement:** `await agree(atr_bytes, url, signer, client)` returns `ToApprove`, signing nothing; once your agent
-  approves it, `await agree(atr_bytes, url, signer, client, approved=…)` pays it and returns `Agreed`.
+- **Agreement:** `await agree(atr_bytes, url, signer, client, chosen=…)` returns `ToApprove` (or `AgreementChallenges`,
+  where the agreement URL offers only MPP agreement challenges), signing nothing; once your
+  agent approves it, `await agree(atr_bytes, url, signer, client, approved=…, chosen=…)` pays it and returns `Agreed`.
 - **Channels:** `open_channel(atr_bytes, opened, binding, landed=…)`, `await within(doc, hold, binding, signer)`,
   `record_charge(hold, charged)`. The caller passes as `landed` only the receipt its own reader read for the opening,
   as `transact` returned it, never a value another party sent.

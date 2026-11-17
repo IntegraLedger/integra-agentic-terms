@@ -26,9 +26,12 @@ In Python, any object with an `account` string and an `async def sign(self, requ
 - **`sign(request)`** signs exactly what it is handed. It changes nothing: not a field, not an amount, not a deadline.
   If it cannot sign a request, it throws (TypeScript) or raises (Python), and the gate declines with `signer-failed`.
 
-The gate calls `sign` only after the comparison matched, at most twice for one payment (a funding and then a voucher),
-and never for the payment of a pairing whose build gives the buyer nothing to sign (it may sign that pairing's
-agreement payment).
+The gate calls `sign` only after the comparison matched and every check on the request passed, and, in `transact`, only
+after your approver answered `true` for it; at most twice for one payment (a funding and then a voucher), and never for
+the payment of a pairing whose build gives the buyer nothing to sign (it may sign that pairing's agreement payment).
+Where the wallet builds the transaction and picks its expiry itself, the request carries the latest deadline it may
+sign (`maxExpirationTimestampSecs`, `maxTtl`, `maxEpoch` or `maxEraPeriod`); a payment signed past it is discarded and
+declined `past-ceiling`.
 
 ## Requests and answers
 
@@ -44,12 +47,11 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 
 | Kind | What the signer signs | Answer |
 | --- | --- | --- |
-| `eip712` | EIP-712 typed data (`request.typedData`): an EIP-3009 transfer authorization, a Permit2 transfer, a channel voucher. | The 65-byte signature, `0x` hex. |
+| `eip712` | EIP-712 typed data (`request.typedData`): an EIP-3009 transfer authorization, a Permit2 transfer, a channel voucher. An EVM session's funding by transfer authorization also carries `opening`, `{ payee, salt, authorizedSigner }`, which its nonce commits to with the payer and the token. | The 65-byte signature, `0x` hex. |
 | `erc7710` | An ERC-7710 delegation request for the option. | `{ delegationManager, permissionContext, delegator }`, each `0x` hex. |
-| `evm-call` | One contract call on the chain. With `broadcast: true` the signer sends it itself. | Without `broadcast`: the signed EIP-1559 transaction, `0x` hex, for the request's `chainId`; another chain is declined `signed-not-bound` (`evm/chain-mismatch`), as are bytes that are not an EIP-1559 transaction (`mpp/credential-malformed`). With `broadcast`: the transaction hash, `0x` hex. |
-| `evm-calls` | Several calls, in order, which the signer broadcasts (a session's opening). | The opening's transaction hash, `0x` hex. |
-| `gateway-burn-intent` | A Circle Gateway burn intent. The client computes the salt from the preimage the request gives and signs. | `{ source, sourceNetwork, destinationNetwork, maxFee, burnIntent, signature }`. |
-| `tempo-call`, `tempo-calls` | A Tempo `0x76` transaction with one call, or several in order (a charge with splits). With `broadcast: true` the signer sends it. | Without `broadcast`: the signed transaction, `0x` hex. With `broadcast`: `{ hash, landed }`, the hash it sent and, where it has it, the landed receipt `{ transaction, blockNumber, logs }`. |
+| `evm-call` | One contract call on the chain. With `broadcast: true` the signer sends it itself (a Spend Permission's `approve`, on its route `"transaction"`). | Without `broadcast`: the signed EIP-1559 transaction, `0x` hex, for the request's `chainId`; another chain is declined `signed-not-bound` (`evm/chain-mismatch`), as are bytes that are not an EIP-1559 transaction (`mpp/credential-malformed`). With `broadcast`: the transaction hash, `0x` hex. |
+| `gateway-burn-intent` | A Circle Gateway burn intent: the salt's preimage, the `maxBlockHeight` the build computed from your floor inputs, and `challengeRequest`, the challenge's `request` as issued, whose hash the preimage commits to and from which the gate shows the amount, the recipient, the destination network and the most fee. The client adds its own values, computes the salt from the preimage and signs. | `{ source, sourceNetwork, destinationNetwork, maxFee, burnIntent, signature }`. A burn intent whose `maxBlockHeight` is not the one built is refused (`mpp/max-block-height-changed`), as is another `sourceNetwork` (`mpp/input-malformed`). |
+| `tempo-call` | A Tempo `0x76` transaction with one call (a session's open). | The signed transaction, `0x` hex. |
 | `tempo-key-authorization` | The digest of a Tempo key authorization, signed by the root key (a subscription). | The root key's signature, `0x` hex. |
 
 ### Other chains
@@ -57,22 +59,21 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 | Kind | What the signer signs | Answer |
 | --- | --- | --- |
 | `solana-message` | A Solana v0 transaction message (`request.message`). | The payer's 64-byte Ed25519 signature, `0x` hex (base58 for the batch-settlement opening and voucher). |
-| `solana-session-open` | The values of an MPP session opening, which the buyer's channel client composes into an `open`. | The open payload. Under the challenge's `operator` voucher signer, the open instruction's authorizedSigner (account 4) is the challenge's `operator`. The gate reads no address lookup table, so an open whose message has lookups is refused `svm/read-first`. |
+| `solana-session-open` | The message of an MPP session's payment-channel `open` (`request.message`), with one Memo instruction carrying H's LCP string, its fee payer the challenge's `operator`, who co-signs and submits it. | The payer's 64-byte Ed25519 signature over the message, `0x` hex. |
 | `ed25519-raw` | Raw Ed25519 over the bytes given (`request.message`), by the key `request.signer` names. | The 64-byte signature, base58. |
-| `stellar-auth` | A Soroban authorization preimage (`request.preimage`). | The 64-byte Ed25519 signature over its SHA-256, `0x` hex. |
+| `stellar-precondition` | A Soroban authorization's `preimage`, and the 40-byte `payload` of its signed-payload precondition: H, then the entry's nonce. | `{ entry, payload }`: the 64-byte Ed25519 signature over the preimage's SHA-256, and the one over the payload, raw, each `0x` hex. |
 | `xrpl-tx` | An XRPL transaction as `txJson`. | The signed blob, hex digits without `0x`, as the XRP Ledger writes it, signed with a single key: a blob that carries `Signers` is declined `signed-not-bound`. The blob carries `NetworkID` as rippled requires of the network, none where its id is at most 1024 and that id above 1024; any other is declined `signed-not-bound` (`xrpl/network-mismatch`). |
 | `xrpl-session-open` | A `PaymentChannelCreate` and the first claim. | `{ signedBlob, claimSignature }`, each hex digits without `0x`, as the XRP Ledger writes them, the blob signed with a single key and carrying no `NetworkID`, which rippled refuses on each network the challenge can name: one that carries it is declined `signed-not-bound` (`xrpl/network-mismatch`). |
 | `xrpl-claim` | One claim on the session's payment channel, or a close's final claim, inside a `batch`: `{ channelId, drops, bytes }`, where `bytes` is `CLM\0`, the channel id and `drops` as a big-endian u64. | The signature over `bytes` by the channel's key, hex digits without `0x`. |
-| `hedera-body` | A Hedera transaction body (`request.bodyBytes`). With `broadcast: true` the signer signs and sends it. | `{ publicKey, signature, type }`, with `type` `ed25519` or `ecdsa-secp256k1`. With `broadcast`: `{ transactionId }`. |
+| `hedera-body` | A Hedera transaction body (`request.bodyBytes`), which the signer signs and never sends. | `{ publicKey, signature, type }`, with `type` `ed25519` or `ecdsa-secp256k1`, the key and signature `0x` hex. |
 | `hedera-executor` | The executors, asset, payee, amount and `validBefore` for the buyer's transfer-executor tooling. | `{ payer, executor, authorization }`. |
-| `hedera-session-open` | An MPP session opening on Hedera, which the signer broadcasts, and its zero voucher. | `{ openTx, signature }`, with `landed` where the signer has the opening's receipt. |
 | `algorand-txn` | An Algorand asset transfer whose note carries H. | The 64-byte Ed25519 signature, `0x` hex. |
-| `aptos-transaction` | The option to pay. The wallet builds and signs the scheme's own payment. | `{ transaction }`, base64: the transaction's BCS bytes, or x402's reference form. |
-| `sui-transaction` | The option and a `pureInput`. The wallet builds the payment, adds the input, and signs. | `{ signature, transaction }`, each base64, as Sui serializes them. |
-| `cardano-transaction` | The option and the auxiliary data. The wallet builds the payment with a TTL, attaches exactly those auxiliary data, and signs without broadcasting. | `{ transaction, nonce }`, the transaction as base64. Metadata that holds label 674 again, or a label-674 map that repeats a key, is declined `signed-not-bound`. |
+| `aptos-transaction` | The option to pay, and `maxExpirationTimestampSecs`. The wallet builds and signs the scheme's own payment, expiring no later. | `{ transaction }`, base64: the transaction's BCS bytes, or x402's reference form. |
+| `sui-transaction` | The option, a `pureInput` and `maxEpoch`. The wallet builds the payment, expiring no later than that epoch, adds the input, and signs. | `{ signature, transaction }`, each base64, as Sui serializes them. |
+| `cardano-transaction` | The option, the auxiliary data and `maxTtl`. The wallet builds the payment, or the lock, with a TTL no later, attaches exactly those auxiliary data, and signs without broadcasting. | `{ transaction, nonce }`, the transaction as base64. Metadata that holds label 674 again, or a label-674 map that repeats a key, is declined `signed-not-bound`. |
 | `near-delegate` | The NEP-461 hash of a delegate action whose `ft_transfer` memo carries H. | `{ keyType, bytes }`, the signature as `0x` hex. |
 | `starknet-snip12` | SNIP-12 typed data for a SNIP-9 outside execution. | The account's signature, a list of felts. |
-| `substrate-call` | The profile's call, which the wallet signs as a v4 extrinsic with its own extensions. | The extrinsic's bytes, `0x` hex. |
+| `substrate-call` | The profile's call and `maxEraPeriod`, which the wallet signs as a v4 extrinsic with its own extensions and a mortal era no longer. | The extrinsic's bytes, `0x` hex. |
 | `tron-txid` | The id of a TRC-20 transfer whose memo carries H. | The 65-byte secp256k1 signature `r ‖ s ‖ v`, `0x` hex. |
 | `ton-w5` | The representation hash of a W5 wallet request. | The 64-byte Ed25519 signature, `0x` hex. |
 | `casper-eip712` | CEP-3009 typed data whose nonce is H. | `{ publicKey, signature }`, each hex digits without `0x`, led by its one-byte algorithm tag (`01` or `02`). |
@@ -84,17 +85,20 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 
 | Kind | What the signer signs | Answer |
 | --- | --- | --- |
-| `tap-field` | The `lcp-hash` field for a Visa Trusted Agent Protocol `agent-payer-auth` message signature. | `{ signatureInput, signature, lcpHash }`, `lcpHash` being every `lcp-hash` field line sent, in order. |
-| `vi-checkout-mandate` | A Mastercard Verifiable Intent checkout mandate. | `{ l2 }` from the user's wallet (immediate), or `{ l1, l2, l3b }` from the agent (autonomous). |
-| `ap2-checkout-mandate` | The claims of a closed AP2 checkout mandate. | The mandate as issued, an SD-JWT string, or AP2's chained presentation: the open mandate's SD-JWT and the closed mandate's, joined by `~~`. The closed mandate is the one read. |
+| `tap-field` | The nonce for the agent's RFC 9421 message signatures, under Visa's Trusted Agent Protocol or Mastercard Agent Pay: H followed by 32 random bytes. | `{ signatureInput, signature }`: the `Signature-Input` and `Signature` fields of the agent's checkout request, from whose nonce the pairing reads H. |
+| `vic-reference` | The transaction reference `transactionReferenceId` the agent writes into its Visa Intelligent Commerce credential request. | `{ transactionReferenceId }`, as the credential payload Visa signs returns it. |
+| `vi-checkout` | The agent's checkout payload, with the seller's `legalContext` written into it, for the agent to sign as its `checkout_jwt` (Mastercard Verifiable Intent, immediate, where the seller serves no `checkout_jwt`). | `{ checkout_jwt }`, whose payload segment is the base64url of the payload as `viJson` writes it. |
+| `vi-checkout-mandate` | A Mastercard Verifiable Intent checkout mandate over the `checkout_jwt`. | `{ l2 }` from the user's wallet (immediate), or `{ l1, l2, l3b }` from the agent (autonomous). |
+| `ap2-checkout-mandate` | The claims of a closed AP2 checkout mandate. | The mandate as issued, an SD-JWT string, or AP2's chained presentation: the open mandate's SD-JWT and the closed mandate's, joined by `~~`. The closed mandate is the one read. On `ap2/checkout-mandate/x402`, `{ checkout_mandate, payment }`: that mandate, and AP2's x402 bundle as your credential provider wrote it. |
 | `ucp-checkout` | A UCP checkout for the buyer's AP2 mandate issuer. | The checkout mandate as issued, an SD-JWT string, or AP2's chained presentation: the open mandate's SD-JWT and the closed mandate's, joined by `~~`. The closed mandate is the one read. |
+| `ucp-legal-context` | The `legal_context` member, `{ type: "sha256", value: H }`, that the platform writes into the request completing the checkout, beside that checkout (`ucp/checkout/agent-signed`). | `{ body, contentDigest }`: the completing request's JSON body as sent, with the member at its top level, and its `Content-Digest` field, which the agent's RFC 9421 signature covers. |
 | `acp-allowance` | An ACP `delegate_payment` allowance. | The `delegate_payment` request the agent signed, as an object. |
 | `batch` | Several requests, signed in order (a channel's opening and first voucher, an in-channel voucher). | A list of answers, in the same order. |
 
 ## Signers that move the payment
 
 For some requests your signer's action moves the payment itself: a Lightning node paying an invoice, a signer that
-broadcasts an `evm-call`, `tempo-call` or `hedera-body` marked `broadcast: true`, a session opening the signer sends. If
+broadcasts an `evm-call` marked `broadcast: true`. If
 the gate declines after that (for example because the pairing does not read H from what came back), the decline carries
 `moved`: the payment as signed, the ATR's bytes and their hash. Keep it, and present it again rather than signing a new
 payment.

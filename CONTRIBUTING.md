@@ -111,7 +111,8 @@ TypeScript side first.
   right.
 - **Expected values come from outside the code.** A test's expected value comes from a specification, a published
   vector, or a recording of a real rail, never from the output of the code under test.
-- **Hash the exact bytes.** Nothing in the gate parses, re-serialises or normalises the ATR.
+- **Hash the exact bytes.** The gate hashes the ATR's bytes as received and parses those same bytes, by the grammar the
+  profile `agentic-terms/profiles/buyer-gate.md` fixes; nothing re-serialises or normalises them.
 - **No business or legal logic.** The gate compares hashes and builds payments. It does not judge terms, prices,
   payees or amounts.
 - **Comments say what the code does.**

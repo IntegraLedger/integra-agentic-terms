@@ -4,10 +4,12 @@ description: Every export of @integraledger/terms, with its signature and what i
 ---
 
 Everything on this page is exported from `@integraledger/terms`. The package is ESM only and needs Node.js
-`>=24`. Bindings, one per pairing, are exported by `@integraledger/lcp`; the
+`>=24.22.1`. Bindings, one per pairing, are exported by `@integraledger/lcp`; the
 [pairings reference](./pairings.md) names each one.
 
-No function throws for a protocol outcome. Each returns its result or a `Declined`.
+No function throws for a protocol outcome. Each returns its result or a `Declined`; nothing the seller serves and
+nothing the approver answers makes it throw. The checks, their order and their declines are the profile
+[`buyer-gate.md`](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms/profiles/buyer-gate.md)'s.
 
 ## Functions
 
@@ -16,6 +18,7 @@ No function throws for a protocol outcome. Each returns its result or a `Decline
 ```ts no-run
 import type { AtrHash } from "@integraledger/lcp";
 import type {
+  AgreementChallenges,
   AgreementReceipt,
   Binding,
   Declined,
@@ -23,6 +26,7 @@ import type {
   Presented,
   Signer,
   ToApprove,
+  ToReturn,
   TransactOptions,
 } from "@integraledger/terms";
 
@@ -31,73 +35,95 @@ declare function transact(
   binding: Binding,
   signer: Signer,
   fetch: Fetch,
-  options?: TransactOptions,
+  options: TransactOptions,
 ): Promise<
   | { signed: Presented | null; landed?: unknown; bytes: Uint8Array; h: AtrHash; agreement?: AgreementReceipt }
   | ToApprove
+  | AgreementChallenges
+  | ToReturn
   | Declined
 >;
 ```
 
-`confirm`, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer, then
-`finish`. Without `options.approved`, an agreement not yet recorded is returned as `{ approve, bytes, h }`: the agreement
+The gate's checks 1 to 11, then, for a pairing whose payment is not itself a public proof, the agreement, paid only on
+an option the pairing's `agreementOn` admits, then for each signing the approver (check 12), then the signer, then
+`finish`. `options.approver` and `options.resourceRequest` are required. Without `options.approved`, an agreement not yet recorded is returned as `{ approve, bytes, h }`: the agreement
 payment for the agent to approve, with nothing signed. With `options.approved`, the value of `approve` carried back
 unchanged, that payment is signed and paid as `agree` pays it, and the payment for the resource is signed only with the
 agreement's receipt in hand. On a decline before the signer, the signer is never called. `signed` is `null` when the
 pairing gives the buyer nothing to sign. `agreement` is the agreement's receipt, where the pairing needs one; `landed`
-where `finish` gives one. `options.signal` ends the agreement exchange. Options holding anything but `inputs`,
-`agreementSigner`, `approved` and `signal`, or a member of the wrong kind, and a `signer` or `agreementSigner` whose
-`account` is not a string, are declined before any fetch.
+where `finish` gives one. `options.signal` ends the agreement exchange. `options.chosen`, the payment `confirm` chose,
+unchanged, makes `transact` build that exact request rather than choose anew. Options that are not an object holding a
+function `approver` and an object `resourceRequest`, or that hold a member other than `inputs`, `ceilings`,
+`legalContext`, `agreementSigner`, `approved`, `signal` and `chosen`, or one of the wrong kind, and a `signer` or
+`agreementSigner` whose `account` is not a string, are declined `no-payable-option` with `<namespace>/input-malformed`
+before any fetch.
 
-The agreement payment is shown before it is signed: `transact` returns it with its amount, asset, payee and network,
-and signs it only when a second call carries it back. The payment for the resource is handed to `signer` directly;
-approving it is your agent's step before it calls `transact`. The gate applies no spending limit. Once the agreement
-payment is sent, a decline is `agreement-pending` with the payment as `moved`: see [`agree`](#agree) for collecting
-its receipt.
+Every signing is shown before it is signed: the approver is called once for each, the agreement payment's and each
+later step's among them, with `ToSign`, and the signer only when it answers `true`. The agreement payment is also
+returned first with its amount, asset, payee and network, and signed only when a second call carries it back. The gate
+applies no spending limit. Where the pairing is paid after its agreement and the first response offers the agreement
+alone, `transact` pays it and returns `ToReturn`, signing no charge; `options.legalContext` is that response's
+`Legal-Context` value as received. On MPP it follows the agreement URL the agreement challenges carry and pays an x402
+agreement option there; where that resource offers only MPP agreement challenges, `ToReturn` holds them as
+`agreementChallenges`, in place of `agreement`, and nothing is signed. Where the agreement URL a charge names offers
+only MPP agreement challenges, `transact` returns `AgreementChallenges`, `{ agreementChallenges, bytes, h }`, signing
+nothing: your own MPP client pays one at the agreement URL. Each signing is asked of the approver with `act`
+`"agreement"` where it is the agreement payment, or a payment through a pairing whose agreement is never a charge (its
+registry data holds `agreement.only`), and `"payment"` otherwise; `step.count` is the number of signings the pairing's
+payment takes. Once the agreement payment is sent, a decline is `agreement-pending` with the payment
+as `moved`: see [`agree`](#agree) for collecting its receipt.
 
 ### `confirm`
 
 ```ts no-run
 import type { AtrHash } from "@integraledger/lcp";
-import type { Binding, Chosen, Declined, Fetch, Inputs, SigningRequest } from "@integraledger/terms";
+import type { Binding, Chosen, ConfirmOptions, Declined, Fetch, SigningRequest, Summary } from "@integraledger/terms";
 
 declare function confirm(
   doc: unknown,
   binding: Binding,
   account: string,
   fetch: Fetch,
-  inputs?: Inputs,
-): Promise<{ chosen: Chosen; request: SigningRequest | null; bytes: Uint8Array; h: AtrHash } | Declined>;
+  options: ConfirmOptions,
+): Promise<{ chosen: Chosen; request: SigningRequest | null; summary?: Summary; bytes: Uint8Array; h: AtrHash } | Declined>;
 ```
 
-Reads the offer, chooses the option for `account`, fetches the ATR and compares its SHA-256 with the advertised hash.
-Only on a match does it build, with the hash it computed. `request` is what the signer is handed, or `null` when nothing
-is handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment, which
-`finish` completes with no signature. `chosen.agreement` is the agreement URL, for a pairing whose payment is not a
-public proof.
+Reads the offer, chooses the option for `account`, fetches the ATR and compares its SHA-256 with the advertised hash;
+parses the bytes, holds the option chosen to the ATR's binding slot and `options.resourceRequest` to its request
+commitment; and only then builds, with the hash it computed, and holds the request to its summary and its ceiling
+(checks 1 to 11). It calls no approver. `request` is what the signer is handed, with its `summary`, or `null` when
+nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment,
+which `finish` completes with no signature. `chosen.agreement` is the agreement URL, for a pairing whose payment is not
+a public proof; `chosen.deadline` the latest deadline handed to a wallet that picks its expiry. Options that are not an
+object holding `resourceRequest` and only `inputs` and `ceilings`, of their forms, are declined before the offer is
+read.
 
 `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. When `chosen.agreement` is
 set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
-`agree(bytes, chosen.agreement, signer, fetch)`, have your agent approve the `approve` it returns, call `agree` again
-with `{ approved }`, and sign `request` only with its `receipt` in hand.
+`agree(bytes, chosen.agreement, signer, fetch, { chosen })`, have your agent approve the `approve` it returns, call
+`agree` again with `{ approved, chosen }`, and sign `request` only with its `receipt` in hand.
 
 ### `finish`
 
 ```ts no-run
 import type { AtrHash } from "@integraledger/lcp";
-import type { Binding, Chosen, Declined, Presented, Signature, SigningRequest } from "@integraledger/terms";
+import type { Binding, Chosen, Declined, FinishOptions, Presented, Signature, SigningRequest, Summary } from "@integraledger/terms";
 
 declare function finish(
   bytes: Uint8Array,
   chosen: Chosen,
   signature: Signature,
   binding: Binding,
-): Promise<{ signed: Presented; landed?: unknown; h: AtrHash } | { next: SigningRequest; h: AtrHash } | Declined>;
+  options?: FinishOptions,
+): Promise<{ signed: Presented; landed?: unknown; h: AtrHash } | { next: SigningRequest; summary: Summary; h: AtrHash } | Declined>;
 ```
 
 Rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and returns the payment only when the
 pairing's `bound` reads the hash of these bytes from the completed payment. For a pairing signed in steps, returns
-`next`; call `finish` again with every answer so far, in order, as a list. For a pairing whose payment is not a public
+`next` with its `summary`, only once the later step has a summary and is within the pairing's ceiling, which
+`options.ceilings` raises (checks 10 and 11); a voucher that names only its channel is shown with its opening's payees,
+asset, network and validity, the channel recomputed for the account `chosen` holds; call `finish` again with every answer so far, in order, as a list. For a pairing whose payment is not a public
 proof and whose `bound` finds no signed place for H, the proof is the agreement payment, and the completed payment is
 returned as it is. Where the signer moved the payment itself, a decline keeps it as `moved`. `landed` is a landed
 receipt the completion carried and the payment leaves out, as JSON, each integer a decimal string.
@@ -113,6 +139,7 @@ declare function check(
   presented: unknown,
   binding: Binding,
   landed?: unknown,
+  act?: "payment" | "agreement",
 ): Promise<{ h: AtrHash } | Declined>;
 ```
 
@@ -122,12 +149,22 @@ returned beside the payment, where there is one, as `landed`: `check` holds it u
 member as `bound` reads it, and a `landed` member written into the payment is not read. The caller passes as `landed`
 only the receipt its own reader read for the payment, as `finish` or `transact` returned it, never a value another
 party sent. A `landed` of `null` is no receipt: the payment is read alone. A `landed` that is not a JSON object, or a
-payment that is not one, is declined `signed-not-bound`.
+payment that is not one, is declined `signed-not-bound`. `act` is the act the payment was paid as: `"payment"`, the
+default, or `"agreement"` for an agreement payment, which `bound` is then given with the hash, so it reads H where the
+payment carries the agreement's own single-use value, `agreementValue(H)`, in its place.
 
 ### `agree`
 
 ```ts no-run
-import type { AgreeOptions, AgreementReceipt, Declined, Fetch, Signer, ToApprove } from "@integraledger/terms";
+import type {
+  AgreeOptions,
+  AgreementChallenges,
+  AgreementReceipt,
+  Declined,
+  Fetch,
+  Signer,
+  ToApprove,
+} from "@integraledger/terms";
 
 declare function agree(
   bytes: Uint8Array,
@@ -135,20 +172,23 @@ declare function agree(
   signer: Signer,
   fetch: Fetch,
   options?: AgreeOptions,
-): Promise<ToApprove | { receipt: AgreementReceipt } | Declined>;
+): Promise<ToApprove | AgreementChallenges | { receipt: AgreementReceipt } | Declined>;
 ```
 
 The agreement for the hash of `bytes` at `url`, in two calls. Without `options.approved`, asks the agreement URL for its
 payment request and returns `{ approve, bytes, h }`, signing nothing; where the agreement is already recorded, returns
-its receipt. With `options.approved`, the value of `approve` carried back unchanged, signs exactly that payment with
+its receipt; where its `402` carries no `PAYMENT-REQUIRED` and carries MPP agreement challenges, returns them as
+`{ agreementChallenges, bytes, h }`, signing nothing, for the caller's own MPP client to pay at `url`. With `options.approved`, the value of `approve` carried back unchanged, signs exactly that payment with
 `signer`, sends it, and returns the receipt once recorded. Before anything is fetched or signed, an approved payment
 whose `required` the protocol package's read refuses for its version, its legal context or agreement URL, or an
 `accepts` that is not a list of at most 32 entries holding an option is declined `offer-unreadable` with the read's
 code, as the unpaid request is, and one whose `option` is not one of `required.accepts`, compared by RFC 8785 form, is
 declined `offer-unreadable` with `x402/option-not-in-document`. The option paid is the first, in document order, that
-`signer` can pay with a pairing whose payment is itself a public proof. `options.inputs` are the buyer's own chain
-values; `options.signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, or a member
-of the wrong kind, and a `signer` whose `account` is not a string, are declined before any fetch.
+`signer` can pay with a pairing whose payment is itself a public proof and, given `options.chosen`, the charge the
+agreement is for, exactly as `confirm` returned it, that the charge's pairing admits by its `agreementOn`.
+`options.inputs` are the buyer's own chain values; `options.signal` ends the exchange. `agree` takes no approver.
+Options holding anything but `approved`, `inputs`, `signal` and `chosen`, or a member of the wrong kind, and a `signer`
+whose `account` is not a string, are declined before any fetch.
 See [agreement payments](../guides/agreement-payments.md).
 
 The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not look
@@ -198,11 +238,22 @@ Signs one later voucher, or a refund, in a held channel. The ATR's bytes, its ha
 and the amount from the new challenge. On x402's batch channels the challenge must advertise the held hash, and the
 payment the build returns must name the held channel before the signer is called. On an MPP session, a challenge that
 names another channel or another hash is declined before the signer is called, and one with no legal context is signed
-under the held hash. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
+under the held hash. `within` takes no approver. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
 recorded charge. A Solana refund also carries the payer-signed `request_close` when it is taken again: when the
 `errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read first, or else the
 document's `error`, is `invalid_batch_settlement_svm_receiver_binding_unavailable`. See
 [channels and sessions](../guides/channels-and-sessions.md#refunds-and-closing).
+
+### `viJson`
+
+```ts no-run
+declare function viJson(value: unknown): string | undefined;
+```
+
+The JSON text a Mastercard Verifiable Intent signer signs for a value (the protocol package's profile
+`card-mastercard-vi.md`, rule 7): compact, every character outside space to `~` escaped, a non-ASCII one as `\uXXXX`
+in lowercase hex, one per UTF-16 code unit, members in the order the object holds them, as Python's
+`json.dumps(value, separators=(",", ":"))` writes it. Undefined for a value that is not JSON.
 
 ### `recordCharge`
 
@@ -226,16 +277,28 @@ amount signed in the channel.
 | `SigningRequest` | What a signer is handed: the union of every request kind. See [signers](../guides/signers.md). |
 | `Signature` | The signer's answer, as JSON, in the form [signers](../guides/signers.md) names for its kind; a list, in order, for `batch`. |
 | `Inputs` | `{ readonly [k: string]: Json }`: the buyer's own values a build needs. |
-| `TransactOptions` | `{ inputs?: Inputs; agreementSigner?: Signer; approved?: AgreementPayment; signal?: AbortSignal }`. |
-| `AgreeOptions` | `{ approved?: AgreementPayment; inputs?: Inputs; signal?: AbortSignal }`. |
-| `Chosen` | `{ pairing: string; choice: Json; ref: string; agreement?: string }`: what the gate chose to pay, as plain JSON, with the agreement URL where the pairing needs one. |
+| `TransactOptions` | `{ approver: Approver; resourceRequest: ResourceRequest; inputs?: Inputs; ceilings?: Ceilings; legalContext?: string; agreementSigner?: Signer; approved?: AgreementPayment; signal?: AbortSignal; chosen?: Chosen }`. |
+| `ConfirmOptions` | `{ resourceRequest: ResourceRequest; inputs?: Inputs; ceilings?: Ceilings }`. |
+| `FinishOptions` | `{ ceilings?: Ceilings }`. |
+| `AgreeOptions` | `{ approved?: AgreementPayment; inputs?: Inputs; signal?: AbortSignal; chosen?: Chosen }`. |
+| `Approver` | `(toSign: ToSign) => boolean \| Promise<boolean>`: approves only by answering `true`. |
+| `ToSign` | `{ act: "payment" \| "agreement"; pairing: string; request: SigningRequest; summary: Summary; step: SigningStep }`. |
+| `SigningStep` | `{ index: number; count: number }`: which signing of the payment, from 0, of the number the pairing's payment takes. |
+| `Summary` | `{ amount?; maximum?; payees: Payee[]; period?; limitPerPeriod?; end?; operator?; authorizationExpiry?; refundExpiry?; deposit?; closableBy?: string[]; grant?: Json; asset: string; network: string \| null; validity: Validity; atr: Uint8Array }`, every integer a decimal string. See [the approver](../guides/pay-with-the-gate.md#the-approver). |
+| `Payee` | `{ account: string; amount: string }`. |
+| `Validity` | `{ notBefore: string \| null; notAfter: string \| null; unit: string }`, `unit` `"seconds"` or the chain's unit. |
+| `ResourceRequest` | `HttpRequest \| ToolCall`, the protocol package's types: `{ method; target; body: Uint8Array; headers? }` or `{ name; arguments? }`. |
+| `Ceilings` | `{ readonly [pairing: string]: number \| "no-end" }`. |
+| `ToReturn` | `{ agreement?: AgreementReceipt; agreementChallenges?: readonly MppChallenge[]; legalContext: string; charge: string; bytes: Uint8Array; h: AtrHash }`: exactly one of `agreement` and `agreementChallenges` is present. |
+| `AgreementChallenges` | `{ agreementChallenges: readonly MppChallenge[]; bytes: Uint8Array; h: AtrHash }`: the agreement resource's MPP agreement challenges, in the seller's order, for the caller's own MPP client; nothing is signed. `MppChallenge` is the protocol package's type (`@integraledger/lcp/mpp`). |
+| `Chosen` | `{ pairing: string; choice: Json; ref: string; agreement?: string; deadline?: string }`: what the gate chose to pay, as plain JSON, with the agreement URL where the pairing needs one, and the latest deadline handed to a wallet that picks its expiry. |
 | `AgreementPayment` | `{ url: string; option: PaymentRequirements; required: PaymentRequired }`: the agreement payment to approve. `option` is the x402 option paid, with its `amount`, `asset`, `payTo` and `network`; `required` is the agreement URL's payment request as served. |
 | `ToApprove` | `{ approve: AgreementPayment; bytes: Uint8Array; h: AtrHash }`. |
 | `AgreementReceipt` | `{ atrHash: AtrHash; agreed: true; network: string; transaction: string }`. |
 | `ChannelHold` | `{ pairing; network; channel; h; atr; opening; landed?; charged; signedMax }`. See [the hold](../guides/channels-and-sessions.md#the-hold). |
 | `Declined` | `{ decline: Reason; moved?: { signed: unknown; bytes: Uint8Array; h: AtrHash } }`. |
 | `Reason` | `{ code: DeclineCode; detail: string }`. |
-| `DeclineCode` | One of the twelve codes in the [declines reference](./declines.md). |
+| `DeclineCode` | One of the codes in the [declines reference](./declines.md). |
 
 `AtrHash` and `Json` are exported by `@integraledger/lcp`; `PaymentRequirements` and `PaymentRequired` by
 `@integraledger/lcp/x402`.
@@ -249,6 +312,8 @@ amount signed in the channel.
 | ATR fetch | one `GET`, `redirect: "manual"`, a redirect answered is `atr-unfetchable`, `https` only |
 | Content coding, every request | `Accept-Encoding: identity`; a `200` with any other `Content-Encoding` is declined unread (`atr-unfetchable` for the ATR), and so is a `200` or a `402` from the agreement URL (`agreement-failed`) |
 | Signer calls for one payment | at most 2 |
+| A pairing's ceiling | 600 seconds, unless `ceilings` raises it; on a rail with a served floor, the floor plus the service's margin |
+| `FLOOR_INPUTS` | `ReadonlyMap<string, readonly string[]>`: each pairing whose rail has a served floor, with the names of its floor inputs |
 | Agreement URL, unpaid request | 10 seconds |
 | Agreement URL, each paid request | `min(maxTimeoutSeconds, 120) + 70` seconds |
 | Agreement exchange, whole | `maxTimeoutSeconds + 180` seconds, of the option paid |

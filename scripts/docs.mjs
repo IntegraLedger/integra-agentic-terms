@@ -57,10 +57,9 @@ const RAILS = {
   "mpp/charge/evm/hash": "EVM",
   "mpp/charge/usdc/evm": "EVM",
   "mpp/charge/usdc/gateway": "EVM",
+  "x402/exact/eip155/gateway-batched": "EVM",
   "mpp/session/evm": "EVM",
   "spend-permissions/eip155": "EVM",
-  "mpp/charge/tempo/memo": "Tempo",
-  "mpp/charge/tempo/push": "Tempo",
   "mpp/charge/tempo/split-memo": "Tempo",
   "mpp/charge/tempo/split-memo/push": "Tempo",
   "mpp/session/tempo": "Tempo",
@@ -71,19 +70,19 @@ const RAILS = {
   "mpp/charge/solana": "Solana",
   "mpp/charge/solana/unsponsored": "Solana",
   "mpp/charge/usdc/solana": "Solana",
-  "mpp/session/solana": "Solana",
+  "mpp/subscription/solana": "Solana",
   "mpp/session/solana/memo": "Solana",
   "mpp/session/solana/stock": "Solana",
-  "mpp/subscription/solana": "Solana",
-  "x402/exact/stellar": "Stellar",
-  "mpp/charge/stellar": "Stellar",
+  "x402/exact/stellar/precondition": "Stellar",
   "x402/exact/xrpl": "XRP Ledger",
+  "x402/upto/xrpl": "XRP Ledger",
   "mpp/charge/xrpl": "XRP Ledger",
   "mpp/session/xrpl": "XRP Ledger",
+  "mpp/session/xrpl/stock": "XRP Ledger",
   "x402/exact/hedera": "Hedera",
   "x402/exact/hedera/transfer-executor": "Hedera",
-  "mpp/charge/hedera": "Hedera",
-  "mpp/session/hedera": "Hedera",
+  "mpp/charge/lcp/hedera": "Hedera",
+  "mpp/session/hedera/stock": "Hedera",
   "x402/exact/algorand": "Algorand",
   "x402/exact/aptos": "Aptos",
   "x402/exact/sui": "Sui",
@@ -98,13 +97,13 @@ const RAILS = {
   "x402/exact/casper": "Casper",
   "x402/exact/ccd": "Concordium",
   "mpp/charge/usdc/stacks": "Stacks",
-  "x402/exact/lnbtc": "Lightning",
-  "x402/exact/lnbtc/invoice-named": "Lightning",
   "x402/exact/lnbtc/payment-hash": "Lightning",
   "mpp/charge/lightning": "Lightning",
   "mpp/session/lightning": "Lightning",
   "x402/batch-settlement/cloudflare": "Cloudflare",
   "card/visa-tap": "Card",
+  "card/visa-vic": "Card",
+  "card/mastercard-agent-pay": "Card",
   "card/mastercard-vi/immediate": "Card",
   "card/mastercard-vi/autonomous": "Card",
   "card/seller-reference": "Card",
@@ -152,7 +151,7 @@ const RAIL_ORDER = [
 /** The Python constant that names a pairing: its id upper-cased, with `/` and `-` as `_`. */
 const pythonName = (id) => id.toUpperCase().replace(/[/-]/g, "_");
 
-/** Every pairing of @integraledger/lcp's registry, with its pattern, its export and whether the gate serves it. */
+/** Every pairing of @integraledger/lcp's registry, with its registry data, its export and whether the gate serves it. */
 async function pairings() {
   const require = createRequire(join(TS_PACKAGE, "package.json"));
   const load = (spec) => import(pathToFileURL(require.resolve(spec)).href);
@@ -166,7 +165,7 @@ async function pairings() {
   for (const subpath of Object.keys(manifest.exports)) {
     const module = await load(`@integraledger/lcp${subpath.slice(1)}`);
     for (const [name, value] of Object.entries(module)) {
-      if (value === null || typeof value !== "object" || typeof value.id !== "string" || value.pattern === undefined) continue;
+      if (value === null || typeof value !== "object" || typeof value.id !== "string" || value.data === undefined) continue;
       if (!exported.has(value.id)) exported.set(value.id, { from: `@integraledger/lcp${subpath.slice(1)}`, name });
     }
   }
@@ -177,7 +176,8 @@ async function pairings() {
     const ts = exported.get(b.id);
     if (ts === undefined) fail(`${b.id} is exported by no entry point of @integraledger/lcp`);
     if (!PIECES.has(b.id)) fail(`${b.id} is in BINDINGS and the gate has no buyer piece for it`);
-    return { id: b.id, rail, pattern: b.pattern, ts, py: pythonName(b.id) };
+    if (b.data.coverage !== "full" && b.data.coverage !== "none") fail(`${b.id} states no coverage in its registry data`);
+    return { id: b.id, rail, data: b.data, ts, py: pythonName(b.id) };
   });
   for (const id of PIECES.keys()) {
     if (!rows.some((r) => r.id === id)) fail(`the gate has a buyer piece for ${id}, which is not in BINDINGS`);
@@ -186,69 +186,79 @@ async function pairings() {
   return rows;
 }
 
-const yes = (v) => (v ? "yes" : "no");
+/** Whether the pairing is paid after an agreement payment, and on which network that agreement may be (`agreementOn`). */
+function agreementFirst(data) {
+  if (data.coverage === "full") return "no";
+  const on = data.agreementOn ?? "any";
+  if (on === "any") return "yes, any network";
+  if (on === "same-network") return "yes, its network";
+  return `yes, \`${on}\``;
+}
+
+/** Whether the pairing's own payment can be the agreement payment of another (`agreement`), or is never a charge (`only`). */
+const paysAgreement = (data) => (data.agreement === undefined ? "no" : data.agreement.only === true ? "only" : "yes");
 
 /** Prose as Markdown that MDX also reads: `<`, `{` and `}` escaped. */
 const mdx = (text) => text.replace(/[<{}]/g, (c) => `\\${c}`);
 
-/** The table a README carries: every pairing, with whether the buyer signs H and whether an agreement comes first. */
+/** The table a README carries: every pairing, with its coverage, whether an agreement comes first, and whether it pays one. */
 function readmeTable(rows, language) {
   const name = language === "python" ? "Python binding" : language === "mcp" ? "`pairing` argument" : "Binding export";
   const lines = [
-    `| Rail | Pairing | ${name} | Buyer signs H | Agreement payment first |`,
-    "| --- | --- | --- | --- | --- |",
+    `| Rail | Pairing | ${name} | Coverage | Agreement payment first | Pays an agreement |`,
+    "| --- | --- | --- | --- | --- | --- |",
   ];
   for (const r of rows) {
     const binding =
       language === "python" ? `\`${r.py}\`` : language === "mcp" ? `\`"${r.id}"\`` : `\`${r.ts.name}\` from \`${r.ts.from}\``;
     lines.push(
-      `| ${r.rail} | \`${r.id}\` | ${binding} | ${yes(r.pattern.buyerSigns)} | ${r.pattern.publicProof ? "no" : "yes"} |`,
+      `| ${r.rail} | \`${r.id}\` | ${binding} | ${r.data.coverage} | ${agreementFirst(r.data)} | ${paysAgreement(r.data)} |`,
     );
   }
   return `${lines.join("\n")}\n`;
 }
 
-/** The reference page: every pairing with its binding pattern, its flags, its imports and what its payment proves. */
+/** The reference page: every pairing with its coverage, its agreement, its imports and what its payment proves. */
 function referencePage(rows) {
   const out = [
     "---",
     "title: Pairings",
-    "description: Every pairing the gate pays, with its binding, its imports in each language, and what its payment proves.",
+    "description: Every pairing the gate pays, with its coverage, its agreement, its imports in each language, and what its payment proves.",
     "---",
     "",
     `The gate serves ${rows.length} pairings, in TypeScript and in Python alike. This page is generated from the code:`,
     "`node scripts/docs.mjs generate` writes it from `BINDINGS` in `@integraledger/lcp` and the pairings the gate serves,",
     "and `node scripts/docs.mjs check` fails when it differs from them or from the Python package's bindings.",
     "",
-    "Columns:",
+    "Columns, each read from the pairing's registry data (`data`) in `@integraledger/lcp`:",
     "",
-    "- **Pattern**: how H rides in the pairing's payment (see [Concepts](../concepts.md#how-h-rides-in-a-payment)).",
-    "- **Buyer signs H**: whether what the buyer's wallet signs contains H.",
-    "- **Binding on chain**: whether the binding is visible on a public ledger after settlement (LCP §8.3): the",
-    "  settlement carries H, part of it, or a value derived from it.",
-    "- **Public proof**: whether the payment is itself a public proof of H. When it is not, the gate pays the seller's",
-    "  agreement payment first (see [Agreement payments](../guides/agreement-payments.md)).",
+    "- **Coverage**: `full` where the payment is itself a public proof of H, the payer's own signed act on a public",
+    "  ledger binding all of H; `none` otherwise (see [Concepts](../concepts.md#coverage)).",
+    "- **Agreement payment first**: whether the gate pays the seller's agreement payment before this payment, and on",
+    "  which network that agreement may be (`agreementOn`): any network, or only the payment's own (see",
+    "  [Agreement payments](../guides/agreement-payments.md)).",
+    "- **Pays an agreement**: whether this pairing's own payment can be the agreement payment another pairing follows",
+    "  (`agreement`), and `only` where it is never a charge, only an agreement.",
     "",
-    "Below each table, every pairing's statement of what its payment proves, as its binding states it (`pattern.proves`).",
-    "Where a statement names `<network>` and `<transaction>`, they stand for the agreement payment's network and",
-    "transaction.",
+    "Below each table, every pairing's statement of what its payment proves, as its registry data states it",
+    "(`data.proves`). Where a statement names `<network>` and `<transaction>`, they stand for the agreement payment's",
+    "network and transaction.",
     "",
   ];
   for (const rail of RAIL_ORDER) {
     const group = rows.filter((r) => r.rail === rail);
     if (group.length === 0) continue;
     out.push(`## ${rail}`, "");
-    out.push("| Pairing | Pattern | Buyer signs H | Binding on chain | Public proof | TypeScript | Python |");
-    out.push("| --- | --- | --- | --- | --- | --- | --- |");
+    out.push("| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |");
+    out.push("| --- | --- | --- | --- | --- | --- |");
     for (const r of group) {
-      const p = r.pattern;
       out.push(
-        `| \`${r.id}\` | ${p.pattern} | ${yes(p.buyerSigns)} | ${yes(p.onChain)} | ${yes(p.publicProof)} | \`${r.ts.name}\` from \`${r.ts.from}\` | \`${r.py}\` |`,
+        `| \`${r.id}\` | ${r.data.coverage} | ${agreementFirst(r.data)} | ${paysAgreement(r.data)} | \`${r.ts.name}\` from \`${r.ts.from}\` | \`${r.py}\` |`,
       );
     }
     out.push("");
     for (const r of group) {
-      out.push(`**\`${r.id}\`**: ${mdx(r.pattern.proves)}`, "");
+      out.push(`**\`${r.id}\`**: ${mdx(r.data.proves)}`, "");
     }
   }
   return `${out.join("\n").trimEnd()}\n`;
@@ -282,7 +292,7 @@ function pythonPairings() {
   const script = [
     "import json, integraledger_terms as t",
     "from integraledger_terms.pieces import PIECES",
-    "names = {n: getattr(t, n).id for n in t.__all__ if n.isupper() and n != 'MAX_ATR_BYTES'}",
+    "names = {n: getattr(t, n).id for n in t.__all__ if n.isupper() and n not in ('MAX_ATR_BYTES', 'FLOOR_INPUTS')}",
     "print(json.dumps({'names': names, 'pieces': sorted(PIECES)}))",
   ].join("\n");
   const out = execFileSync("uv", ["run", "--locked", "--quiet", "python", "-c", script], { cwd: PY_PACKAGE, encoding: "utf8" });

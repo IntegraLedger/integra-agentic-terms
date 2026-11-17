@@ -13,13 +13,18 @@ wallet signs anything:
 
 1. fetches the ATR from the seller's `https` link, once and within bounds;
 2. computes SHA-256 over the exact bytes it received and compares it with H;
-3. only on a match, builds the payment with that hash and hands it to your signer;
-4. reads H back from the completed payment, and returns the payment only if it is the hash of those bytes, or, where the
+3. parses those bytes, and holds the option you pay and the request you make to what the ATR's binding slot commits to;
+4. builds the payment with that hash, shows your approver what the signature grants, and declines a payment that would
+   stay payable past its ceiling;
+5. only on your approver's `true`, hands the request to your signer;
+6. reads H back from the completed payment, and returns the payment only if it is the hash of those bytes, or, where the
    proof is the agreement payment, without that reading.
 
 It works across x402, MPP, card, AP2, UCP, ACP and ACK payments, on EVM chains, Tempo, Solana, Stellar, the XRP Ledger,
 Hedera, Algorand, Aptos, Sui, NEAR, Starknet, Polkadot, TRON, TON, Cardano, Casper, Concordium, Stacks and Lightning.
-It holds no keys, reads none of the record's content, and carries no business or legal logic.
+It holds no keys, judges none of the record's terms, and carries no business or legal logic. The checks and their
+declines are fixed, for both languages, by the profile
+[`buyer-gate.md`](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms/profiles/buyer-gate.md).
 
 ## The packages
 
