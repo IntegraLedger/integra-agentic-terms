@@ -1,7 +1,9 @@
 // Every x402 pairing's bound holds a presented payment's accepted to the option filter its own read applies. The rows
 // are the x402 vector files' boundAccepted rows: a payment in the file, named by JSON Pointer (RFC 6901), presented
 // under an option the pairing's read does not offer, refused with the row's code by bound and, where the pairing has
-// one, by reference.
+// one, by reference. Under its own option, bound takes the payment: it binds it, or, on a pairing whose registry data
+// says nothing the payer signs carries H, refuses it `x402/no-signed-place` once it passes the filter
+// (x402-upto-xrpl.md, rule 7).
 import { readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BINDINGS, isRefusal } from "@integraledger/lcp";
@@ -10,6 +12,7 @@ import { vectors } from "./support.js";
 
 interface X402Pairing {
   id: string;
+  data: { carrier: { signed: string | null } };
   read(doc: unknown): unknown;
   bound(presented: unknown): Promise<unknown>;
   reference?(presented: unknown): Promise<unknown>;
@@ -47,6 +50,10 @@ function offering(option: PaymentRequirements): PaymentRequired {
   } as unknown as PaymentRequired;
 }
 
+/** Whether `b`'s bound takes a payment, by its answer: a hash, or `x402/no-signed-place` where nothing signed carries H. */
+const takes = (b: X402Pairing, answer: unknown): boolean =>
+  !isRefusal(answer) || (b.data.carrier.signed === null && answer.code === "x402/no-signed-place");
+
 const pairing = (id: string): X402Pairing => {
   const b = X402.find((x) => x.id === id);
   if (b === undefined) throw new Error(`no x402 pairing ${id}`);
@@ -67,7 +74,7 @@ describe("the x402 vector files' boundAccepted rows", () => {
   it.each(ROWS.map((r) => [`${r.file} boundAccepted.rows[${r.i}]`, r] as const))("%s", async (_, { row, payment }) => {
     const b = pairing(row.pairing);
     const presented = { ...payment, accepted: row.accepted };
-    expect(isRefusal(await b.bound(payment)), row.case).toBe(false);
+    expect(takes(b, await b.bound(payment)), row.case).toBe(true);
     expect(await b.bound(presented), row.case).toEqual({ refused: true, code: row.expect });
     if (b.reference !== undefined) expect(await b.reference(presented), row.case).toEqual({ refused: true, code: row.expect });
     expect(b.read(offering(row.accepted)), row.case).toEqual({ refused: true, code: "x402/no-payable-option" });

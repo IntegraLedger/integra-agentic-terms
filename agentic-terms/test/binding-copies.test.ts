@@ -243,12 +243,13 @@ describe("a binding from another copy: a bound that finds no signed place runs t
   ];
 
   const docOf = (binding: Binding): unknown =>
-    (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number, a: string): unknown }).advertise(
+    (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number, act: string, a: string): unknown }).advertise(
       [challenge],
       H,
       LINK,
       challenge,
       0,
+      "payment",
       AGREEMENT_URL,
     );
 

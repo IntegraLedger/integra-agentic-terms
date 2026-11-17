@@ -43,7 +43,7 @@ const requestOf = (c: MppChallenge): Loose => JSON.parse(Buffer.from(String(c.re
 function documentWith(depositMemo: string | null): MppChallenge[] {
   const request = { ...N.fixed.request, methodDetails: { ...MD, depositMemo } };
   const issued = { ...N.challenge, request: Buffer.from(JSON.stringify(request), "utf8").toString("base64url") };
-  const placed = chargeNearIntents.advertise([issued], H, LINK, issued, 0, AG.url, issued);
+  const placed = chargeNearIntents.advertise([issued], H, LINK, issued, 0, "payment", AG.url, issued);
   if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
   return placed;
 }

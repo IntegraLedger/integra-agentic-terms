@@ -3,8 +3,9 @@
  * advertised hash, and only on a match builds the signing request with the hash it computed. `finish` completes the
  * payment with the signature and returns it only when the pairing's `bound` reads the hash of these bytes from the
  * completed payment, or, for a pairing at coverage `none`, whose proof is the agreement payment, completes it without
- * that reading. `check` confirms a payment held later against kept bytes.
+ * that reading. `check` confirms a payment held later against kept bytes, as the act it was paid as.
  */
+import type { Act } from "@integraledger/lcp";
 import {
   hash,
   hashEquals,
@@ -32,12 +33,6 @@ import {
   type Signer,
   type SigningRequest,
 } from "./types.js";
-
-/**
- * The act a payment is: the payment itself, or the agreement payment, whose single-use value is, on a pairing whose
- * agreement has its own, that value in H's place (`agreementValue` from `@integraledger/lcp/core`).
- */
-export type Act = "payment" | "agreement";
 
 /**
  * The binding members the gate calls, whatever the pairing's own types. `build` is absent where the protocol package
@@ -91,7 +86,7 @@ function linkRefusal(binding: Binding, link: unknown): string {
  * Whether the pairing's payment is itself a public proof of the hash, so the offer's agreement URL is not paid: the
  * pairing's data states coverage `full`, the payer's own signed act on a public ledger binding all of H.
  */
-export function isFullCoverage(binding: Binding): boolean {
+function isFullCoverage(binding: Binding): boolean {
   const data: unknown = isObject(binding) ? (binding as { data?: unknown }).data : undefined;
   return isObject(data) && data["coverage"] === "full";
 }
@@ -400,15 +395,18 @@ async function boundOf(
  * `landed` receipt `finish` or `transact` returned beside the payment, where it returned one, held under the payment's
  * own `FETCHED` member as `bound` reads it. The caller passes as `landed` only the receipt its own reader read for the
  * payment, as `finish` or `transact` returned it, never a value another party sent. A `landed` of `null` is no
- * receipt: the payment is read alone, as without one. A payment from which the pairing reads no ATR hash is declined
- * `signed-not-bound`, as is a `landed` receipt that is not a JSON object beside a payment that is one. A `landed`
- * member of the payment's own is not read.
+ * receipt: the payment is read alone, as without one. `act` is the act the payment was paid as: `agreement` for the
+ * agreement payment, which `bound` is then given with the hash, so it reads the hash where the payment carries the
+ * agreement's own single-use value in its place; `payment`, the default, for any other. A payment from which the
+ * pairing reads no ATR hash is declined `signed-not-bound`, as is a `landed` receipt that is not a JSON object beside a
+ * payment that is one. A `landed` member of the payment's own is not read.
  */
 export async function check(
   bytes: Uint8Array,
   presented: unknown,
   binding: Binding,
   landed?: unknown,
+  act: Act = "payment",
 ): Promise<{ h: AtrHash } | Declined> {
   if (bytes.length > MAX_ATR_BYTES) return tooLarge();
   const read = landed === null ? undefined : landed;
@@ -416,7 +414,11 @@ export async function check(
     return declined("signed-not-bound", "The landed receipt is not a JSON object beside the payment.");
   }
   const h = await hash(bytes);
-  const b = await boundOf(steps(binding), read === undefined ? presented : held(presented as object, read));
+  const b = await boundOf(
+    steps(binding),
+    read === undefined ? presented : held(presented as object, read),
+    act === "agreement" ? { act, h } : undefined,
+  );
   if (isRefusal(b) || !hashEquals(b, h)) {
     return declined("signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment.");
   }

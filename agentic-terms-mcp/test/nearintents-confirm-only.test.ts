@@ -24,7 +24,7 @@ const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelco
 const pairing = "mpp/charge/nearintents";
 
 type Advertises = {
-  advertise(d: object[], h: string, l: string, o: object, position: number, agreementUrl: string, named: object): object[];
+  advertise(d: object[], h: string, l: string, o: object, position: number, act: string, agreementUrl: string, named: object): object[];
 };
 const binding = BINDINGS.find((b) => b.id === pairing) as unknown as Advertises;
 
@@ -35,7 +35,7 @@ const binding = BINDINGS.find((b) => b.id === pairing) as unknown as Advertises;
 function document(): object[] {
   const request = { ...N.fixed.request, methodDetails: { ...MD, depositMemo: "4120" } };
   const issued = { ...N.challenge, request: Buffer.from(JSON.stringify(request), "utf8").toString("base64url") };
-  return binding.advertise([issued], H, LINK, issued, 0, AG.url, issued);
+  return binding.advertise([issued], H, LINK, issued, 0, "payment", AG.url, issued);
 }
 
 describe("atr_confirm on mpp/charge/nearintents", () => {

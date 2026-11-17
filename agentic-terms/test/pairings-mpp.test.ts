@@ -226,7 +226,7 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
   ];
   it.each(rows)("%s: the agreement is paid first, then the payment completes with the signer's answer", async (_n, binding, answer, type, member) =>
     at(X.fixed.now, async () => {
-      const doc = place([issued("evm", X.fixed.R_ENoTypes)], H, LINK, issued("evm", X.fixed.R_ENoTypes), 0, AGREEMENT_URL);
+      const doc = place([issued("evm", X.fixed.R_ENoTypes)], H, LINK, issued("evm", X.fixed.R_ENoTypes), 0, "payment", AGREEMENT_URL);
       if (!Array.isArray(doc)) throw new Error(JSON.stringify(doc));
       const acct = account(84532, X.fixed);
       const signer = counting(acct, async (r) => (r.kind === "eip712" ? privateKeyToAccount(X.fixed.payerKey).signTypedData(typedDataOf(r)) : answer(r)));

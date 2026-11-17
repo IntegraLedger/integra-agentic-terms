@@ -53,8 +53,9 @@ const DESCRIPTIONS = {
     "Confirms that the ATR hash the pairing reads from a payment is the SHA-256 of the given ATR bytes, with the " +
     "`landed` receipt returned beside the payment, exactly as returned, where there is one. The caller passes as " +
     "`landed` only the receipt its own reader read for the payment, as `atr_finish` or `atr_transact` returned it, " +
-    "never a value another party sent. A `landed` of null is no receipt. A payment from which the pairing reads no " +
-    "ATR hash is declined.",
+    "never a value another party sent. A `landed` of null is no receipt. Pass `act` \"agreement\" for an agreement " +
+    "payment, whose single-use value is the agreement's own value for the ATR hash; it is \"payment\" otherwise. A " +
+    "payment from which the pairing reads no ATR hash is declined.",
   atr_transact:
     "Confirms the ATR hash and, only on a match, signs the payment carrying it with this host's signer. Returns the " +
     "payment to send and the ATR's exact bytes to keep. Where the pairing needs an agreement payment first, returns it " +
@@ -62,8 +63,8 @@ const DESCRIPTIONS = {
     "approve it, call atr_transact again with the same arguments and `approved` set to `approve`, unchanged.",
   atr_agree:
     "The agreement payment for the agreement URL in the `chosen` that atr_confirm returned, for the ATR you confirmed; " +
-    "pass `chosen` exactly as returned, since a changed `chosen` is declined. " +
-    "Without `approved`, returns the payment as `approve` and signs nothing: its `option` holds the amount, asset, " +
+    "pass `chosen` exactly as returned, since a changed `chosen` is declined. Only an agreement option that the " +
+    "confirmed payment's pairing can follow is paid. Without `approved`, returns the payment as `approve` and signs nothing: its `option` holds the amount, asset, " +
     "payee (`payTo`) and network it pays, and it carries the ATR hash. To approve it, call atr_agree again with " +
     "`approved` set to `approve`, unchanged: this host's signer then pays it. Returns the agreement's receipt once it " +
     "is recorded; pass it to atr_confirm.",
@@ -298,11 +299,17 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
     "atr_check",
     {
       description: DESCRIPTIONS.atr_check,
-      inputSchema: z.object({ pairing, atr, presented: JSON_VALUE, landed: JSON_VALUE.optional() }),
+      inputSchema: z.object({
+        pairing,
+        atr,
+        presented: JSON_VALUE,
+        landed: JSON_VALUE.optional(),
+        act: z.enum(["payment", "agreement"]).optional(),
+      }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
-      const out = await check(a.atr, a.presented, bindingOf(a.pairing), a.landed);
+      const out = await check(a.atr, a.presented, bindingOf(a.pairing), a.landed, a.act);
       if ("decline" in out) return declinedResult(out);
       return result({ atrHash: out.h });
     },
@@ -352,6 +359,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
           approved: a.approved as AgreementPayment | undefined,
           inputs: (a.inputs ?? {}) as Inputs,
           signal: ctx.mcpReq.signal,
+          chosen: chosen as unknown as Chosen,
         });
         if ("decline" in out) return declinedResult(out);
         if ("approve" in out) return result({ atrHash: out.h, approve: jsonOf(out.approve) });

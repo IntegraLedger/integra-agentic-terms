@@ -236,7 +236,7 @@ describe("the MCP server over stdio", () => {
     };
     // The pairing is at coverage none: its offer names the agreement URL, which answers the agreement's receipt for H in
     // buyer.json's receipt form, and the full payment is built once that receipt is in hand.
-    const document = chargeUsdcGateway.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never, 0, ABC_FIXED.agreementUrl);
+    const document = chargeUsdcGateway.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never, 0, "payment", ABC_FIXED.agreementUrl);
     const receipt = { ...B.fixed.agreement.receipt, atrHash: H_ABC };
     const sellerAbc: Fetch = async (url) =>
       url === ABC_FIXED.agreementUrl
@@ -244,10 +244,13 @@ describe("the MCP server over stdio", () => {
         : new Response(new TextEncoder().encode("abc"), { status: 200 });
     const pairing = "mpp/charge/usdc/gateway";
     const preimage = { id: f.MV1, realm: f.realm, requestHash: G.M5.expectRequestHash, recipient: G.M5.saltInput.recipient };
+    // The build's inputs, as the vector file's B2 row gives the buyer; their ceiling is M5's maxBlockHeight.
+    const inputs = G.buyer.rows.find((r: { name: string }) => r.name === "B2").input.inputs;
+    const maxBlockHeight: string = G.ceiling.good.expectMaxBlockHeight;
     const c = connect({ fetch: sellerAbc });
-    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source, receipt });
+    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source, inputs, receipt });
     expect(at(confirmed, "result.structuredContent.atrHash")).toBe(H_ABC);
-    expect(at(confirmed, "result.structuredContent.request")).toEqual({ kind: "gateway-burn-intent", preimage });
+    expect(at(confirmed, "result.structuredContent.request")).toEqual({ kind: "gateway-burn-intent", preimage, maxBlockHeight });
     await c.close();
 
     const { recipient: _r, ...own } = G.M5.saltInput;
@@ -266,8 +269,8 @@ describe("the MCP server over stdio", () => {
       },
     };
     const t = connect({ fetch: sellerAbc, signer });
-    const m = await call(t, "atr_transact", { pairing, document });
-    expect(handed).toEqual([{ kind: "gateway-burn-intent", preimage }]);
+    const m = await call(t, "atr_transact", { pairing, document, inputs });
+    expect(handed).toEqual([{ kind: "gateway-burn-intent", preimage, maxBlockHeight }]);
     expect(at(m, "result.isError")).toBeUndefined();
     expect(at(m, "result.structuredContent.atrHash")).toBe(H_ABC);
     expect(at(m, "result.structuredContent.signed.payload.authorization.transfer.burnIntent.spec.salt")).toBe(G.M5.expectSalt);

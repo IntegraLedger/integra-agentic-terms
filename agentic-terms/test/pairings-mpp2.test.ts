@@ -234,7 +234,7 @@ describe("mpp/charge/nearintents (confirm only)", () => {
   const p: Pairing = {
     binding: chargeNearIntents as unknown as Binding,
     // The quote's fixed members are held to the challenge the ATR names: unplaced.expect, as the vector file gives it.
-    doc: chargeNearIntents.advertise([V.challenge], H, LINK, V.challenge, 0, undefined, V.unplaced.expect) as MppChallenge[],
+    doc: chargeNearIntents.advertise([V.challenge], H, LINK, V.challenge, 0, "payment", undefined, V.unplaced.expect) as MppChallenge[],
     account: `${V.fixed.request.methodDetails.originNetwork}:${refundTo}`,
     answer: async () => {
       throw new Error("nothing to sign");

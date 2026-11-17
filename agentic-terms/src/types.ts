@@ -1,4 +1,4 @@
-import type { AtrHash, Binding as LcpBinding, Json, Presented as LcpPresented, Refusal } from "@integraledger/lcp";
+import type { Act, AtrHash, Binding as LcpBinding, Json, Presented as LcpPresented, Refusal } from "@integraledger/lcp";
 import type { AptosUnsigned } from "@integraledger/lcp/aptos";
 import type { AvmUnsigned } from "@integraledger/lcp/avm";
 import type { TapUnsigned, ViUnsigned } from "@integraledger/lcp/card";
@@ -159,12 +159,14 @@ export interface TransactOptions {
 
 /**
  * `agree`'s optional members: the agreement payment the agent approved, exactly as it was returned in `approve`; the
- * buyer's own chain values; and a signal that ends the exchange.
+ * buyer's own chain values; a signal that ends the exchange; and the charge the agreement is for, as `confirm` returned
+ * it in `chosen`, so that only an agreement option its pairing's `agreementOn` admits is paid.
  */
 export interface AgreeOptions {
   readonly approved?: AgreementPayment | undefined;
   readonly inputs?: Inputs | undefined;
   readonly signal?: AbortSignal | undefined;
+  readonly chosen?: Chosen | undefined;
 }
 
 /** The next request of a pairing signed in steps. */
@@ -221,7 +223,7 @@ export interface BuyerPiece {
    * The pairing's build over that input, for a binding whose `build` takes other arguments than the input, the hash and
    * the act.
    */
-  build?(choice: unknown, h: AtrHash, act: "payment" | "agreement"): Promise<unknown>;
+  build?(choice: unknown, h: AtrHash, act: Act): Promise<unknown>;
   /** The request for the signer, or null where the build is itself the payment and nothing is signed. */
   request(unsigned: unknown): SigningRequest | null | Refusal;
   /**

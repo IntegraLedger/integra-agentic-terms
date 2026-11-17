@@ -38,6 +38,7 @@ const PENDING: ReadonlySet<string> = new Set([
   "ap2/checkout-mandate/x402",
   "card/mastercard-agent-pay",
   "card/visa-vic",
+  "mpp/charge/lcp/hedera",
   "mpp/charge/solana/unsponsored",
   "mpp/charge/tempo/split-memo",
   "mpp/charge/tempo/split-memo/push",
@@ -46,8 +47,13 @@ const PENDING: ReadonlySet<string> = new Set([
   "mpp/session/solana/stock",
   "mpp/session/xrpl/stock",
   "mpp/subscription/solana",
+  "spend-permissions/eip155",
   "ucp/checkout/agent-signed",
   "x402/exact/cardano/lock",
+  "x402/exact/eip155/gateway-batched",
+  "x402/exact/lnbtc/payment-hash",
+  "x402/exact/stellar/precondition",
+  "x402/upto/xrpl",
 ]);
 
 interface Row {

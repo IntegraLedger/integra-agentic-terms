@@ -49,20 +49,22 @@ const LINK_ABC: string = vectors("mpp-challenge.json").fixed.link;
 
 /**
  * The ATR links serve A and `abc`; the agreement URL answers 402 with the vector challenge unpaid, and the receipt once
- * paid.
+ * paid, keeping each payment it was sent.
  */
-function seller(): Fetch & { paid: number } {
+function seller(): Fetch & { paid: number; sent: string[] } {
   const f = (async (url: string, init: { headers?: Record<string, string> }) => {
     if (url === LINK) return new Response(new Uint8Array(A), { status: 200 });
     if (url === LINK_ABC) return new Response(new Uint8Array(ABC), { status: 200 });
     if (url === AG.url && init.headers?.["PAYMENT-SIGNATURE"] !== undefined) {
       f.paid++;
+      f.sent.push(init.headers["PAYMENT-SIGNATURE"]);
       return new Response(JSON.stringify(AG.receipt), { status: 200 });
     }
     if (url === AG.url) return new Response(null, { status: 402, headers: { "payment-required": base64Json(AG.required) } });
     return new Response(null, { status: 404 });
-  }) as unknown as Fetch & { paid: number };
+  }) as unknown as Fetch & { paid: number; sent: string[] };
   f.paid = 0;
+  f.sent = [];
   return f;
 }
 
@@ -120,6 +122,17 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     expect(at(m, "result.structuredContent.atrHash")).toBe(H);
     expect(agreementSigner.requests.map((r) => r.kind)).toEqual(["eip712"]);
     expect(fetch.paid).toBe(1);
+
+    // Held later, the agreement payment as sent is confirmed against A by atr_check given the act agreement, its nonce
+    // being the agreement's own value for H, as buyer.json's BA1 signs it.
+    const sent = JSON.parse(Buffer.from(fetch.sent[0]!, "base64").toString("utf8"));
+    const BA1 = B.rows.find((r: { name: string }) => r.name === "BA1");
+    expect(sent.payload.authorization.nonce).toBe(BA1.expect.agreementMessage.nonce);
+    const t = connect({ fetch });
+    const checked = await call(t, "atr_check", { pairing: "x402/exact/eip155/eip3009", atr, presented: sent, act: "agreement" });
+    await t.close();
+    expect(at(checked, "result.isError")).toBeUndefined();
+    expect(at(checked, "result.structuredContent.atrHash")).toBe(H);
   });
 
   // `chosen` carries a `mac`, the server process's HMAC-SHA-256 over its other members, so `atr_agree` takes only the

@@ -32,8 +32,8 @@ function issued(method: string, intent: string, request: unknown, realm: string,
 /** The seller's challenges for one issued challenge, as the pairing's `advertise` places H, the link and, when given, the agreement URL. */
 function docOf(binding: unknown, c: MppChallenge, agreementUrl?: string): MppChallenge[] {
   const placed = (
-    binding as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null, a?: string): unknown }
-  ).advertise([c], H, LINK, c, c.intent === "subscription" && c.method === "tempo" ? null : 0, ...(agreementUrl === undefined ? [] : [agreementUrl]));
+    binding as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null, act?: string, a?: string): unknown }
+  ).advertise([c], H, LINK, c, c.intent === "subscription" && c.method === "tempo" ? null : 0, ...(agreementUrl === undefined ? [] : ["payment", agreementUrl]));
   if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
   return placed as MppChallenge[];
 }
@@ -196,6 +196,9 @@ describe("mpp/charge/usdc/gateway", () => {
     binding: chargeUsdcGateway as unknown as Binding,
     doc: docOf(chargeUsdcGateway, issued("usdc", "charge", V.M5.requestJson, f.realm, f.expires)),
     account: V.M5.source,
+    // The build's inputs, as the vector file's B2 row gives the buyer: the source network, the height served for it and
+    // its wallet's delay, whose ceiling is M5's maxBlockHeight.
+    inputs: V.buyer.rows.find((r: { name: string }) => r.name === "B2").input.inputs,
     answer: async (r) => {
       if (r.kind !== "gateway-burn-intent") throw new Error(r.kind);
       const { recipient: _r, ...inputs } = own;

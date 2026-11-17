@@ -17,6 +17,7 @@ import {
 } from "@integraledger/lcp/x402";
 import {
   agree,
+  check,
   confirm,
   transact,
   type AgreeOptions,
@@ -242,6 +243,9 @@ describe("agreement rows", () => {
     expect(
       await recoverTypedDataAddress({ ...forViem(agreement!.typedData), signature: r.expect.agreementSignature }),
     ).toBe(m.from);
+    // Held later, the agreement payment as sent is confirmed against A given the act agreement: its nonce is the
+    // agreement's own value for H, from which the pairing's bound reads H when given that act and H.
+    expect(await check(A, sent, exactEip3009 as unknown as Binding, undefined, "agreement")).toEqual({ h: H });
 
     expect(out.signed.payload.signature).toBe(B6_SIGNATURE);
     expect(out.h).toBe(H);
@@ -861,6 +865,30 @@ describe("the agreement payment the agent approves", () => {
     const { value } = await drive(agree(A, AGREEMENT_URL, signer, fetch, { approved: first.approve }));
     expect(value).toEqual({ receipt: AG.receipt });
     expect(signer.requests.map((q) => q.typedData.message.value)).toEqual([1n]);
+  });
+
+  // A charge follows only an agreement option its pairing's agreementOn admits. The charge is D's option, on
+  // eip155:84532, through a stub of its pairing at coverage none stating agreementOn, as the BA rows stub the pairing;
+  // the agreement challenge is BA9's requiredMixed, x402-exact-solana.json's option first; the Solana agreement signer
+  // is the payer of that file's B2 row, with that row's inputs.
+  it("a same-network charge is followed only by an agreement option on its own network", async () => {
+    const solana = JSON.parse(
+      readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/x402-exact-solana.json", import.meta.url), "utf8"),
+    ).buyer.rows.find((r: { name: string }) => r.name === "B2").input;
+    const charge = (agreementOn: string): Binding => {
+      const b = withAgreement(AGREEMENT_URL) as unknown as { data: Record<string, unknown> };
+      return { ...b, data: { ...b.data, agreementOn } } as unknown as Binding;
+    };
+    const ba9 = () => seller(row("BA9").input.agreement);
+    const agreementSigner = counting(solana.account);
+    const options = { agreementSigner, inputs: solana.inputs };
+
+    const any = await transact(D, charge("any"), counting(), ba9(), options);
+    expect("approve" in any && any.approve.option.network).toBe(SOLANA_OPTION.network);
+    expect(code(await transact(D, charge("same-network"), counting(), ba9(), options))).toBe("no-payable-option");
+    expect(agreementSigner.requests.length).toBe(0);
+    const own = await transact(D, charge("same-network"), counting(), ba9());
+    expect("approve" in own && own.approve.option).toEqual(OPTION);
   });
 
   it("an option whose pairing is not a public proof is passed over for the next one", async () => {

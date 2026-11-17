@@ -9,8 +9,8 @@ import { confirm, declined, hasAccount, isObject, namespaceOf, pieceOf, signStep
 import type { AgreementReceipt, Binding, Declined, Fetch, Presented, Signer, ToApprove, TransactOptions } from "./types.js";
 
 /**
- * `confirm`, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer, then
- * `finish`. Without `approved`, an agreement not yet recorded is returned as `approve`, the agreement payment for the
+ * `confirm`, then, for a pairing whose payment is not itself a public proof, the agreement, paid only on an option the
+ * pairing's `agreementOn` admits, then the signer, then `finish`. Without `approved`, an agreement not yet recorded is returned as `approve`, the agreement payment for the
  * agent to approve, and nothing is signed; with `approved`, that payment is signed and paid, and the resource's payment
  * is signed only with the agreement's receipt in hand. On a decline before the signer the signer is never called. Where
  * the build is itself the payment the signer is not called; where the pairing has nothing for the buyer to sign,
@@ -40,7 +40,15 @@ export async function transact(
 
   let receipt: { agreement: AgreementReceipt } | Record<string, never> = {};
   if (chosen.agreement !== undefined) {
-    const agreed = await exchange(bytes, chosen.agreement, agreementSigner ?? signer, fetch, { approved, inputs, signal }, ns);
+    const agreed = await exchange(
+      bytes,
+      chosen.agreement,
+      agreementSigner ?? signer,
+      fetch,
+      { approved, inputs, signal, chosen },
+      ns,
+      binding,
+    );
     if (!("receipt" in agreed)) return agreed;
     receipt = { agreement: agreed.receipt };
   }

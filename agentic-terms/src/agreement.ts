@@ -2,7 +2,7 @@
  * The agreement payment, in two calls. Called without an approved payment, `agree` asks the agreement URL for its
  * challenge and returns the agreement payment for the buyer's agent to approve, signing nothing: the challenge's first
  * option, in document order, that the signer can pay with a pairing whose payment can itself be an agreement (its data
- * holds `agreement`). Called with the payment the agent approved, it builds and signs exactly that payment as the act
+ * holds `agreement`) and that the charge's `agreementOn` admits, where the charge is given. Called with the payment the agent approved, it builds and signs exactly that payment as the act
  * `agreement`, sends it, and returns the resource's receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is
  * sent unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again
  * after each 202, 5xx or timeout, each paid request bounded by min(`maxTimeoutSeconds`, 120) + 60 + 10 seconds and the
@@ -22,6 +22,7 @@ import {
   type AtrHash,
   type Refusal,
 } from "@integraledger/lcp";
+import { network as mppNetwork, type MppChallenge } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected, trimHttpWhitespace } from "./gate.js";
 import { isRefusal } from "./pairings/common.js";
@@ -265,6 +266,45 @@ function isAgreementPairing(binding: Binding): boolean {
   return isObject(data) && data["coverage"] === "full" && isObject(data["agreement"]);
 }
 
+/** Whether an agreement option, paid with the pairing `agreement`, is one the charge can follow. */
+type Admits = (agreement: Binding, option: Record<string, unknown>) => boolean;
+
+const ANY: Admits = () => true;
+
+/**
+ * The network the charge `chosen` pays on, as its choice names it: an x402 choice's `accepted.network`, or the network
+ * the protocol package's `network` reads from an MPP choice's `challenge`; undefined where the choice names neither.
+ */
+function chargeNetwork(chosen: Chosen): string | undefined {
+  const choice: unknown = isObject(chosen) ? chosen.choice : undefined;
+  if (!isObject(choice)) return undefined;
+  const accepted = choice["accepted"];
+  if (isObject(accepted)) return typeof accepted["network"] === "string" ? accepted["network"] : undefined;
+  const challenge = choice["challenge"];
+  if (!isObject(challenge)) return undefined;
+  try {
+    const n: unknown = mppNetwork(challenge as unknown as MppChallenge);
+    return typeof n === "string" ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The agreement options the charge paid through `binding` as `chosen` can follow, by the `agreementOn` of the
+ * pairing's data: `any`, or none stated, any option; `same-network`, an option on the charge's own network; a pairing
+ * id, an option of that pairing on that network. A charge whose network its choice does not name follows none but
+ * under `any`.
+ */
+function admitting(binding: Binding, chosen: Chosen): Admits {
+  const data: unknown = (binding as { data?: unknown }).data;
+  const on: unknown = isObject(data) ? data["agreementOn"] : undefined;
+  if (on === undefined || on === "any") return ANY;
+  const network = chargeNetwork(chosen);
+  return (agreement, option) =>
+    network !== undefined && option["network"] === network && (on === "same-network" || agreement.id === on);
+}
+
 /** The x402 pairings the gate pays, in the protocol package's order. */
 const X402: readonly Binding[] = (BINDINGS as readonly Binding[]).filter(
   (b) => String(b.id).startsWith("x402/") && pieceOf(b) !== undefined,
@@ -284,7 +324,8 @@ interface Selected {
 
 /**
  * The option the agreement is paid with, by the main payment's rule: the options in document order, and the first one
- * the signer can pay whose pairing's payment can itself be an agreement (`isAgreementPairing`). An option's pairing is the first x402 pairing,
+ * the signer can pay whose pairing's payment can itself be an agreement (`isAgreementPairing`) and which the charge
+ * can follow (`admits`). An option's pairing is the first x402 pairing,
  * in the protocol package's order, whose read accepts the challenge holding only that option. An option whose
  * `maxTimeoutSeconds` gives no deadline (`bounds`) is not payable, whichever pairing reads it. An `accepts` that is
  * not a list, holds more than 32 entries or holds no object serves no option, and is declined `offer-unreadable` with
@@ -297,6 +338,7 @@ async function select(
   required: Record<string, unknown>,
   account: string,
   inputs: Inputs,
+  admits: Admits,
   approved?: PaymentRequirements,
 ): Promise<Selected | Declined> {
   const accepts = required["accepts"];
@@ -323,7 +365,7 @@ async function select(
       }
       if (read.code !== "x402/no-payable-option") unreadable ??= read.code;
     }
-    if (found === undefined || !isAgreementPairing(found.binding)) continue;
+    if (found === undefined || !isAgreementPairing(found.binding) || !admits(found.binding, option)) continue;
     const limits = bounds(option as unknown as PaymentRequirements);
     if (limits === undefined) continue;
     const piece = pieceOf(found.binding) as BuyerPiece;
@@ -396,9 +438,10 @@ async function paying(
   h: AtrHash,
   account: string,
   inputs: Inputs,
+  admits: Admits,
   approved?: PaymentRequirements,
 ): Promise<{ selected: Selected; limits: { request: number; exchange: number } } | Declined> {
-  const selected = await select(required, account, inputs, approved);
+  const selected = await select(required, account, inputs, admits, approved);
   if ("decline" in selected) return selected;
   if (!hashEquals(selected.read.h, h)) {
     return declined("hash-mismatch", "The agreement challenge advertises another ATR hash.");
@@ -420,10 +463,12 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * option is not one of that challenge's `accepts`, by RFC 8785 form, is declined `offer-unreadable` with
  * `x402/option-not-in-document`, each before any fetch or signer call.
  * `bytes` are the ATR the gate compared, whose hash the agreement payment carries; `inputs` are the buyer's own chain
- * values; `signal` ends the exchange. Options holding anything but `approved`, `inputs` and `signal`, a `signal` that
- * is not an `AbortSignal`, an `approved` that is not of the agreement payment's form, `inputs` that is not an object,
- * or a signer whose `account` is not a string, is declined `no-payable-option` with `x402/input-malformed` before any
- * fetch or signer call. A `url` that is not an https URL is declined `link-not-https` with `x402/link-not-https` for an
+ * values; `signal` ends the exchange; `chosen` is the charge the agreement is for, exactly as `confirm` returned it,
+ * and only an option its pairing's `agreementOn` admits is paid (any option where `chosen` is not given). Options
+ * holding anything but `approved`, `inputs`, `signal` and `chosen`, a `signal` that is not an `AbortSignal`, an
+ * `approved` that is not of the agreement payment's form, `inputs` that is not an object, a `chosen` that does not name
+ * a pairing of the protocol package, or a signer whose `account` is not a string, is declined `no-payable-option` with
+ * `x402/input-malformed` before any fetch or signer call. A `url` that is not an https URL is declined `link-not-https` with `x402/link-not-https` for an
  * absolute URL of another scheme and `x402/legal-context-malformed` for any other value, before any fetch.
  */
 export function agree(
@@ -436,19 +481,29 @@ export function agree(
   return exchange(bytes, url, signer, fetch, options === undefined ? {} : options, undefined);
 }
 
-const OPTION_KEYS: readonly string[] = ["approved", "inputs", "signal"];
+const OPTION_KEYS: readonly string[] = ["approved", "inputs", "signal", "chosen"];
 
-/** Whether `agree`'s options are an object holding only `approved`, `inputs` and `signal`, the signal an `AbortSignal`. */
+/**
+ * Whether `agree`'s options are an object holding only `approved`, `inputs`, `signal` and `chosen`, the signal an
+ * `AbortSignal`.
+ */
 function optionsOk(options: unknown): options is AgreeOptions {
   if (!isObject(options) || !Object.keys(options).every((k) => OPTION_KEYS.includes(k))) return false;
   const signal = options["signal"];
   return signal === undefined || signal instanceof AbortSignal;
 }
 
+/** The protocol package's pairing `chosen` names, or undefined. */
+function chargeBinding(chosen: unknown): Binding | undefined {
+  const id: unknown = isObject(chosen) ? chosen["pairing"] : undefined;
+  return typeof id === "string" ? (BINDINGS as readonly Binding[]).find((b) => b.id === id) : undefined;
+}
+
 /**
  * `agree`, where `ns` is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
  * declines `link-not-https`, its detail the protocol package's code in that namespace, `link-not-https` for an absolute
- * URL of another scheme and `legal-context-malformed` for any other value.
+ * URL of another scheme and `legal-context-malformed` for any other value. `charge` is the binding the charge in
+ * `options.chosen` is paid through, where the caller holds it; else the protocol package's pairing `chosen` names.
  */
 export async function exchange(
   bytes: Uint8Array,
@@ -457,22 +512,30 @@ export async function exchange(
   fetch: Fetch,
   options: AgreeOptions,
   ns: string | undefined,
+  charge?: Binding,
 ): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
   if (!isHttpsLink(url)) {
     const fault = isOtherSchemeLink(url) ? "link-not-https" : "legal-context-malformed";
     return declined("link-not-https", `${ns ?? "x402"}/${fault}`);
   }
   if (!optionsOk(options)) return declined("no-payable-option", `${ns ?? "x402"}/input-malformed`);
-  const { approved, signal, inputs = {} } = options;
-  if ((approved !== undefined && !isAgreementPayment(approved)) || !isObject(inputs) || !hasAccount(signer)) {
+  const { approved, signal, inputs = {}, chosen } = options;
+  const through = chosen === undefined ? undefined : (charge ?? chargeBinding(chosen));
+  if (
+    (approved !== undefined && !isAgreementPayment(approved)) ||
+    !isObject(inputs) ||
+    !hasAccount(signer) ||
+    (chosen !== undefined && through === undefined)
+  ) {
     return declined("no-payable-option", `${ns ?? "x402"}/input-malformed`);
   }
+  const admits = chosen === undefined || through === undefined ? ANY : admitting(through, chosen);
   if (isEnded(signal)) return ended();
   const h = await hash(bytes);
-  if (approved === undefined) return offer(bytes, h, url, signer, fetch, inputs, signal);
+  if (approved === undefined) return offer(bytes, h, url, signer, fetch, inputs, admits, signal);
   if (approved.url !== url) return failed("The approved agreement payment names another agreement URL.");
 
-  const found = await paying(approved.required, h, signer.account, inputs, approved.option);
+  const found = await paying(approved.required, h, signer.account, inputs, admits, approved.option);
   if ("decline" in found) return found;
   const { selected, limits } = found;
   const paid = await pay(selected.binding, selected.chosen, signer, bytes, "agreement");
@@ -516,6 +579,7 @@ async function offer(
   signer: Signer,
   fetch: Fetch,
   inputs: Inputs,
+  admits: Admits,
   signal: AbortSignal | undefined,
 ): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
   const unpaid = await get(fetch, url, undefined, UNPAID_DEADLINE_MS, signal);
@@ -530,7 +594,7 @@ async function offer(
 
   const required = unpaid.paymentRequired === null ? undefined : fromBase64Json(unpaid.paymentRequired);
   if (!isObject(required)) return failed("The agreement URL answered 402 without a readable PAYMENT-REQUIRED.");
-  const found = await paying(required, h, signer.account, inputs);
+  const found = await paying(required, h, signer.account, inputs, admits);
   if ("decline" in found) return found;
   return { approve: { url, option: found.selected.option, required: required as unknown as PaymentRequired }, bytes, h };
 }

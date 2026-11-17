@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { AtrHash } from "@integraledger/lcp";
 import { exactCasper } from "@integraledger/lcp/casper";
-import { CCD_EXPIRY_MARGIN, exactCcd } from "@integraledger/lcp/ccd";
+import { exactCcd } from "@integraledger/lcp/ccd";
 import { chargeLightning, sessionLightning } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
@@ -66,6 +66,7 @@ describe("x402/exact/ccd", () => {
     fixed: { O: PaymentRequirements; payer: string; resource: object; sponsor: string; payee: string };
     D1: { expectCcdMemo: string };
     D3: { ccd: { payment: { payload: { signedTransaction: object } } } };
+    stockOptions: { rows: { option: PaymentRequirements; expectRequest: { expiresBy: number } }[] };
   }>("x402-exact-ccd.json");
   const f = V.fixed;
   const p: Pairing = {
@@ -81,8 +82,10 @@ describe("x402/exact/ccd", () => {
         expect(Buffer.from(r.memo).toString("hex")).toBe(V.D1.expectCcdMemo);
         expect(r.sponsor).toBe(f.sponsor);
         expect(r.toAddress).toBe(f.payee);
-        // The stock client signs now plus maxTimeoutSeconds less its margin (the vector file's expiresBy, 1790000055).
-        expect(r.expiresBy).toBe(NOW + f.O.maxTimeoutSeconds - CCD_EXPIRY_MARGIN);
+        // The stock client signs now plus maxTimeoutSeconds less its margin: the expiresBy of the vector file's expected
+        // request for O's amount at the file's now.
+        const row = V.stockOptions.rows.find((x) => x.option.amount === f.O.amount)!;
+        expect(r.expiresBy).toBe(row.expectRequest.expiresBy);
       });
     }));
 });
