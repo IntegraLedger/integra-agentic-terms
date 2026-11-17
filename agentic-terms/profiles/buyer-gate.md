@@ -191,7 +191,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `mpp/session/evm` | | | | | | |
     | `mpp/session/hedera/stock` | | | | | | |
     | `mpp/session/solana/stock` | | | | | | |
-    | `mpp/session/tempo` | | | | | | |
+    | `tempo-call`, one call `{to, data}` the payer signs in a Tempo transaction on `chainId`, whose `data` is a payment channel's `open` to the escrow `call.to` and the call holds no other member: the TIP-20 channel reserve's `open(payee, operator, token, deposit, salt, authorizedSigner)`, selector `0xedc53b00`, `deposit` a `uint96`, or the earlier escrow's `open(payee, token, deposit, salt, authorizedSigner)`, selector `0xc79ea485`, `deposit` a `uint128`: `mpp/session/tempo`'s opening | none: the vouchers that charge the channel are signed apart | the `open`'s `payee`, in lowercase hex, with its `deposit` | the `open`'s `token`, in lowercase hex | `eip155:` and `chainId` | none to `validBefore`, seconds; a `validBefore` of 0 gives no summary | `deposit`: the `open`'s `deposit`; `operator`: the `open`'s `operator`, absent where it is the zero address or the `open` names none; `grant`: `{escrow, authorizedSigner}`, `call.to`, the contract that holds the deposit, and the `open`'s `authorizedSigner`, the key it names to sign the channel's vouchers. Who may close is the escrow's rule, which the call does not state. The voucher that follows is an `eip712` request of its own |
     | `mpp/session/xrpl/stock` | | | | | | |
     | `mpp/subscription/solana` | | | | | | |
     | `mpp/subscription/stripe` | | | | | | |

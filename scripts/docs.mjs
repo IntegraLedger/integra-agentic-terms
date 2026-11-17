@@ -61,6 +61,8 @@ const RAILS = {
   "spend-permissions/eip155": "EVM",
   "mpp/charge/tempo/memo": "Tempo",
   "mpp/charge/tempo/push": "Tempo",
+  "mpp/charge/tempo/split-memo": "Tempo",
+  "mpp/charge/tempo/split-memo/push": "Tempo",
   "mpp/session/tempo": "Tempo",
   "mpp/subscription/tempo": "Tempo",
   "x402/exact/solana": "Solana",

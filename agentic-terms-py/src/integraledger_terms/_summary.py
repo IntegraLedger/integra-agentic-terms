@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ._summary_evm import erc20_transfer, exact_permit2, key_authorization, mpp_permit2, upto_permit2
+from ._summary_tempo import tempo_open
 from ._types import Inputs, Payee, Summary, Validity
 from ._summary_bolt11 import bolt11_deposit, bolt11_pay
 from ._summary_card import tap_field, vi_checkout_mandate, vi_immediate, vic_reference
@@ -174,6 +175,7 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/lnbtc/payment-hash": SummaryEntry(show=bolt11_pay),
     "mpp/charge/lightning": SummaryEntry(show=bolt11_pay),
     "mpp/session/lightning": SummaryEntry(show=bolt11_deposit),
+    "mpp/session/tempo": SummaryEntry(show=tempo_open),
 }
 
 

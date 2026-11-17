@@ -9,6 +9,7 @@ import type { Inputs, Signature, SigningRequest, Summary } from "./types.js";
 import { exactPermit2, mppPermit2, uptoPermit2 } from "./summary/eip712.js";
 import { erc20Transfer } from "./summary/evm-call.js";
 import { keyAuthorization } from "./summary/tempo-key-authorization.js";
+import { tempoOpen } from "./summary/tempo-call.js";
 import { algorandTransfer } from "./summary/algorand-txn.js";
 import { hederaExecutor, hederaTransfer } from "./summary/hedera-body.js";
 import { solanaSessionOpen, solanaTransfer, solanaUptoOpen } from "./summary/solana-message.js";
@@ -172,6 +173,7 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/lnbtc/payment-hash", { show: bolt11Pay }],
   ["mpp/charge/lightning", { show: bolt11Pay }],
   ["mpp/session/lightning", { show: bolt11Deposit }],
+  ["mpp/session/tempo", { show: tempoOpen }],
 ]);
 
 /**

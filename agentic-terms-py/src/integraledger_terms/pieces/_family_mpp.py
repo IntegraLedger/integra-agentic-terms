@@ -2,6 +2,7 @@
 
 from .._types import Piece
 from . import mpp_card_stripe, mpp_charge_evm, mpp_charge_nearintents, mpp_charge_usdc, mpp_session
+from . import mpp_charge_tempo_split_memo
 
 FAMILY: dict[str, Piece] = {
     p.pairing: p
@@ -19,5 +20,7 @@ FAMILY: dict[str, Piece] = {
         mpp_session.SESSION_EVM_PIECE,
         mpp_session.SESSION_TEMPO_PIECE,
         mpp_session.SUBSCRIPTION_PIECE,
+        mpp_charge_tempo_split_memo.PULL_PIECE,
+        mpp_charge_tempo_split_memo.PUSH_PIECE,
     )
 }

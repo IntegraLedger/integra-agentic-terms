@@ -70,6 +70,7 @@ import { x402ExactSui } from "./x402-exact-sui.js";
 import { x402ExactTronLcpTrc20Memo } from "./x402-exact-tron-lcp-trc20-memo.js";
 import { x402ExactTvm } from "./x402-exact-tvm.js";
 import { spendPermissionsEip155Piece } from "./spend-permissions-eip155.js";
+import { mppChargeTempoSplitMemo, mppChargeTempoSplitMemoPush } from "./mpp-charge-tempo-split-memo.js";
 
 /** The buyer piece for each pairing the gate pays, by pairing id. */
 export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiece>([
@@ -145,4 +146,6 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["card/visa-vic", cardVisaVic],
   ["card/mastercard-agent-pay", cardMastercardAgentPay],
   ["spend-permissions/eip155", spendPermissionsEip155Piece],
+  ["mpp/charge/tempo/split-memo", mppChargeTempoSplitMemo],
+  ["mpp/charge/tempo/split-memo/push", mppChargeTempoSplitMemoPush],
 ]);

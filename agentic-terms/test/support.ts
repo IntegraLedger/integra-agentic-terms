@@ -68,14 +68,22 @@ function fromHexBytes(h: string): Uint8Array {
  */
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
-  ["eip712", ["mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"]],
+  ["eip712", ["mpp/session/evm", "mpp/session/tempo", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"]],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
-  ["tempo-call", ["mpp/session/tempo"]],
 ]);
 
 /** Whether the gate has no summary yet of the request `pairing`'s build hands the signer: SUMMARY_PENDING lists it. */
 export function summaryPending(pairing: string): boolean {
   return [...SUMMARY_PENDING.values()].some((ids) => ids.includes(pairing));
+}
+
+/**
+ * The kinds of request SUMMARY_PENDING lists `pairing` under. A payment signed in steps whose first step has a summary
+ * and a later one none is declined at that later step, its earlier steps shown and signed: no request of these kinds
+ * reaches the signer.
+ */
+export function pendingKinds(pairing: string): string[] {
+  return [...SUMMARY_PENDING].filter(([, ids]) => ids.includes(pairing)).map(([kind]) => kind);
 }
 /** The vectors' link and agreement URL for H, each a random token's path. */
 const FIXED = vectors<{ fixed: { link: string; agreementUrl: string } }>("mpp-challenge.json").fixed;

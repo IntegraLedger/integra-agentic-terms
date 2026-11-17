@@ -27,7 +27,7 @@ import {
   type SigningRequest,
   type ToApprove,
 } from "../src/index.js";
-import { A as ATR_A, ABC, ABD, code, counting, H, HA, isDeclined, LINK, piecePay, serving, summaryPending, vectors, type Counting } from "./support.js";
+import { A as ATR_A, ABC, ABD, code, counting, H, HA, isDeclined, LINK, pendingKinds, piecePay, serving, summaryPending, vectors, type Counting } from "./support.js";
 
 import { GATE } from "./support.js";
 type BatchVectors = {
@@ -119,13 +119,14 @@ async function evmAnswer(r: SigningRequest): Promise<Signature> {
 
 /**
  * The opening through the gate, over an ATR that is one JSON text, its document placed for that ATR's H: while
- * SUMMARY_PENDING lists the pairing, declined summary-missing with no signer call; otherwise signed, and held by
- * `openChannel` with that H.
+ * SUMMARY_PENDING lists the pairing, declined summary-missing with no request of a kind it lists handed to the signer;
+ * otherwise signed, and held by `openChannel` with that H.
  */
 async function opensThroughGate(doc: unknown, binding: Binding, signer: Counting, inputs: Inputs): Promise<void> {
   const out = await transact(doc, binding, signer, serving(ATR_A), { ...GATE, inputs });
   if (summaryPending(binding.id)) {
-    expect([code(out), signer.requests.length]).toEqual(["summary-missing", 0]);
+    expect(code(out)).toBe("summary-missing");
+    expect(signer.requests.filter((r) => pendingKinds(binding.id).includes(r.kind))).toEqual([]);
     return;
   }
   const opened = unwrap(out);

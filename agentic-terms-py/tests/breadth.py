@@ -206,6 +206,8 @@ PIECE_ONLY: Mapping[str, str] = {
     "mpp/charge/nearintents": _NO_RUN,
     "mpp/charge/solana": _NO_RUN,
     "mpp/charge/stripe": _NO_RUN,
+    "mpp/charge/tempo/split-memo": "the stock client signs the placed challenge for H(abc); paid over A through the gate in TypeScript, with lcp's advertise",
+    "mpp/charge/tempo/split-memo/push": "the stock client signs the placed challenge for H(abc); paid over A through the gate in TypeScript, with lcp's advertise",
     "mpp/charge/usdc/evm": _NO_RUN,
     "mpp/charge/usdc/gateway": _NO_RUN,
     "mpp/charge/usdc/solana": _NO_RUN,

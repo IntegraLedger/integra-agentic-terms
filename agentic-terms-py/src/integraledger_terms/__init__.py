@@ -117,6 +117,7 @@ from .bindings.x402_exact_algorand import X402ExactAlgorand
 from .bindings.x402_exact_stellar_precondition import X402ExactStellarPrecondition
 from .bindings.x402_exact_xrpl import X402ExactXrpl
 from .bindings.spend_permissions_eip155 import SpendPermissionsEip155
+from .bindings.mpp_charge_tempo_split_memo import MppChargeTempoSplitMemo, MppChargeTempoSplitMemoPush
 
 # A binding marked type: ignore[assignment] has a build and bound that take no act yet (Binding.build, Binding.bound).
 X402_EXACT_EIP155_EIP3009: Binding = X402ExactEip155Eip3009()
@@ -184,6 +185,8 @@ MPP_SESSION_HEDERA_STOCK: Binding = MppSessionHederaStock()
 X402_UPTO_XRPL: Binding = X402UptoXrpl()
 X402_EXACT_STELLAR_PRECONDITION: Binding = X402ExactStellarPrecondition()
 SPEND_PERMISSIONS_EIP155: Binding = SpendPermissionsEip155()
+MPP_CHARGE_TEMPO_SPLIT_MEMO: Binding = MppChargeTempoSplitMemo()
+MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH: Binding = MppChargeTempoSplitMemoPush()
 
 __all__ = [
     "ACK_PAYMENT_REQUEST",
@@ -259,6 +262,8 @@ __all__ = [
     "X402_UPTO_XRPL",
     "X402_EXACT_STELLAR_PRECONDITION",
     "SPEND_PERMISSIONS_EIP155",
+    "MPP_CHARGE_TEMPO_SPLIT_MEMO",
+    "MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH",
     "Advertised",
     "Agreed",
     "AgreementPayment",
