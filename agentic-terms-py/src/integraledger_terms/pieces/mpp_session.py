@@ -55,6 +55,10 @@ class MppSessionPiece(MppChargePiece):
         """The funding request, exactly as built."""
         return dict(unsigned.funding)
 
+    def steps(self, unsigned: Any) -> int:
+        """Two signings: the funding, then the first voucher."""
+        return 2
+
     def complete(self, unsigned: Any, signature: Signature, chosen: Chosen) -> dict[str, Any] | Step | Refusal:
         """With the funding answer alone, the next request: the voucher over the channel the funding opens. With the
         list [funded, voucherSignature], the credential."""

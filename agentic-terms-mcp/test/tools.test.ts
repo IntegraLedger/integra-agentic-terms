@@ -364,6 +364,35 @@ describe("the MCP server over stdio", () => {
   });
 });
 
+// A payment signed in steps: atr_finish returns the later step's request as `next` with `summary`, the authority signing
+// it grants (terms' profile buyer-gate.md, rule 3), as atr_confirm returns the first's. Verifiable Intent Immediate on
+// the JSON the seller showed: card.json's CJ signs the agent's payload, and the mandate over it, C5's, is the next
+// request, whose summary grants CJ's payload. The ATR is abc, the bytes CJ's legal context names.
+describe("atr_finish of a payment signed in steps", () => {
+  it("returns the next request with its summary: Verifiable Intent Immediate's mandate after CJ", async () => {
+    const CARD = vectors("card.json");
+    const CJ: string = CARD.vi.CJ;
+    const payload = JSON.parse(Buffer.from(CJ.split(".")[1]!, "base64url").toString("utf8"));
+    const { legalContext, ...checkout } = payload;
+    const pairing = "card/mastercard-vi/immediate";
+    const chosen = { pairing, choice: { doc: { legalContext }, checkout }, ref: "r".repeat(32) };
+    const c = connect({ fetch: serving(A), ceilings: { [pairing]: "no-end" } });
+    const atr = Buffer.from("abc").toString("base64");
+    const m = await call(c, "atr_finish", { pairing, atr, chosen, signature: { checkout_jwt: CJ } });
+    await c.close();
+    expect(at(m, "result.structuredContent.atrHash")).toBe(H_ABC);
+    expect(at(m, "result.structuredContent.next")).toEqual({ kind: "vi-checkout-mandate", ...CARD.C5.build.expect });
+    expect(at(m, "result.structuredContent.summary")).toEqual({
+      payees: [],
+      asset: "",
+      network: null,
+      validity: { notBefore: null, notAfter: null, unit: "seconds" },
+      grant: payload,
+      atr: { base64: atr, utf8: "abc" },
+    });
+  });
+});
+
 describe("the MCP server and the skill", () => {
   it("the skill names exactly the tools createBuyerServer can register", async () => {
     const text = readFileSync(

@@ -57,7 +57,9 @@ const DESCRIPTIONS = {
     "Rebuilds the payment from `chosen` and the ATR bytes and joins your wallet's signature. Returns `signed` only " +
     "when the pairing reads the ATR hash from the completed payment, or, where the proof is the agreement payment, " +
     "without that reading. For a pairing with a channel, pass `chosen` exactly as atr_confirm returned it, `mac` " +
-    "included: a changed `chosen` is declined. Send only the `signed` payment it returns.",
+    "included: a changed `chosen` is declined. Send only the `signed` payment it returns. For a payment signed in " +
+    "steps, the first answer returns `next`, the next request to sign, with `summary`, which names every authority " +
+    "signing it grants: read both before your wallet signs it, then call atr_finish with the answers in order.",
   atr_check:
     "Confirms that the ATR hash the pairing reads from a payment is the SHA-256 of the given ATR bytes, with the " +
     "`landed` receipt returned beside the payment, exactly as returned, where there is one. The caller passes as " +
@@ -407,7 +409,7 @@ export function createBuyerServer(options: {
       if (chosen === undefined) return chosenUnverified();
       const out = await finish(a.atr, chosen as unknown as Chosen, a.signature as Signature, binding, raised);
       if ("decline" in out) return declinedResult(out);
-      if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next) });
+      if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next), summary: summaryJson(out.summary) });
       return result({ atrHash: out.h, ...(await signedOf(out, binding)) });
     },
   );

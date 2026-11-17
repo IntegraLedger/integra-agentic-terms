@@ -278,6 +278,23 @@ async def confirm(
     return gated if isinstance(gated, Declined) else gated[0]
 
 
+# A deadline kept in chosen: a decimal string, as the TypeScript gate takes it.
+_DEADLINE = re.compile(r"[0-9]{1,78}")
+
+
+def _given_choice(chosen: object, pairing: str) -> Chosen | None:
+    """The choice of a chosen given back, of confirm's form for the pairing, with the latest deadline it keeps for a
+    wallet that picks the expiry, and without the agreement URL the offer names again; None for another form."""
+    if not isinstance(chosen, Chosen) or chosen.pairing != pairing:
+        return None
+    if not isinstance(chosen.choice, Mapping) or not isinstance(chosen.ref, str):
+        return None
+    deadline = chosen.deadline
+    if deadline is not None and (not isinstance(deadline, str) or _DEADLINE.fullmatch(deadline) is None):
+        return None
+    return Chosen(pairing=pairing, choice=dict(chosen.choice), ref=chosen.ref, deadline=deadline)
+
+
 def _args_ok(resource_request: object, inputs: object, ceilings: object, pairing: str) -> bool:
     """Whether the gate's arguments are of the profile's form: resource_request a mapping, inputs a mapping or None,
     and ceilings a mapping or None whose value for the paid pairing, where given, is of rule 8's form (ceilings_ok)."""
@@ -296,9 +313,11 @@ async def _gate(
     resource_request: ResourceRequest,
     inputs: Inputs,
     ceilings: Ceilings | None,
+    given: Chosen | None = None,
 ) -> tuple[Confirmed, int] | Declined:
     """Checks 3 to 11 of the profile, for confirm and transact, once the pairing and the arguments are known good: the
-    confirmed payment and the number of signings it takes."""
+    confirmed payment and the number of signings it takes. Given the payment confirm chose, its choice is built again
+    exactly rather than chosen anew with the gate's clock and a new reference."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
@@ -311,7 +330,7 @@ async def _gate(
     agreement = None if _full(binding) else advertised.agreement
     if agreement is not None and not isinstance(agreement, str):
         return Declined("offer-unreadable", "The offer names an agreement URL that is not a string.")
-    choice = piece.choose(advertised, account, inputs, _now(), _ref(), doc)
+    choice = given if given is not None else piece.choose(advertised, account, inputs, _now(), _ref(), doc)
     if isinstance(choice, Refusal):
         return Declined("no-payable-option", choice.code)
     chosen = choice if agreement is None else replace(choice, agreement=agreement)
@@ -370,7 +389,7 @@ def _built(
     summary = shown(binding, formed, fetched, inputs, ceilings, network_of(account), None, account)
     if isinstance(summary, Declined):
         return summary
-    return Confirmed(chosen=kept, request=formed, atr_bytes=fetched, h=computed, summary=summary), steps_of(unsigned)
+    return Confirmed(chosen=kept, request=formed, atr_bytes=fetched, h=computed, summary=summary), steps_of(piece, unsigned)
 
 
 def finish(
@@ -379,17 +398,29 @@ def finish(
     """Rebuild the payment from chosen and the bytes, join the signer's answer, and return the payment only when the
     pairing's bound reads the hash of these bytes from the completed payment. For a pairing at coverage none, whose
     payment is not a public proof, and whose bound finds no signed place for the hash, the proof is the agreement payment, and the
-    completed payment is returned as it is. A payment signed in steps returns the next request, only once it has a
-    summary and is within the pairing's ceiling, ceilings raising it (checks 10 and 11). Where the signer moved the
-    payment itself, a decline keeps it as moved. ceilings that are not a mapping are declined no-payable-option with
-    <namespace>/input-malformed."""
+    completed payment is returned as it is. A payment signed in steps returns the next request with its summary, only
+    once it has a summary and is within the pairing's ceiling, ceilings raising it (checks 10 and 11). Where the signer
+    moved the payment itself, a decline keeps it as moved. ceilings that are not a mapping are declined
+    no-payable-option with <namespace>/input-malformed."""
     if not ceilings_ok(ceilings, str(getattr(binding, "id", ""))):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
     out = _finish(atr_bytes, chosen, signature, binding)
-    if not isinstance(out, Next):
+    if not isinstance(out, Step):
         return out
-    summary = shown(binding, out.next, atr_bytes, {}, ceilings, None, _opened(binding, chosen, atr_bytes, signature))
-    return summary if isinstance(summary, Declined) else out
+    opened = _opened(binding, chosen, atr_bytes, signature)
+    account = _confirmed_for(chosen, opened)
+    summary = shown(binding, out.next, atr_bytes, {}, ceilings, network_of(account), opened, account)
+    return summary if isinstance(summary, Declined) else Next(next=out.next, summary=summary, h=atr_hash(atr_bytes))
+
+
+def _confirmed_for(chosen: Chosen, opened: Opened | None) -> str | None:
+    """The CAIP-10 account a payment signed in steps was confirmed for, which finish, given no account, hands its later
+    step's summary: the payer's address the piece keeps in chosen.choice["from"], on the network of the step that
+    opened the payment; None where either is absent."""
+    choice = chosen.choice if isinstance(chosen, Chosen) else None
+    address = choice.get("from") if isinstance(choice, Mapping) else None
+    network = opened.summary.network if opened is not None else None
+    return f"{network}:{address}" if isinstance(address, str) and isinstance(network, str) else None
 
 
 def _opened(binding: Binding, chosen: Chosen, atr_bytes: bytes, signature: Signature) -> Opened | None:
@@ -407,8 +438,9 @@ def _opened(binding: Binding, chosen: Chosen, atr_bytes: bytes, signature: Signa
     return None if summary is None else Opened(request=formed, summary=summary, signature=signature)
 
 
-def _finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding) -> Finished | Next | Declined:
-    """finish without checks 10 and 11 on a later step's request, which the signing steps make with the approval."""
+def _finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding) -> Finished | Step | Declined:
+    """finish without checks 10 and 11 on a later step's request, which the signing steps make with the approval: a
+    later step's request is returned as the Step it is, in the form the signer is handed it."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
@@ -434,7 +466,7 @@ def _finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bin
     if isinstance(signed, Refusal):
         return keep("signed-not-bound", signed.code, signature)
     if isinstance(signed, Step):
-        return Next(next=json_form(signed.next), h=h)
+        return Step(next=json_form(signed.next))
     sent = piece.sent(signed)
     bound = _bound(binding, signed, h, chosen.act)
     on_agreement = not _full(binding) and isinstance(bound, Refusal) and _NOTHING_TO_SIGN.fullmatch(bound.code)
@@ -452,14 +484,18 @@ def _finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bin
     return Finished(signed=sent, h=h, landed=landed)
 
 
-def check(atr_bytes: bytes, presented: Any, binding: Binding, landed: Any = None) -> Checked | Declined:
+def check(
+    atr_bytes: bytes, presented: Any, binding: Binding, landed: Any = None, act: Act = "payment"
+) -> Checked | Declined:
     """Confirms that the ATR hash the pairing reads from a payment held later is the SHA-256 of the kept bytes, with
     the landed receipt finish or transact returned beside the payment, where it returned one, held in Held, as
     @integraledger/lcp holds it under the payment's own FETCHED member: an attribute no JSON decode makes, as bound
     reads it. The caller passes as landed only the receipt its own reader read for the payment, as finish or transact
-    returned it, never a value another party sent. A payment from which the pairing reads no ATR hash is declined
-    signed-not-bound, as is a landed receipt that is not a JSON object beside a payment that is one. A landed member of
-    the payment's own is not read."""
+    returned it, never a value another party sent. act is the act the payment was paid as: "agreement" for the
+    agreement payment, which bound is then given with the hash, so it reads the hash where the payment carries the
+    agreement's own single-use value in its place; "payment", the default, for any other. A payment from which the
+    pairing reads no ATR hash is declined signed-not-bound, as is a landed receipt that is not a JSON object beside a
+    payment that is one. A landed member of the payment's own is not read."""
     if len(atr_bytes) > MAX_ATR_BYTES:
         return _too_large()
     if landed is not None:
@@ -467,7 +503,7 @@ def check(atr_bytes: bytes, presented: Any, binding: Binding, landed: Any = None
             return Declined("signed-not-bound", "The landed receipt is not a JSON object beside the payment.")
         presented = Held(presented, landed)
     h = atr_hash(atr_bytes)
-    bound = _bound(binding, presented)
+    bound = _bound(binding, presented, h, act)
     if isinstance(bound, Refusal) or not hash_equals(bound, h):
         return Declined(
             "signed-not-bound", "The pairing does not read the hash of the compared bytes from the payment."
@@ -502,7 +538,7 @@ async def pay(
             return bounded
         first, chosen = bounded
     kept = _kept(piece, chosen, unsigned)
-    return await _sign_steps(binding, kept, first, signer, atr_bytes, h, approval, steps_of(unsigned))
+    return await _sign_steps(binding, kept, first, signer, atr_bytes, h, approval, steps_of(piece, unsigned))
 
 
 def _agreement_only(binding: Binding) -> bool:
@@ -529,7 +565,7 @@ async def _sign_steps(
         whole = _finish(atr_bytes, chosen, None, binding)
         if isinstance(whole, Declined) and _NOTHING_TO_SIGN.fullmatch(whole.detail):
             return None
-        if isinstance(whole, Next):
+        if isinstance(whole, Step):
             return Declined("signed-not-bound", "The pairing asked for a signature it did not request.")
         return whole
     piece = _piece(binding)
@@ -584,6 +620,7 @@ async def transact(
     agreement_signer: Signer | None = None,
     approved: AgreementPayment | None = None,
     signal: asyncio.Event | None = None,
+    chosen: Chosen | None = None,
 ) -> Transacted | ToApprove | AgreementChallenges | ToReturn | Declined:
     """The gate's checks, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer,
     then finish. Every signing, the agreement payment's among them, is first held to its summary and its ceiling and
@@ -597,8 +634,12 @@ async def transact(
     comparison. agreement is the agreement's receipt, where the pairing needs one. Setting signal ends the agreement
     exchange. An approver that is not callable, a resource_request, inputs or ceilings that are not a mapping, a
     legal_context that is not a string, an agreement signer with no sign method, an approved value that is not an
-    AgreementPayment, a signal that is not an asyncio.Event, or a signer or agreement signer whose account is not a
-    string are declined no-payable-option with <namespace>/input-malformed before any fetch or signer call.
+    AgreementPayment, a signal that is not an asyncio.Event, a chosen that is not a Chosen of confirm's form for the
+    pairing, or a signer or agreement signer whose account is not a string are declined no-payable-option with
+    <namespace>/input-malformed before any fetch or signer call.
+
+    With chosen, the payment confirm chose, unchanged, the gate builds that exact request, the one the approver
+    approved, instead of choosing anew with its clock and a new reference.
 
     Where the pairing is paid after its agreement and the first response offers the agreement and no charge option,
     its every option naming the charges it serves, transact pays the agreement and returns ToReturn. legal_context is
@@ -617,6 +658,7 @@ async def transact(
         or not agreement_signer_ok
         or (approved is not None and not isinstance(approved, AgreementPayment))
         or (signal is not None and not isinstance(signal, asyncio.Event))
+        or (chosen is not None and _given_choice(chosen, str(binding.id)) is None)
         or not isinstance(_account(signer), str)
     ):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
@@ -654,7 +696,8 @@ async def transact(
                 ns,
             )
 
-    gated = await _gate(doc, binding, _account(signer), fetch, resource_request, given, ceilings)
+    again = None if chosen is None else _given_choice(chosen, str(binding.id))
+    gated = await _gate(doc, binding, _account(signer), fetch, resource_request, given, ceilings, again)
     if isinstance(gated, Declined):
         return gated
     confirmed, count = gated

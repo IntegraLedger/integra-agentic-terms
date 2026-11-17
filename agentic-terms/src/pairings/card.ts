@@ -200,6 +200,8 @@ export function viImmediatePiece(
       if (Object.hasOwn(built, "checkoutMandate")) return mandateRequest(built as ViUnsigned);
       return { kind: "vi-checkout", ...(built as ViCheckoutUnsigned) };
     },
+    /** One signing on a mandate the seller's `checkout_jwt` names; two on the agent's payload, then the mandate over it. */
+    steps: (unsigned: unknown) => (Object.hasOwn(unsigned as object, "checkoutMandate") ? 1 : 2),
     async complete(unsigned: unknown, signature: Signature): Promise<Presented | Next | Refusal> {
       const built = unsigned as ViUnsigned | ViCheckoutUnsigned;
       if (Object.hasOwn(built, "checkoutMandate")) return l2Of(signature);

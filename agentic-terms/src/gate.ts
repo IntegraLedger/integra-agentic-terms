@@ -263,7 +263,7 @@ export interface GateArgs {
  * The choice of a `chosen` given back, with the latest deadline it keeps for a wallet that picks the expiry, and without
  * the agreement URL the offer names again; undefined for another form.
  */
-function givenChoice(chosen: unknown, pairing: string): Chosen | undefined {
+export function givenChoice(chosen: unknown, pairing: string): Chosen | undefined {
   if (!isObject(chosen) || chosen["pairing"] !== pairing || !isObject(chosen["choice"]) || typeof chosen["ref"] !== "string") {
     return undefined;
   }
@@ -396,7 +396,7 @@ export async function charged(
   if (request === null) return { chosen: kept, request, count: 0, bytes, h };
   const summary = await shown(binding, request, bytes, inputs, ceilings, networkOfAccount(account), undefined, account);
   if ("decline" in summary) return summary;
-  return { chosen: kept, request, summary, count: stepsOf(unsigned), bytes, h };
+  return { chosen: kept, request, summary, count: stepsOf(piece, unsigned), bytes, h };
 }
 
 /** `chosen` with what the build drew itself, where the piece keeps it, so a rebuild gives the request the signer saw. */
@@ -455,8 +455,20 @@ export async function finish(
   if (!("next" in out)) return out;
   const first = out.first === null ? undefined : await summaryOf(String(binding.id), out.first, bytes);
   const opened = first === undefined || out.first === null ? undefined : openedBy(out.first, first, signature);
-  const summary = await shown(binding, out.next, bytes, {}, ceilings as Ceilings | undefined, undefined, opened);
+  const account = confirmedFor(chosen, first);
+  const summary = await shown(binding, out.next, bytes, {}, ceilings as Ceilings | undefined, networkOfAccount(account), opened, account);
   return "decline" in summary ? summary : { next: out.next, summary, h: out.h };
+}
+
+/**
+ * The CAIP-10 account a payment signed in steps was confirmed for, which `finish`, given no account, hands its later
+ * step's summary: the payer's address the piece keeps in `chosen.choice.from`, on the network of the step that opened
+ * the payment; undefined where either is absent.
+ */
+function confirmedFor(chosen: Chosen, opening: Summary | undefined): string | undefined {
+  const from: unknown = isObject(chosen.choice) ? (chosen.choice as Record<string, unknown>)["from"] : undefined;
+  const network = opening?.network;
+  return typeof from === "string" && typeof network === "string" ? `${network}:${from}` : undefined;
 }
 
 /** The step that opened a payment signed in steps, for its later step's summary: its request, summary and answer. */
@@ -618,7 +630,7 @@ export async function pay(
       ? { request: built, chosen }
       : withDeadline(binding, built, chosen, approval.inputs, approval.ceilings, Math.floor(Date.now() / 1000));
   if ("decline" in bounded) return bounded;
-  return signSteps(binding, keptWith(piece, bounded.chosen, unsigned), bounded.request, signer, bytes, h, act, approval, stepsOf(unsigned));
+  return signSteps(binding, keptWith(piece, bounded.chosen, unsigned), bounded.request, signer, bytes, h, act, approval, stepsOf(piece, unsigned));
 }
 
 /**

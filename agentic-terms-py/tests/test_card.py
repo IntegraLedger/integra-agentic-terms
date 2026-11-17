@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from breadth import ABC, ABD, H, LINK, Pairing, through_gate
-from support import load
+from breadth import ABC, ABD, H, LINK, Pairing, Recording, never, offered, run, through_gate
+from support import HASH_A, RESOURCE_REQUEST, A, load, serving
+
+import integraledger_terms as terms
 
 from integraledger_terms._summary import summary_of
-from integraledger_terms._types import Ceilings, Summary, Validity
+from integraledger_terms._types import Ceilings, SigningStep, Summary, ToSign, Validity
 from integraledger_terms import (
     CARD_MASTERCARD_AGENT_PAY,
     CARD_MASTERCARD_VI_AUTONOMOUS,
@@ -165,9 +167,35 @@ def test_vi_immediate_cj_signs_the_payload_then_c5s_mandate_and_c6s_l2_complete_
     ceilings: Ceilings = {"card/mastercard-vi/immediate": "no-end"}
     step = finish(ABC, kept, {"checkout_jwt": CJ}, CARD_MASTERCARD_VI_IMMEDIATE, ceilings=ceilings)
     assert not isinstance(step, (Declined, Finished)) and step.next == {"kind": "vi-checkout-mandate", **CARD["C5"]["build"]["expect"]}
+    assert step.summary == nothing_named(CJ_PAYLOAD)
     l2 = CARD["C6"]["bound"]["presented"]["l2"]
     done = finish(ABC, kept, [{"checkout_jwt": CJ}, {"l2": l2}], CARD_MASTERCARD_VI_IMMEDIATE)
     assert done == Finished(signed={"l2": l2}, h=H)
+
+
+def test_vi_immediate_through_the_gate_over_buyer_jsons_atr_a_asks_the_agents_payload_as_the_first_of_two() -> None:
+    """On the JSON the seller showed, the payment takes two signings: the agent's payload, then the mandate over its
+    checkout_jwt (V10; CJ, C5, C6). Through the gate over buyer.json's ATR A, its document the legal context the seller
+    shows for A's hash, the approver is told the first is one of two signings."""
+    asked: list[ToSign] = []
+
+    def approver(t: ToSign) -> bool:
+        asked.append(t)
+        return False
+
+    agent = Recording(BUYER, never)
+    doc = {"legalContext": {**SHOWN["legalContext"], "value": HASH_A}}
+    out = run(
+        lambda c: terms.transact(
+            doc, offered(CARD_MASTERCARD_VI_IMMEDIATE), agent, c, approver=approver, resource_request=RESOURCE_REQUEST,
+            inputs={"checkout": CARD["V10"]["immediateBuild"]["choice"]["checkout"]},
+            ceilings={"card/mastercard-vi/immediate": "no-end"},
+        ),
+        serving(A),
+    )  # fmt: skip
+    assert isinstance(out, Declined) and out.code == "not-approved", out
+    assert [(t.act, t.request["kind"], t.step) for t in asked] == [("payment", "vi-checkout", SigningStep(index=0, count=2))]
+    assert agent.requests == []
 
 
 def test_vi_immediate_a_checkout_jwt_over_another_payload_completes_nothing() -> None:

@@ -8,6 +8,7 @@ from collections.abc import Mapping
 
 from .._types import Advertised, Chosen, Inputs, Json, Refusal, Signature
 from ..bindings._bolt11 import decode
+from ..bindings._mpp import pairings_of
 from ..bindings.lightning import LNBTC, MPP_CHARGE, MPP_SESSION
 from ._base import BasePiece
 from ._common import InputKind, account_of, bytes_of, choice_of, inputs_of
@@ -25,6 +26,11 @@ LN_CURRENCY = {
 }
 
 
+# The BOLT11 currency of each network MPP Lightning names in methodDetails.network, as the protocol package's checks of a
+# challenge read it: mainnet bc, signet tbs, regtest bcrt.
+_MPP_LN_CURRENCY = {"mainnet": "bc", "signet": "tbs", "regtest": "bcrt"}
+
+
 def _invoice_of(challenge: object, session: bool) -> object:
     """The invoice a Lightning challenge asks the node to pay: a charge's methodDetails.invoice, a session's
     deposit."""
@@ -38,7 +44,7 @@ def _invoice_of(challenge: object, session: bool) -> object:
 
 
 class LnMppPiece(BasePiece):
-    """The first challenge offering the pairing whose invoice's BOLT11 currency is the account's lnbtc network's. A
+    """The first challenge offering the pairing whose BOLT11 currency is the account's lnbtc network's (_currency). A
     session's return invoice is the buyer's input, and rides in the build's choice."""
 
     def __init__(self, pairing: str, session: bool) -> None:
@@ -51,10 +57,7 @@ class LnMppPiece(BasePiece):
         currency = LN_CURRENCY.get(a.network) if a is not None else None
         if a is None or a.namespace != "lnbtc" or currency is None:
             return Refusal("mpp/no-payable-option")
-        challenge = next(
-            (c for c in challenges_of(read) if self.pairing in pairings_of_placed(c) and self._currency(c) == currency),
-            None,
-        )
+        challenge = next((c for c in challenges_of(read) if self._currency(c) == currency), None)
         if challenge is None:
             return Refusal("mpp/no-payable-option")
         given = inputs_of(inputs, self.pairing, self._spec)
@@ -63,9 +66,25 @@ class LnMppPiece(BasePiece):
         return Chosen(pairing=self.pairing, choice={"challenge": challenge, **given}, ref=ref)
 
     def _currency(self, challenge: object) -> str | None:
+        """The BOLT11 currency a challenge offering the pairing is paid in. A placed challenge, which pairings_of_placed
+        names the pairing for: its invoice's. A challenge as issued, which the ATR's binding slot holds without the
+        invoice the seller's node writes after H (lcp profile mpp-charge.md, rule 5), and which pairings_of names the
+        pairing for (it refuses a challenge whose opaque carries H, so no challenge the seller placed is read so): the
+        currency of the network its methodDetails.network names. None for any other, an issued challenge naming no
+        network among them."""
         invoice = _invoice_of(challenge, self._session)
-        b = decode(invoice) if isinstance(invoice, str) else None
-        return b.currency if b is not None and not isinstance(b, Refusal) else None
+        if self.pairing in pairings_of_placed(challenge):
+            b = decode(invoice) if isinstance(invoice, str) else None
+            return b.currency if b is not None and not isinstance(b, Refusal) else None
+        if invoice is not None:
+            return None
+        named = pairings_of(challenge)
+        if isinstance(named, Refusal) or self.pairing not in named:
+            return None
+        request = request_of(challenge)
+        details = request.get("methodDetails") if request is not None else None
+        network = details.get("network") if isinstance(details, Mapping) else None
+        return _MPP_LN_CURRENCY.get(network) if isinstance(network, str) else None
 
     def choice(self, chosen: Chosen, atr_bytes: bytes) -> Any:
         c = choice_of(chosen)

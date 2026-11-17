@@ -111,6 +111,26 @@ describe("card/mastercard-vi/immediate: the agent's checkout payload", () => {
     expect(done).toEqual({ signed: { l2: CARD.C6.bound.presented.l2 }, h: H });
   });
 
+  // On the JSON the seller showed, the payment takes two signings: the agent's payload, then the mandate over its
+  // checkout_jwt (V10; CJ, C5, C6). Through the gate over buyer.json's ATR A, its document placed for A's hash by the
+  // pairing's own advertise with C1's mastercard-vi option, the approver is told the first is one of two signings.
+  it("through the gate over buyer.json's ATR A: the agent's payload is asked as the first of two signings", async () => {
+    const option = CARD.C1.digestJson.find((r: V) => r.option.scheme === "mastercard-vi").option;
+    const doc = { legalContext: (viImmediate.advertise({}, HA, LINK, option) as { legalContext: Json }).legalContext };
+    const agent = counting(BUYER, async () => {
+      throw new Error("the approver declines the first signing");
+    });
+    const asked: ToSign[] = [];
+    const out = await transact(doc, offered(viImmediate), agent, serving(A), {
+      ...GATE,
+      approver: (t) => (asked.push(t), false),
+      inputs: { checkout: CARD.V10.immediateBuild.choice.checkout },
+      ceilings: { "card/mastercard-vi/immediate": "no-end" },
+    });
+    expect(code(out)).toBe("not-approved");
+    expect([asked.map((t) => [t.act, t.request.kind, t.step]), agent.requests.length]).toEqual([[["payment", "vi-checkout", { index: 0, count: 2 }]], 0]);
+  });
+
   it("a checkout_jwt whose payload is not the payload handed completes nothing: V10's payload answered with CJ", async () => {
     const { choice } = CARD.V10.immediateBuild;
     const { chosen } = await built(viImmediate, choice.shown, { checkout: choice.checkout });

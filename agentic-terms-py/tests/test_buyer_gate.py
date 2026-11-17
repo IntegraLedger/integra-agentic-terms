@@ -10,6 +10,7 @@ files'."""
 
 import asyncio
 import copy
+import dataclasses
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -213,11 +214,12 @@ def test_a_return_value_naming_another_h_is_hash_mismatch_before_the_approver(mo
 
 
 def run_approved(
-    go: Any, monkeypatch: pytest.MonkeyPatch, accepts: list[Any] | None = None
+    go: Any, monkeypatch: pytest.MonkeyPatch, accepts: list[Any] | None = None, later: int = 0
 ) -> tuple[Any, list[str]]:
     """go(doc, client) over buyer-gate.json's row "approved": its document advertising its ATR's hash (with accepts
-    replaced where given), the link serving that ATR; the result and the URLs fetched."""
-    monkeypatch.setattr(_gate, "_now", lambda: V["fixed"]["now"])
+    replaced where given), the link serving that ATR, the gate's clock at the file's now plus later seconds; the result
+    and the URLs fetched."""
+    monkeypatch.setattr(_gate, "_now", lambda: V["fixed"]["now"] + later)
     doc = copy.deepcopy(V["fixed"]["documents"][APPROVED["pairing"]])
     doc["extensions"]["legalContext"]["info"]["value"] = APPROVED["atr"]["sha256"]
     if accepts is not None:
@@ -242,6 +244,36 @@ def test_a_malformed_ceiling_for_the_paid_pairing_is_declined_before_any_fetch(m
         monkeypatch,
     )
     assert out == Declined("no-payable-option", "x402/input-malformed") and calls == [], (out, calls)
+
+
+# An approval answered after the clock has moved: row "approved"'s request, as confirm builds it at the file's now, is
+# approved by an approver that approves that request alone, and transact, called 5 seconds later with confirm's chosen
+# kept as JSON, rebuilds that exact request and signs it once (rule 1's chosen; rule 3).
+def test_transact_given_confirms_chosen_5_s_later_signs_the_request_confirm_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    binding, account = BINDINGS[APPROVED["pairing"]], V["fixed"]["account"]
+    confirmed, _ = run_approved(
+        lambda doc, c: terms.confirm(doc, binding, account, c, resource_request=resource_request(APPROVED)),  # type: ignore[arg-type]
+        monkeypatch,
+    )
+    assert isinstance(confirmed, terms.Confirmed), confirmed
+    chosen = terms.Chosen(**json.loads(json.dumps(dataclasses.asdict(confirmed.chosen))))
+    signer = Payer(True)
+    asked: list[ToSign] = []
+
+    def approver(to_sign: ToSign) -> bool:
+        asked.append(to_sign)
+        return to_sign.request == confirmed.request
+
+    out, _ = run_approved(
+        lambda doc, c: terms.transact(
+            doc, binding, signer, c, approver=approver, resource_request=resource_request(APPROVED), chosen=chosen  # type: ignore[arg-type]
+        ),
+        monkeypatch,
+        later=5,
+    )
+    assert not isinstance(out, Declined), out
+    assert (len(signer.requests), len(asked)) == (1, 1)
+    assert signer.requests[0] == confirmed.request
 
 
 # Rule 12: a first response whose agreement option names the charges it serves in a form lcp's servesOf refuses (each

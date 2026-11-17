@@ -153,6 +153,49 @@ def test_an_mpp_charge_naming_the_agreement_url_returns_mpp_agreement_challenges
     assert (out.agreement_challenges, out.h, asked, signed, seller.paid) == ((agreement,), h, [], 0, 0)
 
 
+# lcp profile mpp-charge.md, rule 5: the ATR's mpp slot holds a Lightning charge as issued, without the invoice the
+# seller's node writes after H, which the pairing's filter of a placed challenge requires. The charge is
+# mpp-server-checks.json's Lightning challenge as issued, naming the network mainnet; the buyer's node is on
+# x402-exact-lnbtc.json's mainnet network.
+def test_an_mpp_lightning_charge_without_its_invoice_is_chosen_by_its_own_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_gate, "_now", lambda: NOW)
+    issued = next(r for r in load("mpp-server-checks.json")["unplaced"]["rows"] if r["case"].startswith("mpp/charge/lightning:"))["issued"]
+    a = json.loads(bytes.fromhex(BUYER["fixed"]["A"]))
+    atr = json.dumps({**a, "mpp": {"challenges": [AGREEMENT, issued]}}, separators=(",", ":")).encode()
+    h = "0x" + hashlib.sha256(atr).hexdigest()
+    agreement = placed([AGREEMENT], h, AGREEMENT)
+    seller = Seller(atr, h, required_for(h), [agreement])
+    asked: list[ToSign] = []
+
+    class Node:
+        account = f"{LN['offer']['network']}:{LN['payee']}"
+        requests: list[Any] = []
+
+        async def sign(self, request: Any) -> str:
+            self.requests.append(request)
+            raise AssertionError("the node is not called before the charge is served")
+
+    payer = EthAccountSigner()
+
+    def approver(t: ToSign) -> bool:
+        asked.append(t)
+        return True
+
+    async def go() -> Any:
+        async with seller.client:
+            return await terms.transact(
+                [agreement], terms.MPP_CHARGE_LIGHTNING, Node(), seller.client, approver=approver,
+                resource_request=resource_request(APPROVED), agreement_signer=payer,  # type: ignore[arg-type]
+            )
+
+    out = asyncio.run(go())
+    assert isinstance(out, ToReturn), out
+    assert (out.charge, out.legal_context, out.agreement and out.agreement.atr_hash) == ("mpp/1", "lcp:sha256:" + h, h)
+    assert ([(t.act, t.pairing) for t in asked], len(Node.requests), payer.calls, seller.paid) == (
+        [("agreement", "x402/exact/eip155/eip3009")], 0, 1, 1
+    )
+
+
 # lcp profile x402-exact-lnbtc.md, rule 3: the ATR's x402 slot holds the option without extra.invoice, which the seller's
 # node writes after the agreement, and the pairing's read serves only an option with its invoice (rule 6).
 def test_an_lnbtc_charge_without_its_invoice_is_chosen_by_its_own_checks(monkeypatch: pytest.MonkeyPatch) -> None:

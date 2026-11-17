@@ -24,6 +24,7 @@ from integraledger_terms import (
     Agreed,
     AgreementPayment,
     AgreementReceipt,
+    Checked,
     Confirmed,
     X402_EXACT_EIP155_ERC7710,
     Declined,
@@ -36,6 +37,7 @@ from integraledger_terms import (
     _agreement,
     _gate,
     agree,
+    check,
 )
 from integraledger_terms.bindings._codec import canonical_or_none
 
@@ -206,6 +208,9 @@ def test_ba1_the_agreement_is_signed_and_paid_first_then_the_full_payment_once(c
     assert sent["payload"]["authorization"]["value"] == m["value"]
     assert sent["accepted"] == AG["option"]
     assert recover(agreement["typedData"], sent["payload"]["signature"]) == m["from"]
+    # Held later, the agreement payment as sent is confirmed against A given the act agreement: its nonce is the
+    # agreement's own value for H, from which the pairing's bound reads H when given that act and H.
+    assert check(A, sent, BINDING, act="agreement") == Checked(h=HASH_A)
 
     assert out.signed is not None and out.signed["payload"]["signature"] == B6_SIGNATURE
     assert out.h == HASH_A and out.atr_bytes == A

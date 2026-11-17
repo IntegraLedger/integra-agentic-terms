@@ -26,6 +26,7 @@ const B: Loose = vectors("buyer.json");
 const RET: Loose = vectors("legal-context-return.json");
 const ET: Loose = vectors("mpp-charge-evm-transaction.json");
 const LN: Loose = vectors("x402-exact-lnbtc.json");
+const SC: Loose = vectors("mpp-server-checks.json");
 const V: Loose = JSON.parse(readFileSync(new URL("../vectors/buyer-gate.json", import.meta.url), "utf8"));
 const AG = B.fixed.agreement;
 const LINK: string = B.fixed.link;
@@ -146,6 +147,41 @@ describe("an MPP charge challenge naming the agreement URL", () => {
     expect(out.decline).toBeUndefined();
     expect([out.agreementChallenges, out.h]).toEqual([[agreement], h]);
     expect([asked, signed, fetch.paid]).toEqual([[], 0, 0]);
+  });
+});
+
+// lcp profile mpp-charge.md, rule 5: the ATR's mpp slot holds a Lightning charge as issued, without the invoice the
+// seller's node writes after H, which the pairing's filter of a placed challenge requires. The charge is
+// mpp-server-checks.json's Lightning challenge as issued, naming the network mainnet; the buyer's node is on
+// x402-exact-lnbtc.json's mainnet network.
+describe("an MPP Lightning charge whose slot challenge lacks the invoice the seller's node writes after H", () => {
+  it("is chosen by the challenge's own checks on the account's network, and its agreement paid", async () => {
+    Date.now = () => B.fixed.now * 1000;
+    const issued: MppChallenge = (SC.unplaced.rows as Loose[]).find((r) => r.case.startsWith("mpp/charge/lightning:")).issued;
+    const atr = JSON.parse(new TextDecoder().decode(fromHex(B.fixed.A)));
+    atr.mpp = mppTie([AGREEMENT, issued])[1];
+    const bytes = new TextEncoder().encode(JSON.stringify(atr));
+    const h = sha256(bytes);
+    const agreement = placed(AGREEMENT, h, 0, "agreement");
+    const fetch = seller(bytes, h, requiredFor(h), [agreement]);
+    const node = counting(`${LN.fixed.offer.network}:${LN.fixed.payee}`, async () => {
+      throw new Error("the node is not called before the charge is served");
+    });
+    const agreementSigner = counting(B.fixed.account, async (r: SigningRequest) => payer.signTypedData((r as { typedData: unknown }).typedData as TypedDataDefinition));
+    const asked: ToSign[] = [];
+    const out: Loose = await transact([agreement], bindingOf("mpp/charge/lightning"), node, fetch, {
+      approver: (t) => (asked.push(t), true),
+      resourceRequest: RESOURCE,
+      agreementSigner,
+    });
+    expect(out.decline).toBeUndefined();
+    expect([out.charge, out.legalContext, out.agreement?.atrHash]).toEqual(["mpp/1", `lcp:sha256:${h}`, h]);
+    expect([asked.map((a) => [a.act, a.pairing]), node.requests.length, agreementSigner.requests.length, fetch.paid]).toEqual([
+      [["agreement", "x402/exact/eip155/eip3009"]],
+      0,
+      1,
+      1,
+    ]);
   });
 });
 

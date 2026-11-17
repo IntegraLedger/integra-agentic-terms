@@ -468,9 +468,11 @@ class Approval:
     inputs: Inputs
 
 
-def steps_of(unsigned: object) -> int:
-    """The number of signings a build takes: two where it holds a funding and the voucher that follows it, else one."""
-    return 2 if callable(getattr(unsigned, "voucher", None)) and hasattr(unsigned, "funding") else 1
+def steps_of(piece: object, unsigned: object) -> int:
+    """The number of signings a build takes, as its piece declares it (steps); one where the piece declares none."""
+    steps = getattr(piece, "steps", None)
+    n = steps(unsigned) if callable(steps) else None
+    return n if isinstance(n, int) and not isinstance(n, bool) and n > 1 else 1
 
 
 def _now() -> int:

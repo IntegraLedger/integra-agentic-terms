@@ -12,6 +12,7 @@ import { startOf, summaryOf, type Opened } from "./summary.js";
 import type {
   Approver,
   Binding,
+  BuyerPiece,
   Ceilings,
   Chosen,
   DeclineCode,
@@ -679,9 +680,10 @@ function copyOf<T>(v: T): T {
   return v;
 }
 
-/** The number of signings a build takes: two where it holds a funding and the voucher that follows it, else one. */
-export function stepsOf(unsigned: unknown): number {
-  return isObject(unsigned) && typeof unsigned["voucher"] === "function" && Object.hasOwn(unsigned, "funding") ? 2 : 1;
+/** The number of signings a build takes, as its piece declares it (`steps`); one where the piece declares none. */
+export function stepsOf(piece: BuyerPiece, unsigned: unknown): number {
+  const n = piece.steps?.(unsigned);
+  return typeof n === "number" && Number.isSafeInteger(n) && n > 1 ? n : 1;
 }
 
 /**

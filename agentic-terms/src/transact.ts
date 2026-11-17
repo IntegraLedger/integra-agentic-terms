@@ -16,6 +16,7 @@ import {
   declined,
   fetchAtr,
   gate,
+  givenChoice,
   hasAccount,
   isAgreementOnly,
   isFullCoverage,
@@ -289,13 +290,13 @@ const OPTION_KEYS: readonly string[] = [
  * Whether `transact`'s options are an object holding `approver` (a function) and `resourceRequest` (an object), and
  * only these optional members: `inputs` (an object), `ceilings` (rule 8's form for `pairing`), `legalContext` (a
  * string), `agreementSigner` (an object with a `sign` function and a string `account`), `approved` (an object),
- * `signal` (an `AbortSignal`) and `chosen` (an object).
+ * `signal` (an `AbortSignal`) and `chosen` (of `confirm`'s `chosen` form for `pairing`).
  */
 function optionsOk(options: unknown, pairing: string): options is TransactOptions {
   if (!isObject(options) || !Object.keys(options).every((k) => OPTION_KEYS.includes(k))) return false;
   const { approver, resourceRequest, inputs, ceilings, legalContext, agreementSigner, approved, signal, chosen } = options;
   if (typeof approver !== "function" || !isObject(resourceRequest)) return false;
-  if (chosen !== undefined && !isObject(chosen)) return false;
+  if (chosen !== undefined && givenChoice(chosen, pairing) === undefined) return false;
   if (inputs !== undefined && !isObject(inputs)) return false;
   if (!isCeilings(ceilings, pairing)) return false;
   if (legalContext !== undefined && typeof legalContext !== "string") return false;

@@ -140,9 +140,12 @@ class Finished:
 
 @dataclass(frozen=True, slots=True)
 class Next:
-    """The next request of a payment signed in steps."""
+    """The next request of a payment signed in steps, with its summary, the authority signing it grants (terms'
+    profile buyer-gate.md, rule 13), which finish computes before it returns the request, and the hash of the
+    bytes."""
 
     next: dict[str, Any]
+    summary: "Summary"
     h: AtrHash
 
 

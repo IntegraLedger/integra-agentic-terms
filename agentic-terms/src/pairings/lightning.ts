@@ -4,7 +4,7 @@
  */
 import type { Refusal } from "@integraledger/lcp/core";
 import { decodeBolt11, type LnMppUnsigned } from "@integraledger/lcp/lightning";
-import type { MppChallenge } from "@integraledger/lcp/mpp";
+import { pairingsOf, type MppChallenge } from "@integraledger/lcp/mpp";
 import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature } from "../types.js";
 import { accountOf, choiceOf, inputsOf, isObject, isRefusal, refuse } from "./common.js";
 import { offers, requestOf } from "./mpp.js";
@@ -31,8 +31,36 @@ function invoiceOf(c: MppChallenge, session: boolean): unknown {
 }
 
 /**
- * The MPP Lightning piece: the first challenge offering the pairing whose invoice's BOLT11 currency is the account's
- * `lnbtc` network's. A session's return invoice is the buyer's input, and rides in the build's choice.
+ * The BOLT11 currency of each network MPP Lightning names in `methodDetails.network`, as the protocol package's checks
+ * of a challenge read it: `mainnet` bc, `signet` tbs, `regtest` bcrt.
+ */
+const MPP_LN_CURRENCY: { readonly [network: string]: string } = { mainnet: "bc", signet: "tbs", regtest: "bcrt" };
+
+/**
+ * The BOLT11 currency a challenge offering the pairing is paid in. A placed challenge, which `pairingsOfPlaced` names
+ * the pairing for: its invoice's. A challenge as issued, which the ATR's binding slot holds without the invoice the
+ * seller's node writes after H (lcp profile `mpp-charge.md`, rule 5), and which `pairingsOf` names the pairing for (it
+ * refuses a challenge whose `opaque` carries H, so no challenge the seller placed is read so): the currency of the
+ * network its `methodDetails.network` names. Undefined for any other, an issued challenge naming no network among them.
+ */
+async function currencyOf(c: MppChallenge, pairing: string, session: boolean): Promise<string | undefined> {
+  const invoice = invoiceOf(c, session);
+  if (offers(c, pairing)) {
+    if (typeof invoice !== "string") return undefined;
+    const b = await decodeBolt11(invoice);
+    return isRefusal(b) ? undefined : b.currency;
+  }
+  if (invoice !== undefined) return undefined;
+  const named = pairingsOf(c);
+  if (isRefusal(named) || !named.some((p) => p === pairing)) return undefined;
+  const d = requestOf(c)?.["methodDetails"];
+  const network = isObject(d) ? d["network"] : undefined;
+  return typeof network === "string" && Object.hasOwn(MPP_LN_CURRENCY, network) ? MPP_LN_CURRENCY[network] : undefined;
+}
+
+/**
+ * The MPP Lightning piece: the first challenge offering the pairing whose BOLT11 currency is the account's `lnbtc`
+ * network's (`currencyOf`). A session's return invoice is the buyer's input, and rides in the build's choice.
  */
 export function lnMppPiece(pairing: string, session: boolean): BuyerPiece {
   return Object.freeze({
@@ -44,11 +72,7 @@ export function lnMppPiece(pairing: string, session: boolean): BuyerPiece {
       const challenges = isObject(offer) && Array.isArray(offer["challenges"]) ? (offer["challenges"] as MppChallenge[]) : [];
       let challenge: MppChallenge | undefined;
       for (const c of challenges) {
-        if (!offers(c, pairing)) continue;
-        const invoice = invoiceOf(c, session);
-        if (typeof invoice !== "string") continue;
-        const b = await decodeBolt11(invoice);
-        if (!isRefusal(b) && b.currency === currency) {
+        if ((await currencyOf(c, pairing, session)) === currency) {
           challenge = c;
           break;
         }

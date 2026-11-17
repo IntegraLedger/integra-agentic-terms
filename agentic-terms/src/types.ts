@@ -415,6 +415,12 @@ export interface BuyerPiece {
    * push funding, whose answer carries the receipt of the funds it sent.
    */
   movedBy?(signature: Signature): boolean;
+  /**
+   * The number of signings the payment built takes, where it takes more than one: a session's funding, then its first
+   * voucher; Verifiable Intent Immediate's agent payload, then the checkout mandate over it. Absent where every build
+   * takes one. The gate hands the approver each signing's index and this count.
+   */
+  steps?(unsigned: unknown): number;
 }
 
 export type { AtrHash };

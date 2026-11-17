@@ -196,6 +196,11 @@ class CardMastercardViImmediatePiece(_SignedCardPiece):
             return {"kind": "vi-checkout-mandate", **unsigned}
         return {"kind": "vi-checkout", **unsigned}
 
+    def steps(self, unsigned: Any) -> int:
+        """One signing on a mandate the seller's checkout_jwt names; two on the agent's payload, then the mandate over
+        it."""
+        return 1 if "checkoutMandate" in unsigned else 2
+
     def complete(self, unsigned: Any, signature: Signature, chosen: Chosen) -> dict[str, Any] | Step | Refusal:
         if "checkoutMandate" in unsigned:
             return _l2(signature)

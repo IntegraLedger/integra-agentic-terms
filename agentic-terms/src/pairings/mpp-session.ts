@@ -63,6 +63,7 @@ export function mppSessionPiece(pairing: string): BuyerPiece {
     choice: mppChoice,
     request: fundingRequest,
     complete: sessionComplete,
+    steps: () => 2,
   });
 }
 
