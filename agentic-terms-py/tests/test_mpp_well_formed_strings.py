@@ -9,14 +9,15 @@ from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_CHARGE_EVM_AUTHORIZATION, Declined, Refusal, confirm
+from integraledger_terms import MPP_CHARGE_EVM_AUTHORIZATION, Declined, Refusal
+from support import confirm
 from integraledger_terms import _gate
 from integraledger_terms.bindings._mpp import challenge_bound, check_challenge
 from integraledger_terms.pieces._mpp import pairings_of_placed
 
 from breadth import ABC, H, LINK, run
 from mpp_docs import MC, issued, placed_doc
-from support import load, serving
+from support import load, piece_confirm, serving
 
 LONE = "\ud800"
 AUTH = load("mpp-charge-evm-authorization.json")["fixed"]
@@ -42,9 +43,9 @@ def test_a_realm_with_no_utf8_form_is_challenge_malformed_when_the_challenge_is_
 
 
 def test_through_the_gate_a_realm_with_no_utf8_form_offers_nothing_and_nothing_is_fetched() -> None:
+    # The control, read, chosen and built by the pairing's own steps over the vectors' abc, with no gate.
     own = placed_doc(issued("evm", "charge", MC["fixed"]["R_E"]), H, LINK)[0]
-    link = serving(ABC)
-    assert not isinstance(run(lambda c: confirm([own], MPP_CHARGE_EVM_AUTHORIZATION, ACCOUNT, c, {"tokenDomain": AUTH["tokenDomain"]}), link), Declined)
+    assert not isinstance(piece_confirm([own], MPP_CHARGE_EVM_AUTHORIZATION, ACCOUNT, {"tokenDomain": AUTH["tokenDomain"]}), Declined)
     bad = {**own, "realm": own["realm"] + LONE}
     link = serving(ABC)
     out = run(lambda c: confirm([bad], MPP_CHARGE_EVM_AUTHORIZATION, ACCOUNT, c, {"tokenDomain": AUTH["tokenDomain"]}), link)

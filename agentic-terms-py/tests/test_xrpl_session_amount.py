@@ -11,7 +11,8 @@ from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_SESSION_XRPL, Confirmed, Declined, Refusal, confirm, transact
+from integraledger_terms import MPP_SESSION_XRPL, Confirmed, Declined, Refusal
+from support import confirm, piece_confirm, transact
 from integraledger_terms.bindings._mpp import pairings_of
 
 from breadth import ABC, Recording, run
@@ -76,6 +77,6 @@ def test_an_amount_that_is_not_a_u64_of_drops_is_declined_before_the_signer(name
 def test_a_u64_of_drops_is_offered_and_the_opening_reaches_the_signer(name: str, amount: str) -> None:
     doc = with_amount(amount)
     assert pairings_of(issued(doc)) == ("mpp/session/xrpl", "mpp/session/xrpl/stock")
-    out = run(lambda c: confirm(doc, MPP_SESSION_XRPL, B2["account"], c, B2["inputs"]), serving(ABC))
+    out = piece_confirm(doc, MPP_SESSION_XRPL, B2["account"], B2["inputs"])
     assert isinstance(out, Confirmed), out
     assert out.request is not None and out.request["kind"] == "xrpl-session-open"

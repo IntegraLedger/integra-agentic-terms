@@ -73,13 +73,14 @@ def eip712(fixed: dict[str, Any]) -> Callable[[Any], str]:
     return answer
 
 
-def doc_of(fixed: dict[str, Any]) -> dict[str, Any]:
-    """The seller's document for the fixed option, as the pairing's advertise places H and the link."""
-    return x402_doc(fixed["option"], fixed["resource"])
+def doc_of(fixed: dict[str, Any], h: str = H) -> dict[str, Any]:
+    """The seller's document for the fixed option, as the pairing's advertise places h (the vectors' H) and the link."""
+    return x402_doc(fixed["option"], fixed["resource"], h)
 
 
 def eip712_pairing(binding: Binding, fixed: dict[str, Any]) -> Pairing:
-    return Pairing(binding, doc_of(fixed), f"{fixed['option']['network']}:{fixed['payer']}", eip712(fixed))
+    return Pairing(binding, doc_of(fixed), f"{fixed['option']['network']}:{fixed['payer']}", eip712(fixed),
+                   placed=lambda h: doc_of(fixed, h))  # fmt: skip
 
 
 def choice(fixed: dict[str, Any], option: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -186,18 +187,21 @@ def tooling(manager: str) -> Callable[[Any], dict[str, str]]:
         assert request["kind"] == "erc7710", request
         salt = int(request["salt"], 16)
         signature = signed_leaf(salt)
-        assert signature == EV8["expectSignature"]
         context = context_of([delegation_tuple(SALT_FIXED["leaf"], salt, signature)])
         assert (len(context) - 2) // 2 == EV8["expectContextBytes"]
-        assert "0x" + hashlib.sha256(bytes.fromhex(context[2:])).hexdigest() == EV8["expectContextSha256"]
+        # EV8's signature and context are over the vectors' H as the salt; through the gate over A the salt is A's hash.
+        if salt == int(H, 16):
+            assert signature == EV8["expectSignature"]
+            assert "0x" + hashlib.sha256(bytes.fromhex(context[2:])).hexdigest() == EV8["expectContextSha256"]
         return {"delegationManager": manager, "permissionContext": context, "delegator": SALT_FIXED["payer"]}
 
     return answer
 
 
 def erc7710_pairing(binding: Binding, manager: str) -> Pairing:
+    """A delegation signs no end: the gate pays it only where the caller raises its ceiling to no-end."""
     return Pairing(binding, doc_of(SALT_FIXED), f"{SALT_FIXED['option']['network']}:{SALT_FIXED['payer']}",
-                   tooling(manager))  # fmt: skip
+                   tooling(manager), placed=lambda h: doc_of(SALT_FIXED, h), ceilings={binding.id: "no-end"})  # fmt: skip
 
 
 def erc7710_inspect(request: Any) -> None:

@@ -3,6 +3,7 @@ payment identifier, B10 and B16 where the TypeScript gate's tests run them), and
 Every expected value is the pairing's vector file's; the signers answer with the values those files publish, or with a
 key generated here."""
 
+import asyncio
 import base64
 import copy
 import hashlib
@@ -13,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from integraledger_terms import X402_EXACT_APTOS, X402_EXACT_CARDANO, X402_EXACT_CASPER, X402_EXACT_CCD, X402_EXACT_SUI, X402_EXACT_POLKADOT_LCP_ASSETS_REMARK, X402_EXACT_STARKNET, Declined, Refusal, Transacted, _gate, transact
+from integraledger_terms import X402_EXACT_APTOS, X402_EXACT_CARDANO, X402_EXACT_CASPER, X402_EXACT_CCD, X402_EXACT_SUI, X402_EXACT_POLKADOT_LCP_ASSETS_REMARK, X402_EXACT_STARKNET, Declined, Finished, Refusal, _gate
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._cbor import CborMap, decode_cbor, is_tag, map_get
 from integraledger_terms.bindings._codec import b58_encode, canonical_json
@@ -30,8 +31,8 @@ from integraledger_terms.bindings.x402_exact_sui import decode_sui_tx, sui_carri
 from integraledger_terms.bindings.x402_exact_starknet import MASK_250, SELECTOR_TRANSFER, chain_id_felt, sn_nonce
 
 import ed25519
-from breadth import ABC, LINK, Pairing, Recording, build_and_sign, code, link_calls, offered, plant, run, x402_doc
-from support import load, serving
+from breadth import LINK, Pairing, Recording, build_and_sign, code, link_calls, offered, plant, x402_doc
+from support import load, piece_transact
 
 EVM_ACCOUNT = "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 PAYMENT_ID = re.compile(r"[A-Za-z0-9_-]{32}")
@@ -53,12 +54,13 @@ def http_doc(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def payment_identifier(p: Pairing) -> None:
-    """B6 · payment identifier: appended to the echoed extension where the challenge advertises it."""
+    """B6 · payment identifier: appended to the echoed extension where the challenge advertises it, paid by the pairing's
+    own steps over the vectors' abc, with no gate."""
     doc = copy.deepcopy(p.doc)
     doc["extensions"]["payment-identifier"] = {"info": {}, "schema": {}}
     signer = Recording(p.account, p.answer)
-    out = run(lambda c: transact(doc, offered(p.binding), signer, c, inputs=p.inputs), serving(ABC))
-    assert isinstance(out, Transacted) and out.signed is not None, out
+    out = asyncio.run(piece_transact(doc, offered(p.binding), signer, p.inputs))
+    assert isinstance(out, Finished) and out.signed is not None, out
     assert PAYMENT_ID.fullmatch(out.signed["extensions"]["payment-identifier"]["info"]["id"])
 
 

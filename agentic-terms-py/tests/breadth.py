@@ -1,6 +1,7 @@
 """What the breadth rows share, as the TypeScript gate's tests do: the ATR bytes the vectors hash, the seller's link, a
 fetch stub, a recording signer, the x402 document a pairing's advertise places, and the two rows every pairing adds: B2
-(the plant) and B6 (build and sign)."""
+(the plant) and B6 (build and sign). The vectors' ATR is lcp's stand-in abc, which the gate declines at its parse: B6
+builds and signs by the pairing's own steps over it, and pays through the gate over buyer.json's fixed.A."""
 
 import asyncio
 import copy
@@ -11,6 +12,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+import integraledger_terms as _terms
+from integraledger_terms import _gate
 from integraledger_terms._types import coverage_of
 from integraledger_terms import (
     Advertised,
@@ -21,18 +24,28 @@ from integraledger_terms import (
     Declined,
     Finished,
     Json,
-    Next,
     Transacted,
     check,
-    confirm,
-    finish,
-    transact,
+)
+from support import confirm, transact
+
+from support import (
+    AGREEMENT_BASE,
+    HASH_A,
+    RESOURCE_REQUEST,
+    STAND_IN,
+    A,
+    Link,
+    approve_all,
+    load,
+    piece_confirm,
+    receipt_for,
+    serving,
+    summary_pending,
 )
 
-from support import AGREEMENT_BASE, Link, load, receipt_for, serving
-
 # "abc", whose SHA-256 is the vectors' H (FIPS 180-2 B.1); "abd", one byte changed, for the plant.
-ABC = b"abc"
+ABC = STAND_IN
 ABD = b"abd"
 H = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 # The vectors' link for H, a random token's path; the agreement URL, a random token's path too.
@@ -70,6 +83,11 @@ class Pairing:
     # The test signer's answer to the request the pairing builds.
     answer: Answer
     inputs: Mapping[str, Any] | None = None
+    # The same document as the pairing's advertise places it for another hash: given, B6 also pays the pairing through
+    # the gate over A, its document placed for A's hash (through_gate).
+    placed: Callable[[str], Any] | None = None
+    # The ceilings the payment through the gate is given, where the profile asks the caller to raise one.
+    ceilings: Mapping[str, Any] | None = None
 
 
 class Offered:
@@ -142,62 +160,126 @@ def plant(p: Pairing) -> None:
     assert code(confirmed) == "hash-mismatch", confirmed
 
 
-def answer_of(p: Pairing, request: Any) -> Any:
-    out = p.answer(request)
-    if isinstance(out, Awaitable):
+def through_gate(p: Pairing, count: int) -> None:
+    """The pairing paid through the gate over A, its document placed for A's hash: where SUMMARY_PENDING lists the
+    pairing under the kind of its request, declined summary-missing with no signer call; otherwise signed count
+    times, returning A with, for a pairing at coverage none, the agreement's receipt for A's hash, and a payment check
+    reads that hash from."""
+    assert p.placed is not None
+    doc = p.placed(HASH_A)
+    signer = Recording(p.account, p.answer)
+    out = run(
+        lambda c: _terms.transact(
+            doc, offered(p.binding), signer, c, approver=approve_all, resource_request=RESOURCE_REQUEST,
+            inputs=p.inputs, ceilings=p.ceilings,
+        ),
+        serving(A),
+    )  # fmt: skip
+    if summary_pending(out):
+        assert signer.requests == []
+        return
+    assert isinstance(out, Transacted), out
+    assert len(signer.requests) == count
+    assert out.atr_bytes == A and out.h == HASH_A
+    assert out.agreement == (None if coverage_of(p.binding) == "full" else receipt(HASH_A))
+    if out.signed is not None:
+        assert check(A, out.signed, p.binding, out.landed) == Checked(h=HASH_A)
 
-        async def wait() -> Any:
-            return await out
 
-        return asyncio.run(wait())
-    return out
+# THE PIECE-ONLY SET: the pairings a B6 test pays by the pairing's own steps alone, over abc, with no document placed for
+# A's hash to pay them through the gate (Pairing.placed), each with why it has no gate-level run here. build_and_sign and
+# confirms_only assert that a pairing they cannot place is listed, so none is skipped unseen; whoever places one removes
+# it.
+_NO_RUN = "not placed for A: no gate-level run yet"
+PIECE_ONLY: Mapping[str, str] = {
+    "ack/payment-request": "K2's Payment Request token is signed with the id of H(abc), which the read holds the legal context to",
+    "card/mastercard-vi/autonomous": "C7's agent chain is signed over the checkout mandate for H(abc); none is published for another H",
+    "card/mastercard-vi/immediate": "C6's user credential is signed over the checkout mandate for H(abc); none is published for another H",
+    "card/seller-reference": _NO_RUN,
+    "card/visa-tap": "C2's TAP answer signs a nonce built for H(abc); no answer signed for another H is published",
+    "mpp/charge/card": _NO_RUN,
+    "mpp/charge/evm/authorization": _NO_RUN,
+    "mpp/charge/evm/permit2": _NO_RUN,
+    "mpp/charge/lcp/hedera": _NO_RUN,
+    "mpp/charge/lightning": "L3's invoice commits to H(abc), and the protocol package refuses to place it again for another H",
+    "mpp/charge/nearintents": _NO_RUN,
+    "mpp/charge/solana": _NO_RUN,
+    "mpp/charge/stripe": _NO_RUN,
+    "mpp/charge/usdc/evm": _NO_RUN,
+    "mpp/charge/usdc/gateway": _NO_RUN,
+    "mpp/charge/usdc/solana": _NO_RUN,
+    "mpp/charge/usdc/stacks": _NO_RUN,
+    "mpp/charge/xrpl": _NO_RUN,
+    "mpp/session/evm": _NO_RUN,
+    "mpp/session/lightning": "the deposit invoice commits to H(abc), and the protocol package refuses to place it again for another H",
+    "mpp/session/tempo": _NO_RUN,
+    "mpp/session/xrpl": _NO_RUN,
+    "mpp/subscription/stripe": _NO_RUN,
+    "mpp/subscription/tempo": _NO_RUN,
+    "x402/batch-settlement/eip155": _NO_RUN,
+    "x402/batch-settlement/solana": _NO_RUN,
+    "x402/exact/algorand": _NO_RUN,
+    "x402/exact/aptos": _NO_RUN,
+    "x402/exact/cardano": _NO_RUN,
+    "x402/exact/cardano/lock": _NO_RUN,
+    "x402/exact/casper": _NO_RUN,
+    "x402/exact/ccd": _NO_RUN,
+    "x402/exact/hedera": _NO_RUN,
+    "x402/exact/hedera/transfer-executor": _NO_RUN,
+    "x402/exact/near": _NO_RUN,
+    "x402/exact/polkadot/lcp-assets-remark": _NO_RUN,
+    "x402/exact/solana": _NO_RUN,
+    "x402/exact/starknet": _NO_RUN,
+    "x402/exact/sui": _NO_RUN,
+    "x402/exact/tron/lcp-trc20-memo": _NO_RUN,
+    "x402/exact/tvm": _NO_RUN,
+    "x402/exact/xrpl": _NO_RUN,
+    "x402/upto/solana": _NO_RUN,
+}
 
 
 def build_and_sign(p: Pairing, inspect: Callable[[Any], None]) -> tuple[dict[str, Any], Any]:
-    """B6: confirm over abc gives the request the pairing builds with H, which inspect checks against the vectors;
-    finish with the test signer's answer returns a payment whose bound hash is H; transact signs as many times;
-    check confirms that payment against abc and declines it against abd. Returns the payment and the request."""
-    binding = offered(p.binding)
-    confirmed = run(lambda c: confirm(p.doc, binding, p.account, c, p.inputs), serving(ABC))
+    """B6, by the pairing's own steps with no gate: the build with the vectors' H gives the request, which inspect
+    checks against the vectors; the test signer's answers complete a payment whose bound hash is H, the signer called
+    once per step; check confirms that payment against abc and declines it against abd. Where the pairing gives placed,
+    it is then paid through the gate over A (through_gate); where it gives none, PIECE_ONLY lists it. Returns the
+    payment and the request."""
+    confirmed = piece_confirm(p.doc, offered(p.binding), p.account, p.inputs)
     assert isinstance(confirmed, Confirmed), confirmed
     assert confirmed.h == H
     assert confirmed.request is not None, "nothing to sign"
     inspect(confirmed.request)
 
-    chosen = copy.deepcopy(confirmed.chosen)
-    answers = [answer_of(p, confirmed.request)]
-    done = finish(ABC, chosen, answers[0], p.binding)
-    while isinstance(done, Next):
-        answers.append(answer_of(p, done.next))
-        done = finish(ABC, chosen, list(answers), p.binding)
+    signer = Recording(p.account, p.answer)
+    done = asyncio.run(_gate.pay(p.binding, copy.deepcopy(confirmed.chosen), signer, ABC))
     assert isinstance(done, Finished), done
     assert done.h == H
+    assert signer.requests[0] == confirmed.request
 
-    signer = Recording(p.account, p.answer)
-    whole = run(lambda c: transact(p.doc, binding, signer, c, inputs=p.inputs), serving(ABC))
-    assert isinstance(whole, Transacted), whole
-    assert len(signer.requests) == len(answers)
-    assert whole.atr_bytes == ABC
-    assert whole.agreement == (None if coverage_of(p.binding) == "full" else receipt())
-
-    # What the buyer holds to confirm later: the payment, with the landed receipt finish returns beside it, if any.
-    assert whole.landed == done.landed
+    # What the buyer holds to confirm later: the payment, with the landed receipt beside it, if any.
     assert check(ABC, done.signed, p.binding, done.landed) == Checked(h=H)
     assert code(check(ABD, done.signed, p.binding, done.landed)) == "signed-not-bound"
+    if p.placed is not None:
+        through_gate(p, len(signer.requests))
+    else:
+        assert p.binding.id in PIECE_ONLY, f"{p.binding.id} is paid by its own steps alone and PIECE_ONLY does not list it"
     return done.signed, confirmed.request
 
 
 def confirms_only(p: Pairing) -> Confirmed:
-    """B6 for a pairing with nothing for the buyer to sign: confirm gives request None, and transact gives signed
-    None without calling the signer."""
-    binding = offered(p.binding)
-    confirmed = run(lambda c: confirm(p.doc, binding, p.account, c, p.inputs), serving(ABC))
+    """B6 for a pairing with nothing for the buyer to sign, by its own steps with no gate: the build with the vectors' H
+    gives request None, and the payment gives nothing signed without calling the signer. Where the pairing gives
+    placed, it is then paid through the gate over A (through_gate); where it gives none, PIECE_ONLY lists it."""
+    confirmed = piece_confirm(p.doc, offered(p.binding), p.account, p.inputs)
     assert isinstance(confirmed, Confirmed), confirmed
     assert confirmed.h == H and confirmed.request is None
     signer = Recording(p.account, p.answer)
-    whole = run(lambda c: transact(p.doc, binding, signer, c, inputs=p.inputs), serving(ABC))
-    assert isinstance(whole, Transacted) and whole.signed is None and whole.h == H, whole
+    assert asyncio.run(_gate.pay(p.binding, confirmed.chosen, signer, ABC)) is None
     assert signer.requests == []
+    if p.placed is not None:
+        through_gate(p, 0)
+    else:
+        assert p.binding.id in PIECE_ONLY, f"{p.binding.id} is paid by its own steps alone and PIECE_ONLY does not list it"
     return confirmed
 
 

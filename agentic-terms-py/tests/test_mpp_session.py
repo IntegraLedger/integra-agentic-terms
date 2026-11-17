@@ -23,16 +23,15 @@ from integraledger_terms import (
     Binding,
     Confirmed,
     Declined,
-    Transacted,
+    Finished,
     BatchUnsigned,
     Refusal,
     Within,
-    confirm,
     open_channel,
     record_charge,
-    transact,
     within,
 )
+from support import confirm
 from integraledger_terms import _gate
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._mpp import pairings_of
@@ -42,7 +41,7 @@ from integraledger_terms.bindings.mpp_session import evm_channel_id
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, plant, run
 from mpp_docs import b64u, http_doc, issued, placed_doc
-from support import digest, load, serving, sign_typed
+from support import digest, load, piece_confirm, piece_transact, serving, sign_typed
 
 EVM = load("mpp-session-evm.json")
 TEMPO = load("mpp-session-tempo.json")
@@ -781,7 +780,7 @@ def test_mpp_session_tempo_a_v1_session_naming_no_chain_pays_on_4217() -> None:
     request = json.loads(TF["requestV1"])
     del request["methodDetails"]["chainId"]
     v1: Any = placed_doc(issued("tempo", "session", json.dumps(request)), H, LINK)
-    out = run(lambda c: confirm(v1, MPP_SESSION_TEMPO, f"eip155:4217:{TF['payer']}", c, {"deposit": TF["deposit"]}), serving(ABC))
+    out = piece_confirm(v1, MPP_SESSION_TEMPO, f"eip155:4217:{TF['payer']}", {"deposit": TF["deposit"]})
     assert isinstance(out, Confirmed), out
     assert out.request is not None and out.request["kind"] == "tempo-call"
     assert out.request["chainId"] == 4217
@@ -916,9 +915,9 @@ def test_mpp_subscription_tempo_b16_other_namespace_and_chain() -> None:
 
 def tempo_hold() -> tuple[Pairing, dict[str, Any]]:
     p = tempo_pairing(TempoAnswer())
-    opened = run(lambda c: transact(p.doc, p.binding, Recording(p.account, p.answer), c, inputs=p.inputs), serving(ABC))
-    assert isinstance(opened, Transacted) and opened.signed is not None
-    hold = open_channel(opened.atr_bytes, opened.signed, MPP_SESSION_TEMPO)
+    opened = asyncio.run(piece_transact(p.doc, p.binding, Recording(p.account, p.answer), p.inputs))
+    assert isinstance(opened, Finished) and opened.signed is not None
+    hold = open_channel(ABC, opened.signed, MPP_SESSION_TEMPO)
     assert not isinstance(hold, Declined), hold
     return p, hold
 

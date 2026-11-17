@@ -14,7 +14,7 @@ from integraledger_terms import X402_EXACT_NEAR, Confirmed, Declined, Refusal, _
 import ed25519
 from breadth import Pairing, build_and_sign, link_calls, plant, x402_doc
 from hbar_support import EVM_ACCOUNT, b10, b16, identifier_row, inputs_row
-from support import hexb, load
+from support import hexb, load, piece_confirm
 
 N = load("x402-exact-near.json")
 F: dict[str, Any] = N["fixed"]
@@ -85,14 +85,15 @@ def caip10(address: str) -> str:
 
 
 def test_x402_exact_near_accounts() -> None:
-    # An account whose address is a NEAR account id is chosen, its link fetched, and the build pays from it; any other
-    # has no payable option, and nothing is fetched.
+    # An account whose address is a NEAR account id is chosen, and the build with the vectors' H pays from it (by the
+    # pairing's own steps over abc, with no gate); any other has no payable option, and nothing is fetched.
     for address in NEAR_ACCOUNTS + NOT_NEAR_ACCOUNTS:
-        out, calls = link_calls(NEAR, f"{F['O']['network']}:{caip10(address)}")
         if address in NEAR_ACCOUNTS:
+            out = piece_confirm(NEAR.doc, NEAR.binding, f"{F['O']['network']}:{caip10(address)}", NEAR.inputs)
             assert isinstance(out, Confirmed) and out.chosen.choice["payer"] == address, (address, out)
-            assert out.request is not None and out.request["kind"] == "near-delegate" and calls == 1, (address, out)
+            assert out.request is not None and out.request["kind"] == "near-delegate", (address, out)
         else:
+            out, calls = link_calls(NEAR, f"{F['O']['network']}:{caip10(address)}")
             assert out == Declined("no-payable-option", "x402/no-payable-option") and calls == 0, (address, out)
 
 

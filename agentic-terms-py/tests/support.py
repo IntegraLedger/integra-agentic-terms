@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +14,23 @@ import pytest
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 
-from integraledger_terms import Advertised, AtrHash, Json, Refusal, Unsigned
+import integraledger_terms as _terms
+from integraledger_terms import (
+    Advertised,
+    AtrHash,
+    Confirmed,
+    Declined,
+    Finished,
+    HttpRequest,
+    Json,
+    Next,
+    Refusal,
+    ToApprove,
+    ToReturn,
+    ToSign,
+    Transacted,
+    Unsigned,
+)
 from integraledger_terms._types import AgreementData
 from integraledger_terms._types import Broadcaster
 
@@ -231,6 +248,8 @@ class StubBinding:
     id: str = "x402/exact/eip155/eip3009"
     coverage: str = "full"
     agreement: AgreementData | None = AgreementData(floor="0")
+    # The registry's agreementOn, for a pairing at coverage none: the agreement options its charge can follow.
+    agreement_on: str | None = None
     read_answer: Advertised | Refusal | None = None
     bound_answer: str | None = None
     built: list[str] = field(default_factory=list)
@@ -387,3 +406,174 @@ def msgpack_longer_forms(value: Msgpack) -> list[str]:
 
     walk(value)
     return out
+
+
+# ── The gate's required arguments, for a test whose subject is not the approval or the request.
+
+_HTTP0: dict[str, Any] = load("x402-request-commitment.json")["http"][0]["request"]
+# The buyer's own request: lcp's x402-request-commitment.json http[0] request, its body the UTF-8 bytes of its bodyUtf8.
+RESOURCE_REQUEST: HttpRequest = {
+    "method": _HTTP0["method"],
+    "target": _HTTP0["target"],
+    "body": _HTTP0["bodyUtf8"].encode("utf-8"),
+}
+
+
+def approve_all(to_sign: ToSign) -> bool:
+    """An approver approving every signing."""
+    return True
+
+
+# THE SUMMARY_PENDING SET, by the kind of request the pairing's build hands the signer: the pairings a test pays through
+# the gate whose request no summary of the profile's table reads yet (terms' profile buyer-gate.md, rule 13), so the gate
+# declines them summary-missing before any signer call. A test that pays one of them runs through the wrappers below,
+# which assert that decline and that no signer was called, and report the test as an expected failure naming the kind
+# and the pairing, never skipped silently; a pairing of the same kind that is not listed, such as one whose summary is
+# filled, fails instead. A change that fills a kind's summary for a pairing removes the pairing here.
+SUMMARY_PENDING: Mapping[str, frozenset[str]] = {
+    "acp-allowance": frozenset({"acp/checkout/delegated"}),
+    "ap2-checkout-mandate": frozenset({"ap2/checkout-mandate"}),
+    "eip712": frozenset(
+        {
+            "mpp/session/evm",
+            "mpp/session/tempo",
+            "x402/auth-capture/eip155/eip3009",
+            "x402/auth-capture/eip155/permit2",
+            "x402/exact/eip155/permit2",
+            "x402/upto/eip155/permit2",
+        }
+    ),
+    "ucp-checkout": frozenset({"ucp/booking/ap2-mandate", "ucp/checkout/ap2-mandate"}),
+    "xrpl-session-open": frozenset({"mpp/session/xrpl"}),
+}
+
+_MISSING = re.compile(r"The gate has no summary of the (.+) request of (.+)\.")
+
+
+def summary_pending(out: object) -> bool:
+    """Whether the gate declined summary-missing for a request of a kind and pairing SUMMARY_PENDING lists."""
+    if not isinstance(out, Declined) or out.code != "summary-missing":
+        return False
+    m = _MISSING.fullmatch(out.detail)
+    return m is not None and m.group(2) in SUMMARY_PENDING.get(m.group(1), frozenset())
+
+
+def _pending(out: object, signer_calls: int) -> None:
+    """Where the gate declined summary-missing for a request SUMMARY_PENDING lists: assert no signer was called
+    and report the test as an expected failure naming the kind and the pairing."""
+    if not summary_pending(out):
+        return
+    assert isinstance(out, Declined) and signer_calls == 0, out
+    m = _MISSING.fullmatch(out.detail)
+    assert m is not None
+    pytest.xfail(f"summary pending: the {m.group(1)} request of {m.group(2)}")
+
+
+class _Counted:
+    """A signer passed through as given, counting its calls."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.calls = 0
+
+    @property
+    def account(self) -> Any:
+        return getattr(self.inner, "account", None)
+
+    async def sign(self, request: Json) -> Any:
+        self.calls += 1
+        return await self.inner.sign(request)
+
+
+def _counted(signer: Any) -> Any:
+    return _Counted(signer) if callable(getattr(signer, "sign", None)) else signer
+
+
+async def transact(
+    doc: Any, binding: Any, signer: Any, fetch: httpx.AsyncClient, **options: Any
+) -> Transacted | ToApprove | ToReturn | Declined:
+    """The gate's transact with an approver approving every signing and RESOURCE_REQUEST where the test gives none,
+    and SUMMARY_PENDING's decline asserted (_pending)."""
+    given = {"approver": approve_all, "resource_request": RESOURCE_REQUEST, **options}
+    counted = _counted(signer)
+    agreement = given.get("agreement_signer")
+    counted_agreement = _counted(agreement) if agreement is not None else None
+    if counted_agreement is not None:
+        given["agreement_signer"] = counted_agreement
+    out = await _terms.transact(doc, binding, counted, fetch, **given)
+    calls = getattr(counted, "calls", 0) + getattr(counted_agreement, "calls", 0)
+    _pending(out, calls)
+    return out
+
+
+async def confirm(
+    doc: Any, binding: Any, account: Any, fetch: httpx.AsyncClient, inputs: Any = None, **options: Any
+) -> Confirmed | Declined:
+    """The gate's confirm with RESOURCE_REQUEST where the test gives none, and SUMMARY_PENDING's decline asserted."""
+    given = {"resource_request": RESOURCE_REQUEST, "inputs": inputs, **options}
+    out = await _terms.confirm(doc, binding, account, fetch, **given)
+    _pending(out, 0)
+    return out
+
+
+def finish(atr_bytes: Any, chosen: Any, signature: Any, binding: Any, **options: Any) -> Finished | Next | Declined:
+    """The gate's finish, SUMMARY_PENDING's decline of a later step's request asserted."""
+    out = _terms.finish(atr_bytes, chosen, signature, binding, **options)
+    _pending(out, 0)
+    return out
+
+
+# lcp's stand-in ATR "abc", whose SHA-256 (FIPS 180-2 B.1) is the H the protocol package's vectors build and sign over.
+# It is no JSON text, so the gate declines it atr-malformed at its parse: a test whose values its vectors computed over
+# that H confirms and pays by the pairing's own steps below, with no gate, and pays through the gate over A.
+STAND_IN = b"abc"
+
+
+def piece_confirm(
+    doc: Any, binding: Any, account: Any, inputs: Any = None, atr_bytes: bytes = STAND_IN
+) -> Confirmed | Declined:
+    """confirm by the pairing's own steps, with no gate and nothing fetched: its read of doc, its piece's choice of
+    option for the account, and its build with H the SHA-256 of atr_bytes, giving the request the signer is handed and
+    the choice kept, or the decline the gate gives each step's refusal. For a pairing at coverage none, chosen names
+    the agreement URL the offer names."""
+    from dataclasses import replace
+
+    from integraledger_terms import _gate
+    from integraledger_terms._core import atr_hash
+    from integraledger_terms._types import coverage_of
+
+    piece = _gate._piece(binding)
+    if piece is None:
+        return _gate._unsupported(binding)
+    read = binding.read(doc)
+    if isinstance(read, Refusal):
+        return Declined("offer-unreadable", read.code)
+    choice = piece.choose(read, account, inputs if inputs is not None else {}, _gate._now(), _gate._ref(), doc)
+    if isinstance(choice, Refusal):
+        return Declined("no-payable-option", choice.code)
+    chosen = choice if coverage_of(binding) == "full" or read.agreement is None else replace(choice, agreement=read.agreement)
+    h = atr_hash(atr_bytes)
+    unsigned = _gate._build(piece, binding, chosen, h, atr_bytes)
+    if isinstance(unsigned, Refusal):
+        if _gate._NOTHING_TO_SIGN.fullmatch(unsigned.code):
+            return Confirmed(chosen=chosen, request=None, atr_bytes=atr_bytes, h=h)
+        return Declined("offer-unreadable", unsigned.code)
+    request = piece.request(unsigned)
+    if isinstance(request, Refusal):
+        return Declined("offer-unreadable", request.code)
+    formed = None if request is None else _gate.json_form(request)
+    return Confirmed(chosen=_gate._kept(piece, chosen, unsigned), request=formed, atr_bytes=atr_bytes, h=h)
+
+
+async def piece_transact(
+    doc: Any, binding: Any, signer: Any, inputs: Any = None, atr_bytes: bytes = STAND_IN
+) -> Finished | Declined | None:
+    """transact by the pairing's own steps, with no gate: piece_confirm, then the signer once per step, and the payment
+    completed and held to the pairing's bound reading the hash of atr_bytes (the gate's pay). None where the pairing has
+    nothing for the buyer to sign. No agreement is paid, and nothing is shown or approved."""
+    from integraledger_terms import _gate
+
+    confirmed = piece_confirm(doc, binding, getattr(signer, "account", None), inputs, atr_bytes)
+    if isinstance(confirmed, Declined):
+        return confirmed
+    return await _gate.pay(binding, confirmed.chosen, signer, atr_bytes)

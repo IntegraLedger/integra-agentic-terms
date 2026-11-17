@@ -5,11 +5,12 @@ does."""
 import copy
 from typing import Any
 
-from integraledger_terms import X402_EXACT_XRPL, Confirmed, Declined, Refusal, confirm, finish
+from integraledger_terms import X402_EXACT_XRPL, Confirmed, Declined, Refusal
+from support import finish, piece_confirm
 from integraledger_terms.bindings import _xrpl
 
-from breadth import ABC, H, Pairing, build_and_sign, plant, run, x402_doc
-from support import load, serving
+from breadth import H, Pairing, build_and_sign, plant, x402_doc
+from support import load
 from xlm_support import EVM_ACCOUNT, b10, b16
 
 X = load("x402-exact-xrpl.json")
@@ -52,7 +53,7 @@ def test_x402_exact_xrpl_ticket_sequence_option_takes_ticket_sequence() -> None:
     option["extra"]["assetTransferMethod"] = "ticketSequence"
     doc = x402_doc(option, F["resource"])
     inputs = {k: v for k, v in V2["build"].items() if k != "sequence"} | {"ticketSequence": 9}
-    out = run(lambda c: confirm(doc, X402_EXACT_XRPL, XRPL.account, c, inputs), serving(ABC))
+    out = piece_confirm(doc, X402_EXACT_XRPL, XRPL.account, inputs)
     assert isinstance(out, Confirmed) and out.request is not None, out
     assert out.request["txJson"]["Sequence"] == 0 and out.request["txJson"]["TicketSequence"] == 9
 
@@ -138,7 +139,7 @@ def test_x402_exact_xrpl_agreed_refusals() -> None:
 
 def test_x402_exact_xrpl_a_blob_answered_in_0x_hex_is_declined_signed_not_bound() -> None:
     # The build's complete reads the signed blob as hex digits without 0x, as the XRP Ledger writes it.
-    out = run(lambda c: confirm(XRPL.doc, X402_EXACT_XRPL, XRPL.account, c, XRPL.inputs), serving(ABC))
+    out = piece_confirm(XRPL.doc, X402_EXACT_XRPL, XRPL.account, XRPL.inputs)
     assert isinstance(out, Confirmed), out
     done = finish(out.atr_bytes, out.chosen, "0x" + V2["blob"], X402_EXACT_XRPL)
     assert isinstance(done, Declined) and (done.code, done.detail) == ("signed-not-bound", "xrpl/blob-malformed"), done

@@ -24,16 +24,14 @@ from integraledger_terms import (
     Transacted,
     _gate,
     check,
-    confirm,
-    finish,
-    transact,
 )
+from support import confirm, finish, transact
 
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._batch_evm import CHANNEL_CONFIG_TYPEHASH, batch_channel_id, erc3009_deposit_nonce
 
 from breadth import ABC, ABD, H, LINK, Pairing, Recording, build_and_sign, code, never, offered, plant, receipt, run, x402_doc
-from support import load, serving
+from support import HASH_A, A, load, piece_confirm, serving
 
 BV = load("x402-batch-settlement.json")
 RESOURCE = BV["fixed"]["resource"]
@@ -142,8 +140,7 @@ def test_x402_batch_settlement_eip155_the_deposit() -> None:
     option = copy.deepcopy(E["option"])
     option["extra"]["minDeposit"] = "250000"
     with_min = x402_doc(option, RESOURCE)
-    confirmed = run(lambda c: confirm(with_min, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, c,
-                                      {**EVM_INPUTS, "deposit": "1"}), serving(ABC))  # fmt: skip
+    confirmed = piece_confirm(with_min, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, {**EVM_INPUTS, "deposit": "1"})
     assert isinstance(confirmed, Confirmed), confirmed
     assert confirmed.chosen.choice["deposit"] == "250000"
 
@@ -151,7 +148,7 @@ def test_x402_batch_settlement_eip155_the_deposit() -> None:
 def test_x402_batch_settlement_eip155_an_absent_authorization_salt_is_drawn_once() -> None:
     """An absent authorization salt is drawn once, kept in chosen, and finish rebuilds the same request."""
     no_salt = {k: v for k, v in EVM_INPUTS.items() if k != "authSalt"}
-    confirmed = run(lambda c: confirm(EVM_DOC, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, c, no_salt), serving(ABC))
+    confirmed = piece_confirm(EVM_DOC, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, no_salt)
     assert isinstance(confirmed, Confirmed) and confirmed.request is not None, confirmed
     salt = confirmed.chosen.choice["authSalt"]
     assert re.fullmatch(r"0x[0-9a-f]{64}", salt)
@@ -170,7 +167,7 @@ CF_ACCOUNT = "cloudflare:402:agent.example"
 def test_x402_batch_settlement_cloudflare_b6_the_build_is_the_payment() -> None:
     """The build is the payment; EC1's echoed legal context; no signer call; check against abc and abd."""
     binding = X402_BATCH_SETTLEMENT_CLOUDFLARE
-    confirmed = run(lambda c: confirm(CF_DOC, offered(binding), CF_ACCOUNT, c), serving(ABC))
+    confirmed = piece_confirm(CF_DOC, offered(binding), CF_ACCOUNT)
     assert isinstance(confirmed, Confirmed), confirmed
     assert confirmed.request is None
     done = finish(ABC, copy.deepcopy(confirmed.chosen), None, binding)
@@ -179,9 +176,11 @@ def test_x402_batch_settlement_cloudflare_b6_the_build_is_the_payment() -> None:
     assert done.signed["accepted"] == CF_OPTION
     assert done.signed["extensions"]["legalContext"]["info"] == BV["EC1"]["payload"]["extensions"]["legalContext"]["info"]
     signer = Recording(CF_ACCOUNT, never)
-    whole = run(lambda c: transact(CF_DOC, offered(binding), signer, c), serving(ABC))
+    # Through the gate over A, an ATR that is one JSON text, its document placed for A's hash: the agreement first, then
+    # the build, which is the payment, with no signer call.
+    whole = run(lambda c: transact(x402_doc(CF_OPTION, RESOURCE, HASH_A), offered(binding), signer, c), serving(A))
     assert isinstance(whole, Transacted), whole
-    assert whole.agreement == receipt()
+    assert whole.agreement == receipt(HASH_A)
     assert signer.requests == []
     assert check(ABC, done.signed, binding) == Checked(h=H)
     assert code(check(ABD, done.signed, binding)) == "signed-not-bound"
@@ -480,7 +479,7 @@ def test_eb4_permit2_deposit() -> None:
 
 
 def test_eb6_kinds_bound_and_plant() -> None:
-    confirmed = run(lambda c: confirm(EVM_DOC, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, c, EVM_INPUTS), serving(ABC))
+    confirmed = piece_confirm(EVM_DOC, X402_BATCH_SETTLEMENT_EIP155, EVM_ACCOUNT, EVM_INPUTS)
     assert isinstance(confirmed, Confirmed) and confirmed.request is not None
     done = finish(ABC, confirmed.chosen, evm_answer(confirmed.request), X402_BATCH_SETTLEMENT_EIP155)
     assert isinstance(done, Finished)

@@ -17,7 +17,8 @@ import httpx
 import pytest
 
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
-from integraledger_terms import Agreed, Confirmed, Declined, ToApprove, _gate, agree, confirm, transact
+from support import confirm, transact
+from integraledger_terms import Agreed, Confirmed, Declined, ToApprove, _gate, agree
 
 from support import A, ACCOUNT, BUYER, D, HASH_A, NOW, Chunks, CountingSigner, EthAccountSigner, Link
 

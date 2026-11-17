@@ -19,7 +19,8 @@ from breadth import Recording, run
 from support import BUYER, MIGRATING, PENDING, VECTORS, Link, migrating
 
 import integraledger_terms as terms
-from integraledger_terms import Checked, Declined, _gate, check, confirm, finish, open_channel, transact, within
+from integraledger_terms import Checked, Declined, _gate, check, open_channel, within
+from support import confirm, finish, transact
 
 BINDINGS: dict[str, Any] = {
     v.id: v for n in dir(terms) if n.isupper() and hasattr(v := getattr(terms, n), "id") and hasattr(v, "bound")

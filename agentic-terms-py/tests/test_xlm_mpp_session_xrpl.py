@@ -8,16 +8,16 @@ import hashlib
 import json
 from typing import Any
 
-from integraledger_terms import MPP_SESSION_XRPL, Declined, Refusal, Transacted, Within, open_channel, transact, within
+from integraledger_terms import MPP_SESSION_XRPL, Declined, Finished, Refusal, Within, open_channel, within
 from integraledger_terms.bindings import _xrpl
 from integraledger_terms.bindings._channel import ChannelRef
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 import ed25519
-from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, plant, run
+from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, plant
 from mpp_docs import placed_doc
-from support import hexb, load, serving
+from support import hexb, load, piece_transact
 from xlm_support import EVM_ACCOUNT, b16, mpp_b10
 
 V = load("mpp-session-hedera-solana-xrpl.json")
@@ -221,14 +221,14 @@ def test_an_opening_answered_in_0x_hex_is_declined_signed_not_bound() -> None:
         lambda r: {**answer(r), "signedBlob": "0x" + S["blob"]},
         lambda r: {"signedBlob": S["blob"], "claimSignature": claim_signature(r)},
     ):
-        out = run(lambda c: transact(SESSION.doc, MPP_SESSION_XRPL, Recording(SESSION.account, prefixed), c, inputs=SESSION.inputs), serving(ABC))
+        out = asyncio.run(piece_transact(SESSION.doc, MPP_SESSION_XRPL, Recording(SESSION.account, prefixed), SESSION.inputs))
         assert isinstance(out, Declined) and out.code == "signed-not-bound", out
 
 
 def test_a_claim_within_the_held_channel_is_answered_as_hex_digits_without_0x() -> None:
-    opened = run(lambda c: transact(SESSION.doc, MPP_SESSION_XRPL, Recording(SESSION.account, answer), c, inputs=SESSION.inputs), serving(ABC))
-    assert isinstance(opened, Transacted) and opened.signed is not None, opened
-    hold = open_channel(opened.atr_bytes, opened.signed, MPP_SESSION_XRPL)
+    opened = asyncio.run(piece_transact(SESSION.doc, MPP_SESSION_XRPL, Recording(SESSION.account, answer), SESSION.inputs))
+    assert isinstance(opened, Finished) and opened.signed is not None, opened
+    hold = open_channel(ABC, opened.signed, MPP_SESSION_XRPL)
     assert not isinstance(hold, Declined), hold
     assert hold["channel"] == S["expectChannel"]
     own = [{**V["SS1"]["xrpl"]["challenge"], "id": "seller-own-id"}]

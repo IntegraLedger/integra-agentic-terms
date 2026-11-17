@@ -8,11 +8,12 @@ from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_SESSION_EVM, Confirmed, Declined, Finished, Next, Refusal, _gate, confirm, finish
+from integraledger_terms import MPP_SESSION_EVM, Confirmed, Declined, Finished, Next, Refusal, _gate
+from support import finish, piece_confirm
 from integraledger_terms.bindings._channel import BatchUnsigned
 
-from breadth import ABC, H, Pairing, offered, run
-from support import load, serving
+from breadth import ABC, H, Pairing, offered
+from support import load
 from test_mpp_evm import AUTHORIZATION, PERMIT2
 from test_mpp_session import AUTHORIZATION_INPUTS, EF, SUB_P, EvmAnswer, TempoAnswer, evm_pairing, tempo_pairing
 from test_mpp_usdc import EVM_P
@@ -37,7 +38,7 @@ def answering(p: Pairing, size: int) -> Callable[[Any], Any]:
 
 def finished(p: Pairing, size: int) -> Finished | Declined:
     """confirm over abc, then finish with each answer until the payment is complete or declined."""
-    confirmed = run(lambda c: confirm(p.doc, offered(p.binding), p.account, c, p.inputs), serving(ABC))
+    confirmed = piece_confirm(p.doc, offered(p.binding), p.account, p.inputs)
     assert isinstance(confirmed, Confirmed), confirmed
     answer = answering(p, size)
     chosen = copy.deepcopy(confirmed.chosen)

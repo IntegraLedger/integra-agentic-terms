@@ -17,6 +17,7 @@ import pytest
 
 from integraledger_terms._core import agreement_value
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
+from support import confirm, transact
 from integraledger_terms import (
     Advertised,
     Agreed,
@@ -29,16 +30,15 @@ from integraledger_terms import (
     Moved,
     Refusal,
     ToApprove,
+    ToReturn,
     Transacted,
     _agreement,
     _gate,
     agree,
-    confirm,
-    transact,
 )
 from integraledger_terms.bindings._codec import canonical_or_none
 
-from support import A, ACCOUNT, BUYER, D, HASH_A, LINK_A, NOW, Link, StubBinding, digest, load, migrating, recover, row, sign_typed
+from support import A, ACCOUNT, BUYER, D, HASH_A, LINK_A, NOW, CountingSigner, Link, StubBinding, digest, load, migrating, recover, row, sign_typed
 
 AG: dict[str, Any] = BUYER["fixed"]["agreement"]
 URL: str = AG["url"]
@@ -142,7 +142,7 @@ async def approve_and_agree(signer: Any, client: httpx.AsyncClient, **options: A
 
 async def approve_and_transact(
     doc: Any, binding: Any, signer: Any, client: httpx.AsyncClient, **options: Any
-) -> Transacted | ToApprove | Declined:
+) -> Transacted | ToApprove | ToReturn | Declined:
     """transact in its two calls: the agreement payment to approve, then the call with that payment approved
     unchanged."""
     first = await transact(doc, binding, signer, client, **options)
@@ -813,6 +813,30 @@ def test_an_approved_payment_whose_challenge_advertises_another_hash_is_never_si
     assert signer.requests == [] and seller.requests == []
 
 
+# A charge follows only an agreement option its pairing's agreementOn admits. The charge is D's option, on eip155:84532,
+# through a stub of its pairing at coverage none stating agreementOn, as the BA rows stub the pairing; the agreement
+# challenge is BA9's requiredMixed, x402-exact-solana.json's option first; the Solana agreement signer is the payer of
+# that file's B2 row, with that row's inputs.
+def test_a_same_network_charge_is_followed_only_by_an_agreement_option_on_its_own_network() -> None:
+    solana = next(r for r in load("x402-exact-solana.json")["buyer"]["rows"] if r["name"] == "B2")["input"]
+
+    def charge(agreement_on: str) -> StubBinding:
+        return dataclasses.replace(with_agreement(URL), agreement_on=agreement_on)
+
+    def ba9() -> Seller:
+        return Seller(row("BA9")["input"]["agreement"])
+
+    agreement_signer = CountingSigner(account=solana["account"])
+    options = {"agreement_signer": agreement_signer, "inputs": solana["inputs"]}
+    any_ = run(ba9().link(), lambda c: transact(D, charge("any"), RecordingSigner(), c, **options))
+    assert isinstance(any_, ToApprove) and any_.approve.option["network"] == SOLANA_OPTION["network"], any_
+    same = run(ba9().link(), lambda c: transact(D, charge("same-network"), RecordingSigner(), c, **options))
+    assert declined(same, "no-payable-option"), same
+    assert agreement_signer.requests == []
+    own = run(ba9().link(), lambda c: transact(D, charge("same-network"), RecordingSigner(), c))
+    assert isinstance(own, ToApprove) and own.approve.option == OPTION, own
+
+
 def test_accepts_solana_then_evm_with_an_evm_signer_approves_and_pays_the_evm_option() -> None:
     seller = Challenging(RECORDED, header=with_accepts([SOLANA_OPTION, OPTION]))
     signer = RecordingSigner()
@@ -1218,7 +1242,7 @@ def test_through_transact_a_set_signal_ends_the_exchange_before_the_agreement_is
 
 def test_through_transact_a_signal_that_is_not_an_event_is_declined_before_any_fetch() -> None:
     seller = Seller([])
-    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), RecordingSigner(), c, signal=object()))  # type: ignore[arg-type]
+    out = run(seller.link(), lambda c: transact(D, with_agreement(URL), RecordingSigner(), c, signal=object()))
     assert out == Declined("no-payable-option", "x402/input-malformed")
     assert seller.requests == []
 

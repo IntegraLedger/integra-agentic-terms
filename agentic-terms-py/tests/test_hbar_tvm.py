@@ -19,9 +19,9 @@ from integraledger_terms.bindings._ton_tlb import MAINNET, message_of, raw_addre
 from integraledger_terms.bindings.x402_exact_tvm import OP_SEND_MSG, boc_of, lcp_comment, root_of, tvm_carrier
 
 import ed25519
-from breadth import Pairing, build_and_sign, link_calls, plant, x402_doc
+from breadth import Pairing, build_and_sign, plant, x402_doc
 from hbar_support import EVM_ACCOUNT, b10, b16, identifier_row, inputs_row
-from support import hexb, load
+from support import hexb, load, piece_confirm
 
 V = load("x402-exact-tvm.json")
 F: dict[str, Any] = V["fixed"]
@@ -404,14 +404,14 @@ def test_x402_exact_tvm_a_raw_address_whose_workchain_is_outside_int8_is_not_an_
         address = f"{workchain}:{hex_hash}"
         assert BINDING.build(tvm_choice(wallet=address), F["H"]) == Refusal("x402/option-malformed")
         assert BINDING.build(tvm_choice(jettonWallet=address), F["H"]) == Refusal("x402/option-malformed")
-        out, calls = link_calls(TVM, f"{F['O']['network']}:{caip10(address)}")
-        assert isinstance(out, Declined) and (out.code, out.detail, calls) == ("offer-unreadable", "x402/option-malformed", 1)
+        out = piece_confirm(TVM.doc, TVM.binding, f"{F['O']['network']}:{caip10(address)}", TVM.inputs)
+        assert isinstance(out, Declined) and (out.code, out.detail) == ("offer-unreadable", "x402/option-malformed")
     for workchain in (-1, 0):
         address = f"{workchain}:{hex_hash}"
         assert not isinstance(BINDING.build(tvm_choice(wallet=address), F["H"]), Refusal)
         assert not isinstance(BINDING.build(tvm_choice(jettonWallet=address), F["H"]), Refusal)
-        out, calls = link_calls(TVM, f"{F['O']['network']}:{caip10(address)}")
-        assert not isinstance(out, Declined) and calls == 1, (address, out)
+        out = piece_confirm(TVM.doc, TVM.binding, f"{F['O']['network']}:{caip10(address)}", TVM.inputs)
+        assert not isinstance(out, Declined), (address, out)
     b16(TVM, [f"{F['O']['network']}:{caip10(f'{w}:{hex_hash}')}" for w in (128, -129)])
 
 

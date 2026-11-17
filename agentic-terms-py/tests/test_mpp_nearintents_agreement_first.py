@@ -27,9 +27,8 @@ from integraledger_terms import (
     Declined,
     ToApprove,
     Transacted,
-    confirm,
-    transact,
 )
+from support import confirm, transact
 
 from mpp_docs import issued, lcp_carrier, place_carrier
 from support import A, ACCOUNT, BUYER, C, HASH_A, LINK_A, Link, load, row, sign_typed

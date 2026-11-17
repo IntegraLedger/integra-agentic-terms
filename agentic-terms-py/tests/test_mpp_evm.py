@@ -18,16 +18,14 @@ from integraledger_terms import (
     Confirmed,
     Finished,
     Refusal,
-    confirm,
-    finish,
-    transact,
 )
+from support import confirm, finish, transact
 from integraledger_terms import _gate
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_decode, rlp_list, rlp_uint_bytes
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, code, offered, plant, run
 from mpp_docs import MC, issued, placed_doc
-from support import digest, load, serving, sign_typed
+from support import HASH_A, A, digest, load, piece_confirm, serving, sign_typed
 
 AUTH = load("mpp-charge-evm-authorization.json")
 PERMIT = load("mpp-charge-evm-permit2.json")
@@ -45,8 +43,8 @@ def account(chain: int, fixed: dict[str, Any]) -> str:
     return f"eip155:{chain}:{fixed['payer']}"
 
 
-def doc_of(request_json: str) -> list[dict[str, Any]]:
-    return placed_doc(issued("evm", "charge", request_json), H, LINK)
+def doc_of(request_json: str, h: str = H) -> list[dict[str, Any]]:
+    return placed_doc(issued("evm", "charge", request_json), h, LINK)
 
 
 def eip712(request: Any) -> str:
@@ -143,9 +141,12 @@ def test_mpp_charge_evm_transaction_and_hash_b2_b6_finish_completes_on_the_agree
     acct = account(84532, TX["fixed"])
     plant(Pairing(binding=binding, doc=doc, account=acct, answer=answer))
     signer = Recording(acct, answer)
-    assert code(run(lambda c: transact(doc, binding, signer, c), serving(ABC))) == "agreement-not-offered"
+    # Through the gate over A, an ATR that is one JSON text, its document placed for A's hash: the gate parses it before
+    # it asks for the agreement URL.
+    placed = doc_of(TX["fixed"]["R_ENoTypes"], HASH_A)
+    assert code(run(lambda c: transact(placed, binding, signer, c), serving(A))) == "agreement-not-offered"
     assert signer.requests == []
-    confirmed = run(lambda c: confirm(doc, offered(binding), acct, c), serving(ABC))
+    confirmed = piece_confirm(doc, offered(binding), acct)
     assert isinstance(confirmed, Confirmed), confirmed
     r = confirmed.request
     assert r is not None and r["kind"] == "evm-call"

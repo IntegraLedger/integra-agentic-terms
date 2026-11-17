@@ -19,11 +19,10 @@ from integraledger_terms import (
     MPP_SESSION_TEMPO,
     MPP_SESSION_XRPL,
     Declined,
-    Transacted,
+    Finished,
     Within,
     _gate,
     open_channel,
-    transact,
     within,
 )
 from integraledger_terms._types import Refusal
@@ -33,9 +32,9 @@ from integraledger_terms.bindings._svm import PAYMENT_CHANNELS, key_bytes
 from integraledger_terms.bindings.mpp_session import MppSessionEvm, MppSessionTempo
 from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
-from breadth import ABC, H, LINK, Recording, offered, run
+from breadth import H, LINK, Recording, offered
 from mpp_docs import b64u, issued, placed_doc
-from support import digest, load, serving, sign_typed
+from support import STAND_IN, digest, load, piece_transact, sign_typed
 
 EVM = load("mpp-session-evm.json")
 TEMPO = load("mpp-session-tempo.json")
@@ -72,12 +71,13 @@ def test_evm_build_within_at_zero_is_es5s_voucher() -> None:
     assert digest(unsigned.requests[0]["typedData"]) == EVM["ES5"]["expectVoucherDigest"]
 
 
-def tempo_opened() -> Transacted:
+def tempo_opened() -> Finished:
+    """A tempo session opened by the pairing's own steps over abc, with no gate."""
     doc = placed_doc(issued("tempo", "session", TF["requestV2"]), H, LINK)
     from test_mpp_session import TempoAnswer
 
-    out = run(lambda c: transact(doc, MPP_SESSION_TEMPO, Recording(f"eip155:42431:{TF['payer']}", TempoAnswer()), c, inputs={"deposit": TF["deposit"]}), serving(ABC))
-    assert isinstance(out, Transacted) and out.signed is not None, out
+    out = asyncio.run(piece_transact(doc, MPP_SESSION_TEMPO, Recording(f"eip155:42431:{TF['payer']}", TempoAnswer()), {"deposit": TF["deposit"]}))
+    assert isinstance(out, Finished) and out.signed is not None, out
     return out
 
 
@@ -215,7 +215,7 @@ def own(channel_id: str | None = None, legal_context: str | None = None) -> dict
 def tempo_hold() -> dict[str, Any]:
     opened = tempo_opened()
     assert opened.signed is not None, opened
-    hold = open_channel(opened.atr_bytes, opened.signed, MPP_SESSION_TEMPO)
+    hold = open_channel(STAND_IN, opened.signed, MPP_SESSION_TEMPO)
     assert not isinstance(hold, Declined), hold
     return hold
 

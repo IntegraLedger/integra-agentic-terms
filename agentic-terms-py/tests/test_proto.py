@@ -59,10 +59,8 @@ from integraledger_terms import (
     Refusal,
     Transacted,
     check,
-    confirm,
-    finish,
-    transact,
 )
+from support import confirm, finish, transact
 from integraledger_terms.bindings._jose import disclosure_digest
 from integraledger_terms.bindings.ap2_checkout_mandate import checkout_binding, checkout_jwt_of, read_mandate
 from integraledger_terms.bindings import card as card_binding

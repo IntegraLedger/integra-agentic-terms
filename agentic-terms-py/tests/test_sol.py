@@ -24,17 +24,15 @@ from integraledger_terms import (
     ChannelRef,
     Confirmed,
     Declined,
+    Finished,
     Refusal,
-    Transacted,
     Within,
     _gate,
-    confirm,
-    finish,
     open_channel,
     record_charge,
-    transact,
     within,
 )
+from support import confirm, finish
 from integraledger_terms.bindings import _svm
 from integraledger_terms.bindings._codec import b58_encode
 from integraledger_terms.pieces.x402_batch_settlement_solana import PIECE as X402_BATCH_SETTLEMENT_SOLANA_PIECE
@@ -42,7 +40,7 @@ from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._mpp_checks import decode_object, decode_string_map
 from integraledger_terms.bindings.x402_batch_settlement_solana import pairs as batch_pairs
 from mpp_docs import b64u, issued, place_carrier
-from support import hexb, load, serving
+from support import hexb, load, piece_confirm, piece_transact, serving
 
 EVM_ACCOUNT = "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
@@ -165,7 +163,7 @@ def test_x402_exact_solana_the_offers_recent_blockhash_is_the_builds() -> None:
     option = with_memo({**SF["option"], "extra": {**SF["option"]["extra"], "recentBlockhash": SF["blockhash"]}})
     doc = x402_doc(option, SF["resource"])
     inputs = {"decimals": SF["decimals"], "tokenProgram": SF["tokenProgram"]}
-    out = run(lambda c: confirm(doc, X402_EXACT_SOLANA, p.account, c, inputs), serving(ABC))
+    out = piece_confirm(doc, X402_EXACT_SOLANA, p.account, inputs)
     assert isinstance(out, Confirmed) and out.request is not None and out.request["kind"] == "solana-message"
     assert decompile(hexb(out.request["message"]))["blockhash"] == S["V1"]["blockhash"]
 
@@ -178,7 +176,7 @@ def test_x402_exact_solana_an_offered_recent_blockhash_that_is_not_a_base58_key_
     option = with_memo({**SF["option"], "extra": {**SF["option"]["extra"], "recentBlockhash": offered}})
     doc = x402_doc(option, SF["resource"])
     given = {"decimals": SF["decimals"], "tokenProgram": SF["tokenProgram"]}
-    out = run(lambda c: confirm(doc, X402_EXACT_SOLANA, p.account, c, {**given, "recentBlockhash": SF["blockhash"]}), serving(ABC))
+    out = piece_confirm(doc, X402_EXACT_SOLANA, p.account, {**given, "recentBlockhash": SF["blockhash"]})
     assert isinstance(out, Confirmed) and out.request is not None and out.request["kind"] == "solana-message"
     assert decompile(hexb(out.request["message"]))["blockhash"] == S["V1"]["blockhash"]
     link = serving(ABC)
@@ -227,7 +225,7 @@ def test_x402_exact_solana_b10_b16_refusals() -> None:
 
 def test_x402_exact_solana_a_signature_that_is_not_64_bytes_of_hex_is_signed_not_bound() -> None:
     p = exact_pairing()
-    out = run(lambda c: confirm(p.doc, X402_EXACT_SOLANA, p.account, c, p.inputs), serving(ABC))
+    out = piece_confirm(p.doc, X402_EXACT_SOLANA, p.account, p.inputs)
     assert isinstance(out, Confirmed)
     assert code(finish(ABC, out.chosen, "0x1234", X402_EXACT_SOLANA)) == "signed-not-bound"
 
@@ -398,7 +396,7 @@ def test_x402_upto_solana_without_a_nonce_input_the_choice_carries_a_fresh_rando
     p = upto_pairing(rest)
     nonces = []
     for _ in range(2):
-        out = run(lambda c: confirm(p.doc, X402_UPTO_SOLANA, p.account, c, rest), serving(ABC))
+        out = piece_confirm(p.doc, X402_UPTO_SOLANA, p.account, rest)
         assert isinstance(out, Confirmed), out
         n = out.chosen.choice["nonce"]
         assert isinstance(n, str) and n.isdigit() and 1 <= len(n) <= 20 and int(n) < 2**64
@@ -621,7 +619,7 @@ def test_x402_batch_settlement_solana_the_recent_blockhash_is_the_offers_when_pr
     option = {**BS["option"], "extra": {**BS["option"]["extra"], "recentBlockhash": BS["blockhash"]}}
     rest = {k: v for k, v in BATCH_INPUTS.items() if k != "recentBlockhash"}
     p = batch_pairing(option, rest)
-    out = run(lambda c: confirm(p.doc, X402_BATCH_SETTLEMENT_SOLANA, p.account, c, rest), serving(ABC))
+    out = piece_confirm(p.doc, X402_BATCH_SETTLEMENT_SOLANA, p.account, rest)
     assert isinstance(out, Confirmed), out
     assert out.chosen.choice["recentBlockhash"] == BS["blockhash"]
 
@@ -852,7 +850,7 @@ def test_x402_batch_settlement_solana_agreed_refusals_on_the_buyer_half() -> Non
         assert BATCH_BINDING.channel_ref(presented) == Refusal(malformed), member
 
     p = batch_pairing()
-    out = run(lambda c: confirm(p.doc, X402_BATCH_SETTLEMENT_SOLANA, p.account, c, p.inputs), serving(ABC))
+    out = piece_confirm(p.doc, X402_BATCH_SETTLEMENT_SOLANA, p.account, p.inputs)
     assert isinstance(out, Confirmed) and out.request is not None
     good = batch_answer(out.request)
     assert code(finish(ABC, out.chosen, good[:1], X402_BATCH_SETTLEMENT_SOLANA)) == "signed-not-bound"
@@ -892,9 +890,9 @@ def test_x402_batch_settlement_solana_agreed_refusals_on_the_buyer_half() -> Non
 def test_x402_batch_settlement_solana_open_channel_holds_es1s_channel_and_within_signs_es3s_voucher() -> None:
     p = batch_pairing()
     opener = Recording(BATCH_ACCOUNT, batch_answer)
-    opened = run(lambda c: transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, opener, c, inputs=p.inputs), serving(ABC))
-    assert isinstance(opened, Transacted) and opened.signed is not None, opened
-    hold = open_channel(opened.atr_bytes, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
+    opened = asyncio.run(piece_transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, opener, p.inputs))
+    assert isinstance(opened, Finished) and opened.signed is not None, opened
+    hold = open_channel(ABC, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
     assert not isinstance(hold, Declined), hold
     expected = {"network": BV["ES4"]["expectRef"]["network"], "channel": BV["ES1"]["channelPda"], "h": H, "charged": "0",
                 "signedMax": "1000"}  # fmt: skip
@@ -923,9 +921,9 @@ def test_x402_batch_settlement_solana_within_another_fee_payer_signs_nothing() -
     the receiver's binding is unavailable, which carries the request_close."""
     p = batch_pairing()
     opener = Recording(BATCH_ACCOUNT, batch_answer)
-    opened = run(lambda c: transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, opener, c, inputs=p.inputs), serving(ABC))
-    assert isinstance(opened, Transacted) and opened.signed is not None, opened
-    hold = open_channel(opened.atr_bytes, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
+    opened = asyncio.run(piece_transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, opener, p.inputs))
+    assert isinstance(opened, Finished) and opened.signed is not None, opened
+    hold = open_channel(ABC, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
     assert not isinstance(hold, Declined), hold
     other = copy.deepcopy(p.doc)
     other["accepts"][0]["extra"]["feePayer"] = BV["ES1"]["channelPda"]
@@ -1205,12 +1203,12 @@ def test_x402_batch_settlement_solana_bw3s_control_signs_the_refund_once() -> No
 
 
 def batch_hold() -> tuple[Any, ChannelHold]:
-    """The batch pairing's document, and a channel opened through the gate over abc and held."""
+    """The batch pairing's document, and a channel opened by the pairing's own steps over abc, with no gate, and held."""
     p = batch_pairing()
-    opened = run(lambda c: transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, Recording(BATCH_ACCOUNT, batch_answer), c,
-                                    inputs=p.inputs), serving(ABC))  # fmt: skip
-    assert isinstance(opened, Transacted) and opened.signed is not None, opened
-    hold = open_channel(opened.atr_bytes, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
+    opened = asyncio.run(piece_transact(p.doc, X402_BATCH_SETTLEMENT_SOLANA, Recording(BATCH_ACCOUNT, batch_answer),
+                                        p.inputs))  # fmt: skip
+    assert isinstance(opened, Finished) and opened.signed is not None, opened
+    hold = open_channel(ABC, opened.signed, X402_BATCH_SETTLEMENT_SOLANA)
     assert not isinstance(hold, Declined), hold
     return p.doc, hold
 

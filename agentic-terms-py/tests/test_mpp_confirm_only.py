@@ -17,8 +17,8 @@ from integraledger_terms import (
     Checked,
     Confirmed,
     check,
-    confirm,
 )
+from support import confirm, piece_confirm
 
 from breadth import ABC, ABD, H, LINK, Pairing, code, confirms_only, never, plant, run
 from mpp_docs import http_doc, issued, lcp_carrier, place_carrier
@@ -62,7 +62,7 @@ def test_mpp_card_stripe_b6_nothing_handed_to_the_signer(binding: Binding, c: di
 @pytest.mark.parametrize(("binding", "c"), CONFIRM_ONLY, ids=IDS)
 def test_mpp_card_stripe_the_agreement_url_reaches_the_buyer(binding: Binding, c: dict[str, Any]) -> None:
     doc: Any = doc_of(c, "mpp/carrier-occupied", AGREEMENT)
-    confirmed = run(lambda client: confirm(doc, binding, EVM_ACCOUNT, client), serving(ABC))
+    confirmed = piece_confirm(doc, binding, EVM_ACCOUNT)
     assert isinstance(confirmed, Confirmed), confirmed
     assert (confirmed.chosen.agreement, confirmed.request, confirmed.h) == (AGREEMENT, None, H)
 

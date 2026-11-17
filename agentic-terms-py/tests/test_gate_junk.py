@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
+from support import confirm, finish, transact
 from integraledger_terms import (
     Chosen,
     Confirmed,
@@ -16,9 +17,6 @@ from integraledger_terms import (
     Transacted,
     _gate,
     check,
-    confirm,
-    finish,
-    transact,
 )
 
 from support import A, ACCOUNT, NOW, O, CountingSigner, EthAccountSigner, Link, document, row, serving
@@ -99,7 +97,7 @@ def test_finish_and_check_decline_what_they_cannot_bind() -> None:
     assert code(check(A, {**whole.signed, "x402Version": 1}, BINDING)) == "signed-not-bound"
     assert code(check(b"\0" * 1_048_577, whole.signed, BINDING)) == "atr-too-large"
     assert code(finish(b"\0" * 1_048_577, Chosen("x", {}, "r"), "0x", BINDING)) == "atr-too-large"
-    assert code(finish(A, None, "0x", BINDING)) == "offer-unreadable"  # type: ignore[arg-type]
+    assert code(finish(A, None, "0x", BINDING)) == "offer-unreadable"
     confirmed = run(lambda c: confirm(document(), BINDING, ACCOUNT, c), serving(A))
     assert isinstance(confirmed, Confirmed)
     assert code(finish(A, confirmed.chosen, "0x1234", BINDING)) == "signed-not-bound"

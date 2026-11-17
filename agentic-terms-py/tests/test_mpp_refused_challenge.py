@@ -19,7 +19,8 @@ from breadth import ABC, Recording, code, run
 from support import PENDING, VECTORS, load, migrating, serving
 
 import integraledger_terms as terms
-from integraledger_terms import Refusal, _gate, confirm, transact
+from integraledger_terms import Refusal, _gate
+from support import confirm, transact
 from integraledger_terms.bindings._codec import b64u_decode, b64u_encode, canonical_json
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.pieces._mpp import pairings_of_placed

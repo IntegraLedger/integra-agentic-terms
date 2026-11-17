@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from breadth import ABC, H, LINK, offered, run, x402_doc
 from mpp_docs import placed_doc
-from support import load, serving
+from support import load, piece_confirm, serving
 
 from integraledger_terms import (
     MPP_CHARGE_LIGHTNING,
@@ -21,8 +21,8 @@ from integraledger_terms import (
     Declined,
     Refusal,
     _gate,
-    confirm,
 )
+from support import confirm
 from integraledger_terms.bindings._codec import b64u_encode
 
 NOW = 1_790_000_000
@@ -71,7 +71,7 @@ def account(network: str) -> str:
 )
 def test_an_account_pays_the_invoice_of_its_networks_currency(network: str, currency: str) -> None:
     doc = [challenge_with(i) for i in (MAINNET_INVOICE, INVOICES["tb"], INVOICES["tbs"], INVOICES["bcrt"])]
-    out = run(lambda c: confirm(doc, offered(MPP_SESSION_LIGHTNING), account(NETWORKS[network]), c, SESSION_INPUTS), serving(ABC))
+    out = piece_confirm(doc, offered(MPP_SESSION_LIGHTNING), account(NETWORKS[network]), SESSION_INPUTS)
     assert isinstance(out, Confirmed), out
     expected = MAINNET_INVOICE if currency == "bc" else INVOICES[currency]
     assert out.request == {"kind": "bolt11-pay", "invoice": expected}

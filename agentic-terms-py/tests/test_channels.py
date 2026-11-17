@@ -26,17 +26,16 @@ from integraledger_terms import (
     ChannelHold,
     Declined,
     Refusal,
-    Transacted,
+    Finished,
     Within,
     _gate,
     open_channel,
     record_charge,
-    transact,
     within,
 )
 
-from breadth import ABC, ABD, H, Recording, run, x402_doc
-from support import load, serving
+from breadth import ABC, ABD, H, Recording, x402_doc
+from support import load, piece_transact
 
 BV = load("x402-batch-settlement.json")
 E = BV["fixed"]["evm"]
@@ -98,10 +97,12 @@ def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def evm_hold() -> tuple[ChannelHold, dict[str, Any]]:
-    """A channel opened through the gate over abc, and held."""
-    opened = run(lambda c: transact(EVM_DOC, BINDING, signer(), c, inputs=INPUTS), serving(ABC))
-    assert isinstance(opened, Transacted) and opened.signed is not None, opened
-    hold = unwrap(open_channel(opened.atr_bytes, opened.signed, BINDING))
+    """A channel opened by the pairing's piece over abc, the vectors' ATR, and held: the gate declines abc, which is no
+    JSON text, atr-malformed, so the opening is the pairing's choice, build with the vectors' H, signature, completion
+    and bound, with no gate (piece_transact)."""
+    opened = asyncio.run(piece_transact(EVM_DOC, BINDING, signer(), INPUTS, ABC))
+    assert isinstance(opened, Finished), opened
+    hold = unwrap(open_channel(ABC, opened.signed, BINDING))
     return json.loads(json.dumps(hold)), opened.signed
 
 
@@ -323,10 +324,11 @@ def test_a_hold_whose_atr_is_not_canonical_base64_is_unreadable(atr_bytes: bytes
     # A hold's atr is read as padded standard base64 in its canonical form only (RFC 4648 sections 3.5 and 4), as the
     # protocol package reads a rail's base64. Another spelling of the held bytes is unreadable before any signer call,
     # and none raises; the canonical one signs.
+    # These bytes are no JSON text, which the gate declines atr-malformed: the channel is opened by the pairing's piece.
     doc = doc_for("0x" + hashlib.sha256(atr_bytes).hexdigest())
-    opened = run(lambda c: transact(doc, BINDING, signer(), c, inputs=INPUTS), serving(atr_bytes))
-    assert isinstance(opened, Transacted) and opened.signed is not None, opened
-    hold = unwrap(open_channel(opened.atr_bytes, opened.signed, BINDING))
+    opened = asyncio.run(piece_transact(doc, BINDING, signer(), INPUTS, atr_bytes))
+    assert isinstance(opened, Finished), opened
+    hold = unwrap(open_channel(atr_bytes, opened.signed, BINDING))
     assert hold["atr"] == canonical
     s = signer()
     assert run_within({**hold, "atr": atr}, doc=doc, s=s) == Declined("signed-not-bound", "The held ATR is unreadable.")

@@ -11,7 +11,8 @@ import copy
 import json
 from typing import Any
 
-from integraledger_terms import MPP_CHARGE_EVM_TRANSACTION, X402_EXACT_EIP155_EIP3009, Advertised, Declined, Refusal, confirm
+from integraledger_terms import MPP_CHARGE_EVM_TRANSACTION, X402_EXACT_EIP155_EIP3009, Advertised, Declined, Refusal
+from support import confirm
 from integraledger_terms.bindings._lcp import is_agreement_url, is_other_scheme_link
 from integraledger_terms.bindings._codec import b64u_encode
 from integraledger_terms.bindings._mpp_checks import decode_string_map

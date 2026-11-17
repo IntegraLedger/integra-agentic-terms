@@ -1,4 +1,5 @@
-"""transact's options are its four keyword arguments, inputs, agreement_signer, approved and signal. An unknown keyword
+"""transact's options are its keyword arguments, approver and resource_request, required, and inputs, ceilings,
+legal_context, agreement_signer, approved and signal; every test here gives the two required ones. An unknown keyword
 raises before any fetch or signer call, as a keyword-only signature does; inputs that are not a mapping, an agreement
 signer with no sign method, an approved value that is not an AgreementPayment, or a signal that is not an asyncio.Event
 are declined no-payable-option with the namespace's input-malformed detail before any fetch or signer call, as the
@@ -18,7 +19,7 @@ import pytest
 from integraledger_terms import X402_EXACT_EIP155_EIP3009 as BINDING
 from integraledger_terms._core import atr_hash
 from integraledger_terms import AgreementPayment, Chosen, Declined, _gate, agree, check, confirm, finish, transact
-from support import ACCOUNT, BUYER, NOW, A, CountingSigner, D, Link, serving
+from support import ACCOUNT, BUYER, NOW, RESOURCE_REQUEST, A, CountingSigner, D, Link, approve_all, serving
 
 AGREEMENT = BUYER["fixed"]["agreement"]
 
@@ -49,7 +50,8 @@ def run(signer: CountingSigner, **options: Any) -> tuple[Any, int]:
 
     async def go() -> Any:
         async with link.client() as client:
-            return await transact(D, BINDING, signer, client, **options)
+            given = {"approver": approve_all, "resource_request": RESOURCE_REQUEST, **options}
+            return await transact(D, BINDING, signer, client, **given)
 
     return asyncio.run(go()), link.calls
 
@@ -68,7 +70,9 @@ def test_inputs_given_positionally_raise() -> None:
 
     async def go() -> Any:
         async with link.client() as client:
-            return await transact(D, BINDING, signer, client, {"recentBlockhash": "1" * 32})  # type: ignore[call-arg]
+            blockhash = {"recentBlockhash": "1" * 32}
+            untyped: Any = transact
+            return await untyped(D, BINDING, signer, client, blockhash, approver=approve_all, resource_request=RESOURCE_REQUEST)
 
     with pytest.raises(TypeError):
         asyncio.run(go())
@@ -115,7 +119,7 @@ def test_confirm_and_agree_decline_inputs_that_are_not_a_mapping(inputs: Any) ->
 
     async def go() -> tuple[Any, Any]:
         async with link.client() as client:
-            confirmed = await confirm(D, BINDING, ACCOUNT, client, inputs)
+            confirmed = await confirm(D, BINDING, ACCOUNT, client, resource_request=RESOURCE_REQUEST, inputs=inputs)
             agreed = await agree(A, AGREEMENT["url"], signer, client, inputs=inputs)
             return confirmed, agreed
 
@@ -151,7 +155,7 @@ def test_a_signer_whose_account_is_not_a_string_is_declined_before_any_fetch_or_
 
     async def go() -> tuple[Any, Any]:
         async with link.client() as client:
-            transacted = await transact(D, BINDING, signer, client)  # type: ignore[arg-type]
+            transacted = await transact(D, BINDING, signer, client, approver=approve_all, resource_request=RESOURCE_REQUEST)  # type: ignore[arg-type]
             agreed = await agree(A, AGREEMENT["url"], signer, client)  # type: ignore[arg-type]
             return transacted, agreed
 

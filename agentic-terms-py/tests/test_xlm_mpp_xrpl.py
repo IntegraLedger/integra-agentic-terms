@@ -2,18 +2,20 @@
 vector rows. Expected values are the vector file's; the wallet stub answers with V3's signed blob, as the TypeScript
 gate's test does."""
 
+import asyncio
 import copy
 import json
 from typing import Any
 
 import pytest
 
-from integraledger_terms import MPP_CHARGE_XRPL, Declined, Refusal, confirm, transact
+from integraledger_terms import MPP_CHARGE_XRPL, Declined, Refusal
+from support import confirm
 from integraledger_terms.bindings._xrpl import Blob, decode_blob, mpp_invoice_id, network_id_held, same_invoice
 
 from breadth import ABC, H, LINK, Pairing, Recording, build_and_sign, plant, run
 from mpp_docs import issued, place_carrier
-from support import load, serving
+from support import load, piece_transact, serving
 from xlm_support import EVM_ACCOUNT, b16, mpp_b10
 
 V = load("mpp-charge-xrpl.json")
@@ -117,7 +119,7 @@ def test_mpp_charge_xrpl_occupied_and_refusals() -> None:
 def test_mpp_charge_xrpl_a_blob_answered_in_0x_hex_is_declined_signed_not_bound() -> None:
     # The build's complete reads the signed blob as hex digits without 0x, as the XRP Ledger writes it.
     signer = Recording(XRPL.account, lambda r: "0x" + V["V3"]["blob"])
-    out = run(lambda c: transact(XRPL.doc, MPP_CHARGE_XRPL, signer, c, inputs=XRPL.inputs), serving(ABC))
+    out = asyncio.run(piece_transact(XRPL.doc, MPP_CHARGE_XRPL, signer, XRPL.inputs))
     assert isinstance(out, Declined) and (out.code, out.detail) == ("signed-not-bound", "xrpl/blob-malformed"), out
 
 

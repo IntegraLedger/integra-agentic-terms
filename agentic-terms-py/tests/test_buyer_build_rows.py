@@ -13,7 +13,8 @@ from breadth import Recording, run
 from support import BUYER, Link, migrating
 
 import integraledger_terms as terms
-from integraledger_terms import Confirmed, Declined, Refusal, _gate, confirm, transact
+from integraledger_terms import Confirmed, Declined, Refusal, _gate
+from support import confirm, transact
 from integraledger_terms.bindings._mpp import check_challenge
 
 BINDINGS: dict[str, Any] = {

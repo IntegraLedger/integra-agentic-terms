@@ -13,11 +13,16 @@ from typing import Any, cast
 
 import httpx
 
-from . import _agreement
+from . import _agreement, _return
+from ._checks import Approval, approves, ceilings_ok, floor_missing, network_of, request_held, shown, slot_holds, steps_of
 from ._core import MAX_ATR_BYTES, AtrHash, atr_hash, hash_equals
+from ._parse import parse_atr
+from ._summary import Opened, summary_of
 from ._types import (
     AgreementPayment,
+    Approver,
     Binding,
+    Ceilings,
     Checked,
     Chosen,
     Confirmed,
@@ -30,10 +35,14 @@ from ._types import (
     Next,
     Piece,
     Refusal,
+    ResourceRequest,
     Signature,
     Signer,
+    SigningStep,
+    Summary,
     Step,
     ToApprove,
+    ToReturn,
     Transacted,
     Act,
     bound_act,
@@ -229,27 +238,66 @@ def _bound(binding: Binding, presented: Any, h: AtrHash | None = None, act: Act 
 
 
 async def confirm(
-    doc: Any, binding: Binding, account: str, fetch: httpx.AsyncClient, inputs: Inputs | None = None
+    doc: Any,
+    binding: Binding,
+    account: str,
+    fetch: httpx.AsyncClient,
+    *,
+    resource_request: ResourceRequest,
+    inputs: Inputs | None = None,
+    ceilings: Ceilings | None = None,
 ) -> Confirmed | Declined:
     """Read the offer (the seller's document as given: an object, a list of challenges, or a string), choose the option,
-    fetch the ATR and compare hashes. Only on a match build, with the hash computed. request is what the signer is
-    handed, or None when nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build is
-    itself the payment, which finish completes with no signature. For a pairing at coverage none, whose payment is not
-    itself a public proof, chosen.agreement is the agreement URL the offer names. Inputs that are not a mapping are declined
-    no-payable-option with <namespace>/input-malformed before the offer is read."""
+    fetch the ATR and compare hashes; parse the bytes, hold the option chosen to the ATR's binding slot and the buyer's
+    request to its request commitment; and only then build, with the hash computed, and hold the request to its summary
+    and its ceiling (terms' profile buyer-gate.md, checks 1 to 11). request is what the signer is handed, with its
+    summary, or None when nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build
+    is itself the payment, which finish completes with no signature. For a pairing at coverage none, whose payment is
+    not itself a public proof, chosen.agreement is the agreement URL the offer names. A resource_request that is not a
+    mapping, inputs that are not a mapping, or ceilings that are not a mapping are declined no-payable-option with
+    <namespace>/input-malformed before the offer is read."""
+    if _piece(binding) is None:
+        return _unsupported(binding)
+    if not _args_ok(resource_request, inputs, ceilings, str(binding.id)):
+        return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
+    gated = await _gate(doc, binding, account, fetch, resource_request, inputs if inputs is not None else {}, ceilings)
+    return gated if isinstance(gated, Declined) else gated[0]
+
+
+def _args_ok(resource_request: object, inputs: object, ceilings: object, pairing: str) -> bool:
+    """Whether the gate's arguments are of the profile's form: resource_request a mapping, inputs a mapping or None,
+    and ceilings a mapping or None whose value for the paid pairing, where given, is of rule 8's form (ceilings_ok)."""
+    return (
+        isinstance(resource_request, Mapping)
+        and (inputs is None or isinstance(inputs, Mapping))
+        and ceilings_ok(ceilings, pairing)
+    )
+
+
+async def _gate(
+    doc: Any,
+    binding: Binding,
+    account: str,
+    fetch: httpx.AsyncClient,
+    resource_request: ResourceRequest,
+    inputs: Inputs,
+    ceilings: Ceilings | None,
+) -> tuple[Confirmed, int] | Declined:
+    """Checks 3 to 11 of the profile, for confirm and transact, once the pairing and the arguments are known good: the
+    confirmed payment and the number of signings it takes."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
-    if inputs is not None and not isinstance(inputs, Mapping):
-        return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
+    floor = floor_missing(str(binding.id), inputs)
+    if floor is not None:
+        return floor
     advertised = binding.read(doc)
     if isinstance(advertised, Refusal):
         return Declined("offer-unreadable", advertised.code)
     agreement = None if _full(binding) else advertised.agreement
     if agreement is not None and not isinstance(agreement, str):
         return Declined("offer-unreadable", "The offer names an agreement URL that is not a string.")
-    given = inputs if inputs is not None else {}
-    choice = piece.choose(advertised, account, given, _now(), _ref(), doc)
+    choice = piece.choose(advertised, account, inputs, _now(), _ref(), doc)
     if isinstance(choice, Refusal):
         return Declined("no-payable-option", choice.code)
     chosen = choice if agreement is None else replace(choice, agreement=agreement)
@@ -261,27 +309,89 @@ async def confirm(
     computed = atr_hash(fetched)
     if not hash_equals(advertised.h, computed):
         return Declined("hash-mismatch", "The bytes the link served do not hash to the advertised ATR hash.")
+    parsed = parse_atr(fetched)
+    if isinstance(parsed, Declined):
+        return parsed
+    not_held = slot_holds(binding, chosen, parsed.value)
+    if not_held is not None:
+        return not_held
+    other_request = request_held(binding, parsed.value, resource_request)
+    if other_request is not None:
+        return other_request
     if not _full(binding) and agreement is None:
         return Declined(
             "agreement-not-offered", "The pairing's payment carries no public proof and the offer names no agreement URL."
         )
+    return _built(piece, binding, chosen, fetched, computed, account, inputs, ceilings)
+
+
+def _built(
+    piece: Piece,
+    binding: Binding,
+    chosen: Chosen,
+    fetched: bytes,
+    computed: AtrHash,
+    account: str,
+    inputs: Inputs,
+    ceilings: Ceilings | None,
+) -> tuple[Confirmed, int] | Declined:
+    """Checks 9 to 11 of the profile on the payment chosen: built with the H the gate computed, its request summarised
+    and held to the pairing's ceiling; the confirmed payment and the number of signings it takes. The return after an
+    agreement makes them on the charge it chooses before the agreement is paid."""
     unsigned = _build(piece, binding, chosen, computed, fetched)
     if isinstance(unsigned, Refusal):
         if _NOTHING_TO_SIGN.fullmatch(unsigned.code):
-            return Confirmed(chosen=chosen, request=None, atr_bytes=fetched, h=computed)
+            return Confirmed(chosen=chosen, request=None, atr_bytes=fetched, h=computed), 0
         return Declined("offer-unreadable", unsigned.code)
     request = piece.request(unsigned)
     if isinstance(request, Refusal):
         return Declined("offer-unreadable", request.code)
-    return Confirmed(chosen=_kept(piece, chosen, unsigned), request=json_form(request), atr_bytes=fetched, h=computed)
+    kept = _kept(piece, chosen, unsigned)
+    if request is None:
+        return Confirmed(chosen=kept, request=None, atr_bytes=fetched, h=computed), 0
+    formed = json_form(request)
+    summary = shown(binding, formed, fetched, inputs, ceilings, network_of(account))
+    if isinstance(summary, Declined):
+        return summary
+    return Confirmed(chosen=kept, request=formed, atr_bytes=fetched, h=computed, summary=summary), steps_of(unsigned)
 
 
-def finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding) -> Finished | Next | Declined:
+def finish(
+    atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding, *, ceilings: Ceilings | None = None
+) -> Finished | Next | Declined:
     """Rebuild the payment from chosen and the bytes, join the signer's answer, and return the payment only when the
     pairing's bound reads the hash of these bytes from the completed payment. For a pairing at coverage none, whose
     payment is not a public proof, and whose bound finds no signed place for the hash, the proof is the agreement payment, and the
-    completed payment is returned as it is. A payment signed in steps returns the next request. Where the signer moved
-    the payment itself, a decline keeps it as moved."""
+    completed payment is returned as it is. A payment signed in steps returns the next request, only once it has a
+    summary and is within the pairing's ceiling, ceilings raising it (checks 10 and 11). Where the signer moved the
+    payment itself, a decline keeps it as moved. ceilings that are not a mapping are declined no-payable-option with
+    <namespace>/input-malformed."""
+    if not ceilings_ok(ceilings, str(getattr(binding, "id", ""))):
+        return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
+    out = _finish(atr_bytes, chosen, signature, binding)
+    if not isinstance(out, Next):
+        return out
+    summary = shown(binding, out.next, atr_bytes, {}, ceilings, None, _opened(binding, chosen, atr_bytes, signature))
+    return summary if isinstance(summary, Declined) else out
+
+
+def _opened(binding: Binding, chosen: Chosen, atr_bytes: bytes, signature: Signature) -> Opened | None:
+    """The step that opened a payment signed in steps, for its later step's summary: the first request the build hands
+    the signer, rebuilt from chosen as finish rebuilds it, its summary and the signer's answer; None where it has none."""
+    piece = _piece(binding)
+    if piece is None:
+        return None
+    unsigned = _build(piece, binding, chosen, atr_hash(atr_bytes), atr_bytes)
+    first = None if isinstance(unsigned, Refusal) else piece.request(unsigned)
+    if first is None or isinstance(first, Refusal):
+        return None
+    formed = json_form(first)
+    summary = summary_of(str(binding.id), formed, atr_bytes)
+    return None if summary is None else Opened(request=formed, summary=summary, signature=signature)
+
+
+def _finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding) -> Finished | Next | Declined:
+    """finish without checks 10 and 11 on a later step's request, which the signing steps make with the approval."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
@@ -342,10 +452,13 @@ def check(atr_bytes: bytes, presented: Any, binding: Binding, landed: Any = None
     return Checked(h=h)
 
 
-async def pay(binding: Binding, chosen: Chosen, signer: Signer, atr_bytes: bytes) -> Finished | Declined | None:
+async def pay(
+    binding: Binding, chosen: Chosen, signer: Signer, atr_bytes: bytes, approval: Approval | None = None
+) -> Finished | Declined | None:
     """Build and sign the payment chosen names, with the hash of atr_bytes: the signer is called once, or once per step
     for a payment signed in steps, and the payment is returned only through finish. None where the pairing has nothing
-    for the buyer to sign."""
+    for the buyer to sign. With approval, each signing is first held to its summary and ceiling and asked of the
+    approver."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
@@ -359,16 +472,26 @@ async def pay(binding: Binding, chosen: Chosen, signer: Signer, atr_bytes: bytes
     if isinstance(request, Refusal):
         return Declined("offer-unreadable", request.code)
     first = json_form(request) if request is not None else None
-    return await _sign_steps(binding, _kept(piece, chosen, unsigned), first, signer, atr_bytes, h)
+    kept = _kept(piece, chosen, unsigned)
+    return await _sign_steps(binding, kept, first, signer, atr_bytes, h, approval, steps_of(unsigned))
 
 
 async def _sign_steps(
-    binding: Binding, chosen: Chosen, first: dict[str, Any] | None, signer: Signer, atr_bytes: bytes, h: AtrHash
+    binding: Binding,
+    chosen: Chosen,
+    first: dict[str, Any] | None,
+    signer: Signer,
+    atr_bytes: bytes,
+    h: AtrHash,
+    approval: Approval | None = None,
+    count: int = 1,
 ) -> Finished | Declined | None:
     """The signer, once per step in order, then finish over its answers. A first request of None is a build that is
-    itself the payment: finish completes it with no signer call, or None where there is nothing to sign."""
+    itself the payment: finish completes it with no signer call, or None where there is nothing to sign. With approval,
+    each step's request is held to its summary and its ceiling and asked of the approver before the signer is called
+    for it (checks 10 to 12); count is the number of signings the build takes."""
     if first is None:
-        whole = finish(atr_bytes, chosen, None, binding)
+        whole = _finish(atr_bytes, chosen, None, binding)
         if isinstance(whole, Declined) and _NOTHING_TO_SIGN.fullmatch(whole.detail):
             return None
         if isinstance(whole, Next):
@@ -378,15 +501,34 @@ async def _sign_steps(
     moves = piece is not None and getattr(piece, "moves", None) is not None and piece.moves(first) is True
     answers: list[Signature] = []
     request = first
-    for _ in range(_MAX_STEPS):
+    opened: Opened | None = None
+    for step in range(_MAX_STEPS):
+        summary: Summary | None = None
+        if approval is not None:
+            approved = await approves(
+                binding,
+                chosen.act,
+                request,
+                atr_bytes,
+                SigningStep(index=step, count=max(count, step + 1)),
+                approval,
+                network_of(_account(signer)),
+                opened,
+            )
+            if isinstance(approved, Declined):
+                kept = Moved(answers[0] if len(answers) == 1 else list(answers), atr_bytes, h) if moves and answers else None
+                return replace(approved, moved=kept)
+            summary = approved
         try:
             answers.append(await signer.sign(request))
         except Exception:
             kept = Moved(answers[0] if len(answers) == 1 else list(answers), atr_bytes, h) if moves and answers else None
             return Declined("signer-failed", "The signer did not sign.", kept)
-        finished = finish(atr_bytes, chosen, answers[0] if len(answers) == 1 else list(answers), binding)
+        finished = _finish(atr_bytes, chosen, answers[0] if len(answers) == 1 else list(answers), binding)
         if isinstance(finished, (Declined, Finished)):
             return finished
+        if step == 0 and summary is not None:
+            opened = Opened(request=request, summary=summary, signature=answers[0])
         request = finished.next
     kept = Moved(list(answers), atr_bytes, h) if moves else None
     return Declined("signed-not-bound", "The pairing asked for more signatures than a payment takes.", kept)
@@ -398,29 +540,44 @@ async def transact(
     signer: Signer,
     fetch: httpx.AsyncClient,
     *,
+    approver: Approver,
+    resource_request: ResourceRequest,
     inputs: Inputs | None = None,
+    ceilings: Ceilings | None = None,
+    legal_context: str | None = None,
     agreement_signer: Signer | None = None,
     approved: AgreementPayment | None = None,
     signal: asyncio.Event | None = None,
-) -> Transacted | ToApprove | Declined:
-    """confirm, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer, then
-    finish. Without approved, an agreement not yet recorded is returned as ToApprove, the agreement payment for the
-    agent to approve, and nothing is signed; with approved, that payment is signed and paid, and the resource's payment
-    is signed only with the agreement's receipt in hand. The signer is called once for the payment, or once per step for
-    a payment signed in steps, and, when no agreement_signer is given, first for the approved agreement payment; it is
-    never called on a decline before it. Where the build is itself the payment the signer is not called for it; where
-    the pairing has nothing for the buyer to sign, signed is None after the comparison. agreement is the agreement's
-    receipt, where the pairing needs one. Setting signal ends the agreement exchange. Inputs that are not a mapping, an
-    agreement signer with no sign method, an approved value that is not an AgreementPayment, a signal that is not an
-    asyncio.Event, or a signer or agreement signer whose account is not a string are declined no-payable-option with
-    <namespace>/input-malformed before any fetch or signer call."""
+) -> Transacted | ToApprove | ToReturn | Declined:
+    """The gate's checks, then, for a pairing whose payment is not itself a public proof, the agreement, then the signer,
+    then finish. Every signing, the agreement payment's among them, is first held to its summary and its ceiling and
+    asked of approver, and the signer is called only for what it approves (terms' profile buyer-gate.md, checks 1 to
+    12). Without approved, an agreement not yet recorded is returned as ToApprove, the agreement payment for the agent
+    to approve, and nothing is signed; with approved, that payment is asked of approver, signed and paid, and the
+    resource's payment is asked of approver and signed only with the agreement's receipt in hand. The signer is called
+    once for the payment, or once per step for a payment signed in steps, and, when no agreement_signer is given, first
+    for the approved agreement payment; it is never called on a decline before it. Where the build is itself the payment
+    the signer is not called for it; where the pairing has nothing for the buyer to sign, signed is None after the
+    comparison. agreement is the agreement's receipt, where the pairing needs one. Setting signal ends the agreement
+    exchange. An approver that is not callable, a resource_request, inputs or ceilings that are not a mapping, a
+    legal_context that is not a string, an agreement signer with no sign method, an approved value that is not an
+    AgreementPayment, a signal that is not an asyncio.Event, or a signer or agreement signer whose account is not a
+    string are declined no-payable-option with <namespace>/input-malformed before any fetch or signer call.
+
+    Where the pairing is paid after its agreement and the first response offers the agreement and no charge option,
+    its every option naming the charges it serves, transact pays the agreement and returns ToReturn. legal_context is
+    that response's return value, its Legal-Context header or MCP _meta value as received: one the protocol package's
+    fromLegalContextHeader refuses is declined offer-unreadable with its code before any fetch, and one whose H is not
+    the ATR's hash-mismatch."""
     if _piece(binding) is None:
         return _unsupported(binding)
     agreement_signer_ok = agreement_signer is None or (
         callable(getattr(agreement_signer, "sign", None)) and isinstance(_account(agreement_signer), str)
     )
     if (
-        (inputs is not None and not isinstance(inputs, Mapping))
+        not callable(approver)
+        or not _args_ok(resource_request, inputs, ceilings, str(binding.id))
+        or (legal_context is not None and not isinstance(legal_context, str))
         or not agreement_signer_ok
         or (approved is not None and not isinstance(approved, AgreementPayment))
         or (signal is not None and not isinstance(signal, asyncio.Event))
@@ -428,10 +585,44 @@ async def transact(
     ):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
     given = inputs if inputs is not None else {}
-    confirmed = await confirm(doc, binding, _account(signer), fetch, given)
-    if isinstance(confirmed, Declined):
-        return confirmed
+    returned: AtrHash | None = None
+    return_value: bytes | None = None
+    if legal_context is not None:
+        read = _return.from_legal_context_header(legal_context)
+        if isinstance(read, Refusal):
+            return Declined("offer-unreadable", read.code)
+        returned, return_value = read
+    approval = Approval(approver=approver, ceilings=ceilings, inputs=given)
+    # Check 3 before anything is paid, the agreement a first response offers among it.
+    floor = floor_missing(str(binding.id), given)
+    if floor is not None:
+        return floor
+
+    if _namespace(binding) == "x402" and not _full(binding):
+        offers = _return.agreement_options(doc)
+        if isinstance(offers, Refusal):
+            return Declined("offer-unreadable", offers.code)
+        if offers is not None:
+            return await _return.to_return(
+                doc,
+                binding,
+                offers,
+                agreement_signer if agreement_signer is not None else signer,
+                _account(signer),
+                fetch,
+                resource_request,
+                (returned, return_value) if returned is not None else None,
+                approval,
+                signal,
+            )
+
+    gated = await _gate(doc, binding, _account(signer), fetch, resource_request, given, ceilings)
+    if isinstance(gated, Declined):
+        return gated
+    confirmed, count = gated
     atr_bytes, chosen = confirmed.atr_bytes, confirmed.chosen
+    if returned is not None and not hash_equals(returned, confirmed.h):
+        return Declined("hash-mismatch", "The return value names another ATR hash than the one the link served.")
     receipt = None
     if chosen.agreement is not None:
         agreed = await _agreement.exchange(
@@ -443,12 +634,15 @@ async def transact(
             inputs=given,
             signal=signal,
             ns=_namespace(binding),
+            approval=approval,
+            chosen=chosen,
+            charge=binding,
         )
         if isinstance(agreed, (Declined, ToApprove)):
             return agreed
         receipt = agreed.receipt
 
-    done = await _sign_steps(binding, chosen, confirmed.request, signer, atr_bytes, confirmed.h)
+    done = await _sign_steps(binding, chosen, confirmed.request, signer, atr_bytes, confirmed.h, approval, count)
     if isinstance(done, Declined):
         return done
     if done is None:

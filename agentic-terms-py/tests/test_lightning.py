@@ -21,10 +21,8 @@ from integraledger_terms import (
     Finished,
     Refusal,
     _gate,
-    confirm,
-    finish,
-    transact,
 )
+from support import confirm, finish, transact
 from integraledger_terms.bindings._bolt11 import Bolt11, decode, invoice_h
 from integraledger_terms.bindings._channel import ChannelRef
 from integraledger_terms.bindings._mpp import pairings_of

@@ -16,14 +16,15 @@ from typing import Any
 import pytest
 
 from integraledger_terms import MPP_CHARGE_EVM_AUTHORIZATION as BINDING
-from integraledger_terms import Chosen, Confirmed, Declined, Finished, Refusal, confirm, finish
+from support import finish, piece_confirm
+from integraledger_terms import Chosen, Confirmed, Declined, Finished, Refusal
 from integraledger_terms.bindings._codec import b64u_encode, js_json
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.pieces._mpp import request_of
 
-from breadth import ABC, H, LINK, run
+from breadth import ABC, H, LINK
 from mpp_docs import placed_doc
-from support import load, serving, sign_typed
+from support import load, sign_typed
 
 F: dict[str, Any] = load("mpp-challenge.json")["fixed"]
 AUTH: dict[str, Any] = load("mpp-charge-evm-authorization.json")["fixed"]
@@ -110,7 +111,7 @@ ACCOUNT = f"eip155:84532:{AUTH['payer']}"
 
 def confirmed() -> Confirmed:
     canonical = issued(b64u_encode(utf8(TEXT)))
-    out = run(lambda c: confirm(placed_doc(canonical, H, LINK), BINDING, ACCOUNT, c, INPUTS), serving(ABC))
+    out = piece_confirm(placed_doc(canonical, H, LINK), BINDING, ACCOUNT, INPUTS)
     assert isinstance(out, Confirmed), out
     return out
 

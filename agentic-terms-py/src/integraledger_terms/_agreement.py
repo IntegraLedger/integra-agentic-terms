@@ -1,7 +1,7 @@
 """The agreement payment, in two calls. Called without an approved payment, agree asks the agreement URL for its
 challenge and returns the agreement payment for the buyer's agent to approve, signing nothing: the challenge's first
 option, in document order, that the signer can pay with a pairing whose payment can itself be the agreement: a pairing
-at coverage full whose registry data holds agreement. The payment is built and checked for the act agreement, so on a
+at coverage full whose registry data holds agreement, and, for transact, one the charge's agreementOn admits. The payment is built and checked for the act agreement, so on a
 pairing whose single-use value is H itself it carries the agreement's own value. Called with the payment the agent approved, it signs exactly that payment, sends it, and returns the resource's
 receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is sent
 unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again after
@@ -12,19 +12,22 @@ after it was sent carries it as moved. Setting the caller's signal ends the exch
 import asyncio
 import base64
 import re
+import sys
 import time
-from collections.abc import Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import httpx
 
 from . import _gate
+from ._checks import Approval
 from ._core import AtrHash, hash_equals, is_hash
 from ._core import atr_hash as hash_of
 from .bindings._codec import b64_decode, js_json
 from .bindings._jose import UNPARSED, parse_json
 from .bindings._lcp import is_https_link, is_other_scheme_link
+from .bindings._mpp import network as mpp_network
 from .bindings._x402 import MAX_OPTIONS, is_offered, timeout_seconds
 from ._types import (
     agreement_of,
@@ -273,6 +276,50 @@ def _x402_bindings() -> tuple[Binding, ...]:
     )
 
 
+# Whether an agreement option, paid with the pairing given, is one the charge can follow.
+_Admits = Callable[[Binding, Mapping[str, Any]], bool]
+
+
+def _any(agreement: Binding, option: Mapping[str, Any]) -> bool:
+    return True
+
+
+def _charge_network(chosen: Chosen) -> str | None:
+    """The network the charge chosen pays on, as its choice names it: an x402 choice's accepted.network, or the network
+    the MPP read gives its challenge; None where the choice names neither."""
+    choice = chosen.choice if isinstance(chosen, Chosen) else None
+    if not isinstance(choice, Mapping):
+        return None
+    accepted = choice.get("accepted")
+    if isinstance(accepted, Mapping):
+        network = accepted.get("network")
+        return network if isinstance(network, str) else None
+    challenge = choice.get("challenge")
+    if not isinstance(challenge, Mapping):
+        return None
+    try:
+        read = mpp_network(challenge)
+    except Exception:
+        return None
+    return read if isinstance(read, str) else None
+
+
+def _admitting(charge: Binding, chosen: Chosen) -> _Admits:
+    """The agreement options the charge paid through charge as chosen can follow, by the agreementOn of the pairing's
+    registry data (agreement_on): any, or none stated, any option; same-network, an option on the charge's own network;
+    a pairing id, an option of that pairing on that network. A charge whose network its choice does not name follows
+    none but under any."""
+    on = getattr(charge, "agreement_on", None)
+    if on is None or on == "any":
+        return _any
+    network = _charge_network(chosen)
+
+    def admits(agreement: Binding, option: Mapping[str, Any]) -> bool:
+        return network is not None and option.get("network") == network and (on == "same-network" or agreement.id == on)
+
+    return admits
+
+
 @dataclass(frozen=True, slots=True)
 class _Selected:
     """What the gate pays for an agreement: the option, which is the accepts entry itself, so that the agreement payment
@@ -287,10 +334,15 @@ class _Selected:
 
 
 def _select(
-    required: Mapping[str, Any], account: str, inputs: Inputs, approved: Mapping[str, Any] | None = None
+    required: Mapping[str, Any],
+    account: str,
+    inputs: Inputs,
+    approved: Mapping[str, Any] | None = None,
+    admits: _Admits = _any,
 ) -> _Selected | Declined:
     """The option the agreement is paid with, by the main payment's rule: the options in document order, and the first
-    one the signer can pay whose pairing's payment can itself be the agreement (agreement_of). An option's pairing is
+    one the signer can pay whose pairing's payment can itself be the agreement (agreement_of) and which the charge can
+    follow (admits). An option's pairing is
     the first x402 pairing, in the protocol package's order, whose read accepts the challenge holding only that option. An option
     whose maxTimeoutSeconds gives no deadline (_bounds) is not payable, whichever pairing reads it. An accepts that is
     not a list, holds more than 32 entries or holds no mapping serves no option, and is declined offer-unreadable with
@@ -327,7 +379,7 @@ def _select(
                 break
             if read.code != "x402/no-payable-option" and unreadable is None:
                 unreadable = read.code
-        if found is None or agreement_of(found[0]) is None:
+        if found is None or agreement_of(found[0]) is None or not admits(found[0], option):
             continue
         limits = _bounds(option)
         if limits is None:
@@ -387,11 +439,16 @@ def _is_agreement_payment(value: object) -> bool:
 
 
 def _paying(
-    required: Mapping[str, Any], h: AtrHash, account: str, inputs: Inputs, approved: Mapping[str, Any] | None = None
+    required: Mapping[str, Any],
+    h: AtrHash,
+    account: str,
+    inputs: Inputs,
+    approved: Mapping[str, Any] | None = None,
+    admits: _Admits = _any,
 ) -> tuple[_Selected, tuple[int, int]] | Declined:
     """The option chosen from required for h, approved when given, with its bounds, once the challenge is found to
     advertise h."""
-    selected = _select(required, account, inputs, approved)
+    selected = _select(required, account, inputs, approved, admits)
     if isinstance(selected, Declined):
         return selected
     if not hash_equals(selected.read.h, h):
@@ -408,6 +465,7 @@ async def agree(
     approved: AgreementPayment | None = None,
     inputs: Inputs | None = None,
     signal: asyncio.Event | None = None,
+    chosen: Chosen | None = None,
 ) -> ToApprove | Agreed | Declined:
     """Without approved: ask the agreement URL for its challenge and return the agreement payment to approve, signing
     nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
@@ -417,12 +475,29 @@ async def agree(
     is not one of that challenge's accepts, by RFC 8785 form, is declined offer-unreadable with
     x402/option-not-in-document, each before any fetch or signer call.
     atr_bytes are the ATR the gate compared, whose hash the agreement payment carries; inputs are the buyer's own chain
-    values; setting signal ends the exchange. An approved value that is not of the agreement payment's form, inputs that
-    are not a mapping, a signal that is not an asyncio.Event, or a signer whose account is not a string is declined
-    no-payable-option with x402/input-malformed before any fetch or signer call. A url that is not an https URL is
+    values; setting signal ends the exchange; chosen is the charge the agreement is for, exactly as confirm returned
+    it, and only an option its pairing's agreementOn admits is paid (any option where chosen is not given). An approved
+    value that is not of the agreement payment's form, inputs that are not a mapping, a signal that is not an
+    asyncio.Event, a chosen that is not a Chosen naming a pairing of this package, or a signer whose account is not a
+    string is declined no-payable-option with x402/input-malformed before any fetch or signer call. A url that is not an https URL is
     declined link-not-https with x402/link-not-https for an absolute URL of another scheme and
     x402/legal-context-malformed for any other value, before any fetch."""
-    return await exchange(atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, signal=signal, ns=None)
+    return await exchange(
+        atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, signal=signal, ns=None, chosen=chosen
+    )
+
+
+def _charge_binding(chosen: object) -> Binding | None:
+    """The binding of this package for the pairing chosen names, or None."""
+    pairing = chosen.pairing if isinstance(chosen, Chosen) else None
+    if not isinstance(pairing, str):
+        return None
+    package = sys.modules[__name__.rpartition(".")[0]]
+    for name in getattr(package, "__all__", ()):
+        binding = getattr(package, name, None)
+        if getattr(binding, "id", None) == pairing and callable(getattr(binding, "read", None)):
+            return cast(Binding, binding)
+    return None
 
 
 async def exchange(
@@ -435,34 +510,45 @@ async def exchange(
     inputs: Inputs | None,
     signal: asyncio.Event | None,
     ns: str | None,
+    approval: Approval | None = None,
+    chosen: Chosen | None = None,
+    charge: Binding | None = None,
 ) -> ToApprove | Agreed | Declined:
     """agree, where ns is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
     declines link-not-https, its detail the protocol package's code in that namespace, link-not-https for an absolute
-    URL of another scheme and legal-context-malformed for any other value."""
+    URL of another scheme and legal-context-malformed for any other value. With approval, transact's, the agreement
+    payment is held to its summary and its own pairing's ceiling and asked of the approver, as the act agreement, before
+    it is signed. With chosen, the charge the agreement is for as confirm chose it, paid through charge, or where no
+    charge is given through this package's binding of the pairing chosen names, only an agreement option the charge's
+    agreementOn admits is paid (_admitting)."""
     if not is_https_link(url):
         fault = "link-not-https" if is_other_scheme_link(url) else "legal-context-malformed"
         return Declined("link-not-https", f"{ns if ns is not None else 'x402'}/{fault}")
+    through = None if chosen is None else (charge if charge is not None else _charge_binding(chosen))
     if (
         (approved is not None and not _is_agreement_payment(approved))
         or (inputs is not None and not isinstance(inputs, Mapping))
         or (signal is not None and not isinstance(signal, asyncio.Event))
         or not isinstance(_gate._account(signer), str)
+        or (chosen is not None and (not isinstance(chosen, Chosen) or through is None))
     ):
         return Declined("no-payable-option", f"{ns if ns is not None else 'x402'}/input-malformed")
     given: Inputs = inputs if inputs is not None else {}
+    admits = _any if chosen is None or through is None else _admitting(through, chosen)
     if _is_ended(signal):
         return _ended()
     h = hash_of(atr_bytes)
     if approved is None:
-        return await _offer(atr_bytes, h, url, signer, fetch, given, signal)
+        return await _offer(atr_bytes, h, url, signer, fetch, given, signal, admits)
     if approved.url != url:
         return _failed("The approved agreement payment names another agreement URL.")
 
-    found = _paying(approved.required, h, _gate._account(signer), given, approved.option)
+    found = _paying(approved.required, h, _gate._account(signer), given, approved.option, admits)
     if isinstance(found, Declined):
         return found
     selected, (request_s, exchange_s) = found
-    paid = await _gate.pay(selected.binding, selected.chosen, signer, atr_bytes)
+    asked = None if approval is None else replace(approval, inputs=given)
+    paid = await _gate.pay(selected.binding, selected.chosen, signer, atr_bytes, asked)
     if isinstance(paid, Declined):
         return paid
     if paid is None:
@@ -509,6 +595,7 @@ async def _offer(
     fetch: httpx.AsyncClient,
     inputs: Inputs,
     signal: asyncio.Event | None,
+    admits: _Admits = _any,
 ) -> ToApprove | Agreed | Declined:
     """The unpaid request: the agreement payment to approve, the receipt of an agreement already recorded, or a
     decline."""
@@ -529,7 +616,7 @@ async def _offer(
     required = None if unpaid.payment_required is None else _from_base64_json(unpaid.payment_required)
     if not isinstance(required, Mapping):
         return _failed("The agreement URL answered 402 without a readable PAYMENT-REQUIRED.")
-    found = _paying(required, h, _gate._account(signer), inputs)
+    found = _paying(required, h, _gate._account(signer), inputs, None, admits)
     if isinstance(found, Declined):
         return found
     selected, _limits = found

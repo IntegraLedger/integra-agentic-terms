@@ -1,11 +1,13 @@
 """What the Hedera, NEAR, Tron and TON rows share, as the TypeScript gate's rails tests do: the document with an http
 link, the document advertising payment-identifier, and B10 and B16."""
 
+import asyncio
 import copy
 import re
 from typing import Any
 
-from integraledger_terms import Declined, Transacted, confirm, transact
+from integraledger_terms import Declined, Finished
+from support import confirm, piece_transact
 
 from breadth import ABC, Pairing, Recording, link_calls, offered, run
 from support import serving
@@ -47,10 +49,11 @@ def b16(p: Pairing, others: list[str]) -> None:
 
 
 def identifier_row(p: Pairing) -> None:
-    """B6 · payment identifier: transact appends id = ref to the echoed extension where the challenge advertises it."""
+    """B6 · payment identifier: the payment appends id = ref to the echoed extension where the challenge advertises it,
+    paid by the pairing's own steps over the vectors' abc, with no gate."""
     signer = Recording(p.account, p.answer)
-    out = run(lambda c: transact(with_identifier(p.doc), offered(p.binding), signer, c, inputs=p.inputs), serving(ABC))
-    assert isinstance(out, Transacted) and out.signed is not None, out
+    out = asyncio.run(piece_transact(with_identifier(p.doc), offered(p.binding), signer, p.inputs))
+    assert isinstance(out, Finished) and out.signed is not None, out
     assert REF.fullmatch(out.signed["extensions"]["payment-identifier"]["info"]["id"])
 
 

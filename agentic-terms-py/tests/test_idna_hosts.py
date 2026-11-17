@@ -12,7 +12,8 @@ import httpx
 import idna
 import pytest
 
-from integraledger_terms import X402_EXACT_EIP155_EIP3009, Confirmed, Declined, agree, confirm
+from integraledger_terms import X402_EXACT_EIP155_EIP3009, Confirmed, Declined, agree
+from support import confirm
 from integraledger_terms.bindings._lcp import is_agreement_url, is_https_link
 
 from breadth import run

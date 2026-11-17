@@ -3,6 +3,8 @@ values: a pairing with no public proof, offered with no agreement URL, is agreem
 MPP's Lightning session ("returnInvoice: REQUIRED. BOLT11 invoice with no encoded amount", draft-lightning-session-00),
 checked before the node pays; and the EVM account form. The offers and payers are the vector files'."""
 
+import asyncio
+
 import pytest
 
 import integraledger_terms as terms
@@ -11,16 +13,15 @@ from integraledger_terms import (
     X402_EXACT_EIP155_EIP3009,
     X402_EXACT_EIP155_ERC7710,
     Declined,
-    Transacted,
-    confirm,
-    transact,
+    Finished,
 )
+from support import confirm, transact
 from integraledger_terms import _gate
 from integraledger_terms.bindings._codec import b64u_encode, js_json
 
 from breadth import ABC, ABD, H, LINK, Recording, code, offered, run, x402_doc
 from mpp_docs import placed_doc
-from support import ACCOUNT, D, load, serving
+from support import ACCOUNT, HASH_A, A, D, load, piece_transact, serving
 
 NOW = 1_790_000_000
 
@@ -32,11 +33,12 @@ def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_erc7710_offered_with_no_agreement_url_is_agreement_not_offered_and_the_signer_is_never_called() -> None:
     e = load("x402-exact-eip155-erc7710.json")["fixed"]
-    doc = x402_doc(e["option"], e["resource"])
+    # Placed for the hash of A, an ATR that is one JSON text, which the gate parses before it asks for the agreement URL.
+    doc = x402_doc(e["option"], e["resource"], HASH_A)
     account = f"{e['option']['network']}:{e['payer']}"
     signer = Recording(account, lambda r: (_ for _ in ()).throw(AssertionError("no signer call")))
-    assert code(run(lambda c: transact(doc, X402_EXACT_EIP155_ERC7710, signer, c), serving(ABC))) == "agreement-not-offered"
-    assert code(run(lambda c: confirm(doc, X402_EXACT_EIP155_ERC7710, account, c), serving(ABC))) == "agreement-not-offered"
+    assert code(run(lambda c: transact(doc, X402_EXACT_EIP155_ERC7710, signer, c), serving(A))) == "agreement-not-offered"
+    assert code(run(lambda c: confirm(doc, X402_EXACT_EIP155_ERC7710, account, c), serving(A))) == "agreement-not-offered"
     assert signer.requests == []
 
 
@@ -44,9 +46,10 @@ LN_S = load("mpp-session-lightning.json")
 LN_S_DOC = placed_doc({**LN_S["S1"]["challenge"], "request": b64u_encode(js_json(LN_S["S1"]["request"]).encode("utf-8"))}, H, LINK)
 LN_MAIN = f"lnbtc:000000000019d6689c085ae165831e93:{load('mpp-charge-lightning.json')['fixed']['payee']}"
 def test_a_lightning_return_invoice_with_no_amount_the_node_pays_once() -> None:
+    """Paid by the pairing's own steps over abc, with no gate: the invoice commits to the vectors' H."""
     node = Recording(LN_MAIN, lambda r: LN_S["fixed"]["preimage"])
-    out = run(lambda c: transact(LN_S_DOC, offered(MPP_SESSION_LIGHTNING), node, c, inputs={"returnInvoice": LN_S["fixed"]["returnInvoice"]}), serving(ABC))
-    assert isinstance(out, Transacted), out
+    out = asyncio.run(piece_transact(LN_S_DOC, offered(MPP_SESSION_LIGHTNING), node, {"returnInvoice": LN_S["fixed"]["returnInvoice"]}))
+    assert isinstance(out, Finished), out
     assert len(node.requests) == 1
 
 
@@ -57,7 +60,7 @@ def test_a_lightning_return_invoice_with_no_amount_the_node_pays_once() -> None:
 )
 def test_a_lightning_return_invoice_that_is_not_amountless_is_declined_before_the_node_is_asked(return_invoice: str) -> None:
     node = Recording(LN_MAIN, lambda r: LN_S["fixed"]["preimage"])
-    out = run(lambda c: transact(LN_S_DOC, offered(MPP_SESSION_LIGHTNING), node, c, inputs={"returnInvoice": return_invoice}), serving(ABC))
+    out = asyncio.run(piece_transact(LN_S_DOC, offered(MPP_SESSION_LIGHTNING), node, {"returnInvoice": return_invoice}))
     assert isinstance(out, Declined) and out.detail == "ln/return-invoice-malformed"
     assert node.requests == []
 
