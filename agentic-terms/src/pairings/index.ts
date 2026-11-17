@@ -14,6 +14,7 @@ import { mppChargeEvmAuthorization } from "./mpp-charge-evm-authorization.js";
 import { mppChargeEvmHash } from "./mpp-charge-evm-hash.js";
 import { mppChargeEvmPermit2 } from "./mpp-charge-evm-permit2.js";
 import { mppChargeEvmTransaction } from "./mpp-charge-evm-transaction.js";
+import { mppChargeLcpHedera } from "./mpp-charge-lcp.js";
 import { mppChargeCard } from "./mpp-charge-card.js";
 import { mppChargeNearIntents } from "./mpp-charge-nearintents.js";
 import { mppChargeStripe } from "./mpp-charge-stripe.js";
@@ -125,4 +126,5 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["mpp/session/hedera/stock", mppSessionHederaStock],
   ["mpp/session/xrpl/stock", mppSessionXrplStock],
   ["x402/upto/xrpl", x402UptoXrpl],
+  ["mpp/charge/lcp/hedera", mppChargeLcpHedera],
 ]);

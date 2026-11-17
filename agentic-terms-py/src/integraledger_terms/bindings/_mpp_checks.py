@@ -11,10 +11,14 @@ from .._types import Refusal
 from ._bolt11 import FIELD
 from ._bolt11 import decode as decode_invoice
 from ._codec import b58_decode, b64u_decode, b64u_encode, canonical_or_none, utf16_key
+from ._hedera_proto import amount_of as hedera_amount_of
+from ._hedera_proto import is_entity
 from ._jose import js_length, parse_json, within_depth
 from ._lcp import is_address, is_list, is_object, uint256_of
 from ._native_usdc import NATIVE_USDC
 from ._stacks import is_canonical_principal
+from ._stellar import is_account as is_stellar_account
+from ._stellar import is_contract as is_stellar_contract
 from ._svm import TOKEN, TOKEN_2022, built_version
 from ._xrpl_codec import account_id_of
 
@@ -843,6 +847,80 @@ def is_jcs_request(request_param: object, parsed: object) -> bool:
     return text is not None and b64u_encode(text.encode("utf-8")) == request_param
 
 
+# The lcp method's charge (lcp profile mpp-method-lcp.md, rules 3 and 4): the request members the charge intent defines
+# and the method takes, each rail's methodDetails members and networks, and Stellar's amount, an i128.
+_LCP_REQUEST = frozenset({"amount", "currency", "recipient", "description", "externalId", "methodDetails"})
+_LCP_HEDERA_DETAILS = frozenset({"rail", "network", "supportedModes", "feePayer", "feePayerAccountId"})
+_LCP_STELLAR_DETAILS = frozenset({"rail", "network", "supportedModes", "feePayer"})
+_LCP_HEDERA_NETWORKS = ("hedera:mainnet", "hedera:testnet", "hedera:previewnet", "hedera:devnet")
+_LCP_STELLAR_NETWORKS = ("stellar:pubnet", "stellar:testnet")
+_LCP_STELLAR_AMOUNT = re.compile(r"0|[1-9][0-9]{0,38}")
+_I128_LIMIT = 1 << 127
+
+
+def _closed(o: Obj, listed: frozenset[str]) -> bool:
+    return all(k in listed for k in o)
+
+
+def _optional_strings(r: Obj) -> bool:
+    """The request's description and externalId are strings where present."""
+    return all(k not in r or isinstance(r[k], str) for k in ("description", "externalId"))
+
+
+def lcp_charge_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
+    """charge on lcp, the method's filter, with the first of these codes that holds: a rail that is neither hedera nor
+    stellar is mpp/not-this-pairing; a challenge with no expires mpp/expires-required; supportedModes absent or not
+    exactly ["pull"] mpp/modes-not-pull; then the rail's network (<rail>/network-malformed) and its closed request schema
+    (<rail>/option-malformed). Hedera: amount a decimal from 1 to 2^63 - 1, currency and recipient entity ids, 0.0.0
+    being HBAR, and feePayer a boolean where present, true with an entity feePayerAccountId and feePayerAccountId present
+    only then. Stellar: amount a decimal below 2^127, zero admitted, currency a C... contract strkey, recipient a plain
+    G... account strkey, and feePayer absent or false; a request that passes names no pairing, since the protocol
+    package serves no Stellar rail of the method, and is mpp/not-this-pairing."""
+    rail = d.get("rail")
+    if rail not in ("hedera", "stellar"):
+        return Refusal("mpp/not-this-pairing")
+    if "expires" not in c:
+        return Refusal("mpp/expires-required")
+    modes = d.get("supportedModes")
+    if not isinstance(modes, list) or len(modes) != 1 or modes[0] != "pull":
+        return Refusal("mpp/modes-not-pull")
+    network = d.get("network")
+    if rail == "hedera":
+        if not isinstance(network, str) or network not in _LCP_HEDERA_NETWORKS:
+            return Refusal("hedera/network-malformed")
+        amount = hedera_amount_of(r.get("amount"))
+        fee_payer = d.get("feePayer", _ABSENT)
+        if (
+            not _closed(r, _LCP_REQUEST)
+            or not _closed(d, _LCP_HEDERA_DETAILS)
+            or amount is None
+            or amount == 0
+            or not is_entity(r.get("currency"))
+            or not is_entity(r.get("recipient"))
+            or not _optional_strings(r)
+            or (fee_payer is not _ABSENT and not isinstance(fee_payer, bool))
+            or (not is_entity(d.get("feePayerAccountId")) if fee_payer is True else "feePayerAccountId" in d)
+        ):
+            return Refusal("hedera/option-malformed")
+        return ["mpp/charge/lcp/hedera"]
+    if not isinstance(network, str) or network not in _LCP_STELLAR_NETWORKS:
+        return Refusal("stellar/network-malformed")
+    amount_text = r.get("amount")
+    if (
+        not _closed(r, _LCP_REQUEST)
+        or not _closed(d, _LCP_STELLAR_DETAILS)
+        or not isinstance(amount_text, str)
+        or _LCP_STELLAR_AMOUNT.fullmatch(amount_text) is None
+        or int(amount_text) >= _I128_LIMIT
+        or not is_stellar_contract(r.get("currency"))
+        or not is_stellar_account(r.get("recipient"))
+        or not _optional_strings(r)
+        or ("feePayer" in d and d["feePayer"] is not False)
+    ):
+        return Refusal("stellar/option-malformed")
+    return Refusal("mpp/not-this-pairing")
+
+
 # Each (intent, method) MPP serves, and the check that names its pairings.
 PAIRING_CHECKS: Mapping[str, PairingCheck] = {
     "charge/evm": evm_charge_pairings,
@@ -862,6 +940,7 @@ PAIRING_CHECKS: Mapping[str, PairingCheck] = {
     "charge/stripe": stripe_charge_pairings,
     "subscription/stripe": stripe_subscription_pairings,
     "charge/usdc": usdc_charge_pairings,
+    "charge/lcp": lcp_charge_pairings,
 }
 
 # The checks of a placed challenge, with the carrier the seller writes after place required where pairings_of takes a

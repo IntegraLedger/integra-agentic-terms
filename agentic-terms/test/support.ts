@@ -76,7 +76,7 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
     ["mpp/charge/evm/permit2", "mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"],
   ],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
-  ["hedera-body", ["x402/exact/hedera"]],
+  ["hedera-body", ["mpp/charge/lcp/hedera", "x402/exact/hedera"]],
   ["near-delegate", ["x402/exact/near"]],
   ["solana-message", ["mpp/charge/solana", "mpp/charge/usdc/solana", "x402/exact/solana", "x402/upto/solana"]],
   ["tempo-call", ["mpp/session/tempo"]],

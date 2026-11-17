@@ -3,6 +3,7 @@
 from .._types import Piece
 from . import (
     mpp_session_hedera_stock,
+    mpp_charge_lcp,
     x402_exact_hedera,
     x402_exact_hedera_transfer_executor,
     x402_exact_near,
@@ -11,6 +12,7 @@ from . import (
 )
 
 FAMILY: dict[str, Piece] = {
+    mpp_charge_lcp.HEDERA_PIECE.pairing: mpp_charge_lcp.HEDERA_PIECE,
     x402_exact_hedera.PIECE.pairing: x402_exact_hedera.PIECE,
     x402_exact_hedera_transfer_executor.PIECE.pairing: x402_exact_hedera_transfer_executor.PIECE,
     x402_exact_near.PIECE.pairing: x402_exact_near.PIECE,

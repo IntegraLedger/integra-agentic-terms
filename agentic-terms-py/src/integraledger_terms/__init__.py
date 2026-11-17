@@ -86,6 +86,7 @@ from .bindings.x402_exact_cardano import X402ExactCardano, X402ExactCardanoLock
 from .bindings.x402_exact_sui import X402ExactSui
 from .bindings.mpp_charge_usdc_stacks import MppChargeUsdcStacks
 from .bindings.mpp_charge_xrpl import MppChargeXrpl
+from .bindings.mpp_charge_lcp import MppChargeLcpHedera
 from .bindings.mpp_session_xrpl import MppSessionXrpl
 from .bindings.mpp_session_xrpl_stock import MppSessionXrplStock
 from .bindings.mpp_session_hedera_stock import MppSessionHederaStock
@@ -145,6 +146,7 @@ X402_EXACT_SUI: Binding = X402ExactSui()
 X402_EXACT_XRPL: Binding = X402ExactXrpl()
 X402_EXACT_ALGORAND: Binding = X402ExactAlgorand()
 MPP_CHARGE_XRPL: Binding = MppChargeXrpl()
+MPP_CHARGE_LCP_HEDERA: Binding = MppChargeLcpHedera()
 MPP_CHARGE_USDC_STACKS: Binding = MppChargeUsdcStacks()
 MPP_SESSION_XRPL: Binding = MppSessionXrpl()
 MPP_SESSION_XRPL_STOCK: Binding = MppSessionXrplStock()
@@ -210,6 +212,7 @@ __all__ = [
     "X402_EXACT_XRPL",
     "X402_EXACT_ALGORAND",
     "MPP_CHARGE_XRPL",
+    "MPP_CHARGE_LCP_HEDERA",
     "MPP_CHARGE_USDC_STACKS",
     "MPP_SESSION_XRPL",
     "MPP_SESSION_XRPL_STOCK",

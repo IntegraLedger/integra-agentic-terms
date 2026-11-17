@@ -4,7 +4,9 @@ the charge intent's "REQUIRED for blockchain methods" is an example of a method 
 EIP-3009 validBefore, the Permit2 deadline and the session openings' deadline; and on NEAR Intents, whose draft says expires "MUST be set to the 1Click quote
 deadline" (draft-nearintents-charge-01 L414-415), and on the XRP Ledger charge, whose draft says "The server MUST reject
 a credential whose challenge carries no expires" (draft-xrpl-charge-00 L391-392). Without expires those pairings are
-left out, and a challenge left with none is mpp/expires-required, as the protocol package's pairingsOf answers."""
+left out, and a challenge left with none is mpp/expires-required, as the protocol package's pairingsOf answers. The lcp
+method's filter itself refuses a challenge with no expires, mpp/expires-required (lcp profile mpp-method-lcp.md, rules
+2 and 4)."""
 
 import json
 from typing import Any
@@ -18,6 +20,9 @@ from mpp_docs import MC, issued, place, placed_doc
 from support import PENDING, VECTORS, load, migrating
 
 REQUIRED = Refusal("mpp/expires-required")
+# The pairings a challenge without expires does not offer: those whose build writes it, and the lcp method's, whose
+# filter refuses such a challenge.
+NEEDS = NEEDS_EXPIRES | {"mpp/charge/lcp/hedera"}
 H: str = MC["fixed"]["H"]
 LINK: str = MC["fixed"]["link"]
 FROM = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
@@ -43,7 +48,7 @@ def test_each_vector_files_challenge_without_expires_offers_its_pairings_that_do
     offer = {k: v for k, v in row["input"]["presented"]["challenge"].items() if k not in ("id", "opaque")}
     named = pairings_of(offer)
     assert isinstance(named, tuple) and named
-    kept = tuple(p for p in named if p not in NEEDS_EXPIRES)
+    kept = tuple(p for p in named if p not in NEEDS)
     assert pairings_of(without_expires(offer)) == (kept or REQUIRED)
     assert pairings_of({**offer, "expires": "tomorrow"}) == REQUIRED
 

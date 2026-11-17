@@ -397,6 +397,8 @@ def network(challenge: object) -> str | Refusal:
         return hedera_session_network_of(d)
     if key == "charge/nearintents":
         return str(d["originNetwork"])
+    if key == "charge/lcp":
+        return str(d["network"])
     if key == "charge/usdc":
         profile = usdc_profile(d)
         if isinstance(profile, Refusal):

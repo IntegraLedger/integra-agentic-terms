@@ -50,7 +50,6 @@ PENDING: frozenset[str] = frozenset(
         "ap2/checkout-mandate/x402",
         "card/mastercard-agent-pay",
         "card/visa-vic",
-        "mpp/charge/lcp/hedera",
         "mpp/charge/solana/unsponsored",
         "mpp/charge/tempo/split-memo",
         "mpp/charge/tempo/split-memo/push",
