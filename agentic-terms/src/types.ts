@@ -19,6 +19,7 @@ import type {
 import type { NearUnsigned } from "@integraledger/lcp/near";
 import type { PolkadotUnsigned } from "@integraledger/lcp/polkadot";
 import type { StarknetUnsigned } from "@integraledger/lcp/starknet";
+import type { StellarUnsigned } from "@integraledger/lcp/stellar";
 import type { SuiUnsigned } from "@integraledger/lcp/sui";
 import type { KeyAuthorizationUnsigned } from "@integraledger/lcp/tempo";
 import type { TronUnsigned } from "@integraledger/lcp/tron";
@@ -72,6 +73,7 @@ export type SigningRequest =
   | CardanoUnsigned["request"]
   | SuiUnsigned["request"]
   | StarknetUnsigned["request"]
+  | StellarUnsigned["request"]
   | PolkadotUnsigned["request"]
   | TronUnsigned["request"]
   | TvmUnsigned["request"]

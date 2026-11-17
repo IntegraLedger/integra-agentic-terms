@@ -35,6 +35,7 @@ EXECUTOR = load("x402-exact-hedera-transfer-executor.json")["fixed"]
 CASPER = load("x402-exact-casper.json")["fixed"]
 CCD = load("x402-exact-ccd.json")["fixed"]
 XRPL = load("x402-exact-xrpl.json")["fixed"]
+XLM = load("x402-exact-stellar-precondition.json")
 
 EVM_MEMBERS = {"from": EVM["payer"], "now": EVM["now"]}
 EVM_BAD = [("from", "0x12", "x402/option-malformed"), ("now", -1, "x402/option-malformed")]
@@ -208,6 +209,11 @@ ROWS: dict[str, tuple[dict[str, Any], str, list[tuple[str, Any, str]]]] = {
             ("fee", "x", "x402/option-malformed"),
             ("lastLedgerSequence", -1, "x402/option-malformed"),
         ],
+    ),
+    "x402/exact/stellar/precondition": (
+        {"currentLedger": XLM["build"]["currentLedger"], "payer": XLM["fixed"]["buyer"]},
+        "x402/payload-malformed",
+        [("currentLedger", -1, "stellar/tx-malformed"), ("payer", "x", "stellar/payer-mismatch")],
     ),
     "x402/exact/sui": ({}, "x402/payload-malformed", []),
     "x402/exact/aptos": ({}, "x402/payload-malformed", []),

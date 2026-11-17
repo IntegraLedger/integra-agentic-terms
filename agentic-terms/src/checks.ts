@@ -389,6 +389,7 @@ const PACE: { readonly [namespace: string]: number } = {
   near: 0.6,
   polkadot: 6,
   solana: 0.3,
+  stellar: 5,
   sui: 86_400,
   xrpl: 5,
 };

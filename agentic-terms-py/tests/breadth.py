@@ -230,6 +230,7 @@ PIECE_ONLY: Mapping[str, str] = {
     "x402/exact/polkadot/lcp-assets-remark": _NO_RUN,
     "x402/exact/solana": _NO_RUN,
     "x402/exact/starknet": _NO_RUN,
+    "x402/exact/stellar/precondition": "no Python summary of stellar-precondition yet; paid through the gate in TypeScript",
     "x402/exact/sui": _NO_RUN,
     "x402/exact/tron/lcp-trc20-memo": _NO_RUN,
     "x402/exact/tvm": _NO_RUN,

@@ -62,6 +62,19 @@ B2 = [(f, r) for f, r in ROWS if r["name"] == "B2" and r["pairing"] not in PENDI
 B6 = [(f, r) for f, r in ROWS if r["name"] == "B6" and r["pairing"] not in PENDING]
 
 
+def account_of(given: dict[str, Any]) -> str:
+    """The row's account: its own; for a row that names none and whose inputs name the build's payer (the Stellar
+    precondition's B2), that payer on the network of the document's first option, the account the build signs for; and
+    for any other row that names none, one whose pairing's choice reads none, the empty account."""
+    payer = given.get("inputs", {}).get("payer")
+    if "account" in given:
+        account: str = given["account"]
+        return account
+    if not isinstance(payer, str):
+        return ""
+    return f"{given['doc']['accepts'][0]['network']}:{payer}"
+
+
 def cases(rows: list[tuple[str, dict[str, Any]]]) -> list[Any]:
     return [pytest.param(f, r, id=f"{f} {r['pairing']}", marks=migrating(r["pairing"])) for f, r in rows]
 
@@ -78,14 +91,12 @@ def test_b2_the_plant(file: str, row: dict[str, Any], monkeypatch: pytest.Monkey
     def never(request: Any) -> Any:
         raise AssertionError("the signer is never called on a plant")
 
-    # A row that names no account is one whose pairing's choice reads none: it is given the empty account.
-    account = given.get("account", "")
-    signer = Recording(account, never)
+    signer = Recording(account_of(given), never)
     out = run(lambda c: transact(copy.deepcopy(given["doc"]), binding, signer, c, inputs=inputs), serving(served))
     assert isinstance(out, Declined) and out.code == row["expect"]["decline"], out
     assert len(signer.requests) == row["expect"]["signCalls"]
     link = serving(served)
-    confirmed = run(lambda c: confirm(copy.deepcopy(given["doc"]), binding, account, c, inputs), link)
+    confirmed = run(lambda c: confirm(copy.deepcopy(given["doc"]), binding, account_of(given), c, inputs), link)
     assert isinstance(confirmed, Declined) and confirmed.code == row["expect"]["decline"], confirmed
     assert link.calls == 1
 

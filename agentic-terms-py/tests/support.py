@@ -77,7 +77,6 @@ PENDING: frozenset[str] = frozenset(
         "ucp/checkout/agent-signed",
         "x402/exact/eip155/gateway-batched",
         "x402/exact/lnbtc/payment-hash",
-        "x402/exact/stellar/precondition",
     }
 )
 

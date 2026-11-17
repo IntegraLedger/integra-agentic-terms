@@ -19,6 +19,7 @@ import { ccdTransfer } from "./summary/ccd-transfer.js";
 import { starknetTransfer } from "./summary/starknet-snip12.js";
 import { substrateTransfer } from "./summary/substrate-call.js";
 import { aptosTransaction, cardanoTransaction, suiTransaction } from "./summary/x402-wallet.js";
+import { stellarPrecondition, stellarStart } from "./summary/stellar-precondition.js";
 
 /** A summary without the ATR's bytes, which the gate adds. */
 export type Shown = Omit<Summary, "atr">;
@@ -143,6 +144,7 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/aptos", { show: aptosTransaction }],
   ["x402/exact/cardano", { show: cardanoTransaction }],
   ["x402/exact/sui", { show: suiTransaction }],
+  ["x402/exact/stellar/precondition", { show: stellarPrecondition, start: stellarStart }],
 ]);
 
 /**

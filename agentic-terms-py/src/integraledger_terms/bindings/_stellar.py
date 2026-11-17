@@ -1,12 +1,14 @@
 """Stellar rail pieces the buyer half reads and writes: strkeys (base32 with a CRC16-XModem checksum), the muxed id
-that carries the ATR hash's first 8 bytes, a payer-signed Soroban transfer decoded from its envelope, and the
-authorization preimage the payer signs with the envelope that its signature completes.
+that carries the ATR hash's first 8 bytes, a payer-signed Soroban transfer decoded from its envelope, the
+authorization preimage the payer signs with the envelope that its signature completes, and the signed-payload
+precondition (CAP-40) of H and the entry's nonce that the agreement on x402 carries.
 """
 
 import base64
 import binascii
 import hashlib
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .._core import AtrHash
@@ -14,6 +16,7 @@ from .._types import Refusal
 from . import _stellar_xdr as xdr
 from ._codec import b64_decode
 from ._jose import js_length
+from ._lcp import normal_hash
 
 PASSPHRASE = {
     "stellar:pubnet": "Public Global Stellar Network ; September 2015",
@@ -445,3 +448,190 @@ def signing_for(text: object, network: object, expiration: object, zero_source: 
         _key=key,
     )
     return Signing(parsed.payment, parsed.agrees, unsigned)
+
+
+# ── the signed-payload precondition ─────────────────────────────────────────────────────────────────────────────
+
+# The length of the signed-payload precondition's payload: H's 32 bytes, then an int64's 8.
+PAYLOAD_BYTES = 40
+_I64_LIMIT = 2**63
+_PUBLIC_KEY = b"public_key"
+_MAX_SIGNATURES = 20
+
+
+def signed_payload(h: object, value: object) -> bytes | Refusal:
+    """The 40-byte payload of the signed-payload precondition (CAP-40): H's 32 bytes, then value, an int64 (the
+    authorization entry's nonce), 8 bytes big-endian two's complement. An h that is not a 32-byte hash is
+    x402/payload-malformed; a value outside the int64 range stellar/carrier-mismatch."""
+    nh = normal_hash(h)
+    if nh is None:
+        return Refusal("x402/payload-malformed")
+    if isinstance(value, bool) or not isinstance(value, int) or not -_I64_LIMIT <= value < _I64_LIMIT:
+        return Refusal("stellar/carrier-mismatch")
+    return bytes.fromhex(nh[2:]) + value.to_bytes(8, "big", signed=True)
+
+
+@dataclass(frozen=True, slots=True)
+class SignedPayload:
+    h: AtrHash
+    value: int
+
+
+def read_signed_payload(data: object) -> SignedPayload | Refusal:
+    """H and the int64 of a 40-byte payload; bytes of any other length are stellar/carrier-mismatch."""
+    if not isinstance(data, bytes) or len(data) != PAYLOAD_BYTES:
+        return Refusal("stellar/carrier-mismatch")
+    return SignedPayload("0x" + data[:32].hex(), int.from_bytes(data[32:], "big", signed=True))
+
+
+def _entry_keys(data: bytes, c: xdr.Credentials) -> list[str]:
+    """The G keys whose signatures an address entry carries, as a Stellar account's entry carries them: a vector of
+    maps {public_key, signature}, the first public_key of each map 32 bytes. None where the signature has another
+    form."""
+    r = xdr.Reader(data[c.signature_start : c.signature_end])
+
+    def body(v: xdr.Val) -> bytes:
+        """A symbol's or a byte string's bytes: the length after the type, then the bytes."""
+        length = int.from_bytes(r.data[v.start + 4 : v.start + 8], "big")
+        return r.data[v.start + 8 : v.start + 8 + length]
+
+    keys: list[str] = []
+    try:
+        if r.i32() != 16 or not r.flag():
+            return []
+        for _ in range(r.count()):
+            if r.i32() != 17:
+                return []
+            entries = r.count() if r.flag() else 0
+            found: bytes | None = None
+            for _ in range(entries):
+                key, val = xdr.sc_val(r), xdr.sc_val(r)
+                if found is None and key.kind == 15 and body(key) == _PUBLIC_KEY:
+                    found = body(val) if val.kind == 13 else b""
+            if found is None or len(found) != 32:
+                return []
+            keys.append(account(found))
+    except xdr.Malformed:
+        return []
+    return keys
+
+
+@dataclass(frozen=True, slots=True)
+class PayloadSigner:
+    """A signed-payload signer of a transaction's preconditions: its Ed25519 key as a G strkey, and its payload."""
+
+    key: str
+    payload: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class PreconditionEnvelope:
+    """What an envelope of the precondition form shows: the payment the buyer's entry signs and whether the operation
+    invokes exactly that, the signed-payload signers of its preconditions, and the keys whose signatures the buyer's
+    entry carries."""
+
+    payment: Payment
+    agrees: bool
+    signers: list[PayloadSigner]
+    entry_keys: list[str]
+
+
+def read_precondition(text: object, network: object, landed: bool) -> PreconditionEnvelope | Refusal:
+    """An envelope of the precondition form, read as read_signed_transfer reads it, with the signed-payload signers of
+    its (inner) v1 transaction's preconditions, in order: none where they are not PRECOND_V2."""
+    data = _bytes_of(text, network)
+    if isinstance(data, Refusal):
+        return data
+    assert isinstance(network, str)
+    parsed = _parse(data, network, landed)
+    if isinstance(parsed, Refusal):
+        return parsed
+    cond = parsed.envelope.cond
+    signers = [
+        PayloadSigner(account(s.key), s.payload)
+        for s in (cond.signers if cond.kind == 2 else [])
+        if s.kind == 3 and s.payload is not None
+    ]
+    return PreconditionEnvelope(parsed.payment, parsed.agrees, signers, _entry_keys(data, parsed.credentials))
+
+
+def _optional(value: bytes | None) -> bytes:
+    return b"\0\0\0\0" if value is None else b"\0\0\0\1" + value
+
+
+@dataclass(frozen=True, slots=True)
+class PreconditionSigning:
+    """The precondition form's signing inputs: the payment the buyer's entry signs, whether the operation invokes
+    exactly that, the entry's HashIDPreimage with its expiration ledger set, the 40-byte payload, and the completion
+    that writes the two signatures."""
+
+    payment: Payment
+    agrees: bool
+    preimage: bytes
+    payload: bytes
+    _data: bytes
+    _parsed: _Parsed
+    _expiration: int
+    _key: bytes
+
+    def written(self, signatures: object) -> str | Refusal:
+        """The base64 envelope: the preconditions PRECOND_V2 with the time bounds, ledger bounds and sequence conditions
+        they held and one signed-payload signer, the buyer's key with the payload; the entry's expiration ledger set and
+        its signature written as an account's, a vector of one map {public_key, signature}; and the payload's signature
+        appended as a decorated signature whose hint is the key's last 4 bytes XOR the payload's last 4 (CAP-40). A
+        signature that is not 64 bytes is stellar/tx-malformed, and an envelope over MAX_XDR characters
+        stellar/tx-too-large."""
+        if not isinstance(signatures, Mapping):
+            return Refusal("stellar/tx-malformed")
+        entry, payload = signatures.get("entry"), signatures.get("payload")
+        if not isinstance(entry, bytes) or len(entry) != 64 or not isinstance(payload, bytes) or len(payload) != 64:
+            return Refusal("stellar/tx-malformed")
+        env, c, data = self._parsed.envelope, self._parsed.credentials, self._data
+        sigs, cond = env.signatures, env.cond
+        if sigs.count >= _MAX_SIGNATURES:
+            return Refusal("stellar/tx-malformed")
+        hint = bytes(k ^ p for k, p in zip(self._key[28:], self.payload[PAYLOAD_BYTES - 4 :], strict=True))
+        precondition = (
+            (2).to_bytes(4, "big")
+            + _optional(cond.time_bounds)
+            + _optional(cond.ledger_bounds)
+            + _optional(cond.min_seq_num)
+            + cond.min_seq_age
+            + cond.min_seq_ledger_gap
+            + (1).to_bytes(4, "big")
+            + (3).to_bytes(4, "big")
+            + self._key
+            + PAYLOAD_BYTES.to_bytes(4, "big")
+            + self.payload
+        )
+        out = data[: sigs.at] + (sigs.count + 1).to_bytes(4, "big") + data[sigs.at + 4 : sigs.end]
+        out += hint + (64).to_bytes(4, "big") + payload + data[sigs.end :]
+        out = out[: c.signature_start] + _signature_val(self._key, entry) + out[c.signature_end :]
+        out = out[: c.expiration_at] + self._expiration.to_bytes(4, "big") + out[c.expiration_at + 4 :]
+        out = out[: cond.start] + precondition + out[cond.end :]
+        text = base64.b64encode(out).decode("ascii")
+        return Refusal("stellar/tx-too-large") if len(text) > MAX_XDR else text
+
+
+def precondition_signing_for(text: object, network: object, expiration: object, h: object) -> PreconditionSigning | Refusal:
+    """The precondition form's signing inputs from a simulated envelope. signing_input's checks come first; a buyer
+    that is not an account is stellar/no-address-auth, and a simulated transaction that already holds an extra signer
+    stellar/tx-malformed."""
+    data = signing_input(text, network, expiration)
+    if isinstance(data, Refusal):
+        return data
+    assert isinstance(network, str) and isinstance(expiration, int)
+    parsed = _parse(data, network, False)
+    if isinstance(parsed, Refusal):
+        return parsed
+    key = decode_strkey(_ACCOUNT, parsed.payment.source)
+    if key is None:
+        return Refusal("stellar/no-address-auth")
+    cond = parsed.envelope.cond
+    if cond.kind == 2 and cond.signers:
+        return Refusal("stellar/tx-malformed")
+    payload = signed_payload(h, parsed.credentials.nonce)
+    if isinstance(payload, Refusal):
+        return payload
+    preimage = preimage_of(network, parsed.entry, parsed.credentials, expiration)
+    return PreconditionSigning(parsed.payment, parsed.agrees, preimage, payload, data, parsed, expiration, key)

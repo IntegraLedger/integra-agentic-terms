@@ -392,27 +392,56 @@ class Invoke:
     entries: list[Entry] = field(default_factory=list)
 
 
-def _preconditions(r: Reader) -> None:
+@dataclass(frozen=True, slots=True)
+class Signer:
+    """A SignerKey of a transaction's extra signers: its type (3 an Ed25519 signed payload), its key, and its payload
+    where it has one."""
+
+    kind: int
+    key: bytes
+    payload: bytes | None
+
+
+@dataclass(frozen=True, slots=True)
+class Preconditions:
+    """A transaction's Preconditions: their span, their kind (0 none, 1 time bounds, 2 V2), and each member's own XDR
+    bytes, None where an optional member is absent, so that a writer keeps them as they were."""
+
+    start: int
+    end: int
+    kind: int
+    time_bounds: bytes | None
+    ledger_bounds: bytes | None
+    min_seq_num: bytes | None
+    min_seq_age: bytes
+    min_seq_ledger_gap: bytes
+    signers: list[Signer]
+
+
+def _preconditions(r: Reader) -> Preconditions:
+    start = r.at
     kind = r.enum(range(0, 3))
+    time_bounds = ledger_bounds = min_seq_num = None
+    min_seq_age, min_seq_ledger_gap = bytes(8), bytes(4)
+    signers: list[Signer] = []
     if kind == 1:
-        r.u64()
-        r.u64()
+        time_bounds = r.take(16)
     elif kind == 2:
         if r.flag():
-            r.u64()
-            r.u64()
+            time_bounds = r.take(16)
         if r.flag():
-            r.u32()
-            r.u32()
+            ledger_bounds = r.take(8)
         if r.flag():
-            r.i64()
-        r.u64()
-        r.u32()
+            min_seq_num = r.take(8)
+        min_seq_age = r.take(8)
+        min_seq_ledger_gap = r.take(4)
         for _ in range(r.count(2)):
             signer = r.enum(range(0, 4))
-            r.opaque(32)
-            if signer == 3:
-                r.var_opaque(64)
+            key = r.opaque(32)
+            signers.append(Signer(signer, key, r.var_opaque(64) if signer == 3 else None))
+    return Preconditions(
+        start, r.at, kind, time_bounds, ledger_bounds, min_seq_num, min_seq_age, min_seq_ledger_gap, signers
+    )
 
 
 def _memo(r: Reader) -> None:
@@ -612,9 +641,19 @@ def _invoke(r: Reader) -> Invoke:
 
 
 @dataclass(frozen=True, slots=True)
+class Signatures:
+    """A v1 envelope's signatures: the offset of their count, the count, and the offset just after the last."""
+
+    at: int
+    count: int
+    end: int
+
+
+@dataclass(frozen=True, slots=True)
 class Envelope:
     """A v1 transaction's one invoke, where its source account's bytes sit, and whether it came in a fee bump; the
-    Ed25519 keys of the v1 transaction's source account and of the operation's, None when the operation names none."""
+    Ed25519 keys of the v1 transaction's source account and of the operation's, None when the operation names none;
+    and the v1 transaction's preconditions and signatures, the inner one's in a fee bump."""
 
     fee_bump: bool
     source_start: int
@@ -622,12 +661,17 @@ class Envelope:
     invoke: Invoke
     source: bytes
     operation_source: bytes | None
+    cond: Preconditions
+    signatures: Signatures
 
 
-def _signatures(r: Reader) -> None:
-    for _ in range(r.count(20)):
+def _signatures(r: Reader) -> Signatures:
+    at = r.at
+    count = r.count(20)
+    for _ in range(count):
         r.opaque(4)
         r.var_opaque(64)
+    return Signatures(at, count, r.at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -636,6 +680,8 @@ class _V1:
     source_end: int
     source: bytes
     operations: list[tuple[bytes | None, Invoke | None]]
+    cond: Preconditions
+    signatures: Signatures
 
 
 def _v1(r: Reader) -> _V1:
@@ -644,7 +690,7 @@ def _v1(r: Reader) -> _V1:
     source_end = r.at
     r.u32()
     r.i64()
-    _preconditions(r)
+    cond = _preconditions(r)
     _memo(r)
     operations: list[tuple[bytes | None, Invoke | None]] = []
     for _ in range(r.count(100)):
@@ -656,8 +702,8 @@ def _v1(r: Reader) -> _V1:
             _operation(r, kind)
             operations.append((operation_source, None))
     _transaction_ext(r)
-    _signatures(r)
-    return _V1(source_start, source_end, source, operations)
+    signatures = _signatures(r)
+    return _V1(source_start, source_end, source, operations, cond, signatures)
 
 
 def envelope(data: bytes) -> Envelope:
@@ -683,4 +729,6 @@ def envelope(data: bytes) -> Envelope:
     operation_source, invoke = v1.operations[0]
     if invoke is None:
         raise NotOneTransfer
-    return Envelope(kind == 5, v1.source_start, v1.source_end, invoke, v1.source, operation_source)
+    return Envelope(
+        kind == 5, v1.source_start, v1.source_end, invoke, v1.source, operation_source, v1.cond, v1.signatures
+    )

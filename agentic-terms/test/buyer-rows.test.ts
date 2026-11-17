@@ -49,7 +49,6 @@ const PENDING: ReadonlySet<string> = new Set([
   "ucp/checkout/agent-signed",
   "x402/exact/eip155/gateway-batched",
   "x402/exact/lnbtc/payment-hash",
-  "x402/exact/stellar/precondition",
 ]);
 
 interface Row {
@@ -77,6 +76,17 @@ const rows: { file: string; row: Row }[] = readdirSync(dir)
     return (data.buyer?.rows ?? []).map((row) => ({ file, row }));
   });
 const fromHex = (h: string): Uint8Array => Uint8Array.from(Buffer.from(h, "hex"));
+/**
+ * The row's account: its own; for a row that names none and whose inputs name the build's `payer` (the Stellar
+ * precondition's B2), that payer on the network of the document's first option, the account the build signs for; and
+ * for any other row that names none, one whose pairing's choice reads none, the empty account.
+ */
+const accountOf = (row: Row): string => {
+  const payer = row.input.inputs?.["payer"];
+  if (row.input.account !== undefined) return row.input.account;
+  if (typeof payer !== "string") return "";
+  return `${(row.input.doc as { accepts: { network: string }[] }).accepts[0]!.network}:${payer}`;
+};
 const bindingOf = (id: string): Binding => {
   const b = BINDINGS.find((x) => x.id === id);
   if (b === undefined) throw new Error(`no pairing ${id}`);
@@ -133,9 +143,7 @@ describe("every vector file's buyer rows, through the gate", () => {
       }
       const binding = bindingOf(row.pairing);
       const inputs = row.input.inputs ?? {};
-      // A row that names no account is one whose pairing's choice reads none: it is given the empty account.
-      const account = row.input.account ?? "";
-      const signer = counting(account, async () => {
+      const signer = counting(accountOf(row), async () => {
         throw new Error("the signer is never called on a plant");
       });
       const served = fromHex(row.input.servesHex!);
@@ -144,7 +152,7 @@ describe("every vector file's buyer rows, through the gate", () => {
       expect("decline" in out ? out.decline.code : "signed").toBe(expected.decline);
       expect(signer.requests.length).toBe(expected.signCalls);
       const fetch = serving(served);
-      const confirmed = await confirm(structuredClone(row.input.doc), binding, account, fetch, { ...CONFIRMING, inputs: inputs });
+      const confirmed = await confirm(structuredClone(row.input.doc), binding, accountOf(row), fetch, { ...CONFIRMING, inputs: inputs });
       expect("decline" in confirmed ? confirmed.decline.code : "confirmed").toBe(expected.decline);
       expect(confirmed).not.toHaveProperty("request");
       expect(fetch.calls).toBe(1);

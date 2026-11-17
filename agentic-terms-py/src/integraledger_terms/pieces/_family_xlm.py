@@ -1,4 +1,4 @@
-"""The buyer pieces of the XRPL, Algorand and Stacks pairings, keyed by pairing id."""
+"""The buyer pieces of the XRPL, Algorand, Stacks and Stellar pairings, keyed by pairing id."""
 
 from .._types import Piece
 from . import (
@@ -7,6 +7,7 @@ from . import (
     mpp_session_xrpl,
     mpp_session_xrpl_stock,
     x402_exact_algorand,
+    x402_exact_stellar_precondition,
     x402_exact_xrpl,
     x402_upto_xrpl,
 )
@@ -19,4 +20,5 @@ FAMILY: dict[str, Piece] = {
     mpp_session_xrpl.PIECE.pairing: mpp_session_xrpl.PIECE,
     mpp_session_xrpl_stock.PIECE.pairing: mpp_session_xrpl_stock.PIECE,
     x402_upto_xrpl.PIECE.pairing: x402_upto_xrpl.PIECE,
+    x402_exact_stellar_precondition.PIECE.pairing: x402_exact_stellar_precondition.PIECE,
 }

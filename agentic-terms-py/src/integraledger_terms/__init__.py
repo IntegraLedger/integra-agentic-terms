@@ -103,6 +103,7 @@ from .bindings.mpp_session_xrpl_stock import MppSessionXrplStock
 from .bindings.mpp_session_hedera_stock import MppSessionHederaStock
 from .bindings.x402_upto_xrpl import X402UptoXrpl
 from .bindings.x402_exact_algorand import X402ExactAlgorand
+from .bindings.x402_exact_stellar_precondition import X402ExactStellarPrecondition
 from .bindings.x402_exact_xrpl import X402ExactXrpl
 
 # A binding marked type: ignore[assignment] has a build and bound that take no act yet (Binding.build, Binding.bound).
@@ -163,6 +164,7 @@ MPP_SESSION_XRPL: Binding = MppSessionXrpl()
 MPP_SESSION_XRPL_STOCK: Binding = MppSessionXrplStock()
 MPP_SESSION_HEDERA_STOCK: Binding = MppSessionHederaStock()
 X402_UPTO_XRPL: Binding = X402UptoXrpl()
+X402_EXACT_STELLAR_PRECONDITION: Binding = X402ExactStellarPrecondition()
 
 __all__ = [
     "ACK_PAYMENT_REQUEST",
@@ -229,6 +231,7 @@ __all__ = [
     "MPP_SESSION_XRPL_STOCK",
     "MPP_SESSION_HEDERA_STOCK",
     "X402_UPTO_XRPL",
+    "X402_EXACT_STELLAR_PRECONDITION",
     "Advertised",
     "Agreed",
     "AgreementPayment",

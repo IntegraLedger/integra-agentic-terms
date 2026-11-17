@@ -48,6 +48,7 @@ import { x402ExactEip155Permit2 } from "./x402-exact-eip155-permit2.js";
 import { x402ExactHedera } from "./x402-exact-hedera.js";
 import { x402ExactHederaTransferExecutor } from "./x402-exact-hedera-transfer-executor.js";
 import { x402ExactSolana } from "./x402-exact-solana.js";
+import { x402ExactStellarPrecondition } from "./x402-exact-stellar-precondition.js";
 import { x402ExactXrpl } from "./x402-exact-xrpl.js";
 import { x402UptoEip155Permit2 } from "./x402-upto-eip155-permit2.js";
 import { x402UptoSolana } from "./x402-upto-solana.js";
@@ -77,6 +78,7 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["x402/exact/hedera", x402ExactHedera],
   ["x402/exact/hedera/transfer-executor", x402ExactHederaTransferExecutor],
   ["x402/exact/algorand", x402ExactAlgorand],
+  ["x402/exact/stellar/precondition", x402ExactStellarPrecondition],
   ["mpp/charge/evm/authorization", mppChargeEvmAuthorization],
   ["mpp/charge/evm/permit2", mppChargeEvmPermit2],
   ["mpp/charge/evm/transaction", mppChargeEvmTransaction],

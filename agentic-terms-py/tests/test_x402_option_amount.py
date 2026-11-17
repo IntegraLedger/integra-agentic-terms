@@ -47,6 +47,9 @@ ZERO_PRICE |= {"x402/exact/eip155/eip3009"}
 # the scheme: x402/exact/casper, x402/exact/ccd and x402/exact/tvm, and x402/exact/sui where the buyer or a sponsor pays
 # the gas (x402-exact-ccd.json stockOptions, x402-exact-sui.json filter).
 ZERO_PRICE |= {"x402/exact/casper", "x402/exact/ccd", "x402/exact/sui", "x402/exact/tvm"}
+# The Stellar agreement, offered as an agreement only, whose floor is zero: the Stellar Asset Contract transfers zero
+# (x402-exact-stellar-precondition.json acceptedFilter, "an amount of zero, the floor").
+ZERO_PRICE |= {"x402/exact/stellar/precondition"}
 
 
 def with_amount(option: dict[str, Any], amount: object) -> dict[str, Any]:
