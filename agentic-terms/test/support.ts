@@ -77,17 +77,8 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
   ["ccd-transfer", ["x402/exact/ccd"]],
   [
     "eip712",
-    [
-      "mpp/charge/evm/authorization",
-      "mpp/charge/evm/permit2",
-      "mpp/charge/usdc/evm",
-      "x402/auth-capture/eip155/eip3009",
-      "x402/auth-capture/eip155/permit2",
-      "x402/exact/eip155/permit2",
-      "x402/upto/eip155/permit2",
-    ],
+    ["mpp/charge/evm/permit2", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"],
   ],
-  ["evm-call", ["mpp/charge/evm/hash", "mpp/charge/evm/transaction"]],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
   ["hedera-body", ["x402/exact/hedera"]],
   ["hedera-executor", ["x402/exact/hedera/transfer-executor"]],

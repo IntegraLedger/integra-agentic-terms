@@ -6,6 +6,9 @@
  */
 import type { Json } from "@integraledger/lcp/core";
 import type { Inputs, SigningRequest, Summary } from "./types.js";
+import { exactPermit2, uptoPermit2 } from "./summary/eip712.js";
+import { erc20Transfer } from "./summary/evm-call.js";
+import { keyAuthorization } from "./summary/tempo-key-authorization.js";
 
 /** A summary without the ATR's bytes, which the gate adds. */
 export type Shown = Omit<Summary, "atr">;
@@ -87,6 +90,13 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/eip155/eip3009", { show: transferWithAuthorization }],
   ["x402/exact/eip155/erc7710", { show: erc7710 }],
   ["x402/exact/eip155/erc7710-salt", { show: erc7710 }],
+  ["x402/exact/eip155/permit2", { show: exactPermit2 }],
+  ["x402/upto/eip155/permit2", { show: uptoPermit2 }],
+  ["mpp/charge/evm/authorization", { show: transferWithAuthorization }],
+  ["mpp/charge/usdc/evm", { show: transferWithAuthorization }],
+  ["mpp/charge/evm/hash", { show: erc20Transfer }],
+  ["mpp/charge/evm/transaction", { show: erc20Transfer }],
+  ["mpp/subscription/tempo", { show: keyAuthorization }],
 ]);
 
 /**

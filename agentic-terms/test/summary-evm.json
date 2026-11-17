@@ -1,0 +1,101 @@
+{
+  "about": "The approval summary (profile buyer-gate.md, rule 13) of the EVM requests whose rows the profile's table fills, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors: the file's buyer row B2 for that pairing gives the document, the account, the inputs and the time, from which the pairing's buyer piece builds the request the signer is handed, over the ATR abc (616263, whose SHA-256 is the H the document advertises); expect is the summary of that request without the ATR's bytes, which are abc. Every value in expect is read from the row of the same file that `from` names, the payment as the file signs it, or, where the file signs none, its offer: x402-exact-eip155-permit2.json and x402-upto-eip155-permit2.json buyer B6's permit2Authorization, mpp-charge-evm-authorization.json and mpp-charge-usdc-evm.json buyer B6's credential payload, mpp-charge-evm-hash.json and mpp-charge-evm-transaction.json buyer B2's challenge request (amount, currency, recipient and methodDetails.chainId; the recipient as an ERC-20 transfer's call data writes it, in lowercase hex), and mpp-subscription-tempo.json SUB1's authorization, the key authorization whose digest SUB1 holds. Nothing here is terms' output.",
+  "rows": [
+    {
+      "pairing": "x402/exact/eip155/permit2",
+      "file": "x402-exact-eip155-permit2.json",
+      "from": "buyer B6 input.presented.payload.permit2Authorization",
+      "expect": {
+        "amount": "10000",
+        "payees": [{ "account": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C", "amount": "10000" }],
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "network": "eip155:84532",
+        "validity": { "notBefore": "0", "notAfter": "1790000060", "unit": "seconds" }
+      }
+    },
+    {
+      "pairing": "x402/upto/eip155/permit2",
+      "file": "x402-upto-eip155-permit2.json",
+      "from": "buyer B6 input.presented.payload.permit2Authorization",
+      "expect": {
+        "maximum": "5000000",
+        "payees": [{ "account": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C", "amount": "5000000" }],
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "network": "eip155:84532",
+        "validity": { "notBefore": "0", "notAfter": "1790000300", "unit": "seconds" }
+      }
+    },
+    {
+      "pairing": "mpp/charge/evm/authorization",
+      "file": "mpp-charge-evm-authorization.json",
+      "from": "buyer B6 input.presented.payload, and buyer B2's challenge request for the asset and the chain",
+      "expect": {
+        "amount": "10000",
+        "payees": [{ "account": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C", "amount": "10000" }],
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "network": "eip155:84532",
+        "validity": { "notBefore": "0", "notAfter": "1790000060", "unit": "seconds" }
+      }
+    },
+    {
+      "pairing": "mpp/charge/usdc/evm",
+      "file": "mpp-charge-usdc-evm.json",
+      "from": "buyer B6 input.presented.payload, and buyer B2's challenge request for the asset and the chain",
+      "expect": {
+        "amount": "10000",
+        "payees": [{ "account": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C", "amount": "10000" }],
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "network": "eip155:84532",
+        "validity": { "notBefore": "0", "notAfter": "1790000060", "unit": "seconds" }
+      }
+    },
+    {
+      "pairing": "mpp/charge/evm/hash",
+      "file": "mpp-charge-evm-hash.json",
+      "from": "buyer B2 input.doc[0].request",
+      "expect": {
+        "amount": "10000",
+        "payees": [{ "account": "0x209693bc6afc0c5328ba36faf03c514ef312287c", "amount": "10000" }],
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "network": "eip155:84532",
+        "validity": { "notBefore": null, "notAfter": null, "unit": "seconds" }
+      }
+    },
+    {
+      "pairing": "mpp/charge/evm/transaction",
+      "file": "mpp-charge-evm-transaction.json",
+      "from": "buyer B2 input.doc[0].request",
+      "expect": {
+        "amount": "10000",
+        "payees": [{ "account": "0x209693bc6afc0c5328ba36faf03c514ef312287c", "amount": "10000" }],
+        "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "network": "eip155:84532",
+        "validity": { "notBefore": null, "notAfter": null, "unit": "seconds" }
+      }
+    },
+    {
+      "pairing": "mpp/subscription/tempo",
+      "file": "mpp-subscription-tempo.json",
+      "from": "SUB1.authorization",
+      "expect": {
+        "payees": [{ "account": "0x742d35Cc6634C0532925a3b844Bc9e7595f8fE00", "amount": "10000000" }],
+        "period": "2592000",
+        "limitPerPeriod": "10000000",
+        "end": "1797724800",
+        "grant": {
+          "keyId": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "limits": [{ "token": "0x20c0000000000000000000000000000000000000", "limit": "10000000", "period": "2592000" }],
+          "allowedCalls": [
+            {
+              "target": "0x20c0000000000000000000000000000000000000",
+              "selectorRules": [{ "selector": "0x95777d59", "recipients": ["0x742d35Cc6634C0532925a3b844Bc9e7595f8fE00"] }]
+            }
+          ]
+        },
+        "asset": "0x20c0000000000000000000000000000000000000",
+        "network": "eip155:42431",
+        "validity": { "notBefore": null, "notAfter": "1797724800", "unit": "seconds" }
+      }
+    }
+  ]
+}

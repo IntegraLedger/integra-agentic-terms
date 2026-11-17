@@ -119,7 +119,8 @@ describe("an EVM transfer the signer completed after the agreement's 200 is retu
           return a;
         },
       };
-      const out = await transactApproved(doc, binding as Binding, signer, seller());
+      // A transaction signs no end (profile buyer-gate.md, rule 8): the caller raises the pairing's ceiling to pay it.
+      const out = await transactApproved(doc, binding as Binding, signer, seller(), { ceilings: { [_id]: "no-end" } });
       if (summaryPending(_id)) {
         // The payment's request is shown before anything is signed, the agreement among it: none is shown yet.
         expect([code(out), kinds]).toEqual(["summary-missing", []]);

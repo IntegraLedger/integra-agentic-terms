@@ -239,7 +239,8 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
       const acct = account(84532, X.fixed);
       const signer = counting(acct, async (r) => (r.kind === "eip712" ? privateKeyToAccount(X.fixed.payerKey).signTypedData(typedDataOf(r)) : answer(r)));
       const stub = seller();
-      const t = await transactApproved(doc, binding, signer, stub);
+      // A transaction signs no end (profile buyer-gate.md, rule 8): the caller raises the pairing's ceiling to pay it.
+      const t = await transactApproved(doc, binding, signer, stub, { ceilings: { [binding.id]: "no-end" } });
       if (summaryPending(binding.id)) {
         // The payment's request is shown before anything is signed, the agreement among it: none is shown yet.
         expect([code(t), signer.requests.length, stub.paid]).toEqual(["summary-missing", 0, 0]);

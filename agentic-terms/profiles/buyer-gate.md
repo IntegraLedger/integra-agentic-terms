@@ -152,6 +152,9 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `eip712`, `PermitWitnessTransferFrom` (Permit2), witness `{to, validAfter}`: `x402/exact/eip155/permit2` | `amount`: `m.permitted.amount` | `m.witness.to`, with `m.permitted.amount` | `m.permitted.token` | `eip155:` and `d.chainId` | `m.witness.validAfter` to `m.deadline`, seconds | none |
     | `eip712`, `PermitWitnessTransferFrom` (Permit2), witness `{to, facilitator, validAfter}`: `x402/upto/eip155/permit2` | `maximum`: `m.permitted.amount` | `m.witness.to`, with `m.permitted.amount` | `m.permitted.token` | `eip155:` and `d.chainId` | `m.witness.validAfter` to `m.deadline`, seconds | none |
     | `erc7710`: `x402/exact/eip155/erc7710`, `x402/exact/eip155/erc7710-salt` | `amount`: `amount` | `payTo`, with `amount` | `token` | `eip155:` and `chainId` | none to none: a delegation signs no end | `grant`: `{token, payTo, amount}` |
+    | `eip712`, `TransferWithAuthorization` (EIP-3009): `mpp/charge/evm/authorization`, `mpp/charge/usdc/evm` | `amount`: `m.value` | `m.to`, with `m.value` | `d.verifyingContract` | `eip155:` and `d.chainId` | `m.validAfter` to `m.validBefore`, seconds | none |
+    | `evm-call` whose `call` holds `to` and `data` alone, `data` an ERC-20 `transfer(address,uint256)`: `mpp/charge/evm/hash`, `mpp/charge/evm/transaction` | `amount`: the transfer's amount, `data`'s second word | the transfer's recipient, `data`'s first word, in lowercase hex, with the amount | `call.to` | `eip155:` and `chainId` | none to none: a transaction signs no end | none |
+    | `tempo-key-authorization`, `a` its `authorization`, whose RLP's keccak-256 is the `digest` the root key signs, with one limit and every allowed call to that limit's token under the selector `transferWithMemo` (`0x95777d59`) with recipients: `mpp/subscription/tempo` | none | every recipient of `a.allowedCalls`' selector rules, each with `a.limits[0].limit` | `a.limits[0].token` | `eip155:` and `a.chainId` | none to `a.expiry`, seconds; none to none where `a.expiry` is 0, which signs no expiry | `period`: `a.limits[0].period`; `limitPerPeriod`: `a.limits[0].limit`; `end`: `a.expiry`, absent where it is 0; `grant`: `{keyId, limits, allowedCalls}` of `a` |
     | `ack/payment-request` | | | | | | |
     | `acp/checkout/delegated` | | | | | | |
     | `acp/checkout/undelegated` | | | | | | |
@@ -164,10 +167,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `card/visa-tap` | | | | | | |
     | `card/visa-vic` | | | | | | |
     | `mpp/charge/card` | | | | | | |
-    | `mpp/charge/evm/authorization` | | | | | | |
-    | `mpp/charge/evm/hash` | | | | | | |
     | `mpp/charge/evm/permit2` | | | | | | |
-    | `mpp/charge/evm/transaction` | | | | | | |
     | `mpp/charge/lightning` | | | | | | |
     | `mpp/charge/nearintents` | | | | | | |
     | `mpp/charge/solana` | | | | | | |
@@ -175,7 +175,6 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `mpp/charge/stripe` | | | | | | |
     | `mpp/charge/tempo/split-memo` | | | | | | |
     | `mpp/charge/tempo/split-memo/push` | | | | | | |
-    | `mpp/charge/usdc/evm` | | | | | | |
     | `mpp/charge/usdc/gateway` | | | | | | |
     | `mpp/charge/usdc/solana` | | | | | | |
     | `mpp/charge/usdc/stacks` | | | | | | |
@@ -190,7 +189,6 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `mpp/session/xrpl/stock` | | | | | | |
     | `mpp/subscription/solana` | | | | | | |
     | `mpp/subscription/stripe` | | | | | | |
-    | `mpp/subscription/tempo` | | | | | | |
     | `ucp/booking/ap2-mandate` | | | | | | |
     | `ucp/booking/unsigned` | | | | | | |
     | `ucp/checkout/agent-signed` | | | | | | |

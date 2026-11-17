@@ -271,7 +271,8 @@ describe("a binding from another copy: a bound that finds no signed place runs t
           return a;
         });
         // Through the gate, over an ATR that is one JSON text, its document placed for that ATR's H.
-        const out = await transactApproved(docOf(binding, HA), binding, s, seller(A, HA));
+        // A transaction signs no end (profile buyer-gate.md, rule 8): the caller raises the pairing's ceiling to pay it.
+        const out = await transactApproved(docOf(binding, HA), binding, s, seller(A, HA), { ceilings: { [_id]: "no-end" } });
         if (summaryPending(_id)) {
           // The payment's request is shown before anything is signed, the agreement among it: none is shown yet.
           expect([code(out), s.kinds]).toEqual(["summary-missing", []]);
