@@ -10,6 +10,7 @@ import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x4
 import { confirm, type Binding } from "../src/index.js";
 import { buildAndSign, code, H, LINK, serving, vectors, type Pairing } from "./support.js";
 
+import { CONFIRMING } from "./support.js";
 const NOW = 1_790_000_000;
 async function at<T>(run: () => Promise<T>): Promise<T> {
   const real = Date.now;
@@ -42,6 +43,7 @@ describe("x402/exact/casper", () => {
   const p: Pairing = {
     binding: exactCasper,
     doc: x402Doc(exactCasper, f.resource, f.O),
+    placed: (h) => x402Doc(exactCasper, f.resource, f.O, h),
     account: `${f.O.network}:${f.from}`,
     answer: async () => ({ publicKey: f.publicKey, signature: f.signature }),
   };
@@ -72,6 +74,7 @@ describe("x402/exact/ccd", () => {
   const p: Pairing = {
     binding: exactCcd,
     doc: x402Doc(exactCcd, f.resource, f.O),
+    placed: (h) => x402Doc(exactCcd, f.resource, f.O, h),
     account: `${f.O.network}:${f.payer}`,
     answer: async () => V.D3.ccd.payment.payload.signedTransaction as never,
   };
@@ -92,9 +95,9 @@ describe("x402/exact/ccd", () => {
 
 const b64u = (s: string) => Buffer.from(s, "utf8").toString("base64url");
 type LnMpp = { challenge: Omit<MppChallenge, "request">; request: object };
-function lnChallenges(binding: Binding, row: LnMpp): MppChallenge[] {
+function lnChallenges(binding: Binding, row: LnMpp, h: AtrHash = H): MppChallenge[] {
   const issued = { ...row.challenge, request: b64u(JSON.stringify(row.request)) } as MppChallenge;
-  return placed<MppChallenge[]>(binding, [issued], issued, H, LINK, 0);
+  return placed<MppChallenge[]>(binding, [issued], issued, h, LINK, 0);
 }
 
 describe("mpp/charge/lightning and mpp/session/lightning", () => {
@@ -136,8 +139,8 @@ describe("mpp/charge/lightning and mpp/session/lightning", () => {
   it("B16: without the return invoice, or with another namespace, no-payable-option before any fetch", () =>
     at(async () => {
       const fetch = serving(new TextEncoder().encode("abc"));
-      expect(code(await confirm(session.doc, sessionLightning, account, fetch))).toBe("no-payable-option");
-      expect(code(await confirm(charge.doc, chargeLightning, "eip155:1:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", fetch))).toBe(
+      expect(code(await confirm(session.doc, sessionLightning, account, fetch, CONFIRMING))).toBe("no-payable-option");
+      expect(code(await confirm(charge.doc, chargeLightning, "eip155:1:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", fetch, CONFIRMING))).toBe(
         "no-payable-option",
       );
       expect(fetch.calls).toBe(0);

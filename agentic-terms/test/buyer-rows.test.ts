@@ -29,6 +29,7 @@ import {
 import { PIECES } from "../src/pairings/index.js";
 import { counting, vectors } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 /**
  * PENDING: the pairings the protocol package serves that have no buyer piece yet. Each one's B2 answers
  * pairing-not-supported before any fetch or signer call, asserted below and never skipped; the set is held equal to the
@@ -119,8 +120,8 @@ describe("every vector file's buyer rows, through the gate", () => {
         throw new Error("the signer is never called for a pairing with no piece");
       });
       const fetch = serving(fromHex(row.input.servesHex!));
-      const out = await transact(structuredClone(row.input.doc), binding, signer, fetch, { inputs: row.input.inputs ?? {} });
-      const confirmed = await confirm(structuredClone(row.input.doc), binding, row.input.account!, fetch, row.input.inputs ?? {});
+      const out = await transact(structuredClone(row.input.doc), binding, signer, fetch, { ...GATE, inputs: row.input.inputs ?? {} });
+      const confirmed = await confirm(structuredClone(row.input.doc), binding, row.input.account!, fetch, { ...CONFIRMING, inputs: row.input.inputs ?? {} });
       expect(["decline" in out && out.decline.code, "decline" in confirmed && confirmed.decline.code]).toEqual([
         "pairing-not-supported",
         "pairing-not-supported",
@@ -141,12 +142,12 @@ describe("every vector file's buyer rows, through the gate", () => {
         throw new Error("the signer is never called on a plant");
       });
       const served = fromHex(row.input.servesHex!);
-      const out = await transact(structuredClone(row.input.doc), binding, signer, serving(served), { inputs });
+      const out = await transact(structuredClone(row.input.doc), binding, signer, serving(served), { ...GATE, inputs });
       const expected = row.expect as { decline: string; signCalls: number };
       expect("decline" in out ? out.decline.code : "signed").toBe(expected.decline);
       expect(signer.requests.length).toBe(expected.signCalls);
       const fetch = serving(served);
-      const confirmed = await confirm(structuredClone(row.input.doc), binding, row.input.account!, fetch, inputs);
+      const confirmed = await confirm(structuredClone(row.input.doc), binding, row.input.account!, fetch, { ...CONFIRMING, inputs: inputs });
       expect("decline" in confirmed ? confirmed.decline.code : "confirmed").toBe(expected.decline);
       expect(confirmed).not.toHaveProperty("request");
       expect(fetch.calls).toBe(1);
@@ -232,7 +233,7 @@ describe("buyer.json's rows through one gate function", () => {
   it("B19: finish compares chosen's pairing with the binding before it rebuilds anything", async () => {
     const r = named("B19");
     expect([r.input.entry, r.input["binding"]]).toEqual(["finish", "x402/exact/eip155/permit2"]);
-    const confirmed = await confirm(structuredClone(D), bindingOf("x402/exact/eip155/eip3009"), account, serving(A));
+    const confirmed = await confirm(structuredClone(D), bindingOf("x402/exact/eip155/eip3009"), account, serving(A), CONFIRMING);
     if ("decline" in confirmed) throw new Error(confirmed.decline.code);
     const signer = standIn(account);
     const out = await finish(A, confirmed.chosen, B6_SIGNATURE, bindingOf(r.input["binding"] as string));
@@ -247,7 +248,7 @@ describe("buyer.json's rows through one gate function", () => {
     for (const run of runs) {
       const fetch = serving(A);
       const signer = standIn(account);
-      const out = await confirm(structuredClone(D), bindingOf("x402/exact/eip155/eip3009"), account, fetch, run.input.inputs as Inputs);
+      const out = await confirm(structuredClone(D), bindingOf("x402/exact/eip155/eip3009"), account, fetch, { ...CONFIRMING, inputs: run.input.inputs as Inputs });
       compare(`B20, ${run.case}`, run.expect, out, fetch.calls, signer.requests.length);
     }
   });
@@ -270,7 +271,7 @@ describe("buyer.json's rows through one gate function", () => {
       const r = named(name);
       const fetch = serving(A);
       const signer = standIn(account);
-      const out = await transact(docs[name]!(), bindingOf("x402/exact/eip155/eip3009"), signer, fetch);
+      const out = await transact(docs[name]!(), bindingOf("x402/exact/eip155/eip3009"), signer, fetch, GATE);
       compare(name, r.expect, out, fetch.calls, signer.requests.length);
     });
   }

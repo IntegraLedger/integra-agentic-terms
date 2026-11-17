@@ -12,6 +12,7 @@ import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
 import { agree, transact, type Binding, type Declined, type Fetch, type SigningRequest } from "../src/index.js";
 import { counting, coverageNone, fromHex, vectors } from "./support.js";
 
+import { GATE } from "./support.js";
 type Row = { name: string; input: Record<string, unknown>; expect: Record<string, unknown> };
 type Script = { status: number; paymentRequired?: string; retryAfter?: string; body?: string };
 const B = vectors<{ rows: Row[]; fixed: Record<string, any> }>("buyer.json");
@@ -118,7 +119,7 @@ describe("the gate on a Workers fetch", () => {
   it("fetches the ATR, compares it and signs once", async () => {
     const fetch = workers(() => new Response(new Uint8Array(A), { status: 200 }));
     const s = signer();
-    const out = await transact(D, exactEip3009, s, fetch);
+    const out = await transact(D, exactEip3009, s, fetch, GATE);
     if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
     expect(out.h).toBe(H);
     expect(s.requests.length).toBe(1);
@@ -129,7 +130,7 @@ describe("the gate on a Workers fetch", () => {
   it.each([301, 302, 303, 307, 308])("B11: a %i redirect is atr-unfetchable, and nothing is signed", async (status) => {
     const fetch = workers(redirectTo(status, LINK_A));
     const s = signer();
-    expect(code(await transact(D, exactEip3009, s, fetch))).toBe(B11.decline);
+    expect(code(await transact(D, exactEip3009, s, fetch, GATE))).toBe(B11.decline);
     expect(s.requests.length).toBe(B11.signCalls);
     expect(fetch.calls.length).toBe(1);
     expectManual(fetch.calls);
@@ -138,7 +139,7 @@ describe("the gate on a Workers fetch", () => {
   it("B11: an opaque redirect (type opaqueredirect, status 0) is atr-unfetchable, and nothing is signed", async () => {
     const fetch = workers(opaqueRedirect);
     const s = signer();
-    expect(code(await transact(D, exactEip3009, s, fetch))).toBe(B11.decline);
+    expect(code(await transact(D, exactEip3009, s, fetch, GATE))).toBe(B11.decline);
     expect(s.requests.length).toBe(B11.signCalls);
     expect(fetch.calls.length).toBe(1);
   });
@@ -157,10 +158,10 @@ describe("the agreement exchange on a Workers fetch", () => {
     const r = row("BA1");
     const fetch = workers(seller(r.input["agreement"] as Script[]));
     const s = signer();
-    const first = await drive(transact(D, withAgreement(), s, fetch));
+    const first = await drive(transact(D, withAgreement(), s, fetch, GATE));
     if (isDeclined(first) || !("approve" in first)) throw new Error("the agreement payment is returned for approval");
     expect(s.requests.length).toBe(0);
-    const out = await drive(transact(D, withAgreement(), s, fetch, { approved: first.approve }));
+    const out = await drive(transact(D, withAgreement(), s, fetch, { ...GATE, approved: first.approve }));
     if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
     expect(s.requests.length).toBe(r.expect["signCalls"]);
     expect(fetch.calls.map((c) => c.url)).toEqual([LINK_A, AGREEMENT_URL, LINK_A, AGREEMENT_URL, AGREEMENT_URL]);

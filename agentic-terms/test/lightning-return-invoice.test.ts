@@ -8,8 +8,8 @@
 import { describe, expect, it } from "vitest";
 import { sessionLightning } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
-import { transact, type Binding } from "../src/index.js";
-import { ABC, counting, H, isDeclined, LINK, offered, serving, vectors } from "./support.js";
+import type { Binding } from "../src/index.js";
+import { counting, H, isDeclined, LINK, offered, piecePay, vectors } from "./support.js";
 
 const NOW = 1_790_000_000;
 async function at<T>(run: () => Promise<T>): Promise<T> {
@@ -49,7 +49,7 @@ describe("mpp/session/lightning: the return invoice is read before the node pays
   it("control: with a BOLT11 return invoice that encodes no amount, the node pays once and the open credential is returned", () =>
     at(async () => {
       const node = counting(account, async () => S.fixed.preimage);
-      const out = await transact(doc, offered(sessionLightning), node, serving(ABC), { inputs: { returnInvoice: S.fixed.returnInvoice } });
+      const out = await piecePay(doc, offered(sessionLightning), node, { returnInvoice: S.fixed.returnInvoice });
       if (isDeclined(out)) throw new Error(out.decline.code);
       expect(node.requests.length).toBe(1);
     }));
@@ -59,7 +59,7 @@ describe("mpp/session/lightning: the return invoice is read before the node pays
     (_n, returnInvoice) =>
     at(async () => {
       const node = counting(account, async () => S.fixed.preimage);
-      const out = await transact(doc, offered(sessionLightning), node, serving(ABC), { inputs: { returnInvoice } });
+      const out = await piecePay(doc, offered(sessionLightning), node, { returnInvoice });
       expect(isDeclined(out) && out.decline.detail).toBe("ln/return-invoice-malformed");
       expect(node.requests.map((r) => r.kind)).toEqual([]);
     }));

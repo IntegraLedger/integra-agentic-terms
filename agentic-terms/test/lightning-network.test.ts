@@ -11,8 +11,9 @@ import { describe, expect, it } from "vitest";
 import { sessionLightning } from "@integraledger/lcp/lightning";
 import type { MppChallenge } from "@integraledger/lcp/mpp";
 import { confirm, transact, type Binding } from "../src/index.js";
-import { ABC, code, counting, H, isDeclined, LINK, offered, serving, vectors } from "./support.js";
+import { ABC, code, counting, H, isDeclined, LINK, offered, pieceConfirm, serving, vectors } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 const NOW = 1_790_000_000;
 async function at<T>(run: () => Promise<T>): Promise<T> {
   const real = Date.now;
@@ -73,7 +74,7 @@ describe("mpp/session/lightning: the invoice's BOLT11 currency is the account's 
   ] as const)("a %s account (%s) pays the %s invoice of four offered, and no other", (_name, network, currency) =>
     at(async () => {
       const doc = [mainnetChallenge(), testChallenge(), signetChallenge(), regtestChallenge()];
-      const out = await confirm(doc, binding, account(network), serving(ABC), inputs);
+      const out = await pieceConfirm(doc, binding, account(network), inputs);
       if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
       const expected = currency === "bc" ? S.S1.request.depositInvoice : INVOICES[currency];
       expect(out.request).toEqual({ kind: "bolt11-pay", invoice: expected });
@@ -90,7 +91,7 @@ describe("mpp/session/lightning: the invoice's BOLT11 currency is the account's 
   ] as const)("%s: no-payable-option before any fetch", (_case, network, doc) =>
     at(async () => {
       const fetch = serving(ABC);
-      const out = await confirm(doc(), binding, account(network), fetch, inputs);
+      const out = await confirm(doc(), binding, account(network), fetch, { ...CONFIRMING, inputs: inputs });
       expect(code(out)).toBe("no-payable-option");
       expect(isDeclined(out) && out.decline.detail).toBe("mpp/no-payable-option");
       expect(fetch.calls).toBe(0);
@@ -141,9 +142,7 @@ describe("mpp/session/lightning: S1's refusals decline before the node is asked 
       expect(built).toEqual(row.expect);
       const node = counting(account, async () => S.fixed.preimage);
       const fetch = serving(ABC);
-      const out = await transact(doc, offered(sessionLightning as unknown as Binding), node, fetch, {
-        inputs: { returnInvoice: S.fixed.returnInvoice },
-      });
+      const out = await transact(doc, offered(sessionLightning as unknown as Binding), node, fetch, { ...GATE, inputs: { returnInvoice: S.fixed.returnInvoice }, });
       expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
       expect(fetch.calls).toBe(0);
       expect(node.requests).toEqual([]);

@@ -1,6 +1,7 @@
 // B2 and B6 for MPP's EVM charge pairings. Expected values are the vector files': the challenge C_E and the digests and
 // signatures of the published Anvil key #0.
 import { createHash, randomUUID } from "node:crypto";
+import type { AtrHash } from "@integraledger/lcp";
 import { describe, expect, it } from "vitest";
 import { hashTypedData, toBytes, type Hex, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -15,20 +16,25 @@ import {
 import { exactEip3009, type PaymentRequirements } from "@integraledger/lcp/x402";
 import { confirm, finish, transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
 import {
+  A as ATR_A,
   ABC,
   buildAndSign,
   code,
   counting,
   H,
+  HA,
   isDeclined,
   LINK,
   offered,
+  pieceConfirm,
   serving,
+  summaryPending,
   transactApproved,
   vectors,
   type Pairing,
 } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 type Challenge = { fixed: { realm: string; expires: string; R_E: string; R_T: string } };
 const V = vectors<Challenge>("mpp-challenge.json");
 const b64u = (s: string) => Buffer.from(s, "utf8").toString("base64url");
@@ -37,10 +43,10 @@ const issued = (method: string, request: string): MppChallenge =>
   ({ realm: V.fixed.realm, method, intent: "charge", request: b64u(request), expires: V.fixed.expires }) as MppChallenge;
 
 /** The seller's 402 challenges for one issued challenge, as the pairing's `advertise` places H and the link. */
-function docOf(binding: Binding, c: MppChallenge): MppChallenge[] {
+function docOf(binding: Binding, c: MppChallenge, h: AtrHash = H): MppChallenge[] {
   const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null): unknown }).advertise(
     [c],
-    H,
+    h,
     LINK,
     c,
     0,
@@ -74,6 +80,7 @@ describe("mpp/charge/evm/authorization", () => {
   const p: Pairing = {
     binding: evmAuthorization,
     doc: docOf(evmAuthorization, issued("evm", V.fixed.R_E)),
+    placed: (h) => docOf(evmAuthorization, issued("evm", V.fixed.R_E), h),
     account: account(84532, A.fixed),
     inputs: { tokenDomain: A.fixed.tokenDomain },
     answer: eip712(A.fixed),
@@ -90,9 +97,9 @@ describe("mpp/charge/evm/authorization", () => {
   it("B16: without the token's EIP-712 domain, no-payable-option before any fetch", () =>
     at(A.fixed.now, async () => {
       const fetch = serving(ABC);
-      expect(code(await confirm(p.doc, p.binding, p.account, fetch))).toBe("no-payable-option");
-      expect(code(await confirm(p.doc, p.binding, account(1, A.fixed), fetch, p.inputs))).toBe("no-payable-option");
-      expect(code(await confirm(p.doc, p.binding, "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:x", fetch))).toBe(
+      expect(code(await confirm(p.doc, p.binding, p.account, fetch, CONFIRMING))).toBe("no-payable-option");
+      expect(code(await confirm(p.doc, p.binding, account(1, A.fixed), fetch, { ...CONFIRMING, inputs: p.inputs }))).toBe("no-payable-option");
+      expect(code(await confirm(p.doc, p.binding, "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp:x", fetch, CONFIRMING))).toBe(
         "no-payable-option",
       );
       expect(fetch.calls).toBe(0);
@@ -106,6 +113,7 @@ describe("mpp/charge/evm/permit2", () => {
   const p: Pairing = {
     binding: evmPermit2,
     doc: docOf(evmPermit2, issued("evm", V.fixed.R_E)),
+    placed: (h) => docOf(evmPermit2, issued("evm", V.fixed.R_E), h),
     account: account(84532, P.fixed),
     inputs: { spender: P.fixed.spender },
     answer: eip712(P.fixed),
@@ -154,7 +162,7 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash (coverage none)", (
     at(X.fixed.now, async () => {
       const doc = docOf(binding, issued("evm", X.fixed.R_ENoTypes));
       const acct = account(84532, X.fixed);
-      const confirmed = await confirm(doc, offered(binding), acct, serving(ABC));
+      const confirmed = await pieceConfirm(doc, offered(binding), acct);
       if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
       const r = confirmed.request!;
       if (r.kind !== "evm-call") throw new Error(r.kind);
@@ -189,7 +197,7 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
     extra: { name: "USDC", version: "2" },
   };
   // The agreement resource's receipt `{atrHash, agreed: true, network, transaction}`.
-  const RECEIPT = { atrHash: H, agreed: true, network: "eip155:84532", transaction: `0x${"ab".repeat(32)}` };
+  const RECEIPT = { atrHash: HA, agreed: true, network: "eip155:84532", transaction: `0x${"ab".repeat(32)}` };
   const signedTx = async (r: SigningRequest): Promise<Hex> => {
     if (r.kind !== "evm-call") throw new Error(r.kind);
     const t = X.MV11.transaction;
@@ -204,12 +212,12 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
       data: r.call.data,
     });
   };
-  /** Serves ABC at the link; the agreement URL answers 402 with the EIP-3009 agreement option, then 200 with RECEIPT. */
+  /** Serves A at the link; the agreement URL answers 402 with the EIP-3009 agreement option, then 200 with its receipt. */
   function seller(): Fetch & { paid: number } {
-    const required = exactEip3009.advertise({ x402Version: 2, resource: { url: AGREEMENT_URL }, accepts: [O] }, H, LINK, O);
+    const required = exactEip3009.advertise({ x402Version: 2, resource: { url: AGREEMENT_URL }, accepts: [O] }, HA, LINK, O);
     if ("refused" in required) throw new Error(required.code);
     const f = (async (url: string, init: Parameters<Fetch>[1]) => {
-      if (url === LINK) return new Response(new Uint8Array(ABC), { status: 200 });
+      if (url === LINK) return new Response(new Uint8Array(ATR_A), { status: 200 });
       if (url !== AGREEMENT_URL) return new Response(null, { status: 404 });
       if (init.headers?.["PAYMENT-SIGNATURE"] === undefined) {
         return new Response(null, { status: 402, headers: { "payment-required": Buffer.from(JSON.stringify(required)).toString("base64") } });
@@ -226,12 +234,17 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
   ];
   it.each(rows)("%s: the agreement is paid first, then the payment completes with the signer's answer", async (_n, binding, answer, type, member) =>
     at(X.fixed.now, async () => {
-      const doc = place([issued("evm", X.fixed.R_ENoTypes)], H, LINK, issued("evm", X.fixed.R_ENoTypes), 0, "payment", AGREEMENT_URL);
+      const doc = place([issued("evm", X.fixed.R_ENoTypes)], HA, LINK, issued("evm", X.fixed.R_ENoTypes), 0, "payment", AGREEMENT_URL);
       if (!Array.isArray(doc)) throw new Error(JSON.stringify(doc));
       const acct = account(84532, X.fixed);
       const signer = counting(acct, async (r) => (r.kind === "eip712" ? privateKeyToAccount(X.fixed.payerKey).signTypedData(typedDataOf(r)) : answer(r)));
       const stub = seller();
       const t = await transactApproved(doc, binding, signer, stub);
+      if (summaryPending(binding.id)) {
+        // The payment's request is shown before anything is signed, the agreement among it: none is shown yet.
+        expect([code(t), signer.requests.length, stub.paid]).toEqual(["summary-missing", 0, 0]);
+        return;
+      }
       if (isDeclined(t)) throw new Error(`${t.decline.code}: ${t.decline.detail}`);
       if ("approve" in t) throw new Error("an agreement payment to approve");
       expect(stub.paid).toBe(1);
@@ -239,16 +252,16 @@ describe("mpp/charge/evm/transaction and mpp/charge/evm/hash complete once the a
       expect(signer.requests.map((r) => r.kind)).toEqual(["eip712", "evm-call"]);
       const expected = await answer(signer.requests[1]!);
       expect(t.signed).toMatchObject({ challenge: { id: doc[0]!.id }, payload: { type, [member]: expected } });
-      expect(t.h).toBe(H);
+      expect(t.h).toBe(HA);
     }),
   );
   // A pairing whose payment is not a public proof, offered with no agreement URL, is declined
   // `agreement-not-offered` before the signer is called.
   it.each(rows)("%s: no agreement URL in the challenge: agreement-not-offered, and the signer is never called", async (_n, binding, answer) =>
     at(X.fixed.now, async () => {
-      const doc = docOf(binding, issued("evm", X.fixed.R_ENoTypes));
+      const doc = docOf(binding, issued("evm", X.fixed.R_ENoTypes), HA);
       const signer = counting(account(84532, X.fixed), answer);
-      expect(code(await transact(doc, binding, signer, serving(ABC)))).toBe("agreement-not-offered");
+      expect(code(await transact(doc, binding, signer, serving(ATR_A), GATE))).toBe("agreement-not-offered");
       expect(signer.requests.length).toBe(0);
     }),
   );

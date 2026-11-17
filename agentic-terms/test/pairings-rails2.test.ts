@@ -16,21 +16,25 @@ import { fromBase58 } from "@mysten/sui/utils";
 import { exactTronMemo } from "@integraledger/lcp/tron";
 import { exactTvm } from "@integraledger/lcp/tvm";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import { confirm, transact, type Binding, type Presented, type SigningRequest } from "../src/index.js";
+import { confirm, type Binding, type Presented, type SigningRequest } from "../src/index.js";
 import { PIECES } from "../src/pairings/index.js";
+import type { AtrHash } from "@integraledger/lcp";
 import {
+  A,
   buildAndSign,
   code,
-  counting,
   H,
+  HA,
   LINK,
-  offered,
+  pieceConfirm,
   serving,
+  summaryPending,
   toHex,
   vectors,
   type Pairing,
 } from "./support.js";
 
+import { CONFIRMING } from "./support.js";
 /** The option a payment answers, as its `accepted` names it: what the protocol package's `reference` takes beside it. */
 const acceptedOf = (payment: unknown): unknown => (payment as { accepted?: unknown }).accepted;
 
@@ -44,9 +48,14 @@ type Doc = PaymentRequired & { extensions: { legalContext: { info: { legalContex
  * pairing's `advertise` takes after the offer: on Cardano the `coinsPerUtxoByte` protocol parameter its floor reads.
  */
 function docOf(binding: Binding, option: PaymentRequirements, resource: { url: string }, ...rest: unknown[]): Doc {
+  return docFor(H, binding, option, resource, ...rest);
+}
+
+/** The same document as the pairing's `advertise` places another hash `h`. */
+function docFor(h: AtrHash, binding: Binding, option: PaymentRequirements, resource: { url: string }, ...rest: unknown[]): Doc {
   const base = { x402Version: 2, resource, accepts: [option] } as PaymentRequired;
   const placed = (binding as unknown as { advertise(d: PaymentRequired, h: string, l: string, o: unknown, ...r: unknown[]): unknown })
-    .advertise(base, H, LINK, option, ...rest);
+    .advertise(base, h, LINK, option, ...rest);
   if (typeof placed === "object" && placed !== null && "refused" in placed) throw new Error(JSON.stringify(placed));
   return placed as Doc;
 }
@@ -128,6 +137,7 @@ const nearRow: Row = (() => {
     p: {
       binding: exactNear,
       doc: docOf(exactNear, f.O, f.resource),
+      placed: (h) => docFor(h, exactNear, f.O, f.resource),
       account: `${f.O.network}:${f.payer}`,
       inputs: { publicKey: f.publicKey, accessKeyNonce: f.accessKeyNonce, finalHeight: f.finalHeight },
       answer: async (r) => {
@@ -185,6 +195,7 @@ const tronRow: Row = (() => {
     p: {
       binding: exactTronMemo,
       doc: docOf(exactTronMemo, f.O, f.resource),
+      placed: (h) => docFor(h, exactTronMemo, f.O, f.resource),
       account: `${f.O.network}:${f.payer}`,
       inputs: { refBlock: { number: String(f.refBlock.number), id: f.refBlock.id }, feeLimit: String(f.feeLimit) },
       answer: async (r) => {
@@ -241,6 +252,7 @@ const tvmRow: Row = (() => {
     p: {
       binding: exactTvm,
       doc,
+      placed: (h) => docFor(h, exactTvm, f.O, f.resource),
       // CAIP-10 writes the raw address's colon as %3A.
       account: `${f.O.network}:${f.wallet.replace(":", "%3A")}`,
       inputs: {
@@ -328,6 +340,7 @@ const starknetRow: Row = (() => {
     p: {
       binding: exactStarknet,
       doc: docOf(exactStarknet, f.O, f.resource),
+      placed: (h) => docFor(h, exactStarknet, f.O, f.resource),
       account: `${f.O.network}:${f.from}`,
       // No Stark-curve signer is available to these tests: the signer checks the request is the vectors' and answers
       // with the vector file's signature.
@@ -367,6 +380,7 @@ const polkadotRow: Row = (() => {
     p: {
       binding: exactPolkadotRemark,
       doc: docOf(exactPolkadotRemark, f.O, f.resource),
+      placed: (h) => docFor(h, exactPolkadotRemark, f.O, f.resource),
       account: `${f.O.network}:${DOT_PAYER}`,
       // The signing payload's era and genesis hashes are chain data: the wallet checks the call is the vectors' and
       // answers with V3, the extrinsic the chain accepted.
@@ -470,6 +484,7 @@ const suiRow: Row = (() => {
     p: {
       binding: exactSui,
       doc: docOf(exactSui, f.O, f.resource),
+      placed: (h) => docFor(h, exactSui, f.O, f.resource),
       account: `${f.O.network}:${f.sender}`,
       // The wallet answers V2, the vectors' transaction carrying H as its one unused Pure input. The pairing reads the
       // carrier from the transaction and never verifies the signature, so the signature is 97 zero bytes.
@@ -592,6 +607,7 @@ const aptosRow: Row = (() => {
     p: {
       binding: exactAptos,
       doc: docOf(exactAptos, f.O, f.resource),
+      placed: (h) => docFor(h, exactAptos, f.O, f.resource),
       account: `${f.O.network}:${f.fixtureF.sender}`,
       answer: async (r) => {
         checkRequest(r);
@@ -652,6 +668,7 @@ const cardanoRow: Row = (() => {
       binding: exactCardano,
       // The offer's floor reads the ledger's coinsPerUtxoByte, V8's published 4,310 lovelace a byte.
       doc: docOf(exactCardano, f.O, f.resource, BigInt(ADA.V8.coinsPerUtxoByte)),
+      placed: (h) => docFor(h, exactCardano, f.O, f.resource, BigInt(ADA.V8.coinsPerUtxoByte)),
       account: `${f.O.network}:${address}`,
       // The wallet answers V2, the vectors' transaction whose body commits to V1's auxiliary data.
       answer: async (r) => {
@@ -682,17 +699,16 @@ describe.each(rows.map((r) => [r.id, r] as const))("%s", (_id, row) => {
     at(now, async () => {
       const doc = structuredClone(p.doc) as Doc & { extensions: Record<string, unknown> };
       doc.extensions["payment-identifier"] = { info: {}, schema: {} };
-      const out = await transact(doc, offered(p.binding), counting(p.account, p.answer), serving(new TextEncoder().encode("abc")), { inputs: p.inputs ?? {} });
-      if ("decline" in out) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
-      if ("approve" in out) throw new Error("an agreement payment to approve");
-      const ext = (out.signed as unknown as { extensions: Record<string, { info: { id?: string } }> }).extensions;
+      const { placed: _placed, ...piece } = p;
+      const { signed } = await buildAndSign({ ...piece, doc }, () => undefined);
+      const ext = (signed as unknown as { extensions: Record<string, { info: { id?: string } }> }).extensions;
       expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
     }));
 
   it("B10: an http:// link is offer-unreadable, x402/link-not-https, with no fetch", () =>
     at(now, async () => {
       const fetch = serving(new TextEncoder().encode("abc"));
-      const out = await confirm(httpDoc(p.doc as Doc), p.binding, p.account, fetch, p.inputs);
+      const out = await confirm(httpDoc(p.doc as Doc), p.binding, p.account, fetch, { ...CONFIRMING, inputs: p.inputs });
       expect(out).toEqual({ decline: { code: "offer-unreadable", detail: "x402/link-not-https" } });
       expect(fetch.calls).toBe(0);
     }));
@@ -701,7 +717,7 @@ describe.each(rows.map((r) => [r.id, r] as const))("%s", (_id, row) => {
     at(now, async () => {
       for (const account of ["eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", row.otherNetwork]) {
         const fetch = serving(new TextEncoder().encode("abc"));
-        const out = await confirm(p.doc, p.binding, account, fetch, p.inputs);
+        const out = await confirm(p.doc, p.binding, account, fetch, { ...CONFIRMING, inputs: p.inputs });
         expect(code(out)).toBe("no-payable-option");
         expect(fetch.calls).toBe(0);
       }
@@ -717,7 +733,7 @@ describe("x402/exact/tvm accounts", () => {
       for (const workchain of [128, -129]) {
         const fetch = serving(new TextEncoder().encode("abc"));
         const account = `${TVM.fixed.O.network}:${workchain}%3A${hex}`;
-        const out = await confirm(tvmRow.p.doc, tvmRow.p.binding, account, fetch, tvmRow.p.inputs);
+        const out = await confirm(tvmRow.p.doc, tvmRow.p.binding, account, fetch, { ...CONFIRMING, inputs: tvmRow.p.inputs });
         expect([account, code(out)]).toEqual([account, "no-payable-option"]);
         expect(fetch.calls).toBe(0);
       }
@@ -729,9 +745,9 @@ describe("x402/exact/tvm accounts", () => {
     at(tvmRow.now, async () => {
       const hex = TVM.fixed.wallet.split(":")[1]!;
       for (const workchain of [-128, 127]) {
-        const fetch = serving(new TextEncoder().encode("abc"));
+        const fetch = serving(A);
         const account = `${TVM.fixed.O.network}:${workchain}%3A${hex}`;
-        const out = await confirm(tvmRow.p.doc, tvmRow.p.binding, account, fetch, tvmRow.p.inputs);
+        const out = await confirm(tvmRow.p.placed!(HA), tvmRow.p.binding, account, fetch, { ...CONFIRMING, inputs: tvmRow.p.inputs });
         expect([account, code(out)]).toEqual([account, "offer-unreadable"]);
         expect(fetch.calls).toBe(1);
       }
@@ -759,12 +775,17 @@ describe("x402/exact/near accounts", () => {
   it("an account whose address is a NEAR account id is chosen and its link fetched; any other is no-payable-option with no fetch", () =>
     at(nearRow.now, async () => {
       for (const address of [...nearAccounts, ...notNearAccounts]) {
-        const fetch = serving(new TextEncoder().encode("abc"));
+        const fetch = serving(A);
         const account = `${NEAR.fixed.O.network}:${caip10(address)}`;
-        const out = await confirm(nearRow.p.doc, nearRow.p.binding, account, fetch, nearRow.p.inputs);
+        const out = await confirm(nearRow.p.placed!(HA), nearRow.p.binding, account, fetch, { ...CONFIRMING, inputs: nearRow.p.inputs });
         if (nearAccounts.includes(address)) {
-          if ("decline" in out) throw new Error(`${address}: ${out.decline.code}: ${out.decline.detail}`);
-          expect([address, (out.chosen.choice as { payer: string }).payer, out.request?.kind, fetch.calls]).toEqual([address, address, "near-delegate", 1]);
+          const built = await pieceConfirm(nearRow.p.doc, nearRow.p.binding, account, nearRow.p.inputs);
+          if ("decline" in built) throw new Error(`${address}: ${built.decline.code}: ${built.decline.detail}`);
+          expect([address, (built.chosen.choice as { payer: string }).payer, built.request?.kind]).toEqual([address, address, "near-delegate"]);
+          // Through the gate the link is fetched; the request is then shown, or declined while its summary is pending.
+          expect([address, fetch.calls]).toEqual([address, 1]);
+          if (summaryPending(nearRow.id)) expect([address, code(out)]).toEqual([address, "summary-missing"]);
+          else expect([address, "decline" in out ? out.decline : out.request?.kind]).toEqual([address, "near-delegate"]);
         } else {
           expect([address, out, fetch.calls]).toEqual([address, { decline: { code: "no-payable-option", detail: "x402/no-payable-option" } }, 0]);
         }
@@ -802,7 +823,7 @@ describe("inputs", () => {
       ];
       for (const [row, inputs, detail] of cases) {
         const fetch = serving(new TextEncoder().encode("abc"));
-        const out = await confirm(row.p.doc, row.p.binding, row.p.account, fetch, inputs as never);
+        const out = await confirm(row.p.doc, row.p.binding, row.p.account, fetch, { ...CONFIRMING, inputs: inputs as never });
         expect(out).toEqual({ decline: { code: "no-payable-option", detail } });
         expect(fetch.calls).toBe(0);
       }

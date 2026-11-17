@@ -10,8 +10,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { TypedDataDefinition } from "viem";
 import { evmHash, evmTransaction, type MppChallenge } from "@integraledger/lcp/mpp";
 import { exactEip3009, type PaymentRequirements } from "@integraledger/lcp/x402";
-import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { ABC, AGREEMENT_URL, H, LINK, transactApproved, vectors } from "./support.js";
+import { type Binding, type Fetch, type SigningRequest } from "../src/index.js";
+import { A, AGREEMENT_URL, code, H, HA, LINK, pieceConfirm, summaryPending, transactApproved, vectors } from "./support.js";
 
 const MC = vectors<{ fixed: { realm: string; expires: string } }>("mpp-challenge.json");
 const X = vectors<{
@@ -24,7 +24,7 @@ const X = vectors<{
 const MV12 = vectors<{ MV12: { hash: `0x${string}` } }>("mpp-charge-evm-hash.json").MV12;
 const AG = vectors<{ fixed: { agreement: { option: PaymentRequirements } } }>("buyer.json").fixed.agreement;
 
-const RECEIPT = { atrHash: H, agreed: true, network: "eip155:84532", transaction: `0x${"cd".repeat(32)}` };
+const RECEIPT = { atrHash: HA, agreed: true, network: "eip155:84532", transaction: `0x${"cd".repeat(32)}` };
 const ACCOUNT = `eip155:84532:${X.fixed.payer}`;
 const payer = privateKeyToAccount(X.fixed.payerKey);
 
@@ -36,17 +36,17 @@ const challenge = {
   expires: MC.fixed.expires,
 } as MppChallenge;
 
-/** The seller: the ATR at LINK; the agreement URL answers 402 unpaid and 200 with the receipt once paid. */
+/** The seller: the ATR A at LINK; the agreement URL answers 402 unpaid and 200 with the receipt once paid. */
 function seller(): Fetch {
   const required = exactEip3009.advertise(
     { x402Version: 2, resource: { url: AGREEMENT_URL }, accepts: [AG.option] },
-    H,
+    HA,
     LINK,
     AG.option,
   );
   const header = Buffer.from(JSON.stringify(required), "utf8").toString("base64");
   return async (url, init) => {
-    if (url === LINK) return new Response(new Uint8Array(ABC), { status: 200 });
+    if (url === LINK) return new Response(new Uint8Array(A), { status: 200 });
     if (url !== AGREEMENT_URL) return new Response(null, { status: 404 });
     if (init.headers?.["PAYMENT-SIGNATURE"] === undefined) {
       return new Response(null, { status: 402, headers: { "payment-required": header } });
@@ -88,15 +88,25 @@ const rows: [string, unknown, (r: SigningRequest) => Promise<`0x${string}`>, (ra
 describe("an EVM transfer the signer completed after the agreement's 200 is returned, not dropped", () => {
   it.each(rows)("%s", (_id, binding, answer, payload) =>
     at(X.fixed.now, async () => {
-      const doc = (binding as { advertise(d: unknown, h: string, l: string, o: unknown, p: number, act: string, a: string): unknown }).advertise(
-        [challenge],
-        H,
-        LINK,
-        challenge,
-        0,
-        "payment",
-        AGREEMENT_URL,
-      );
+      const docFor = (h: string) =>
+        (binding as { advertise(d: unknown, h: string, l: string, o: unknown, p: number, act: string, a: string): unknown }).advertise(
+          [challenge],
+          h,
+          LINK,
+          challenge,
+          0,
+          "payment",
+          AGREEMENT_URL,
+        );
+      if (_id.endsWith("transaction")) {
+        // By the pairing's own steps over the vector's H, the transaction the payer signs is MV11's.
+        const built = await pieceConfirm(docFor(H), binding as Binding, ACCOUNT);
+        if ("decline" in built || built.request === null) throw new Error(JSON.stringify(built));
+        const raw = await signedTx(built.request);
+        expect(`0x${createHash("sha256").update(Buffer.from(raw.slice(2), "hex")).digest("hex")}`).toBe(X.MV11.expectRawSha256);
+      }
+      // Through the gate, over an ATR that is one JSON text, its document placed for that ATR's H.
+      const doc = docFor(HA);
       const answers: `0x${string}`[] = [];
       const kinds: string[] = [];
       const signer = {
@@ -110,14 +120,14 @@ describe("an EVM transfer the signer completed after the agreement's 200 is retu
         },
       };
       const out = await transactApproved(doc, binding as Binding, signer, seller());
-      expect(kinds).toEqual(["eip712", "evm-call"]);
-      if (answers[0] !== undefined && _id.endsWith("transaction")) {
-        expect(`0x${createHash("sha256").update(Buffer.from(answers[0].slice(2), "hex")).digest("hex")}`).toBe(
-          X.MV11.expectRawSha256,
-        );
+      if (summaryPending(_id)) {
+        // The payment's request is shown before anything is signed, the agreement among it: none is shown yet.
+        expect([code(out), kinds]).toEqual(["summary-missing", []]);
+        return;
       }
+      expect(kinds).toEqual(["eip712", "evm-call"]);
       expect(out).not.toHaveProperty("decline");
-      expect(out).toMatchObject({ agreement: RECEIPT, h: H });
+      expect(out).toMatchObject({ agreement: RECEIPT, h: HA });
       expect((out as { signed: { payload: unknown } }).signed.payload).toEqual(payload(answers[0]!));
     }),
   );

@@ -13,7 +13,7 @@ import {
   type PaymentRequired,
   type PaymentRequirements,
 } from "@integraledger/lcp/x402";
-import { pairingOf } from "@integraledger/lcp";
+import { pairingOf, type AtrHash } from "@integraledger/lcp";
 import { permit2TypedData } from "@integraledger/lcp/evm";
 import type { Binding, SigningRequest } from "../src/index.js";
 import { buildAndSign, H, LINK, vectors, type Pairing } from "./support.js";
@@ -27,10 +27,10 @@ type Fixed = {
 };
 
 /** The seller's document for the fixed option, as the pairing's `advertise` places H and the link. */
-function docOf(binding: Binding, f: Fixed): PaymentRequired {
+function docOf(binding: Binding, f: Fixed, h: AtrHash = H): PaymentRequired {
   const base: PaymentRequired = { x402Version: 2, resource: f.resource, accepts: [f.option] } as PaymentRequired;
   const placed = (binding as unknown as { advertise(d: PaymentRequired, h: string, l: string, o: unknown): unknown })
-    .advertise(base, H, LINK, f.option);
+    .advertise(base, h, LINK, f.option);
   if (typeof placed === "object" && placed !== null && "refused" in placed) throw new Error(JSON.stringify(placed));
   return placed as PaymentRequired;
 }
@@ -43,7 +43,7 @@ function typedDataOf(r: SigningRequest): TypedDataDefinition {
 const eip712 = (f: Fixed) => (r: SigningRequest) => privateKeyToAccount(f.payerKey).signTypedData(typedDataOf(r));
 
 function eip712Pairing(binding: Binding, f: Fixed): Pairing {
-  return { binding, doc: docOf(binding, f), account: `${f.option.network}:${f.payer}`, answer: eip712(f) };
+  return { binding, doc: docOf(binding, f), placed: (h) => docOf(binding, f, h), account: `${f.option.network}:${f.payer}`, answer: eip712(f) };
 }
 
 /** Freezes the clock at the vectors' `now`, and restores it. */
@@ -133,13 +133,17 @@ describe("x402/exact/eip155/erc7710-salt", () => {
       primaryType: "Delegation",
       message: leaf as never,
     });
-    expect(signature).toBe(ES.EV8.expectSignature);
+    // EV8's signature is over the vector's H as the salt; through the gate over another ATR the salt is that ATR's H.
+    if (BigInt(r.salt) === BigInt(H)) expect(signature).toBe(ES.EV8.expectSignature);
     const permissionContext = encodeAbiParameters(delegationAbi, [[{ ...leaf, signature } as never]]);
     return { delegationManager: manager, permissionContext, delegator: f.payer };
   };
   const p: Pairing = {
     binding: exactErc7710Salt,
     doc: docOf(exactErc7710Salt, f),
+    placed: (h) => docOf(exactErc7710Salt, f, h),
+    // A delegation signs no end: the gate pays it only where the caller raises its ceiling to "no-end".
+    ceilings: { "x402/exact/eip155/erc7710-salt": "no-end" },
     account: `${f.option.network}:${f.payer}`,
     answer: answer(f.delegationManager),
   };
@@ -163,6 +167,9 @@ describe("x402/exact/eip155/erc7710-salt", () => {
     const q: Pairing = {
       binding: exactErc7710,
       doc: docOf(exactErc7710, E.fixed),
+      placed: (h) => docOf(exactErc7710, E.fixed, h),
+      // A delegation signs no end: the gate pays it only where the caller raises its ceiling to "no-end".
+      ceilings: { "x402/exact/eip155/erc7710": "no-end" },
       account: `${E.fixed.option.network}:${E.fixed.payer}`,
       answer: answer(E.EV7.otherManager),
     };

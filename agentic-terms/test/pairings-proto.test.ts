@@ -4,7 +4,7 @@
 // ACP documents advertise the vectors' own H, over the vectors' own ATR bytes.
 import { createECDH, createHash, createPrivateKey, createPublicKey, sign as signWith, verify } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import type { Refusal } from "@integraledger/lcp";
+import type { AtrHash, Refusal } from "@integraledger/lcp";
 import { binding as a2aBinding } from "@integraledger/lcp/a2a";
 import { paymentRequest } from "@integraledger/lcp/ack";
 import { delegated, undelegated } from "@integraledger/lcp/acp";
@@ -14,8 +14,9 @@ import { ap2Mandate, bookingAp2Mandate, bookingUnsigned, unsigned } from "@integ
 import { check, confirm, finish, transact, type Binding, type Presented, type SigningRequest } from "../src/index.js";
 import { PIECES } from "../src/pairings/index.js";
 import type { BuyerPiece, Chosen, Read } from "../src/types.js";
-import { ABC, ABD, code, counting, H, isDeclined, isPublicProof, LINK, offered, receiptFor, serving, vectors, type Pairing } from "./support.js";
+import { A as ATR_A, ABC, ABD, code, counting, H, HA, isDeclined, isPublicProof, LINK, offered, pieceConfirm, receiptFor, serving, summaryPending, vectors, type Pairing } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type V = any;
 const CARD: V = vectors("card.json");
@@ -34,9 +35,11 @@ const never = async (): Promise<never> => {
 };
 
 /**
- * B6 over the given ATR and its hash: `confirm` gives the request `inspect` checks; `finish` with the test signer's
- * answer returns a payment bound to `h`; `transact` signs once; `check` confirms the payment against the ATR and
- * declines it against other bytes.
+ * B6 over the given ATR and its hash, by the pairing's own steps with no gate: the build gives the request `inspect`
+ * checks; `finish` with the test signer's answer returns a payment bound to `h`; `check` confirms the payment against
+ * the ATR and declines it against other bytes. Then through the gate, over an ATR that is one JSON text: the one given,
+ * or, for `abc`, which the gate's parse declines, `A` where the pairing places its document for `HA`. There `transact`
+ * signs once, or, while SUMMARY_PENDING lists the pairing, declines summary-missing with no signer call.
  */
 async function signsOver(
   p: Pairing,
@@ -44,10 +47,9 @@ async function signsOver(
   h: string,
   inspect: (r: SigningRequest) => void | Promise<void>,
 ): Promise<Presented> {
-  const confirmed = await confirm(p.doc, offered(p.binding), p.account, serving(atr), p.inputs);
+  const confirmed = await pieceConfirm(p.doc, offered(p.binding), p.account, p.inputs, atr);
   if (isDeclined(confirmed)) throw new Error(`${confirmed.decline.code}: ${confirmed.decline.detail}`);
   expect(confirmed.h).toBe(h);
-  expect(confirmed.bytes).toEqual(atr);
   if (confirmed.request === null) throw new Error("nothing to sign");
   await inspect(confirmed.request);
 
@@ -56,44 +58,59 @@ async function signsOver(
   if (isDeclined(done)) throw new Error(`${done.decline.code}: ${done.decline.detail}`);
   if ("next" in done) throw new Error("the piece asked for a second signature");
   expect(done.h).toBe(h);
-
-  const signer = counting(p.account, p.answer);
-  const whole = await transact(p.doc, offered(p.binding), signer, serving(atr), { inputs: p.inputs ?? {} });
-  if (isDeclined(whole)) throw new Error(`${whole.decline.code}: ${whole.decline.detail}`);
-  if ("approve" in whole) throw new Error("an agreement payment to approve");
-  expect(signer.requests.length).toBe(1);
-  expect(whole.signed).toEqual(done.signed);
-  expect(whole.bytes).toEqual(atr);
-  expect(whole.agreement).toEqual(isPublicProof(p.binding) ? undefined : receiptFor(h));
-
   expect(await check(atr, done.signed, p.binding)).toEqual({ h });
   expect(code(await check(ABD, done.signed, p.binding))).toBe("signed-not-bound");
+
+  const [doc, bytes, gh] = atr === ABC ? [p.placed?.(HA), ATR_A, HA] : [p.doc, atr, h];
+  if (doc !== undefined) {
+    const signer = counting(p.account, p.answer);
+    const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {} });
+    if (summaryPending(p.binding.id)) {
+      expect([code(whole), signer.requests.length]).toEqual(["summary-missing", 0]);
+    } else {
+      if (isDeclined(whole)) throw new Error(`${whole.decline.code}: ${whole.decline.detail}`);
+      if ("approve" in whole) throw new Error("an agreement payment to approve");
+      expect(signer.requests.length).toBe(1);
+      if (bytes === atr) expect(whole.signed).toEqual(done.signed);
+      expect(whole.bytes).toEqual(bytes);
+      expect(whole.agreement).toEqual(isPublicProof(p.binding) ? undefined : receiptFor(gh));
+      expect(await check(bytes, whole.signed, p.binding)).toEqual({ h: gh });
+    }
+  }
   return done.signed;
 }
 
-/** B6 for a confirm-only pairing: `confirm` gives no request and the hash; `transact` gives no payment, unsigned. */
+/**
+ * B6 for a confirm-only pairing: by its own steps the build gives no request and the hash; through the gate, over an
+ * ATR that is one JSON text (as `signsOver` chooses it), `confirm` gives no request and `transact` no payment, unsigned.
+ */
 async function confirmsOnly(p: Pairing, atr: Uint8Array, h: string): Promise<Chosen> {
-  const confirmed = await confirm(p.doc, offered(p.binding), p.account, serving(atr), p.inputs);
+  const confirmed = await pieceConfirm(p.doc, offered(p.binding), p.account, p.inputs, atr);
   if (isDeclined(confirmed)) throw new Error(`${confirmed.decline.code}: ${confirmed.decline.detail}`);
   expect(confirmed.request).toBeNull();
   expect(confirmed.h).toBe(h);
-  expect(confirmed.bytes).toEqual(atr);
   expect(JSON.parse(JSON.stringify(confirmed.chosen))).toEqual(confirmed.chosen);
 
-  const signer = counting(p.account, never);
-  const whole = await transact(p.doc, offered(p.binding), signer, serving(atr), { inputs: p.inputs ?? {} });
-  expect(whole).toEqual({ signed: null, bytes: atr, h, ...(isPublicProof(p.binding) ? {} : { agreement: receiptFor(h) }) });
-  expect(signer.requests.length).toBe(0);
+  const [doc, bytes, gh] = atr === ABC ? [p.placed?.(HA), ATR_A, HA] : [p.doc, atr, h];
+  if (doc !== undefined) {
+    const gated = await confirm(doc, offered(p.binding), p.account, serving(bytes), { ...CONFIRMING, inputs: p.inputs });
+    if (isDeclined(gated)) throw new Error(`${gated.decline.code}: ${gated.decline.detail}`);
+    expect([gated.request, gated.h, gated.bytes]).toEqual([null, gh, bytes]);
+    const signer = counting(p.account, never);
+    const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {} });
+    expect(whole).toEqual({ signed: null, bytes, h: gh, ...(isPublicProof(p.binding) ? {} : { agreement: receiptFor(gh) }) });
+    expect(signer.requests.length).toBe(0);
+  }
   return confirmed.chosen;
 }
 
 /** B10: a document whose link is `http://` is `offer-unreadable` with the pairing's code, before any fetch. */
 async function httpLink(p: Pairing, httpDoc: unknown, detail: string): Promise<void> {
   const f = serving(ABC);
-  const out = await confirm(httpDoc, p.binding, p.account, f, p.inputs);
+  const out = await confirm(httpDoc, p.binding, p.account, f, { ...CONFIRMING, inputs: p.inputs });
   expect(out).toEqual({ decline: { code: "offer-unreadable", detail } });
   const signer = counting(p.account, never);
-  expect(code(await transact(httpDoc, p.binding, signer, f, { inputs: p.inputs ?? {} }))).toBe("offer-unreadable");
+  expect(code(await transact(httpDoc, p.binding, signer, f, { ...GATE, inputs: p.inputs ?? {} }))).toBe("offer-unreadable");
   expect(f.calls).toBe(0);
   expect(signer.requests.length).toBe(0);
 }
@@ -102,7 +119,7 @@ async function httpLink(p: Pairing, httpDoc: unknown, detail: string): Promise<v
 async function unpayable(p: Pairing, accounts: readonly string[]): Promise<void> {
   for (const account of accounts) {
     const f = serving(ABC);
-    const out = await confirm(p.doc, p.binding, account, f, p.inputs);
+    const out = await confirm(p.doc, p.binding, account, f, { ...CONFIRMING, inputs: p.inputs });
     expect(code(out)).toBe("no-payable-option");
     expect(f.calls).toBe(0);
   }
@@ -180,7 +197,14 @@ const card = {
       return { ...CARD.C7.bound.presented };
     },
   } as Pairing,
-  sellerReference: { binding: sellerReference, doc: tapDoc, account: BUYER, answer: never } as Pairing,
+  sellerReference: {
+    binding: sellerReference,
+    doc: tapDoc,
+    // The same legal context as the card pairings' `advertise` places another hash, over C1's seller-reference option.
+    placed: (h: AtrHash) => ({ legalContext: (sellerReference.advertise({}, h, LINK, CARD.C1.digestJson[2].option) as { legalContext: unknown }).legalContext }),
+    account: BUYER,
+    answer: never,
+  } as Pairing,
 };
 
 describe("card: the pieces over the vectors' requests and answers", () => {
@@ -729,7 +753,7 @@ describe("acp", () => {
       for (const k of Object.keys(values)) {
         const f = serving(atr);
         const { [k]: _gone, ...rest } = values;
-        expect(await confirm(session, delegated, BUYER, f, rest)).toEqual({
+        expect(await confirm(session, delegated, BUYER, f, { ...CONFIRMING, inputs: rest })).toEqual({
           decline: { code: "no-payable-option", detail: "acp/input-missing" },
         });
         expect(f.calls).toBe(0);
@@ -822,7 +846,7 @@ describe("a2a", () => {
     expect(a2aBinding).toEqual({ refused: true, code: "a2a/no-signed-place" });
     expect([...PIECES.keys()].filter((k) => k.startsWith("a2a/"))).toEqual([]);
     const f = serving(ABC);
-    expect(code(await confirm({}, a2aBinding as never, BUYER, f))).toBe("pairing-not-supported");
+    expect(code(await confirm({}, a2aBinding as never, BUYER, f, CONFIRMING))).toBe("pairing-not-supported");
     expect(f.calls).toBe(0);
   });
 });

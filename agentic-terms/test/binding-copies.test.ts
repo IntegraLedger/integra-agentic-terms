@@ -36,8 +36,9 @@ import {
   type SigningRequest,
   type ToApprove,
 } from "../src/index.js";
-import { ABC, AGREEMENT_URL, H, LINK, offered, receiptFor, serving, transactApproved, vectors } from "./support.js";
+import { A, ABC, AGREEMENT_URL, code, H, HA, LINK, offered, piecePay, receiptFor, serving, summaryPending, transactApproved, vectors } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "terms-binding-copies-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -73,7 +74,7 @@ type AcpVectors = {
   V6: { doc: unknown; expect: { refused: true; code: string } };
 };
 const ACP = vectors<AcpVectors>("acp-checkout.json");
-const CARD = vectors<{ C2: { build: { doc: unknown } } }>("card.json");
+const CARD = vectors<{ C2: { build: { doc: unknown } }; C1: { digestJson: { option: unknown }[] } }>("card.json");
 const X = vectors<{
   fixed: { payerKey: `0x${string}`; payer: `0x${string}`; now: number; R_ENoTypes: string };
   MV11: { transaction: { chainId: number; nonce: number; maxPriorityFeePerGas: string; maxFeePerGas: string; gas: number } };
@@ -173,7 +174,7 @@ describe("a binding from another copy: its read's refusal runs the gate's declin
     for (const binding of [delegated as Binding, other.delegated]) {
       const f = serving(ABC);
       const s = signer(never);
-      const out = await transact(ACP.V6.doc, offered(binding), s, f);
+      const out = await transact(ACP.V6.doc, offered(binding), s, f, GATE);
       expect(out).toEqual({ decline: { code: "offer-unreadable", detail: ACP.V6.expect.code } });
       expect(f.calls).toBe(0);
       expect(s.kinds).toEqual([]);
@@ -197,16 +198,23 @@ describe("a binding from another copy: its build's refusal runs the gate's decli
   });
 
   it("card/seller-reference: confirm-only, with no request, no payment and no signer call", async () => {
-    const doc = CARD.C2.build.doc;
     for (const binding of [sellerReference as Binding, other.sellerReference]) {
-      const confirmed = await confirm(doc, offered(binding), ACCOUNT, serving(ABC));
-      expect(confirmed).toMatchObject({ request: null, h: H });
+      // The legal context each copy's `advertise` places for A's hash, over the card vectors' seller-reference option.
+      const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown): { legalContext: unknown } }).advertise(
+        {},
+        HA,
+        LINK,
+        CARD.C1.digestJson[2]!.option,
+      );
+      const doc = { legalContext: placed.legalContext };
+      const confirmed = await confirm(doc, offered(binding), ACCOUNT, serving(A), CONFIRMING);
+      expect(confirmed).toMatchObject({ request: null, h: HA });
       const s = signer(never);
-      expect(await transact(doc, offered(binding), s, serving(ABC))).toEqual({
+      expect(await transact(doc, offered(binding), s, serving(A), GATE)).toEqual({
         signed: null,
-        bytes: ABC,
-        h: H,
-        agreement: receiptFor(H),
+        bytes: A,
+        h: HA,
+        agreement: receiptFor(HA),
       });
       expect(s.kinds).toEqual([]);
     }
@@ -242,10 +250,10 @@ describe("a binding from another copy: a bound that finds no signed place runs t
     ["mpp/charge/evm/hash", evmHash as Binding, other.evmHash, async () => MV12.hash, () => ({ type: "hash", hash: MV12.hash })],
   ];
 
-  const docOf = (binding: Binding): unknown =>
+  const docOf = (binding: Binding, h: AtrHash = H): unknown =>
     (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number, act: string, a: string): unknown }).advertise(
       [challenge],
-      H,
+      h,
       LINK,
       challenge,
       0,
@@ -262,9 +270,15 @@ describe("a binding from another copy: a bound that finds no signed place runs t
           answers.push(a);
           return a;
         });
-        const out = await transactApproved(docOf(binding), binding, s, seller(ABC, H));
+        // Through the gate, over an ATR that is one JSON text, its document placed for that ATR's H.
+        const out = await transactApproved(docOf(binding, HA), binding, s, seller(A, HA));
+        if (summaryPending(_id)) {
+          // The payment's request is shown before anything is signed, the agreement among it: none is shown yet.
+          expect([code(out), s.kinds]).toEqual(["summary-missing", []]);
+          continue;
+        }
         expect(s.kinds).toEqual(["eip712", "evm-call"]);
-        expect(out).toMatchObject({ agreement: receiptFor(H), h: H });
+        expect(out).toMatchObject({ agreement: receiptFor(HA), h: HA });
         expect((out as { signed: { payload: unknown } }).signed.payload).toEqual(payload(answers[0]!));
       }
     }),
@@ -273,9 +287,10 @@ describe("a binding from another copy: a bound that finds no signed place runs t
   it("mpp/charge/evm/transaction: a signer answering 0x completes no credential, signed-not-bound mpp/credential-malformed", () =>
     at(X.fixed.now, async () => {
       for (const binding of [evmTransaction as Binding, other.evmTransaction]) {
+        // By the pairing's own steps over the vector's H: the signer's answer completes the payment, or not.
         const s = signer(async () => "0x");
-        const out = await transactApproved(docOf(binding), binding, s, seller(ABC, H));
-        expect(s.kinds).toEqual(["eip712", "evm-call"]);
+        const out = await piecePay(docOf(binding), binding, s);
+        expect(s.kinds).toEqual(["evm-call"]);
         expect((out as Declined).decline).toEqual({ code: "signed-not-bound", detail: "mpp/credential-malformed" });
         expect(out).not.toHaveProperty("signed");
       }
@@ -285,8 +300,9 @@ describe("a binding from another copy: a bound that finds no signed place runs t
   it.each(rows)("%s: a signer answering a refusal-shaped object is never read as a refusal", (_id, own, theirs) =>
     at(X.fixed.now, async () => {
       for (const binding of [own, theirs]) {
+        // By the pairing's own steps over the vector's H: the signer's answer completes the payment, or not.
         const s = signer(async () => ({ refused: true, code: "mpp/no-signed-place" }) as unknown as Signature);
-        const out = await transactApproved(docOf(binding), binding, s, seller(ABC, H));
+        const out = await piecePay(docOf(binding), binding, s);
         expect((out as Declined).decline).toEqual({ code: "signed-not-bound", detail: "mpp/credential-malformed" });
         expect(out).not.toHaveProperty("signed");
       }
@@ -348,7 +364,8 @@ describe("a binding from another copy: a channel's members are read the same way
         LINK,
         S.option,
       );
-      const opened = unwrap(await transact(doc, binding, solana, serving(ABC), { inputs }));
+      // The opening by the pairing's own steps over the vector's H, so ES1's channel and ES3's voucher are the vectors'.
+      const opened = unwrap(await piecePay(doc, binding, solana, inputs));
       const hold = unwrap(await openChannel(opened.bytes, opened.signed!, binding));
       expect(hold).toMatchObject({ network: BV.ES4.expectRef.network, channel: BV.ES1.channelPda, h: H, charged: "0" });
       requests.length = 0;

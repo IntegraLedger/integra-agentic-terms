@@ -24,6 +24,7 @@ import {
   type SigningRequest,
 } from "../src/index.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 const B = JSON.parse(
   readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"),
 );
@@ -167,7 +168,7 @@ describe("fixed inputs", () => {
 describe("buyer rows", () => {
   it("B1: hash(A), and confirm returns it for the bytes it served", async () => {
     expect(await hash(A)).toBe(row("B1").expect.h);
-    const r = await confirm(D, binding, ACCOUNT, serving(A));
+    const r = await confirm(D, binding, ACCOUNT, serving(A), CONFIRMING);
     expect(isDeclined(r)).toBe(false);
     if (isDeclined(r)) return;
     expect(r.h).toBe(row("B1").expect.h);
@@ -179,9 +180,9 @@ describe("buyer rows", () => {
     expect(r.plant).toBe(true);
     expect(await hash(C)).toBe(B.fixed.hashC);
     const signer = counting();
-    expect(code(await transact(D, binding, signer, serving(C)))).toBe(r.expect.decline);
+    expect(code(await transact(D, binding, signer, serving(C), GATE))).toBe(r.expect.decline);
     expect(signer.requests.length).toBe(r.expect.signCalls);
-    const confirmed = await confirm(D, binding, ACCOUNT, serving(C));
+    const confirmed = await confirm(D, binding, ACCOUNT, serving(C), CONFIRMING);
     expect(code(confirmed)).toBe(r.expect.decline);
     expect(confirmed).not.toHaveProperty("request");
   });
@@ -190,7 +191,7 @@ describe("buyer rows", () => {
     const r = row("B2b");
     const signer = counting();
     const fetch = serving(fromHex(r.input.servesHex));
-    expect(code(await transact(r.input.doc, binding, signer, fetch))).toBe(r.expect.decline);
+    expect(code(await transact(r.input.doc, binding, signer, fetch, GATE))).toBe(r.expect.decline);
     expect(signer.requests.length).toBe(r.expect.signCalls);
     expect(fetch.calls.length).toBe(1);
   });
@@ -200,7 +201,7 @@ describe("buyer rows", () => {
     const served = fromHex(r.input.servesHex);
     expect(await hash(served)).toBe(r.servedHash);
     const signer = counting();
-    expect(code(await transact(D, binding, signer, serving(served)))).toBe(r.expect.decline);
+    expect(code(await transact(D, binding, signer, serving(served), GATE))).toBe(r.expect.decline);
     expect(signer.requests.length).toBe(r.expect.signCalls);
   });
 
@@ -217,7 +218,7 @@ describe("buyer rows", () => {
         return exactEip3009.build(choice, h);
       },
     };
-    const out = await confirm(D, stubbed, ACCOUNT, serving(A));
+    const out = await confirm(D, stubbed, ACCOUNT, serving(A), CONFIRMING);
     expect(isDeclined(out)).toBe(!r.expect.match);
     if (isDeclined(out)) return;
     expect(out.h).toBe(r.expect.h);
@@ -226,7 +227,7 @@ describe("buyer rows", () => {
 
   it("B6: confirm builds the authorization with nonce hash(A); finish binds the signature", async () => {
     const r = row("B6");
-    const confirmed = await confirm(D, binding, ACCOUNT, serving(A));
+    const confirmed = await confirm(D, binding, ACCOUNT, serving(A), CONFIRMING);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
     const typedData = typedDataOf(confirmed.request);
     expect(confirmed.request?.kind).toBe("eip712");
@@ -252,7 +253,7 @@ describe("buyer rows", () => {
     );
 
     const signer = counting();
-    const whole = await transact(D, binding, signer, serving(A));
+    const whole = await transact(D, binding, signer, serving(A), GATE);
     if (isDeclined(whole)) throw new Error(whole.decline.code);
     if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(signer.requests.length).toBe(1);
@@ -263,7 +264,7 @@ describe("buyer rows", () => {
 
   it("B7: check confirms the B6 payment against A, and declines it against C", async () => {
     const r = row("B7");
-    const whole = await transact(D, binding, counting(), serving(A));
+    const whole = await transact(D, binding, counting(), serving(A), GATE);
     if (isDeclined(whole)) throw new Error(whole.decline.code);
     if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(await check(A, whole.signed, binding)).toEqual({ h: r.expect[0].h });
@@ -272,7 +273,7 @@ describe("buyer rows", () => {
 
   it("B7 with landed null: check reads the payment alone, as with no landed", async () => {
     const r = row("B7");
-    const whole = await transact(D, binding, counting(), serving(A));
+    const whole = await transact(D, binding, counting(), serving(A), GATE);
     if (isDeclined(whole)) throw new Error(whole.decline.code);
     if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(await check(A, whole.signed, binding, null)).toEqual({ h: r.expect[0].h });
@@ -284,7 +285,7 @@ describe("buyer rows", () => {
     const doc = withExtension(D, "payment-identifier", { info: {}, schema: {} });
     const ids: string[] = [];
     for (let i = 0; i < r.input.runs; i++) {
-      const out = await transact(doc, binding, counting(), serving(A));
+      const out = await transact(doc, binding, counting(), serving(A), GATE);
       if (isDeclined(out)) throw new Error(out.decline.code);
       if ("approve" in out) throw new Error("an agreement payment to approve");
       const info = x402(out.signed).extensions?.["payment-identifier"]?.info as { id?: string };
@@ -295,7 +296,7 @@ describe("buyer rows", () => {
     expect(ids[0] !== ids[1]).toBe(r.expect.differsBetweenRuns);
     expect(doc.extensions?.["payment-identifier"]).toEqual({ info: {}, schema: {} });
 
-    const plain = await transact(D, binding, counting(), serving(A));
+    const plain = await transact(D, binding, counting(), serving(A), GATE);
     if (isDeclined(plain)) throw new Error(plain.decline.code);
     if ("approve" in plain) throw new Error("an agreement payment to approve");
     expect(x402(plain.signed).extensions).not.toHaveProperty("payment-identifier");
@@ -305,7 +306,7 @@ describe("buyer rows", () => {
     const r = row("B9");
     const stubbed: Binding = { ...exactEip3009, bound: async () => B.fixed[r.input.stubBound] };
     const signer = counting();
-    const out = await transact(D, stubbed, signer, serving(A));
+    const out = await transact(D, stubbed, signer, serving(A), GATE);
     expect(code(out)).toBe(r.expect.decline);
     expect(out).not.toHaveProperty("signed");
     expect(signer.requests.length).toBe(r.expect.signCalls);
@@ -320,7 +321,7 @@ describe("buyer rows", () => {
       info: { ...(legalContext.info as object), legalContextUrl: httpLink },
     });
     const first = serving(A);
-    const out = await confirm(httpDoc, binding, ACCOUNT, first);
+    const out = await confirm(httpDoc, binding, ACCOUNT, first, CONFIRMING);
     expect(code(out)).toBe(r.expect[0].decline);
     expect((out as Declined).decline.detail).toBe(r.expect[0].detail);
     expect(first.calls.length).toBe(r.expect[0].fetches);
@@ -329,7 +330,7 @@ describe("buyer rows", () => {
     if ("refused" in real) throw new Error(real.code);
     const stubbed: Binding = { ...exactEip3009, read: () => ({ ...real, link: r.input[1].stubRead.link }) };
     const second = serving(A);
-    expect(code(await confirm(D, stubbed, ACCOUNT, second))).toBe(r.expect[1].decline);
+    expect(code(await confirm(D, stubbed, ACCOUNT, second, CONFIRMING))).toBe(r.expect[1].decline);
     expect(second.calls.length).toBe(r.expect[1].fetches);
   });
 
@@ -344,7 +345,7 @@ describe("buyer rows", () => {
     if ("refused" in real) throw new Error(real.code);
     const stubbed: Binding = { ...exactEip3009, read: () => ({ ...real, link: r.link }) };
     const fetch = serving(A);
-    const out = await confirm(D, stubbed, ACCOUNT, fetch);
+    const out = await confirm(D, stubbed, ACCOUNT, fetch, CONFIRMING);
     if (r.accept) {
       expect(fetch.calls.map((c) => c.url)).toEqual([r.link]);
     } else {
@@ -363,7 +364,7 @@ describe("buyer rows", () => {
     const legalContext = D.extensions!["legalContext"]!;
     const doc = withExtension(D, "legalContext", { ...legalContext, info: { ...(legalContext.info as object), legalContextUrl: link } });
     const fetch = serving(A);
-    expect(await confirm(doc, binding, ACCOUNT, fetch)).toEqual({ decline: { code: "offer-unreadable", detail } });
+    expect(await confirm(doc, binding, ACCOUNT, fetch, CONFIRMING)).toEqual({ decline: { code: "offer-unreadable", detail } });
     expect(fetch.calls.length).toBe(0);
   });
 
@@ -378,7 +379,7 @@ describe("buyer rows", () => {
     for (const answer of answers) {
       const signer = counting();
       const fetch = stub(answer);
-      expect(code(await transact(D, binding, signer, fetch))).toBe(r.expect.decline);
+      expect(code(await transact(D, binding, signer, fetch, GATE))).toBe(r.expect.decline);
       expect(signer.requests.length).toBe(r.expect.signCalls);
       expect(fetch.calls.length).toBe(1);
       expect(fetch.calls[0]!.url).toBe(LINK_A);
@@ -390,7 +391,7 @@ describe("buyer rows", () => {
 
   it("B12: a body of exactly 1 MiB is read and hashed", async () => {
     const r = row("B12");
-    expect(code(await confirm(D, binding, ACCOUNT, serving(new Uint8Array(r.input.bodyLength))))).toBe(
+    expect(code(await confirm(D, binding, ACCOUNT, serving(new Uint8Array(r.input.bodyLength)), CONFIRMING))).toBe(
       r.expect.decline,
     );
   });
@@ -404,7 +405,7 @@ describe("buyer rows", () => {
     const declared = streamed([1], String(r.input[1].contentLength));
     for (const s of [whole, declared]) {
       const signer = counting();
-      expect(code(await transact(D, binding, signer, stub(() => s.response)))).toBe(r.expect.decline);
+      expect(code(await transact(D, binding, signer, stub(() => s.response), GATE))).toBe(r.expect.decline);
       expect(s.seen.cancelled).toBe(r.expect.streamCancelled);
       expect(signer.requests.length).toBe(r.expect.signCalls);
     }
@@ -417,7 +418,7 @@ describe("buyer rows", () => {
   it("a declared length of 5000 digits is too large, and the body is never read", async () => {
     const declared = streamed([1], "1" + "0".repeat(4999));
     const signer = counting();
-    expect(code(await transact(D, binding, signer, stub(() => declared.response)))).toBe("atr-too-large");
+    expect(code(await transact(D, binding, signer, stub(() => declared.response), GATE))).toBe("atr-too-large");
     expect([declared.seen.pulled, signer.requests.length]).toEqual([0, 0]);
   });
 
@@ -425,7 +426,7 @@ describe("buyer rows", () => {
     const r = row("B14");
     const fetch = stub(() => new Promise<Response>(() => undefined));
     let settled: unknown;
-    const pending = confirm(D, binding, ACCOUNT, fetch).then((v) => (settled = v));
+    const pending = confirm(D, binding, ACCOUNT, fetch, CONFIRMING).then((v) => (settled = v));
     await vi.advanceTimersByTimeAsync(r.input.advanceMs - 1);
     expect(settled).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1);
@@ -438,7 +439,7 @@ describe("buyer rows", () => {
     const r = row("B14");
     const body = new ReadableStream<Uint8Array>({ pull: () => new Promise<void>(() => undefined) });
     const fetch = stub(() => ({ status: 200, headers: new Headers(), body }) as unknown as Response);
-    const pending = confirm(D, binding, ACCOUNT, fetch);
+    const pending = confirm(D, binding, ACCOUNT, fetch, CONFIRMING);
     await vi.advanceTimersByTimeAsync(r.input.advanceMs);
     expect(code(await pending)).toBe(r.expect.decline);
   });
@@ -452,15 +453,15 @@ describe("buyer rows", () => {
         throw new Error("no wallet");
       },
     };
-    expect(code(await transact(D, binding, rejects, serving(A)))).toBe(r.expect.decline);
-    expect(code(await transact(D, binding, throws, serving(A)))).toBe(r.expect.decline);
+    expect(code(await transact(D, binding, rejects, serving(A), GATE))).toBe(r.expect.decline);
+    expect(code(await transact(D, binding, throws, serving(A), GATE))).toBe(r.expect.decline);
   });
 
   it("B16: an account on no offered chain, or not an EVM account, has no payable option; nothing is fetched", async () => {
     const r = row("B16");
     for (const account of r.input.accounts) {
       const fetch = serving(A);
-      expect(code(await confirm(D, binding, account, fetch))).toBe(r.expect.decline);
+      expect(code(await confirm(D, binding, account, fetch, CONFIRMING))).toBe(r.expect.decline);
       expect(fetch.calls.length).toBe(r.expect.fetches);
     }
   });
@@ -469,8 +470,8 @@ describe("buyer rows", () => {
     const r = row("B17");
     const stubbed = { ...exactEip3009, id: r.input.stubBindingId } as unknown as Binding;
     const fetch = serving(A);
-    expect(code(await confirm(D, stubbed, ACCOUNT, fetch))).toBe(r.expect.decline);
-    expect(code(await transact(D, stubbed, counting(), fetch))).toBe(r.expect.decline);
+    expect(code(await confirm(D, stubbed, ACCOUNT, fetch, CONFIRMING))).toBe(r.expect.decline);
+    expect(code(await transact(D, stubbed, counting(), fetch, GATE))).toBe(r.expect.decline);
     expect(code(await finish(A, {} as never, "0x", stubbed))).toBe(r.expect.decline);
     expect(fetch.calls.length).toBe(0);
   });
@@ -514,7 +515,7 @@ describe("finish rows", () => {
     for (const r of rows) {
       const chosen = chosenOf(r.input.chosen);
       const bytes = fromHex(B.fixed[chosen.serves]);
-      const confirmed = await confirm(B.fixed[r.input.doc], bindingOf(chosen.pairing), ACCOUNT, serving(bytes));
+      const confirmed = await confirm(B.fixed[r.input.doc], bindingOf(chosen.pairing), ACCOUNT, serving(bytes), CONFIRMING);
       if (isDeclined(confirmed)) throw new Error(`${r.name}: ${confirmed.decline.code}`);
       const other = bindingOf(r.input.binding as string) as unknown as { build: (...a: unknown[]) => unknown };
       let builds = 0;
@@ -535,7 +536,7 @@ describe("B18: an advertised payment-identifier that cannot take an id without o
   ])("%s: signed-not-bound, and no payment is returned", async (_, ext) => {
     const doc = withExtension(D, "payment-identifier", ext as { info: unknown; schema: unknown });
     const signer = counting();
-    const out = await transact(doc, binding, signer, serving(A));
+    const out = await transact(doc, binding, signer, serving(A), GATE);
     expect(out).toEqual({
       decline: { code: "signed-not-bound", detail: "x402/payment-identifier-unwritable" },
     });
@@ -556,7 +557,7 @@ describe("what a seller serves never throws", () => {
   ];
   it.each(junk)("%s: a decline value", async (_, doc) => {
     const signer = counting();
-    const out = await transact(doc, binding, signer, serving(A));
+    const out = await transact(doc, binding, signer, serving(A), GATE);
     expect(isDeclined(out)).toBe(true);
     expect(signer.requests.length).toBe(0);
   });
@@ -565,17 +566,17 @@ describe("what a seller serves never throws", () => {
     const throwing = (() => {
       throw new Error("sync");
     }) as unknown as Fetch;
-    expect(code(await confirm(D, binding, ACCOUNT, throwing))).toBe("atr-unfetchable");
-    expect(code(await confirm(D, binding, ACCOUNT, stub(() => undefined as unknown as Response)))).toBe(
+    expect(code(await confirm(D, binding, ACCOUNT, throwing, CONFIRMING))).toBe("atr-unfetchable");
+    expect(code(await confirm(D, binding, ACCOUNT, stub(() => undefined as unknown as Response), CONFIRMING))).toBe(
       "atr-unfetchable",
     );
     const strings = new ReadableStream({ start: (c) => (c.enqueue("text"), c.close()) });
     const odd = stub(() => ({ status: 200, headers: new Headers(), body: strings }) as unknown as Response);
-    expect(code(await confirm(D, binding, ACCOUNT, odd))).toBe("atr-unfetchable");
+    expect(code(await confirm(D, binding, ACCOUNT, odd, CONFIRMING))).toBe("atr-unfetchable");
   });
 
   it("finish and check decline what they cannot bind, without throwing", async () => {
-    const whole = await transact(D, binding, counting(), serving(A));
+    const whole = await transact(D, binding, counting(), serving(A), GATE);
     if (isDeclined(whole)) throw new Error(whole.decline.code);
     if ("approve" in whole) throw new Error("an agreement payment to approve");
     expect(code(await check(A, null, binding))).toBe("signed-not-bound");
@@ -583,7 +584,7 @@ describe("what a seller serves never throws", () => {
     expect(code(await check(new Uint8Array(1_048_577), whole.signed, binding))).toBe("atr-too-large");
     expect(code(await finish(new Uint8Array(1_048_577), {} as never, "0x", binding))).toBe("atr-too-large");
     expect(code(await finish(A, null as never, "0x", binding))).toBe("offer-unreadable");
-    const confirmed = await confirm(D, binding, ACCOUNT, serving(A));
+    const confirmed = await confirm(D, binding, ACCOUNT, serving(A), CONFIRMING);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
     expect(code(await finish(A, confirmed.chosen, "0x1234", binding))).toBe("signed-not-bound");
   });

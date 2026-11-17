@@ -21,13 +21,15 @@ import {
   type Binding,
   type ChannelHold,
   type Declined,
+  type Inputs,
   type Presented,
   type Signature,
   type SigningRequest,
   type ToApprove,
 } from "../src/index.js";
-import { ABC, ABD, code, counting, H, isDeclined, LINK, serving, vectors } from "./support.js";
+import { A as ATR_A, ABC, ABD, code, counting, H, HA, isDeclined, LINK, piecePay, serving, summaryPending, vectors, type Counting } from "./support.js";
 
+import { GATE } from "./support.js";
 type BatchVectors = {
   fixed: {
     Hprime: Hex;
@@ -115,9 +117,24 @@ async function evmAnswer(r: SigningRequest): Promise<Signature> {
   return Promise.all(r.requests.map((q, i) => privateKeyToAccount(keys[i]!).signTypedData(typedDataOf((q as { typedData: unknown }).typedData))));
 }
 
-/** A channel opened through the gate over `abc`, and held. */
+/**
+ * The opening through the gate, over an ATR that is one JSON text, its document placed for that ATR's H: while
+ * SUMMARY_PENDING lists the pairing, declined summary-missing with no signer call; otherwise signed, and held by
+ * `openChannel` with that H.
+ */
+async function opensThroughGate(doc: unknown, binding: Binding, signer: Counting, inputs: Inputs): Promise<void> {
+  const out = await transact(doc, binding, signer, serving(ATR_A), { ...GATE, inputs });
+  if (summaryPending(binding.id)) {
+    expect([code(out), signer.requests.length]).toEqual(["summary-missing", 0]);
+    return;
+  }
+  const opened = unwrap(out);
+  expect(unwrap(await openChannel(opened.bytes, opened.signed!, binding, opened.landed)).h).toBe(HA);
+}
+
+/** A channel opened by the pairing's own steps over `abc`, so its channel is the vectors', and held. */
 async function evmHold(): Promise<{ hold: ChannelHold; opening: Presented }> {
-  const opened = unwrap(await transact(evmDoc, batchEvm, counting(evmAccount, evmAnswer), serving(ABC), { inputs: evmInputs }));
+  const opened = unwrap(await piecePay(evmDoc, batchEvm, counting(evmAccount, evmAnswer), evmInputs));
   const opening = opened.signed!;
   const hold = unwrap(await openChannel(opened.bytes, opening, batchEvm));
   return { hold: JSON.parse(JSON.stringify(hold)), opening };
@@ -129,6 +146,7 @@ const voucherOf = (signed: Presented) =>
 describe("x402/batch-settlement/eip155: the channel hold", () => {
   it("openChannel holds the ATR's bytes with the opening and EB1's channel; charged 0, signed max EB2's 1000", () =>
     at(E.now, async () => {
+      await opensThroughGate(x402Doc(batchEvm, E.option, HA), batchEvm, counting(evmAccount, evmAnswer), evmInputs);
       const { hold } = await evmHold();
       expect(hold).toMatchObject({
         pairing: "x402/batch-settlement/eip155",
@@ -321,7 +339,7 @@ describe("x402/batch-settlement/eip155: the channel hold", () => {
         at(E.now, async () => {
           const atr = new TextEncoder().encode(text);
           const doc = x402Doc(batchEvm, E.option, `0x${createHash("sha256").update(atr).digest("hex")}`);
-          const opened = unwrap(await transact(doc, batchEvm, counting(evmAccount, evmAnswer), serving(atr), { inputs: evmInputs }));
+          const opened = unwrap(await piecePay(doc, batchEvm, counting(evmAccount, evmAnswer), evmInputs, atr));
           const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchEvm));
           expect(hold.atr).toBe(canonical);
           for (const other of others) {
@@ -537,7 +555,8 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
   }
 
   it("openChannel holds ES1's channel; within at charged 0 signs ES3's voucher message; kind within, same channel", async () => {
-    const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
+    await opensThroughGate(x402Doc(batchSvm, S.option, HA), batchSvm, counting(account, answer), inputs);
+    const opened = unwrap(await piecePay(doc, batchSvm, counting(account, answer), inputs));
     const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
     expect(hold).toMatchObject({ network: BV.ES4.expectRef.network, channel: BV.ES1.channelPda, h: H, charged: "0", signedMax: "1000" });
     const signer = counting(account, answer);
@@ -559,7 +578,7 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
   // derived from the option's `feePayer` as well as the held channel configuration, so a within challenge naming
   // another fee payer asks for a voucher or a refund in another channel.
   it("a within challenge naming another feePayer: no-payable-option, and the signer is never called", async () => {
-    const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
+    const opened = unwrap(await piecePay(doc, batchSvm, counting(account, answer), inputs));
     const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
     const option = { ...S.option, extra: { ...(S.option.extra as object), feePayer: BV.ES1.channelPda } } as PaymentRequirements;
     const other = x402Doc(batchSvm, option);
@@ -579,7 +598,7 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
   // (the rail does not fix key order inside a category). The inputs here are the opening's, blockhash included.
   const RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable";
   async function charged1000(): Promise<ChannelHold> {
-    const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
+    const opened = unwrap(await piecePay(doc, batchSvm, counting(account, answer), inputs));
     const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
     return unwrap(recordCharge(hold, "1000"));
   }
@@ -708,7 +727,7 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
   // channel's configuration. The refund hands it `w.refund = {}` and none of the buyer's request_close values; the
   // refund taken again hands it all three.
   it("a full refund hands buildWithin refund {}, and the request_close values only for the refund taken again", async () => {
-    const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
+    const opened = unwrap(await piecePay(doc, batchSvm, counting(account, answer), inputs));
     const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
     const handed: Record<string, unknown>[] = [];
     const binding = {
@@ -774,7 +793,7 @@ describe("x402/batch-settlement/solana: the channel hold", () => {
     ["a list", []],
     ["null", null],
   ])("inputs that are %s: within declines before the build and the signer call", async (_, given) => {
-    const opened = unwrap(await transact(doc, batchSvm, counting(account, answer), serving(ABC), { inputs }));
+    const opened = unwrap(await piecePay(doc, batchSvm, counting(account, answer), inputs));
     const hold = unwrap(await openChannel(opened.bytes, opened.signed!, batchSvm));
     let builds = 0;
     const binding = {
@@ -852,7 +871,9 @@ describe("mpp/session/tempo: the channel hold", () => {
 
   it("openChannel holds TS3's channel; a pairing with no buildWithin has no in-channel payment, and nothing is signed", () =>
     at(f.now, async () => {
-      const opened = unwrap(await transact(doc, sessionTempo, counting(account, walletAnswer), serving(ABC), { inputs: { deposit: f.deposit } }));
+      const docA = sessionTempo.advertise([challenge], HA, LINK, challenge, 0) as MppChallenge[];
+      await opensThroughGate(docA, sessionTempo, counting(account, walletAnswer), { deposit: f.deposit });
+      const opened = unwrap(await piecePay(doc, sessionTempo, counting(account, walletAnswer), { deposit: f.deposit }));
       const hold = unwrap(await openChannel(opened.bytes, opened.signed!, sessionTempo));
       expect(hold).toMatchObject({ network: "eip155:42431", channel: T.TS3.expectChannelId, h: H, charged: "0", signedMax: "0" });
       const signer = counting(account, walletAnswer);
@@ -864,7 +885,7 @@ describe("mpp/session/tempo: the channel hold", () => {
 
   it("within hands buildWithin the within challenge, the held opening, the charge plus the amount, and the voucher action", () =>
     at(f.now, async () => {
-      const opened = unwrap(await transact(doc, sessionTempo, counting(account, walletAnswer), serving(ABC), { inputs: { deposit: f.deposit } }));
+      const opened = unwrap(await piecePay(doc, sessionTempo, counting(account, walletAnswer), { deposit: f.deposit }));
       const { binding, seen } = withBuildWithin();
       const hold = unwrap(await openChannel(opened.bytes, opened.signed!, binding));
       const charged = unwrap(recordCharge({ ...hold, signedMax: "500" }, "300"));
@@ -893,7 +914,7 @@ describe("mpp/session/tempo: the channel hold", () => {
 
   it("a partial refund, and an action buildWithin does not build, are pairing-not-supported; nothing is signed", () =>
     at(f.now, async () => {
-      const opened = unwrap(await transact(doc, sessionTempo, counting(account, walletAnswer), serving(ABC), { inputs: { deposit: f.deposit } }));
+      const opened = unwrap(await piecePay(doc, sessionTempo, counting(account, walletAnswer), { deposit: f.deposit }));
       const hold = unwrap(await openChannel(opened.bytes, opened.signed!, sessionTempo));
       const signer = counting(account, walletAnswer);
       const partial = await within(doc, hold, withBuildWithin().binding, signer, { amount: "5" });
@@ -931,7 +952,7 @@ describe("mpp/session/tempo: the channel hold", () => {
   const H_OTHER = `0x${"11".repeat(32)}` as AtrHash;
   const held = () =>
     at(f.now, async () => {
-      const opened = unwrap(await transact(doc, sessionTempo, counting(account, walletAnswer), serving(ABC), { inputs: { deposit: f.deposit } }));
+      const opened = unwrap(await piecePay(doc, sessionTempo, counting(account, walletAnswer), { deposit: f.deposit }));
       return unwrap(await openChannel(opened.bytes, opened.signed!, sessionTempo));
     });
 

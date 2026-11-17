@@ -18,12 +18,14 @@ import {
   isHttpsLink,
   isOtherSchemeLink,
   parseJson,
+  servesOf,
   toBase64,
   type AtrHash,
   type Refusal,
 } from "@integraledger/lcp";
 import { network as mppNetwork, type MppChallenge } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
+import type { Approval } from "./checks.js";
 import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected, trimHttpWhitespace } from "./gate.js";
 import { isRefusal } from "./pairings/common.js";
 import type {
@@ -449,6 +451,30 @@ async function paying(
   return { selected, limits: selected.limits };
 }
 
+/**
+ * The agreement options of a first response that offers the agreement and no charge option (the protocol package's
+ * profile `legal-context-return.md`): each option of `accepts`, in document order, with the charges it names as those
+ * it serves (`servesOf`) and the read of the response holding only that option by the first x402 pairing, in the
+ * protocol package's order, that reads it. Undefined unless `accepts` is a list of 1 to 32 options each of which names
+ * the charges it serves and is read by such a pairing.
+ */
+export function agreementOptions(
+  required: unknown,
+): { option: PaymentRequirements; read: Read; serves: readonly string[] }[] | undefined {
+  const accepts = isObject(required) ? required["accepts"] : undefined;
+  if (!Array.isArray(accepts) || accepts.length === 0 || accepts.length > MAX_OPTIONS) return undefined;
+  const out: { option: PaymentRequirements; read: Read; serves: readonly string[] }[] = [];
+  for (const option of accepts) {
+    const serves = servesOf(option);
+    if (serves === undefined || isRefusal(serves)) return undefined;
+    const only = { ...(required as object), accepts: [option] };
+    const read = X402.map((b) => (b as unknown as { read(d: unknown): Read | Refusal }).read(only)).find((r) => !isRefusal(r));
+    if (read === undefined || isRefusal(read)) return undefined;
+    out.push({ option: option as PaymentRequirements, read, serves });
+  }
+  return out;
+}
+
 /** Whether `v` has the form of an agreement payment: an agreement URL, an option and a payment request. */
 function isAgreementPayment(v: unknown): v is AgreementPayment {
   return isObject(v) && typeof v["url"] === "string" && isObject(v["option"]) && isObject(v["required"]);
@@ -503,7 +529,9 @@ function chargeBinding(chosen: unknown): Binding | undefined {
  * `agree`, where `ns` is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
  * declines `link-not-https`, its detail the protocol package's code in that namespace, `link-not-https` for an absolute
  * URL of another scheme and `legal-context-malformed` for any other value. `charge` is the binding the charge in
- * `options.chosen` is paid through, where the caller holds it; else the protocol package's pairing `chosen` names.
+ * `options.chosen` is paid through, where the caller holds it; else the protocol package's pairing `chosen` names. With
+ * `approval`, `transact`'s, the agreement payment is held to its summary and its own pairing's ceiling and asked of the
+ * approver, as the act `agreement`, before it is signed.
  */
 export async function exchange(
   bytes: Uint8Array,
@@ -513,6 +541,7 @@ export async function exchange(
   options: AgreeOptions,
   ns: string | undefined,
   charge?: Binding,
+  approval?: Approval,
 ): Promise<ToApprove | { receipt: AgreementReceipt } | Declined> {
   if (!isHttpsLink(url)) {
     const fault = isOtherSchemeLink(url) ? "link-not-https" : "legal-context-malformed";
@@ -538,7 +567,7 @@ export async function exchange(
   const found = await paying(approved.required, h, signer.account, inputs, admits, approved.option);
   if ("decline" in found) return found;
   const { selected, limits } = found;
-  const paid = await pay(selected.binding, selected.chosen, signer, bytes, "agreement");
+  const paid = await pay(selected.binding, selected.chosen, signer, bytes, "agreement", approval && { ...approval, inputs });
   if ("decline" in paid) return paid;
   if (paid.signed === null) return declined("offer-unreadable", "The agreement payment gave nothing to sign.");
   if (isEnded(signal)) return ended();

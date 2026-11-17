@@ -3,7 +3,7 @@
 // the seeds those files publish as test values.
 import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { Json } from "@integraledger/lcp";
+import type { AtrHash, Json } from "@integraledger/lcp";
 import { exactAvm } from "@integraledger/lcp/avm";
 import { msgpackRawDecode } from "algosdk";
 import { exactHedera, exactHederaExecutor } from "@integraledger/lcp/hedera";
@@ -20,19 +20,21 @@ import {
   H,
   isDeclined,
   LINK,
+  pieceConfirm,
   serving,
   toHex,
   vectors,
   type Pairing,
 } from "./support.js";
 
+import { CONFIRMING } from "./support.js";
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The seller's document for the fixed option, as the pairing's `advertise` places H and the link. */
-function docOf(binding: Binding, option: PaymentRequirements, resource: { url: string }): PaymentRequired {
+function docOf(binding: Binding, option: PaymentRequirements, resource: { url: string }, h: AtrHash = H): PaymentRequired {
   const base = { x402Version: 2, resource, accepts: [option] } as PaymentRequired;
   const placed = (binding as unknown as { advertise(d: PaymentRequired, h: string, l: string, o: unknown): unknown })
-    .advertise(base, H, LINK, option);
+    .advertise(base, h, LINK, option);
   if (typeof placed === "object" && placed !== null && "refused" in placed) throw new Error(JSON.stringify(placed));
   return placed as PaymentRequired;
 }
@@ -117,7 +119,7 @@ function decompile(message: Uint8Array) {
 function refusals(p: Pairing, others: readonly string[]) {
   it("B10: an http link is offer-unreadable, x402/link-not-https, before any fetch", async () => {
     const fetch = serving(ABC);
-    const out = await confirm(httpDoc(p.doc as PaymentRequired), p.binding, p.account, fetch, p.inputs);
+    const out = await confirm(httpDoc(p.doc as PaymentRequired), p.binding, p.account, fetch, { ...CONFIRMING, inputs: p.inputs });
     expect(code(out)).toBe("offer-unreadable");
     expect(isDeclined(out) && out.decline.detail).toBe("x402/link-not-https");
     expect(fetch.calls).toBe(0);
@@ -125,7 +127,7 @@ function refusals(p: Pairing, others: readonly string[]) {
   it("B16: an account of another namespace, and one on another network, have no payable option; nothing is fetched", async () => {
     for (const account of others) {
       const fetch = serving(ABC);
-      expect(code(await confirm(p.doc, p.binding, account, fetch, p.inputs))).toBe("no-payable-option");
+      expect(code(await confirm(p.doc, p.binding, account, fetch, { ...CONFIRMING, inputs: p.inputs }))).toBe("no-payable-option");
       expect(fetch.calls).toBe(0);
     }
   });
@@ -156,6 +158,7 @@ describe("x402/exact/solana", () => {
   const p: Pairing = {
     binding: exactSvm,
     doc: docOf(exactSvm, f.option, f.resource),
+    placed: (h) => docOf(exactSvm, f.option, f.resource, h),
     account: `${f.option.network}:${f.payer}`,
     inputs: { decimals: f.decimals, tokenProgram: f.tokenProgram, recentBlockhash: f.blockhash },
     answer,
@@ -186,7 +189,7 @@ describe("x402/exact/solana", () => {
   it("the offer's extra.recentBlockhash is the build's when the option names one", async () => {
     const option = { ...f.option, extra: { ...f.option.extra, recentBlockhash: f.blockhash } } as Option;
     const doc = docOf(exactSvm, option, f.resource);
-    const out = await confirm(doc, exactSvm, p.account, serving(ABC), { decimals: f.decimals, tokenProgram: f.tokenProgram });
+    const out = await pieceConfirm(doc, exactSvm, p.account, { decimals: f.decimals, tokenProgram: f.tokenProgram });
     if (isDeclined(out) || out.request === null || out.request.kind !== "solana-message") throw new Error("no request");
     expect(decompile(out.request.message).blockhash).toBe(S.V1.blockhash);
   });
@@ -196,11 +199,11 @@ describe("x402/exact/solana", () => {
       const option = { ...f.option, extra: { ...f.option.extra, recentBlockhash: offered } } as Option;
       const doc = docOf(exactSvm, option, f.resource);
       const given = { decimals: f.decimals, tokenProgram: f.tokenProgram };
-      const out = await confirm(doc, exactSvm, p.account, serving(ABC), { ...given, recentBlockhash: f.blockhash });
+      const out = await pieceConfirm(doc, exactSvm, p.account, { ...given, recentBlockhash: f.blockhash });
       if (isDeclined(out) || out.request === null || out.request.kind !== "solana-message") throw new Error(String(offered));
       expect(decompile(out.request.message).blockhash, String(offered)).toBe(S.V1.blockhash);
       const fetch = serving(ABC);
-      const without = await confirm(doc, exactSvm, p.account, fetch, given);
+      const without = await confirm(doc, exactSvm, p.account, fetch, { ...CONFIRMING, inputs: given });
       expect(isDeclined(without) && [without.decline.code, without.decline.detail], String(offered)).toEqual([
         "no-payable-option",
         "x402/input-missing",
@@ -210,7 +213,7 @@ describe("x402/exact/solana", () => {
   });
   it("a missing input is declined before any fetch", async () => {
     const fetch = serving(ABC);
-    const out = await confirm(p.doc, exactSvm, p.account, fetch, { decimals: f.decimals, recentBlockhash: f.blockhash });
+    const out = await confirm(p.doc, exactSvm, p.account, fetch, { ...CONFIRMING, inputs: { decimals: f.decimals, recentBlockhash: f.blockhash } });
     expect(code(out)).toBe("no-payable-option");
     expect(isDeclined(out) && out.decline.detail).toBe("x402/input-missing");
     expect(fetch.calls).toBe(0);
@@ -249,6 +252,7 @@ describe("x402/upto/solana", () => {
   const p: Pairing = {
     binding: uptoSvm,
     doc: docOf(uptoSvm, f.option, f.resource),
+    placed: (h) => docOf(uptoSvm, f.option, f.resource, h),
     account: `${f.option.network}:${f.payer}`,
     inputs,
     answer: answering((r) => {
@@ -296,7 +300,7 @@ describe("x402/upto/solana", () => {
       const { nonce: _given, ...rest } = inputs;
       const nonces = [];
       for (let i = 0; i < 2; i++) {
-        const out = await confirm(p.doc, uptoSvm, p.account, serving(ABC), rest);
+        const out = await pieceConfirm(p.doc, uptoSvm, p.account, rest);
         if (isDeclined(out)) throw new Error(out.decline.code);
         const n = (out.chosen.choice as { nonce: string }).nonce;
         expect(n).toMatch(/^[0-9]{1,20}$/);
@@ -345,6 +349,7 @@ describe("x402/exact/xrpl", () => {
   const p: Pairing = {
     binding: exactXrpl,
     doc: docOf(exactXrpl, f.option, f.resource),
+    placed: (h) => docOf(exactXrpl, f.option, f.resource, h),
     account: `${f.option.network}:${f.payer}`,
     inputs: X.V2.build,
     answer: answering((r) => {
@@ -361,7 +366,7 @@ describe("x402/exact/xrpl", () => {
     expect((signed as { payload: unknown }).payload).toEqual({ signedTxBlob: X.V2.blob });
   });
   it("a signed blob answered in 0x hex is declined signed-not-bound: the answer is hex digits without 0x", async () => {
-    const out = await confirm(p.doc, exactXrpl, p.account, serving(ABC), p.inputs!);
+    const out = await pieceConfirm(p.doc, exactXrpl, p.account, p.inputs!);
     if (isDeclined(out)) throw new Error(out.decline.code);
     const done = await finish(ABC, out.chosen, `0x${X.V2.blob}`, exactXrpl);
     expect(isDeclined(done) && [done.decline.code, done.decline.detail]).toEqual(["signed-not-bound", "xrpl/blob-malformed"]);
@@ -379,7 +384,7 @@ describe("x402/exact/xrpl", () => {
   it("a blob whose NetworkID the network does not take is declined with the refusal complete resolves to", async () => {
     const rows = X.agreedRefusals.rows.filter((r) => r.network === f.option.network && r.blobs !== undefined);
     expect(rows.length, "agreedRefusals rows with blobs on the fixed option's network").toBeGreaterThan(0);
-    const out = await confirm(withIdentifier(p.doc as PaymentRequired), exactXrpl, p.account, serving(ABC), p.inputs!);
+    const out = await pieceConfirm(withIdentifier(p.doc as PaymentRequired), exactXrpl, p.account, p.inputs!);
     if (isDeclined(out)) throw new Error(out.decline.code);
     for (const row of rows) {
       for (const blob of row.blobs!) {
@@ -392,7 +397,7 @@ describe("x402/exact/xrpl", () => {
     const option = { ...f.option, extra: { ...f.option.extra, assetTransferMethod: "ticketSequence" } } as Option;
     const doc = docOf(exactXrpl, option, f.resource);
     const { sequence: _s, ...rest } = X.V2.build;
-    const out = await confirm(doc, exactXrpl, p.account, serving(ABC), { ...rest, ticketSequence: 9 });
+    const out = await pieceConfirm(doc, exactXrpl, p.account, { ...rest, ticketSequence: 9 });
     if (isDeclined(out) || out.request === null || out.request.kind !== "xrpl-tx") throw new Error("no request");
     expect(out.request.txJson).toMatchObject({ Sequence: 0, TicketSequence: 9 });
   });
@@ -413,6 +418,7 @@ describe("x402/exact/hedera", () => {
   const p: Pairing = {
     binding: exactHedera,
     doc: docOf(exactHedera, f.O, f.resource),
+    placed: (h) => docOf(exactHedera, f.O, f.resource, h),
     account: `${f.O.network}:${f.payer}`,
     inputs: { node: f.node, validStart: f.validStart, maxFee: f.maxFee },
     answer: answering((r) => {
@@ -475,7 +481,7 @@ describe("x402/exact/hedera", () => {
   it("an account whose address is not shard.realm.num as the protocol package reads it has no payable option; nothing is fetched", async () => {
     for (const account of ["hedera:testnet:0.0.05555", "hedera:testnet:00.0.5555", `hedera:testnet:0.0.${"9".repeat(20)}`]) {
       const fetch = serving(ABC);
-      expect(code(await confirm(p.doc, p.binding, account, fetch, p.inputs))).toBe("no-payable-option");
+      expect(code(await confirm(p.doc, p.binding, account, fetch, { ...CONFIRMING, inputs: p.inputs }))).toBe("no-payable-option");
       expect(fetch.calls).toBe(0);
     }
   });
@@ -493,6 +499,7 @@ describe("x402/exact/hedera/transfer-executor", () => {
   const p: Pairing = {
     binding: exactHederaExecutor,
     doc: docOf(exactHederaExecutor, f.O, f.resource),
+    placed: (h) => docOf(exactHederaExecutor, f.O, f.resource, h),
     account: `${f.O.network}:${f.payload.payer}`,
     answer: answering((r) => {
       if (r.kind !== "hedera-executor") throw new Error(r.kind);
@@ -508,7 +515,7 @@ describe("x402/exact/hedera/transfer-executor", () => {
   it("an account whose address is not shard.realm.num as the protocol package reads it has no payable option; nothing is fetched", async () => {
     for (const account of ["hedera:testnet:0.0.05555", "hedera:testnet:00.0.5555", `hedera:testnet:0.0.${"9".repeat(20)}`]) {
       const fetch = serving(ABC);
-      expect(code(await confirm(p.doc, p.binding, account, fetch, p.inputs))).toBe("no-payable-option");
+      expect(code(await confirm(p.doc, p.binding, account, fetch, { ...CONFIRMING, inputs: p.inputs }))).toBe("no-payable-option");
       expect(fetch.calls).toBe(0);
     }
   });
@@ -531,6 +538,7 @@ describe("x402/exact/algorand", () => {
   const p: Pairing = {
     binding: exactAvm,
     doc: docOf(exactAvm, f.O, f.resource),
+    placed: (h) => docOf(exactAvm, f.O, f.resource, h),
     account: `${f.O.network}:${f.payer}`,
     inputs: { params: f.params },
     answer: answering((r) => {
@@ -594,7 +602,7 @@ describe("a signer's answer in another form is not bound", () => {
     const f = S.fixed;
     const doc = docOf(exactSvm, f.option, f.resource);
     const account = `${f.option.network}:${f.payer}`;
-    const out = await confirm(doc, exactSvm, account, serving(ABC), {
+    const out = await pieceConfirm(doc, exactSvm, account, {
       decimals: f.decimals, tokenProgram: f.tokenProgram, recentBlockhash: f.blockhash,
     });
     if (isDeclined(out)) throw new Error(out.decline.code);

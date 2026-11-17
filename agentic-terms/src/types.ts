@@ -26,7 +26,7 @@ import type { TvmUnsigned } from "@integraledger/lcp/tvm";
 import type { Unsigned as UcpUnsigned } from "@integraledger/lcp/ucp";
 import type { Unsigned as Ap2Unsigned } from "@integraledger/lcp/ap2";
 import type { Unsigned as AcpUnsigned } from "@integraledger/lcp/acp";
-import type { PaymentRequired, PaymentRequirements, X402Unsigned } from "@integraledger/lcp/x402";
+import type { HttpRequest, PaymentRequired, PaymentRequirements, ToolCall, X402Unsigned } from "@integraledger/lcp/x402";
 import type { SigningRequest as BatchRequest } from "@integraledger/lcp/x402-batch-settlement";
 import type { SvmUnsigned } from "@integraledger/lcp/x402-exact-solana";
 import type { XrplUnsigned } from "@integraledger/lcp/xrpl";
@@ -129,7 +129,15 @@ export type DeclineCode =
   | "signed-not-bound"
   | "agreement-not-offered"
   | "agreement-pending"
-  | "agreement-failed";
+  | "agreement-failed"
+  | "not-approved"
+  | "atr-malformed"
+  | "option-not-in-atr"
+  | "request-mismatch"
+  | "summary-missing"
+  | "past-ceiling"
+  | "no-end"
+  | "floor-missing";
 
 export interface Reason {
   readonly code: DeclineCode;
@@ -146,15 +154,126 @@ export type Declined = {
 };
 
 /**
- * `transact`'s optional members: the buyer's own chain values; the signer that pays the agreement; the agreement payment
- * the agent approved, exactly as `transact` or `agree` returned it in `approve`; and a signal that ends the agreement
- * exchange.
+ * The request the buyer is about to pay, the one the seller's offer answered, in the form the protocol package's request
+ * commitment reads it: over HTTP `{method, target, body, headers?}`, over MCP the tool call `{name, arguments?}`.
+ */
+export type ResourceRequest = HttpRequest | ToolCall;
+
+/**
+ * The raised ceilings: a pairing id mapped to a positive safe integer of seconds, the longest a signed payment through it
+ * may stay payable, or to `"no-end"`, which lifts the pairing's ceiling and admits a form that signs no end.
+ */
+export type Ceilings = { readonly [pairing: string]: number | "no-end" };
+
+/** Which signing of a payment the approver is asked about: `index`, from 0, of `count` signings. */
+export interface SigningStep {
+  readonly index: number;
+  readonly count: number;
+}
+
+/** A payee of the summary: its account as the form names it, and its part of the amount or of the maximum. */
+export interface Payee {
+  readonly account: string;
+  readonly amount: string;
+}
+
+/**
+ * From and until when the signed payment is payable, each `null` where the form signs none, in `unit`: `"seconds"` for
+ * Unix seconds, or a chain's own unit (a round, a slot, a block, a ledger or an epoch).
+ */
+export interface Validity {
+  readonly notBefore: string | null;
+  readonly notAfter: string | null;
+  readonly unit: string;
+}
+
+/**
+ * Every authority the signature grants, read from the request handed to the signer. Each integer is a decimal string,
+ * each amount in the asset's base units, each time in Unix seconds but a `validity` whose `unit` names another. A
+ * member the form does not have is absent; `payees`, `asset`, `network`, `validity` and `atr` are always present.
+ */
+export interface Summary {
+  readonly amount?: string;
+  readonly maximum?: string;
+  readonly payees: readonly Payee[];
+  readonly period?: string;
+  readonly limitPerPeriod?: string;
+  readonly end?: string;
+  readonly operator?: string;
+  readonly authorizationExpiry?: string;
+  readonly refundExpiry?: string;
+  readonly deposit?: string;
+  readonly closableBy?: readonly string[];
+  readonly grant?: Json;
+  readonly asset: string;
+  readonly network: string;
+  readonly validity: Validity;
+  /** The ATR's bytes: the bytes the gate hashed, parsed and compared. */
+  readonly atr: Uint8Array;
+}
+
+/** What the approver is asked about, once for each signing, before the signer is called for it. */
+export interface ToSign {
+  /** `"payment"`, the payment for the resource, or `"agreement"`, the agreement payment. */
+  readonly act: "payment" | "agreement";
+  /** The id of the pairing whose build made the request. */
+  readonly pairing: string;
+  /** The request the signer will be handed, as the signer is handed it. */
+  readonly request: SigningRequest;
+  readonly summary: Summary;
+  readonly step: SigningStep;
+}
+
+/**
+ * The approval callback `transact` requires. It answers `true`, or a promise of it, to approve the signing; any other
+ * answer, a throw or a rejection approves nothing.
+ */
+export type Approver = (toSign: ToSign) => boolean | Promise<boolean>;
+
+/**
+ * `transact`'s options: the approval callback and the buyer's own request, required; the buyer's own chain values and
+ * the floor inputs a rail's service serves; the raised ceilings; the first response's return value; the signer that
+ * pays the agreement; the agreement payment the agent approved, exactly as `transact` or `agree` returned it in
+ * `approve`; and a signal that ends the agreement exchange.
  */
 export interface TransactOptions {
+  readonly approver: Approver;
+  readonly resourceRequest: ResourceRequest;
   readonly inputs?: Inputs | undefined;
+  readonly ceilings?: Ceilings | undefined;
+  readonly legalContext?: string | undefined;
   readonly agreementSigner?: Signer | undefined;
   readonly approved?: AgreementPayment | undefined;
   readonly signal?: AbortSignal | undefined;
+}
+
+/** `confirm`'s options: the buyer's own request, required; its chain values and floor inputs; the raised ceilings. */
+export interface ConfirmOptions {
+  readonly resourceRequest: ResourceRequest;
+  readonly inputs?: Inputs | undefined;
+  readonly ceilings?: Ceilings | undefined;
+}
+
+/** `finish`'s options: the raised ceilings, which a later step's request is held to. */
+export interface FinishOptions {
+  readonly ceilings?: Ceilings | undefined;
+}
+
+/**
+ * What `transact` returns once it has paid the agreement of a pairing paid after its agreement: the agreement's receipt;
+ * the `Legal-Context` value the caller sends when it repeats its request; the charge chosen, `<slot>/<i>`; the ATR's
+ * bytes the gate compared; and H, their SHA-256.
+ */
+export interface ToReturn {
+  readonly agreement: AgreementReceipt;
+  readonly legalContext: string;
+  readonly charge: string;
+  readonly bytes: Uint8Array;
+  readonly h: AtrHash;
+  /** Never present: no charge is signed before the return. */
+  readonly signed?: never;
+  /** Never present. */
+  readonly landed?: never;
 }
 
 /**

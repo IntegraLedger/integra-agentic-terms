@@ -156,7 +156,10 @@ describe("publicFetch", () => {
         legalContext: { info: { type: "sha256", value: h, legalContextUrl: `https://localhost:${port}/${h}` }, schema: {} },
       },
     };
-    const out = await confirm(offer, exactEip3009, "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", publicFetch);
+    // The buyer's request is read only where a fetched ATR commits to one; nothing is fetched here.
+    const out = await confirm(offer, exactEip3009, "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", publicFetch, {
+      resourceRequest: { name: "" },
+    });
     expect(out).toEqual({ decline: { code: "atr-unfetchable", detail: "The ATR could not be fetched from the link." } });
     expect(connections).toBe(before);
   });

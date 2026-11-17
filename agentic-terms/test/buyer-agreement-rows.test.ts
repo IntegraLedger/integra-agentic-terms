@@ -14,6 +14,7 @@ import { exactEip3009, type Eip3009Payment, type Eip3009TypedData, type PaymentR
 import { agree, transact, type Binding, type Declined, type Fetch, type Signer, type SigningRequest } from "../src/index.js";
 import { coverageNone, vectors } from "./support.js";
 
+import { GATE } from "./support.js";
 type Step = {
   status: number;
   paymentRequired?: string;
@@ -190,7 +191,7 @@ async function exchange(name: string, input: Input, expected: Expect, entry = "t
     entry === "agree"
       ? agree(input.atr === undefined ? A : fromHex(named(input.atr)), url, signer, fetch, { ...given, ...more })
       : entry === "transact"
-        ? transact(doc, binding, signer, fetch, { ...given, ...more })
+        ? transact(doc, binding, signer, fetch, { ...GATE, ...given, ...more })
         : Promise.reject(new Error(`${name}: no entry ${entry}`));
   let { value: out, elapsed } = await drive(call({}));
   if (expected.approval !== undefined && !("approve" in out)) {
@@ -315,7 +316,7 @@ describe("buyer.json's coding rows", () => {
         return new Response(new Uint8Array(fromHex(c.bodyHex!)), { status: 200, headers: { "content-encoding": c.contentEncoding! } });
       }) as Fetch;
       const signer = counting();
-      const out = await transact(D, exactEip3009, signer, fetch);
+      const out = await transact(D, exactEip3009, signer, fetch, GATE);
       expect(reason(out).code).toBe(BE1.expect.decline);
       expect(signer.requests.length).toBe(BE1.expect.signCalls);
       expect(calls.map((k) => k.init.headers)).toEqual([{ "Accept-Encoding": BE1.expect.requestHeaders!["accept-encoding"] }]);
@@ -330,7 +331,7 @@ describe("buyer.json's coding rows", () => {
       return new Response(new Uint8Array(A), { status: 200, headers: { "content-encoding": "identity" } });
     }) as Fetch;
     const signer = counting();
-    const out = await transact(D, exactEip3009, signer, fetch);
+    const out = await transact(D, exactEip3009, signer, fetch, GATE);
     expect(signer.requests.length).toBe(e.signCalls);
     expect((out as { signed: Eip3009Payment }).signed.payload.signature).toBe(SIGNATURES[e.paymentSignature!]);
     expect(calls.map((k) => k.init.headers)).toEqual([{ "Accept-Encoding": e.requestHeaders!["accept-encoding"] }]);

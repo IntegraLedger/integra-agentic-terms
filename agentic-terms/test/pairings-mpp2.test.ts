@@ -2,6 +2,7 @@
 // bytes, digests, signatures and credentials are the vector files'; the keys come from the seeds and keys those files
 // publish as test values.
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+import type { AtrHash } from "@integraledger/lcp";
 import { describe, expect, it } from "vitest";
 import {
   chargeNearIntents,
@@ -14,6 +15,7 @@ import {
 import { decodeSvmTx } from "@integraledger/lcp/svm";
 import { check, confirm, openChannel, transact, within, type Binding, type SigningRequest } from "../src/index.js";
 import {
+  A as ATR_A,
   ABC,
   ABD,
   buildAndSign,
@@ -21,16 +23,19 @@ import {
   counting,
   fromHex,
   H,
+  HA,
   isDeclined,
   LINK,
   offered,
-  RECEIPT,
+  piecePay,
+  receiptFor,
   serving,
   toHex,
   vectors,
   type Pairing,
 } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // Vector files are read as loose JSON data; each row names the fields it uses.
@@ -40,10 +45,10 @@ const b64u = (s: string) => Buffer.from(s, "utf8").toString("base64url");
 const request = (r: SigningRequest) => r as unknown as Record<string, Loose>;
 
 /** The seller's challenges for one issued challenge, as the pairing's `advertise` places H and the link. */
-function docOf(binding: Binding, c: MppChallenge): MppChallenge[] {
+function docOf(binding: Binding, c: MppChallenge, h: AtrHash = H): MppChallenge[] {
   const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown, p: number): unknown }).advertise(
     [c],
-    H,
+    h,
     LINK,
     c,
     0,
@@ -116,14 +121,14 @@ function decompile(message: Uint8Array) {
 function refusals(p: Pairing, others: readonly string[]) {
   it("B10: an http link is offer-unreadable, mpp/link-not-https, before any fetch", async () => {
     const fetch = serving(ABC);
-    const out = await confirm(httpDoc(p.doc as MppChallenge[]), p.binding, p.account, fetch, p.inputs);
+    const out = await confirm(httpDoc(p.doc as MppChallenge[]), p.binding, p.account, fetch, { ...CONFIRMING, inputs: p.inputs });
     expect(out).toEqual({ decline: { code: "offer-unreadable", detail: "mpp/link-not-https" } });
     expect(fetch.calls).toBe(0);
   });
   it("B16: an account of another namespace, and one on another network, have no payable option; nothing is fetched", async () => {
     for (const account of others) {
       const fetch = serving(ABC);
-      expect(code(await confirm(p.doc, p.binding, account, fetch, p.inputs))).toBe("no-payable-option");
+      expect(code(await confirm(p.doc, p.binding, account, fetch, { ...CONFIRMING, inputs: p.inputs }))).toBe("no-payable-option");
       expect(fetch.calls).toBe(0);
     }
   });
@@ -142,6 +147,7 @@ describe("mpp/charge/solana", () => {
   const p: Pairing = {
     binding: chargeSolana,
     doc: docOf(chargeSolana, V.challenge),
+    placed: (h) => docOf(chargeSolana, V.challenge, h),
     account: `${SOLANA_DEVNET}:${V.fixed.payer}`,
     inputs: { computeUnitLimit: V.build.computeUnitLimit, computeUnitPrice: V.build.computeUnitPrice },
     answer: async (r) => {
@@ -167,7 +173,7 @@ describe("mpp/charge/solana", () => {
     delete r.methodDetails.decimals;
     const doc = docOf(chargeSolana, { ...V.challenge, request: b64u(JSON.stringify(r)) });
     const fetch = serving(ABC);
-    const out = await confirm(doc, chargeSolana, p.account, fetch, p.inputs);
+    const out = await confirm(doc, chargeSolana, p.account, fetch, { ...CONFIRMING, inputs: p.inputs });
     expect(out).toEqual({ decline: { code: "no-payable-option", detail: "mpp/input-missing" } });
     expect(fetch.calls).toBe(0);
   });
@@ -182,6 +188,7 @@ describe("mpp/charge/xrpl", () => {
   const p: Pairing = {
     binding: chargeXrpl,
     doc: docOf(chargeXrpl, V.challenge),
+    placed: (h) => docOf(chargeXrpl, V.challenge, h),
     account: `xrpl:1:${f.account}`,
     inputs: { fee: V.build.fee, sequence: V.build.sequence, lastLedgerSequence: V.build.lastLedgerSequence },
     answer: async (r) => {
@@ -214,12 +221,12 @@ describe("mpp/charge/xrpl", () => {
     expect((signed as MppCredential).payload).toEqual({ type: "transaction", blob: V.V3.blob });
   });
   it("a signed blob answered in 0x hex is declined signed-not-bound: the answer is hex digits without 0x", async () => {
-    const out = await transact(p.doc, chargeXrpl, counting(p.account, async () => `0x${V.V3.blob}`), serving(ABC), { inputs: p.inputs! });
+    const out = await piecePay(p.doc, chargeXrpl, counting(p.account, async () => `0x${V.V3.blob}`), p.inputs!);
     expect(isDeclined(out) && [out.decline.code, out.decline.detail]).toEqual(["signed-not-bound", "xrpl/blob-malformed"]);
   });
   it("without the buyer's ledger reads, no-payable-option before any fetch", async () => {
     const fetch = serving(ABC);
-    const out = await confirm(p.doc, p.binding, p.account, fetch, { fee: "12" });
+    const out = await confirm(p.doc, p.binding, p.account, fetch, { ...CONFIRMING, inputs: { fee: "12" } });
     expect(out).toEqual({ decline: { code: "no-payable-option", detail: "mpp/input-missing" } });
     expect(fetch.calls).toBe(0);
   });
@@ -235,6 +242,7 @@ describe("mpp/charge/nearintents (confirm only)", () => {
     binding: chargeNearIntents as unknown as Binding,
     // The quote's fixed members are held to the challenge the ATR names: unplaced.expect, as the vector file gives it.
     doc: chargeNearIntents.advertise([V.challenge], H, LINK, V.challenge, 0, "payment", undefined, V.unplaced.expect) as MppChallenge[],
+    placed: (h) => chargeNearIntents.advertise([V.challenge], h, LINK, V.challenge, 0, "payment", undefined, V.unplaced.expect),
     account: `${V.fixed.request.methodDetails.originNetwork}:${refundTo}`,
     answer: async () => {
       throw new Error("nothing to sign");
@@ -245,13 +253,13 @@ describe("mpp/charge/nearintents (confirm only)", () => {
     expect(p.doc).toEqual([V.place.expect]);
   });
   it("B6: on a match nothing is handed to the signer; the vector's hash credential checks against abc, not abd", async () => {
-    const confirmed = await confirm(p.doc, offered(p.binding), p.account, serving(ABC));
+    const confirmed = await confirm(p.placed!(HA), offered(p.binding), p.account, serving(ATR_A), CONFIRMING);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
-    expect(confirmed.h).toBe(H);
+    expect(confirmed.h).toBe(HA);
     expect(confirmed.request).toBeNull();
     const signer = counting(p.account, p.answer);
-    const whole = await transact(p.doc, offered(p.binding), signer, serving(ABC));
-    expect(whole).toEqual({ signed: null, bytes: ABC, h: H, agreement: RECEIPT });
+    const whole = await transact(p.placed!(HA), offered(p.binding), signer, serving(ATR_A), GATE);
+    expect(whole).toEqual({ signed: null, bytes: ATR_A, h: HA, agreement: receiptFor(HA) });
     expect(signer.requests.length).toBe(0);
     const credential = { challenge: V.place.expect, payload: V.bound.payload };
     expect(await check(ABC, credential, p.binding)).toEqual({ h: V.bound.expect });
@@ -272,6 +280,7 @@ describe("mpp/session/xrpl", () => {
   const p: Pairing = {
     binding: sessionXrpl,
     doc: docOf(sessionXrpl, V.SS1.xrpl.challenge),
+    placed: (h) => docOf(sessionXrpl, V.SS1.xrpl.challenge, h),
     account: `xrpl:1:${s.account}`,
     inputs: {
       deposit: s.deposit,
@@ -329,14 +338,14 @@ describe("mpp/session/xrpl", () => {
       async (r: SigningRequest) => ({ ...((await p.answer(r)) as Record<string, string>), signedBlob: `0x${s.blob}` }),
       async (r: SigningRequest) => ({ signedBlob: s.blob, claimSignature: claimSignature(r) }),
     ]) {
-      const out = await transact(p.doc, sessionXrpl, counting(p.account, prefixed), serving(ABC), { inputs: p.inputs! });
+      const out = await piecePay(p.doc, sessionXrpl, counting(p.account, prefixed), p.inputs!);
       expect(isDeclined(out) && out.decline.code).toBe("signed-not-bound");
     }
   });
 
   // A later claim in the held channel: XS3's claim bytes, signed by the channel's key and answered in the opening's form.
   it("a claim within the held channel is answered as hex digits without 0x; one in 0x hex is declined signed-not-bound", async () => {
-    const opened = await transact(p.doc, sessionXrpl, counting(p.account, p.answer), serving(ABC), { inputs: p.inputs! });
+    const opened = await piecePay(p.doc, sessionXrpl, counting(p.account, p.answer), p.inputs!);
     if (isDeclined(opened) || "approve" in opened) throw new Error(JSON.stringify(opened));
     const hold = await openChannel(opened.bytes, opened.signed!, sessionXrpl);
     if (isDeclined(hold)) throw new Error(hold.decline.detail);

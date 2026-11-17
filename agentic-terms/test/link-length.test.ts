@@ -7,6 +7,7 @@ import { exactEip3009, type PaymentRequirements } from "@integraledger/lcp/x402"
 import { confirm } from "../src/index.js";
 import { ABC, serving, vectors } from "./support.js";
 
+import { CONFIRMING } from "./support.js";
 const X = vectors<{ fixed: { H: string; O: PaymentRequirements; resource: { url: string }; payer: string; link: string } }>(
   "x402-exact-eip155-eip3009.json",
 ).fixed;
@@ -35,7 +36,7 @@ describe("an agreement URL over 2048 UTF-16 code units", () => {
       },
     };
     const f = serving(ABC);
-    expect(await confirm(doc, exactEip3009, `eip155:84532:${X.payer}`, f)).toEqual({
+    expect(await confirm(doc, exactEip3009, `eip155:84532:${X.payer}`, f, CONFIRMING)).toEqual({
       decline: { code: "offer-unreadable", detail: "x402/legal-context-malformed" },
     });
     expect(f.calls).toBe(0);

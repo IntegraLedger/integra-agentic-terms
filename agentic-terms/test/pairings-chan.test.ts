@@ -10,24 +10,29 @@ import { Transaction as TempoTransaction } from "viem/tempo";
 import { sessionEvm, sessionTempo, subscriptionTempo, type MppChallenge } from "@integraledger/lcp/mpp";
 import { batchCloudflare, batchEvm, batchSvm } from "@integraledger/lcp/x402-batch-settlement";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import { isRefusal, pairingOf } from "@integraledger/lcp";
+import { isRefusal, pairingOf, type AtrHash } from "@integraledger/lcp";
 import { check, confirm, finish, transact, type Binding, type Signature, type SigningRequest } from "../src/index.js";
 import {
+  A as ATR_A,
   ABC,
   ABD,
   buildAndSign,
   code,
   counting,
   H,
+  HA,
   isDeclined,
   LINK,
   offered,
-  RECEIPT,
+  pieceConfirm,
+  receiptFor,
   serving,
+  summaryPending,
   vectors,
   type Pairing,
 } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 // ── shared helpers ────────────────────────────────────────────────────────────────────────────────────────────────
 
 async function at<T>(now: number, run: () => Promise<T>): Promise<T> {
@@ -69,11 +74,11 @@ function ed25519(seedHex: string, message: Uint8Array): Uint8Array {
 const typedDataOf = (td: unknown) => td as TypedDataDefinition;
 
 /** The x402 document for one option, as the pairing's `advertise` places H and `link`. */
-function x402Doc(binding: Binding, option: PaymentRequirements, resource: { url: string }, link = LINK): PaymentRequired {
+function x402Doc(binding: Binding, option: PaymentRequirements, resource: { url: string }, link = LINK, h: AtrHash = H): PaymentRequired {
   const base = { x402Version: 2, resource, accepts: [option] } as PaymentRequired;
   const placed = (binding as unknown as { advertise(d: unknown, h: string, l: string, o: unknown): unknown }).advertise(
     base,
-    H,
+    h,
     link,
     option,
   );
@@ -91,7 +96,7 @@ function withHttpLink(doc: PaymentRequired): PaymentRequired {
 /** B10: the document with an `http://` link is unreadable, detail `<ns>/link-not-https`, and nothing is fetched. */
 async function b10(doc: unknown, binding: Binding, account: string, ns: string, inputs?: Pairing["inputs"]) {
   const fetch = serving(ABC);
-  const out = await confirm(doc, binding, account, fetch, inputs);
+  const out = await confirm(doc, binding, account, fetch, { ...CONFIRMING, inputs: inputs });
   expect(code(out)).toBe("offer-unreadable");
   expect(isDeclined(out) && out.decline.detail).toBe(`${ns}/link-not-https`);
   expect(fetch.calls).toBe(0);
@@ -100,7 +105,7 @@ async function b10(doc: unknown, binding: Binding, account: string, ns: string, 
 /** B16: each account is declined no-payable-option, and nothing is fetched. */
 async function b16(doc: unknown, binding: Binding, accounts: string[], inputs?: Pairing["inputs"]) {
   const fetch = serving(ABC);
-  for (const a of accounts) expect(code(await confirm(doc, binding, a, fetch, inputs))).toBe("no-payable-option");
+  for (const a of accounts) expect(code(await confirm(doc, binding, a, fetch, { ...CONFIRMING, inputs: inputs }))).toBe("no-payable-option");
   expect(fetch.calls).toBe(0);
 }
 
@@ -193,18 +198,18 @@ describe("x402/batch-settlement/eip155", () => {
   it("the deposit: extra.minDeposit when present, else the buyer's deposit; the payer authorizer required before any fetch", () =>
     at(f.now, async () => {
       const fetch = serving(ABC);
-      const noAuthorizer = await confirm(doc, batchEvm, account, fetch, { deposit: f.deposit });
+      const noAuthorizer = await confirm(doc, batchEvm, account, fetch, { ...CONFIRMING, inputs: { deposit: f.deposit } });
       expect(isDeclined(noAuthorizer) && noAuthorizer.decline.detail).toBe("x402/input-missing");
       expect(fetch.calls).toBe(0);
       const withMin = x402Doc(batchEvm, { ...f.option, extra: { ...f.option.extra, minDeposit: "250000" } }, BV.fixed.resource);
-      const confirmed = await confirm(withMin, batchEvm, account, serving(ABC), { ...inputs, deposit: "1" });
+      const confirmed = await pieceConfirm(withMin, batchEvm, account, { ...inputs, deposit: "1" });
       if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
       expect((confirmed.chosen.choice as { deposit: string }).deposit).toBe("250000");
     }));
   it("an absent authorization salt is drawn once, kept in chosen, and finish rebuilds the same request", () =>
     at(f.now, async () => {
       const { authSalt: _, ...noSalt } = inputs;
-      const confirmed = await confirm(doc, batchEvm, account, serving(ABC), noSalt);
+      const confirmed = await pieceConfirm(doc, batchEvm, account, noSalt);
       if (isDeclined(confirmed) || confirmed.request === null) throw new Error("declined");
       const salt = (confirmed.chosen.choice as { authSalt: string }).authSalt;
       expect(salt).toMatch(/^0x[0-9a-f]{64}$/);
@@ -264,7 +269,7 @@ describe("x402/batch-settlement/solana", () => {
   it("the recent blockhash is the offer's extra.recentBlockhash when present", async () => {
     const offered = x402Doc(batchSvm, { ...f.option, extra: { ...f.option.extra, recentBlockhash: f.blockhash } }, BV.fixed.resource);
     const { recentBlockhash: _, ...rest } = inputs;
-    const confirmed = await confirm(offered, batchSvm, account, serving(ABC), rest);
+    const confirmed = await pieceConfirm(offered, batchSvm, account, rest);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
     expect((confirmed.chosen.choice as { recentBlockhash: string }).recentBlockhash).toBe(f.blockhash);
   });
@@ -279,7 +284,7 @@ describe("x402/batch-settlement/cloudflare", () => {
   };
 
   it("B6: the build is the payment; EC1's echoed legal context; no signer call; check against abc and abd", async () => {
-    const confirmed = await confirm(doc, offered(batchCloudflare), account, serving(ABC));
+    const confirmed = await pieceConfirm(doc, offered(batchCloudflare), account);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
     expect(confirmed.request).toBeNull();
     const done = await finish(ABC, JSON.parse(JSON.stringify(confirmed.chosen)), null, batchCloudflare);
@@ -289,10 +294,11 @@ describe("x402/batch-settlement/cloudflare", () => {
     expect(signed.accepted).toEqual(option);
     expect(signed.extensions.legalContext.info).toEqual(BV.EC1.payload.extensions.legalContext.info);
     const signer = counting(account, never);
-    const whole = await transact(doc, offered(batchCloudflare), signer, serving(ABC));
+    // Through the gate, over an ATR that is one JSON text, its document placed for that ATR's H.
+    const whole = await transact(x402Doc(batchCloudflare, option, BV.fixed.resource, LINK, HA), offered(batchCloudflare), signer, serving(ATR_A), GATE);
     if (isDeclined(whole)) throw new Error(whole.decline.code);
     if ("approve" in whole) throw new Error("an agreement payment to approve");
-    expect(whole.agreement).toEqual(RECEIPT);
+    expect(whole.agreement).toEqual(receiptFor(HA));
     expect(signer.requests.length).toBe(0);
     expect(await check(ABC, done.signed, batchCloudflare)).toEqual({ h: H });
     expect(code(await check(ABD, done.signed, batchCloudflare))).toBe("signed-not-bound");
@@ -569,12 +575,15 @@ describe("mpp/session/tempo", () => {
       for (const row of rows) {
         expect(Object.keys(row).filter((k) => !MEMBERS.includes(k)), row.case).toEqual([]);
         const challenges = mppDoc(sessionTempo, issued("tempo", "session", row.sessionProtocol === "v1" ? f.requestV1 : f.requestV2));
-        const confirmed = await confirm(challenges, sessionTempo, account, serving(ABC), p.inputs);
+        const confirmed = await pieceConfirm(challenges, sessionTempo, account, p.inputs);
         if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
         const r = confirmed.request;
         if (r?.kind !== "tempo-call") throw new Error("not a tempo call");
         const chosen = JSON.parse(JSON.stringify(confirmed.chosen));
-        expect(await finish(ABC, chosen, await openWire(r), sessionTempo), row.case).toHaveProperty("next");
+        // finish shows the voucher it asks for next: until the pairing has a summary, it declines it unshown.
+        const first = await finish(ABC, chosen, await openWire(r), sessionTempo);
+        if (summaryPending("mpp/session/tempo")) expect(code(first), row.case).toBe("summary-missing");
+        else expect(first, row.case).toHaveProperty("next");
         let wire: Hex;
         if (row.transactionChainId !== undefined) {
           wire = await openWire({ ...r, chainId: row.transactionChainId });
@@ -599,7 +608,7 @@ describe("mpp/session/tempo", () => {
       const R = JSON.parse((f as unknown as { requestV1: string }).requestV1);
       delete R.methodDetails.chainId;
       const v1 = mppDoc(sessionTempo, issued("tempo", "session", JSON.stringify(R)));
-      const out = await confirm(v1, sessionTempo, `eip155:4217:${f.payer}`, serving(ABC), p.inputs);
+      const out = await pieceConfirm(v1, sessionTempo, `eip155:4217:${f.payer}`, p.inputs);
       if (isDeclined(out)) throw new Error(out.decline.detail);
       if (out.request?.kind !== "tempo-call") throw new Error("not tempo-call");
       expect(out.request.chainId).toBe(4217);

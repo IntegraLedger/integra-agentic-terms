@@ -7,7 +7,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { TypedDataDefinition } from "viem";
 import { exactEip3009, exactPermit2, type PaymentRequired, type PaymentRequirements } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest } from "../src/index.js";
-import { coverageNone, transactApproved, vectors } from "./support.js";
+import { code, coverageNone, summaryPending, transactApproved, vectors } from "./support.js";
 
 const B = vectors<{
   fixed: { A: string; D: PaymentRequired; link: string; account: string; payerKey: `0x${string}`; now: number; agreement: { url: string } };
@@ -61,6 +61,11 @@ describe("an agreement placed by another x402 pairing that can be an agreement i
       },
     };
     const out = await transactApproved(B.fixed.D, withAgreement(), signer, seller());
+    if (summaryPending("x402/exact/eip155/permit2")) {
+      // The agreement payment is shown before it is signed, and the gate has no summary of permit2's request yet.
+      expect([code(out), handed]).toEqual(["summary-missing", []]);
+      return;
+    }
     expect(out).not.toHaveProperty("decline");
     expect(out).toMatchObject({ agreement: RECEIPT, h: H });
     expect(handed.length).toBe(2);

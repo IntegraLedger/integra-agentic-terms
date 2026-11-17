@@ -16,6 +16,7 @@ import { chargeNearIntents, type MppChallenge } from "@integraledger/lcp/mpp";
 import { confirm, transact, type Binding, type Fetch, type Signer, type SigningRequest } from "../src/index.js";
 import { isDeclined, vectors } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 // Vector files are read as loose JSON data; each use names the fields it reads.
 type Loose = any;
 
@@ -94,13 +95,13 @@ describe("mpp/charge/nearintents: the gate compares the hash and pays the agreem
     const signed: SigningRequest[] = [];
     const options = { agreementSigner: agreementSigner(events, signed) };
 
-    const first = await transact(doc, binding, wallet(events), seller(events, AG.receipt), options);
+    const first = await transact(doc, binding, wallet(events), seller(events, AG.receipt), { ...GATE, ...options });
     if (!("approve" in first)) throw new Error(JSON.stringify(first));
     expect(first).not.toHaveProperty("signed");
     expect(events).toEqual(["atr fetched", "agreement asked"]);
 
     events.length = 0;
-    const second = await transact(doc, binding, wallet(events), seller(events, AG.receipt), { ...options, approved: first.approve });
+    const second = await transact(doc, binding, wallet(events), seller(events, AG.receipt), { ...GATE, ...options, approved: first.approve });
     expect(events).toEqual(["atr fetched", "agreement signed", "agreement paid"]);
     expect(second).toEqual({ signed: null, bytes: A, h: H, agreement: AG.receipt });
     expect(signed.map((r) => (r as Loose).typedData.message.nonce)).toEqual([AGREEMENT_NONCE]);
@@ -108,9 +109,7 @@ describe("mpp/charge/nearintents: the gate compares the hash and pays the agreem
 
   it("an ATR that does not hash to the advertised H is declined before the agreement URL is asked; nothing is signed", async () => {
     const events: string[] = [];
-    const out = await transact(documentWith(null), binding, wallet(events), seller(events, AG.receipt, C), {
-      agreementSigner: agreementSigner(events, []),
-    });
+    const out = await transact(documentWith(null), binding, wallet(events), seller(events, AG.receipt, C), { ...GATE, agreementSigner: agreementSigner(events, []), });
     expect(isDeclined(out) && out.decline.code).toBe("hash-mismatch");
     expect(events).toEqual(["atr fetched"]);
   });
@@ -119,9 +118,9 @@ describe("mpp/charge/nearintents: the gate compares the hash and pays the agreem
     const doc = documentWith(null);
     const events: string[] = [];
     const options = { agreementSigner: agreementSigner(events, []) };
-    const first = await transact(doc, binding, wallet(events), seller(events, AG.receiptOtherHash), options);
+    const first = await transact(doc, binding, wallet(events), seller(events, AG.receiptOtherHash), { ...GATE, ...options });
     if (!("approve" in first)) throw new Error(JSON.stringify(first));
-    const out = await transact(doc, binding, wallet(events), seller(events, AG.receiptOtherHash), { ...options, approved: first.approve });
+    const out = await transact(doc, binding, wallet(events), seller(events, AG.receiptOtherHash), { ...GATE, ...options, approved: first.approve });
     expect(isDeclined(out) && out.decline.code).toBe("agreement-failed");
     expect(out).not.toHaveProperty("signed");
     expect(events).not.toContain("wallet signed");
@@ -135,7 +134,7 @@ describe("mpp/charge/nearintents: the challenge the wallet deposits on is the se
   ])("%s reaches the wallet unchanged, and the gate adds nothing", async (_name, depositMemo) => {
     const doc = documentWith(depositMemo);
     const issued = structuredClone(doc);
-    const confirmed = await confirm(doc, binding, ACCOUNT, seller([], AG.receipt));
+    const confirmed = await confirm(doc, binding, ACCOUNT, seller([], AG.receipt), CONFIRMING);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
     expect(confirmed.request).toBeNull();
     expect(confirmed.chosen.choice).toEqual({ challenge: issued[0] });
@@ -145,9 +144,9 @@ describe("mpp/charge/nearintents: the challenge the wallet deposits on is the se
 
     const events: string[] = [];
     const options = { agreementSigner: agreementSigner(events, []) };
-    const first = await transact(doc, binding, wallet(events), seller(events, AG.receipt), options);
+    const first = await transact(doc, binding, wallet(events), seller(events, AG.receipt), { ...GATE, ...options });
     if (!("approve" in first)) throw new Error(JSON.stringify(first));
-    const second = await transact(doc, binding, wallet(events), seller(events, AG.receipt), { ...options, approved: first.approve });
+    const second = await transact(doc, binding, wallet(events), seller(events, AG.receipt), { ...GATE, ...options, approved: first.approve });
     expect(second).toMatchObject({ signed: null, h: H });
     expect(doc).toEqual(issued);
   });

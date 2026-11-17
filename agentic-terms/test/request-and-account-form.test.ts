@@ -5,6 +5,7 @@ import { hash } from "@integraledger/lcp";
 import { exactEip3009, type PaymentRequired } from "@integraledger/lcp/x402";
 import { confirm, type Binding, type Fetch } from "../src/index.js";
 
+import { CONFIRMING } from "./support.js";
 // The x402 EVM vectors' option O and payer.
 const O = {
   scheme: "exact", network: "eip155:84532", amount: "10000", asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
@@ -29,7 +30,7 @@ describe("the request and the account form", () => {
   // is `{name: extra.name, version: extra.version, chainId: <the network's reference>, verifyingContract: asset}`.
   it("the signer is handed the build's typed data exactly as built (verifyingContract = asset)", async () => {
     const { doc, fetch } = await offer();
-    const c = await confirm(doc, exactEip3009 as unknown as Binding, `eip155:84532:${PAYER}`, fetch);
+    const c = await confirm(doc, exactEip3009 as unknown as Binding, `eip155:84532:${PAYER}`, fetch, CONFIRMING);
     if ("decline" in c) throw new Error(c.decline.code);
     const typedData = (c.request as { typedData: { domain: unknown } }).typedData;
     expect(typedData.domain).toEqual({
@@ -42,7 +43,7 @@ describe("the request and the account form", () => {
   it("an account that does not match the gate's pattern is declined no-payable-option before any fetch", async () => {
     const { doc, fetch, fetches } = await offer();
     const account = `eip155:84532:0x%66${PAYER.slice(3)}`;
-    const c = await confirm(doc, exactEip3009 as unknown as Binding, account, fetch);
+    const c = await confirm(doc, exactEip3009 as unknown as Binding, account, fetch, CONFIRMING);
     expect("decline" in c ? c.decline.code : "confirmed").toBe("no-payable-option");
     expect(fetches.n).toBe(0);
   });

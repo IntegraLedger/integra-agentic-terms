@@ -1,6 +1,7 @@
 // B2 and B6 for MPP's `card`, `stripe` and `usdc` pairings. Expected values are the lcp vector files' (M1-M5); keys are the published Anvil key #0 and the Solana vectors' test seed, and the Stacks
 // transaction is M4's bytes, signed there by the key whose scalar is 1.
 import { createPrivateKey, sign } from "node:crypto";
+import type { AtrHash } from "@integraledger/lcp";
 import { describe, expect, it } from "vitest";
 import { hashTypedData, type TypedDataDefinition } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -17,8 +18,9 @@ import {
   type MppCredential,
 } from "@integraledger/lcp/mpp";
 import { check, confirm, transact, type Binding, type SigningRequest } from "../src/index.js";
-import { ABC, AGREEMENT_URL as AGREEMENT, buildAndSign, counting, fromHex, H, isDeclined, LINK, offered, RECEIPT, serving, toHex, vectors, type Pairing } from "./support.js";
+import { A, ABC, AGREEMENT_URL as AGREEMENT, buildAndSign, counting, fromHex, H, HA, isDeclined, LINK, offered, receiptFor, serving, toHex, vectors, type Pairing } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 // Vector files are read as loose JSON data; each row names the fields it uses.
 type Loose = any;
 
@@ -30,10 +32,10 @@ function issued(method: string, intent: string, request: unknown, realm: string,
 }
 
 /** The seller's challenges for one issued challenge, as the pairing's `advertise` places H, the link and, when given, the agreement URL. */
-function docOf(binding: unknown, c: MppChallenge, agreementUrl?: string): MppChallenge[] {
+function docOf(binding: unknown, c: MppChallenge, agreementUrl?: string, h: AtrHash = H): MppChallenge[] {
   const placed = (
     binding as { advertise(d: unknown, h: string, l: string, o: unknown, p: number | null, act?: string, a?: string): unknown }
-  ).advertise([c], H, LINK, c, c.intent === "subscription" && c.method === "tempo" ? null : 0, ...(agreementUrl === undefined ? [] : ["payment", agreementUrl]));
+  ).advertise([c], h, LINK, c, c.intent === "subscription" && c.method === "tempo" ? null : 0, ...(agreementUrl === undefined ? [] : ["payment", agreementUrl]));
   if (!Array.isArray(placed)) throw new Error(JSON.stringify(placed));
   return placed as MppChallenge[];
 }
@@ -61,6 +63,7 @@ describe.each(confirmOnly)("%s (confirm only)", (_id, binding, challenge) => {
   const p: Pairing = {
     binding: binding as Binding,
     doc: docOf(binding, challenge),
+    placed: (h) => docOf(binding, challenge, undefined, h),
     account: "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     answer: async () => {
       throw new Error("nothing to sign");
@@ -68,19 +71,19 @@ describe.each(confirmOnly)("%s (confirm only)", (_id, binding, challenge) => {
   };
 
   it("B6: on a match nothing is handed to the signer", async () => {
-    const confirmed = await confirm(p.doc, offered(p.binding), p.account, serving(ABC));
+    const confirmed = await confirm(p.placed!(HA), offered(p.binding), p.account, serving(A), CONFIRMING);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
-    expect(confirmed.h).toBe(H);
+    expect(confirmed.h).toBe(HA);
     expect(confirmed.request).toBeNull();
     const signer = counting(p.account, p.answer);
-    expect(await transact(p.doc, offered(p.binding), signer, serving(ABC))).toEqual({ signed: null, bytes: ABC, h: H, agreement: RECEIPT });
+    expect(await transact(p.placed!(HA), offered(p.binding), signer, serving(A), GATE)).toEqual({ signed: null, bytes: A, h: HA, agreement: receiptFor(HA) });
     expect(signer.requests.length).toBe(0);
   });
 
   it("the offer's agreement URL reaches the buyer, who pays it before the payment", async () => {
-    const confirmed = await confirm(docOf(binding, challenge, AGREEMENT), p.binding, p.account, serving(ABC));
+    const confirmed = await confirm(docOf(binding, challenge, AGREEMENT, HA), p.binding, p.account, serving(A), CONFIRMING);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.detail);
-    expect(confirmed).toMatchObject({ chosen: { agreement: AGREEMENT }, request: null, h: H });
+    expect(confirmed).toMatchObject({ chosen: { agreement: AGREEMENT }, request: null, h: HA });
   });
 });
 
@@ -92,6 +95,7 @@ describe("mpp/charge/usdc/evm", () => {
   const p: Pairing = {
     binding: chargeUsdcEvm as unknown as Binding,
     doc: docOf(chargeUsdcEvm, issued("usdc", "charge", V.M3.requestJson, f.realm, f.expires)),
+    placed: (h) => docOf(chargeUsdcEvm, issued("usdc", "charge", V.M3.requestJson, f.realm, f.expires), undefined, h),
     account: `eip155:84532:${f.payer}`,
     inputs: { tokenDomain: f.tokenDomain },
     answer: async (r) => {
@@ -118,6 +122,7 @@ describe("mpp/charge/usdc/solana", () => {
   const p: Pairing = {
     binding: chargeUsdcSolana as unknown as Binding,
     doc: docOf(chargeUsdcSolana, issued("usdc", "charge", V.fixed.request, V.fixed.realm, V.fixed.expires)),
+    placed: (h) => docOf(chargeUsdcSolana, issued("usdc", "charge", V.fixed.request, V.fixed.realm, V.fixed.expires), undefined, h),
     account: `${V.V2.expectReference.network}:${S.fixed.payer}`,
     inputs: { computeUnitLimit: S.build.computeUnitLimit, computeUnitPrice: S.build.computeUnitPrice },
     answer: async (r) => {
@@ -139,6 +144,7 @@ describe("mpp/charge/usdc/stacks", () => {
   const p: Pairing = {
     binding: chargeUsdcStacks as unknown as Binding,
     doc: docOf(chargeUsdcStacks, issued("usdc", "charge", f.request, f.realm, f.expires)),
+    placed: (h) => docOf(chargeUsdcStacks, issued("usdc", "charge", f.request, f.realm, f.expires), undefined, h),
     account: `${f.network}:${f.sender}`,
     answer: async (r) => {
       if (r.kind !== "stacks-contract-call") throw new Error(r.kind);
@@ -195,6 +201,7 @@ describe("mpp/charge/usdc/gateway", () => {
   const p: Pairing = {
     binding: chargeUsdcGateway as unknown as Binding,
     doc: docOf(chargeUsdcGateway, issued("usdc", "charge", V.M5.requestJson, f.realm, f.expires)),
+    placed: (h) => docOf(chargeUsdcGateway, issued("usdc", "charge", V.M5.requestJson, f.realm, f.expires), undefined, h),
     account: V.M5.source,
     // The build's inputs, as the vector file's B2 row gives the buyer: the source network, the height served for it and
     // its wallet's delay, whose ceiling is M5's maxBlockHeight.

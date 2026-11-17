@@ -7,8 +7,9 @@
 import { describe, expect, it } from "vitest";
 import { pairingsOf, sessionXrpl, type MppChallenge } from "@integraledger/lcp/mpp";
 import { confirm, transact, type Binding, type Declined, type Inputs } from "../src/index.js";
-import { ABC, counting, serving, vectors } from "./support.js";
+import { ABC, counting, pieceConfirm, serving, vectors } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 type Row = { name: string; pairing: string; input: { doc: MppChallenge[]; account: string; inputs: Inputs } };
 const B2 = vectors<{ buyer: { rows: Row[] } }>("mpp-session-hedera-solana-xrpl.json").buyer.rows.find(
   (r) => r.name === "B2" && r.pairing === "mpp/session/xrpl",
@@ -51,10 +52,10 @@ describe("mpp/session/xrpl: the challenge's amount is a u64 of drops", () => {
       const signer = counting(B2.account, async () => {
         throw new Error("the signer is never called");
       });
-      const out = await transact(doc, binding, signer, serving(ABC), { inputs: B2.inputs });
+      const out = await transact(doc, binding, signer, serving(ABC), { ...GATE, inputs: B2.inputs });
       expect((out as Declined).decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
       expect(signer.requests.length).toBe(0);
-      const confirmed = await confirm(doc, binding, B2.account, serving(ABC), B2.inputs);
+      const confirmed = await confirm(doc, binding, B2.account, serving(ABC), { ...CONFIRMING, inputs: B2.inputs });
       expect((confirmed as Declined).decline).toEqual({ code: "no-payable-option", detail: "mpp/no-payable-option" });
     });
   }
@@ -63,7 +64,7 @@ describe("mpp/session/xrpl: the challenge's amount is a u64 of drops", () => {
       const doc = withAmount(amount);
       // The stock session is read from the same challenge, beside the one lcp's client opens.
       expect(pairingsOf(issued(doc))).toEqual(["mpp/session/xrpl", "mpp/session/xrpl/stock"]);
-      const out = await confirm(doc, binding, B2.account, serving(ABC), B2.inputs);
+      const out = await pieceConfirm(doc, binding, B2.account, B2.inputs);
       if ("decline" in out) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
       expect(out.request?.kind).toBe("xrpl-session-open");
     });

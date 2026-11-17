@@ -32,6 +32,7 @@ import {
 } from "../src/index.js";
 import { coverageNone } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 const B = JSON.parse(
   readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"),
 );
@@ -159,11 +160,11 @@ async function approveAndTransact(
   binding: Binding,
   signer: Signer,
   fetch: Fetch,
-  options: TransactOptions = {},
+  options: Partial<TransactOptions> = {},
 ): ReturnType<typeof transact> {
-  const first = await transact(doc, binding, signer, fetch, options);
+  const first = await transact(doc, binding, signer, fetch, { ...GATE, ...options });
   if (!("approve" in first)) return first;
-  return transact(doc, binding, signer, fetch, { ...options, approved: first.approve });
+  return transact(doc, binding, signer, fetch, { ...GATE, ...options, approved: first.approve });
 }
 
 const code = (r: unknown): string | undefined => (r as Declined).decline?.code;
@@ -189,10 +190,10 @@ describe("fixed agreement inputs", () => {
 
 describe("confirm", () => {
   it("carries the agreement URL the binding read in chosen, and none when it read none", async () => {
-    const withUrl = await confirm(D, withAgreement(AGREEMENT_URL), ACCOUNT, seller([]));
+    const withUrl = await confirm(D, withAgreement(AGREEMENT_URL), ACCOUNT, seller([]), CONFIRMING);
     if (isDeclined(withUrl)) throw new Error(withUrl.decline.code);
     expect(withUrl.chosen.agreement).toBe(AGREEMENT_URL);
-    const without = await confirm(D, exactEip3009, ACCOUNT, seller([]));
+    const without = await confirm(D, exactEip3009, ACCOUNT, seller([]), CONFIRMING);
     if (isDeclined(without)) throw new Error(without.decline.code);
     expect(without.chosen).not.toHaveProperty("agreement");
   });
@@ -202,7 +203,7 @@ describe("confirm", () => {
     if ("refused" in real) throw new Error(real.code);
     const odd = { ...AT_COVERAGE_NONE, read: () => ({ ...real, agreement: 7 }) } as unknown as Binding;
     const fetch = seller([]);
-    expect(code(await confirm(D, odd, ACCOUNT, fetch))).toBe("offer-unreadable");
+    expect(code(await confirm(D, odd, ACCOUNT, fetch, CONFIRMING))).toBe("offer-unreadable");
     expect(fetch.calls.length).toBe(0);
   });
 });
@@ -470,13 +471,13 @@ describe("agreement rows", () => {
     const read = exactEip3009.read(doc);
     if ("refused" in read) throw new Error(read.code);
     expect(read.agreement).toBe(AGREEMENT_URL);
-    const confirmed = await confirm(doc, exactEip3009, ACCOUNT, seller([]));
+    const confirmed = await confirm(doc, exactEip3009, ACCOUNT, seller([]), CONFIRMING);
     if (isDeclined(confirmed)) throw new Error(confirmed.decline.code);
     expect(confirmed).not.toHaveProperty("agreement");
 
     const fetch = seller([{ status: 402, paymentRequired: "required" }]);
     const signer = counting();
-    const out = await transact(doc, exactEip3009, signer, fetch);
+    const out = await transact(doc, exactEip3009, signer, fetch, GATE);
     if (isDeclined(out)) throw new Error(out.decline.code);
     if ("approve" in out) throw new Error("an agreement payment to approve");
     expect(fetch.agreementCalls().length).toBe(r.expect.agreementFetches);
@@ -492,7 +493,7 @@ describe("agreement rows", () => {
     if ("approve" in out) throw new Error("an agreement payment to approve");
     expect(out.agreement).toEqual(AG[r.expect.agreement]);
     expect((out.signed as Eip3009Payment).payload.signature).toBe(row(r.expect.signed).expect.signature);
-    const plain = await transact(D, exactEip3009, counting(), seller([]));
+    const plain = await transact(D, exactEip3009, counting(), seller([]), GATE);
     if (isDeclined(plain)) throw new Error(plain.decline.code);
     expect(plain).not.toHaveProperty("agreement");
   });
@@ -759,7 +760,7 @@ describe("the agreement payment the agent approves", () => {
   it("transact returns the agreement payment for approval and signs nothing", async () => {
     const fetch = seller(row("BA1").input.agreement);
     const signer = counting();
-    const out = await transact(D, withAgreement(AGREEMENT_URL), signer, fetch);
+    const out = await transact(D, withAgreement(AGREEMENT_URL), signer, fetch, GATE);
     expect(out).toEqual({ approve: { url: AGREEMENT_URL, option: OPTION, required: AG.required }, bytes: A, h: H });
     expect(signer.requests.length).toBe(0);
     expect(fetch.paid().length).toBe(0);
@@ -881,13 +882,13 @@ describe("the agreement payment the agent approves", () => {
     };
     const ba9 = () => seller(row("BA9").input.agreement);
     const agreementSigner = counting(solana.account);
-    const options = { agreementSigner, inputs: solana.inputs };
+    const options = { ...GATE, agreementSigner, inputs: solana.inputs };
 
     const any = await transact(D, charge("any"), counting(), ba9(), options);
     expect("approve" in any && any.approve.option.network).toBe(SOLANA_OPTION.network);
     expect(code(await transact(D, charge("same-network"), counting(), ba9(), options))).toBe("no-payable-option");
     expect(agreementSigner.requests.length).toBe(0);
-    const own = await transact(D, charge("same-network"), counting(), ba9());
+    const own = await transact(D, charge("same-network"), counting(), ba9(), GATE);
     expect("approve" in own && own.approve.option).toEqual(OPTION);
   });
 
@@ -1230,12 +1231,10 @@ describe("the caller's signal", () => {
   it("through transact: an aborted signal ends the exchange before the agreement is signed, and the payment is never signed", async () => {
     const fetch = seller(row("BA1").input.agreement);
     const signer = counting();
-    const first = await transact(D, withAgreement(AGREEMENT_URL), signer, fetch);
+    const first = await transact(D, withAgreement(AGREEMENT_URL), signer, fetch, GATE);
     if (!("approve" in first)) throw new Error("the agreement payment is returned for approval");
-    const out = await transact(D, withAgreement(AGREEMENT_URL), signer, fetch, {
-      approved: first.approve,
-      signal: AbortSignal.abort(),
-    });
+    const out = await transact(D, withAgreement(AGREEMENT_URL), signer, fetch, { ...GATE, approved: first.approve,
+      signal: AbortSignal.abort(), });
     expect(code(out)).toBe("agreement-failed");
     expect(signer.requests.length).toBe(0);
     expect(fetch.paid().length).toBe(0);
@@ -1243,9 +1242,7 @@ describe("the caller's signal", () => {
 
   it("through transact: a signal that is not an AbortSignal is declined before any fetch", async () => {
     const fetch = seller([]);
-    const out = await transact(D, withAgreement(AGREEMENT_URL), counting(), fetch, {
-      signal: {} as unknown as AbortSignal,
-    });
+    const out = await transact(D, withAgreement(AGREEMENT_URL), counting(), fetch, { ...GATE, signal: {} as unknown as AbortSignal, });
     expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
     expect(fetch.calls.length).toBe(0);
   });
@@ -1312,7 +1309,7 @@ describe("a header value read without its surrounding HTTP whitespace", () => {
       const receipt = (async () => answer(200, { "content-length": c + receiptLength + c }, RECEIPT)) as Fetch;
       got.push([
         label(c),
-        outcome(await confirm(D, exactEip3009, ACCOUNT, atr)),
+        outcome(await confirm(D, exactEip3009, ACCOUNT, atr, CONFIRMING)),
         outcome(await agree(A, AGREEMENT_URL, counting(), receipt)),
       ]);
     }
@@ -1334,7 +1331,7 @@ describe("a header value read without its surrounding HTTP whitespace", () => {
       const receipt = (async () => answer(200, coded, RECEIPT)) as Fetch;
       got.push([
         label(c),
-        outcome(await confirm(D, exactEip3009, ACCOUNT, atr)),
+        outcome(await confirm(D, exactEip3009, ACCOUNT, atr, CONFIRMING)),
         outcome(await agree(A, AGREEMENT_URL, counting(), receipt)),
       ]);
     }

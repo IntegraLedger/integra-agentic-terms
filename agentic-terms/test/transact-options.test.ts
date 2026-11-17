@@ -14,6 +14,7 @@ import { agree, check, confirm, finish, transact, type Fetch, type Signer, type 
 import { pay } from "../src/gate.js";
 import { isDeclined } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 const B = JSON.parse(readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"));
 const A = Uint8Array.from(Buffer.from(B.fixed.A.replace(/^0x/, ""), "hex"));
 const D: PaymentRequired = B.fixed.D;
@@ -54,22 +55,24 @@ describe("transact's options object", () => {
     ],
     ["an approved payment that is not an object", { approved: "yes" }],
     ["a signal that is not an AbortSignal", { signal: { aborted: false } }],
+    ["absent", undefined],
   ])("%s is refused before any fetch or signer call", async (_, options) => {
     const { fetch, signer } = fixture();
-    const out = await transact(D, exactEip3009, signer, fetch, options as never);
+    // An object is given beside the required approver and request; any other value is given as the options themselves.
+    const given = typeof options === "object" && options !== null && !Array.isArray(options) ? { ...GATE, ...options } : options;
+    const out = await transact(D, exactEip3009, signer, fetch, given as never);
     expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
     expect([fetch.calls, signer.calls]).toEqual([0, 0]);
   });
 
   it.each([
-    ["absent", undefined],
     ["empty", {}],
     ["inputs only", { inputs: {} }],
     ["every member undefined", { inputs: undefined, agreementSigner: undefined, approved: undefined, signal: undefined }],
     ["a signal that is not aborted", { signal: new AbortController().signal }],
   ])("%s: the payment is made", async (_, options) => {
     const { fetch, signer } = fixture();
-    const out = await transact(D, exactEip3009, signer, fetch, options as never);
+    const out = await transact(D, exactEip3009, signer, fetch, { ...GATE, ...(options as object) });
     expect(isDeclined(out)).toBe(false);
     expect(signer.calls).toBe(1);
   });
@@ -85,7 +88,7 @@ describe("inputs and payments the other entry points are given", () => {
     ["null", null],
   ])("inputs that are %s: confirm and agree decline before any fetch or signer call", async (_, inputs) => {
     const { fetch, signer } = fixture();
-    const confirmed = await confirm(D, exactEip3009, signer.account, fetch, inputs as never);
+    const confirmed = await confirm(D, exactEip3009, signer.account, fetch, { ...CONFIRMING, inputs: inputs as never });
     const agreed = await agree(A, B.fixed.agreement.url, signer, fetch, { inputs: inputs as never });
     for (const out of [confirmed, agreed]) {
       expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
@@ -117,7 +120,7 @@ describe("inputs and payments the other entry points are given", () => {
     }) as unknown as Fetch;
     let signs = 0;
     const signer = { ...member, sign: async () => (signs++, "0x") } as unknown as Signer;
-    const transacted = await transact(D, exactEip3009, signer, fetch);
+    const transacted = await transact(D, exactEip3009, signer, fetch, GATE);
     const agreed = await agree(A, B.fixed.agreement.url, signer, fetch);
     for (const out of [transacted, agreed]) {
       expect(isDeclined(out) && out.decline).toEqual({ code: "no-payable-option", detail: "x402/input-malformed" });
@@ -184,7 +187,6 @@ describe("agree's options object", () => {
   });
 
   it.each([
-    ["absent", undefined],
     ["empty", {}],
     ["every member undefined", { approved: undefined, inputs: undefined, signal: undefined }],
     ["a signal that is not aborted", { signal: new AbortController().signal }],

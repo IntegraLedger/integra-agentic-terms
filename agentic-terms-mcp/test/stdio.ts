@@ -15,13 +15,22 @@ export const at = (v: unknown, path: string): unknown =>
   path.split(".").reduce<unknown>((o, k) => (typeof o === "object" && o !== null ? (o as Record<string, unknown>)[k] : undefined), v);
 
 /** One stdio connection to a server from the factory: writes JSON-RPC lines, reads the answers by id. */
+/**
+ * What the host gives every test server whose subject is not the approval or the ceiling: an approver approving every
+ * signing, and the delegation forms, which sign no end, raised to "no-end", as terms' profile asks a caller to raise them.
+ */
+const HOST = {
+  approver: () => true,
+  ceilings: { "x402/exact/eip155/erc7710": "no-end", "x402/exact/eip155/erc7710-salt": "no-end" },
+} as const;
+
 export function connect(
-  options: { fetch: Fetch; signer?: Signer; agreementSigner?: Signer },
+  options: Parameters<typeof createBuyerServer>[0],
   create: typeof createBuyerServer = createBuyerServer,
 ) {
   const input = new PassThrough();
   const output = new PassThrough();
-  const handle = serveStdio(() => create(options), {
+  const handle = serveStdio(() => create({ ...HOST, ...options }), {
     legacy: "serve",
     transport: new StdioServerTransport(input, output),
   });

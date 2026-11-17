@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import type { AtrHash } from "@integraledger/lcp";
 import { exactCcd } from "@integraledger/lcp/ccd";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
-import { transact, type Binding } from "../src/index.js";
-import { ABC, counting, H, LINK, serving, vectors } from "./support.js";
+import type { Binding } from "../src/index.js";
+import { counting, H, LINK, piecePay, vectors } from "./support.js";
 
 interface Row {
   case: string;
@@ -55,7 +55,7 @@ describe("x402/exact/ccd: the signer's answer in x402's wire form", () => {
       Date.now = () => f.now * 1000;
       try {
         const signer = counting(`${f.O.network}:${f.payer}`, async () => withBigints(row.bigints!) as never);
-        const out = await transact(structuredClone(doc), exactCcd as unknown as Binding, signer, serving(ABC));
+        const out = await piecePay(structuredClone(doc), exactCcd as unknown as Binding, signer);
         expect("decline" in out && [out.decline.code, out.decline.detail]).toEqual(["signed-not-bound", row.expect.code]);
         expect(signer.requests.length).toBe(1);
       } finally {
@@ -70,7 +70,7 @@ describe("x402/exact/ccd: the signer's answer in x402's wire form", () => {
     try {
       const text = JSON.stringify(V.D3.ccd.payment.payload.signedTransaction);
       const signer = counting(`${f.O.network}:${f.payer}`, async () => text as never);
-      const out = await transact(structuredClone(doc), exactCcd as unknown as Binding, signer, serving(ABC));
+      const out = await piecePay(structuredClone(doc), exactCcd as unknown as Binding, signer);
       expect("decline" in out && [out.decline.code, out.decline.detail]).toEqual(["signed-not-bound", "x402/signature-malformed"]);
     } finally {
       Date.now = real;
@@ -83,7 +83,7 @@ describe("x402/exact/ccd: the signer's answer in x402's wire form", () => {
     try {
       const answer = structuredClone(V.D3.ccd.payment.payload.signedTransaction);
       const signer = counting(`${f.O.network}:${f.payer}`, async () => answer as never);
-      const out = await transact(structuredClone(doc), exactCcd as unknown as Binding, signer, serving(ABC));
+      const out = await piecePay(structuredClone(doc), exactCcd as unknown as Binding, signer);
       expect("signed" in out && (out.signed as { payload: unknown }).payload).toEqual({ signedTransaction: answer });
     } finally {
       Date.now = real;

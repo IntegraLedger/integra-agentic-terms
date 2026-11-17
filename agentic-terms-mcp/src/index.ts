@@ -18,13 +18,16 @@ import {
   transact,
   within,
   type AgreementPayment,
+  type Approver,
   type Binding,
+  type Ceilings,
   type ChannelHold,
   type Chosen,
   type Declined,
   type Fetch,
   type Inputs,
   type Presented,
+  type ResourceRequest,
   type Signature,
   type Signer,
 } from "@integraledger/terms";
@@ -231,7 +234,28 @@ async function signedOf(
   return { signed, ...landed, mac: await macOf("opening", { pairing: binding.id, signed, ...landed }) };
 }
 
-export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agreementSigner?: Signer }): McpServer {
+/**
+ * The buyer's request the gate is given while the tools take none: a tool call the protocol package refuses
+ * (`x402/tool-call-malformed`), so an ATR that commits to a request is declined `request-mismatch`, and one that commits
+ * to none is compared with nothing.
+ */
+const NO_REQUEST: ResourceRequest = { name: "" };
+
+/** The approver where the host gives none: it approves nothing, so `atr_transact` signs nothing unapproved. */
+const APPROVES_NOTHING: Approver = () => false;
+
+/**
+ * The buyer's tools. `approver`, the host's, is asked before each signing `atr_transact` makes, with the signing
+ * request and its summary; where the host gives none, every signing is declined `not-approved`. `ceilings`, the host's,
+ * raises a pairing's ceiling on how long a signed payment stays payable; no tool input raises one.
+ */
+export function createBuyerServer(options: {
+  fetch: Fetch;
+  signer?: Signer;
+  agreementSigner?: Signer;
+  approver?: Approver;
+  ceilings?: Ceilings;
+}): McpServer {
   const byId = new Map(BINDINGS.map((b) => [b.id as string, b]));
   const ids = [...byId.keys()] as [string, ...string[]];
   const pairing = z.enum(ids);
@@ -249,7 +273,8 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
   const inputs = z.record(z.string(), JSON_VALUE).optional();
   const approved = z.record(z.string(), JSON_VALUE).optional();
   const bindingOf = (id: string): Binding => byId.get(id)!;
-  const { fetch, signer, agreementSigner } = options;
+  const { fetch, signer, agreementSigner, approver = APPROVES_NOTHING, ceilings } = options;
+  const raised = ceilings === undefined ? {} : { ceilings };
   const payer = agreementSigner ?? signer;
 
   const server = new McpServer({ name: "integraledger-terms", version: VERSION }, { capabilities: { tools: {} } });
@@ -262,7 +287,11 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async (a) => {
-      const out = await confirm(a.document, bindingOf(a.pairing), a.account, fetch, (a.inputs ?? {}) as Inputs);
+      const out = await confirm(a.document, bindingOf(a.pairing), a.account, fetch, {
+        resourceRequest: NO_REQUEST,
+        inputs: (a.inputs ?? {}) as Inputs,
+        ...raised,
+      });
       if ("decline" in out) return declinedResult(out);
       const confirmed = { atrHash: out.h, atr: atrOf(out.bytes), chosen: await sealChosen(out.chosen) };
       if (out.chosen.agreement === undefined) return result({ ...confirmed, request: jsonOf(out.request) });
@@ -288,7 +317,7 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       const { mac: _mac, ...members } = a.chosen;
       const chosen = hasChannel(binding) ? await unsealChosen(a.chosen) : members;
       if (chosen === undefined) return chosenUnverified();
-      const out = await finish(a.atr, chosen as unknown as Chosen, a.signature as Signature, binding);
+      const out = await finish(a.atr, chosen as unknown as Chosen, a.signature as Signature, binding, raised);
       if ("decline" in out) return declinedResult(out);
       if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next) });
       return result({ atrHash: out.h, ...(await signedOf(out, binding)) });
@@ -325,13 +354,21 @@ export function createBuyerServer(options: { fetch: Fetch; signer?: Signer; agre
       },
       async (a, ctx) => {
         const out = await transact(a.document, bindingOf(a.pairing), signer, fetch, {
+          approver,
+          resourceRequest: NO_REQUEST,
           inputs: (a.inputs ?? {}) as Inputs,
+          ...raised,
           agreementSigner,
           approved: a.approved as AgreementPayment | undefined,
           signal: ctx.mcpReq.signal,
         });
         if ("decline" in out) return declinedResult(out);
         if ("approve" in out) return result({ atrHash: out.h, atr: atrOf(out.bytes), approve: jsonOf(out.approve) });
+        if ("legalContext" in out) {
+          // The agreement is paid and no charge is signed: the value the buyer's repeated request carries.
+          const { agreement, legalContext, charge } = out;
+          return result({ atrHash: out.h, atr: atrOf(out.bytes), agreement: jsonOf(agreement), legalContext, charge });
+        }
         const agreement = out.agreement === undefined ? {} : { agreement: jsonOf(out.agreement) };
         return result({ atrHash: out.h, atr: atrOf(out.bytes), ...(await signedOf(out, bindingOf(a.pairing))), ...agreement });
       },

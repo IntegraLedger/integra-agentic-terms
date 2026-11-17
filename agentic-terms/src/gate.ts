@@ -15,23 +15,39 @@ import {
   type AtrHash,
   type Refusal,
 } from "@integraledger/lcp/core";
+import {
+  approves,
+  floorMissing,
+  isCeilings,
+  parseAtr,
+  requestHeld,
+  shown,
+  slotHolds,
+  stepsOf,
+  type Approval,
+} from "./checks.js";
 import { fetchedOf, held, isRefusal, jsonSafe, refuse } from "./pairings/common.js";
 import { PIECES } from "./pairings/index.js";
 import {
   MAX_ATR_BYTES,
   type Binding,
   type BuyerPiece,
+  type Ceilings,
   type Chosen,
+  type ConfirmOptions,
   type DeclineCode,
   type Declined,
   type Fetch,
+  type FinishOptions,
   type Inputs,
   type Next,
   type Presented,
   type Read,
+  type ResourceRequest,
   type Signature,
   type Signer,
   type SigningRequest,
+  type Summary,
 } from "./types.js";
 
 /**
@@ -86,7 +102,7 @@ function linkRefusal(binding: Binding, link: unknown): string {
  * Whether the pairing's payment is itself a public proof of the hash, so the offer's agreement URL is not paid: the
  * pairing's data states coverage `full`, the payer's own signed act on a public ledger binding all of H.
  */
-function isFullCoverage(binding: Binding): boolean {
+export function isFullCoverage(binding: Binding): boolean {
   const data: unknown = isObject(binding) ? (binding as { data?: unknown }).data : undefined;
   return isObject(data) && data["coverage"] === "full";
 }
@@ -146,7 +162,7 @@ export function isIdentity(contentEncoding: string | null): boolean {
  * whose `Content-Encoding` names any coding: its body is never read or decoded. A declared or streamed length over the
  * bound cancels the body. The bytes are returned exactly as received.
  */
-async function fetchAtr(fetch: Fetch, link: string): Promise<Uint8Array | Declined> {
+export async function fetchAtr(fetch: Fetch, link: string): Promise<Uint8Array | Declined> {
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new DOMException("The ATR fetch passed its deadline.", "TimeoutError")),
@@ -219,25 +235,67 @@ function cancel(s: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint
   }
 }
 
+/** What the gate's checks 3 to 11 read beside the offer: the buyer's request, its inputs and the raised ceilings. */
+export interface GateArgs {
+  readonly resourceRequest: ResourceRequest;
+  readonly inputs: Inputs;
+  readonly ceilings: Ceilings | undefined;
+}
+
+/** What checks 3 to 11 give: the choice, the request for the signer with its summary, the bytes and H. */
+export interface Gated {
+  chosen: Chosen;
+  request: SigningRequest | null;
+  summary?: Summary;
+  count: number;
+  bytes: Uint8Array;
+  h: AtrHash;
+}
+
+const CONFIRM_KEYS: readonly string[] = ["resourceRequest", "inputs", "ceilings"];
+
+/** Whether `confirm`'s options are an object holding `resourceRequest` (an object) and only `inputs` and `ceilings`. */
+function confirmOptionsOk(options: unknown): options is ConfirmOptions {
+  if (!isObject(options) || !Object.keys(options).every((k) => CONFIRM_KEYS.includes(k))) return false;
+  const { resourceRequest, inputs, ceilings } = options;
+  return isObject(resourceRequest) && (inputs === undefined || isObject(inputs)) && isCeilings(ceilings);
+}
+
 /**
- * Reads the offer, chooses the option, fetches the ATR and compares its SHA-256 with the advertised hash. Only on a
- * match does it build, with the hash it computed. `request` is what the signer is handed, or `null` when nothing is
+ * Reads the offer, chooses the option, fetches the ATR and compares its SHA-256 with the advertised hash; parses the
+ * bytes, holds the option chosen to the ATR's binding slot and the buyer's request to its request commitment; and only
+ * then builds, with the hash it computed, and holds the request to its summary and its ceiling (terms' profile
+ * `buyer-gate.md`, checks 1 to 11). `request` is what the signer is handed, with `summary`, or `null` when nothing is
  * handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment, which
  * `finish` completes with no signature. For a pairing whose payment is not itself a public proof, `chosen.agreement` is
- * the agreement URL the offer names. `inputs` that is not an object is declined `no-payable-option` with
- * `<namespace>/input-malformed` before the offer is read.
+ * the agreement URL the offer names. Options that are not an object holding `resourceRequest` and only `inputs` and
+ * `ceilings` of their forms are declined `no-payable-option` with `<namespace>/input-malformed` before the offer is
+ * read.
  */
 export async function confirm(
   doc: unknown,
   binding: Binding,
   account: string,
   fetch: Fetch,
-  inputs: Inputs = {},
-): Promise<{ chosen: Chosen; request: SigningRequest | null; bytes: Uint8Array; h: AtrHash } | Declined> {
+  options: ConfirmOptions,
+): Promise<{ chosen: Chosen; request: SigningRequest | null; summary?: Summary; bytes: Uint8Array; h: AtrHash } | Declined> {
+  if (pieceOf(binding) === undefined) return unsupported(binding);
+  if (!confirmOptionsOk(options)) return declined("no-payable-option", `${namespaceOf(binding)}/input-malformed`);
+  const { resourceRequest, inputs = {}, ceilings } = options;
+  const out = await gate(doc, binding, account, fetch, { resourceRequest, inputs, ceilings });
+  if ("decline" in out) return out;
+  const { count: _count, ...confirmed } = out;
+  return confirmed;
+}
+
+/** Checks 3 to 11 of the profile, for `confirm` and `transact`, once the pairing and the arguments are known good. */
+export async function gate(doc: unknown, binding: Binding, account: string, fetch: Fetch, args: GateArgs): Promise<Gated | Declined> {
   const piece = pieceOf(binding);
   if (piece === undefined) return unsupported(binding);
-  if (!isObject(inputs)) return declined("no-payable-option", `${namespaceOf(binding)}/input-malformed`);
+  const { inputs, ceilings, resourceRequest } = args;
   const b = steps(binding);
+  const floor = floorMissing(b.id, inputs);
+  if (floor !== undefined) return floor;
 
   const read = b.read(doc);
   if (isRefusal(read)) return declined("offer-unreadable", read.code);
@@ -259,18 +317,28 @@ export async function confirm(
   if (!hashEquals(read.h, computed)) {
     return declined("hash-mismatch", "The bytes the link served do not hash to the advertised ATR hash.");
   }
+  const parsed = parseAtr(bytes);
+  if ("decline" in parsed) return parsed;
+  const notHeld = await slotHolds(binding, chosen, parsed.value);
+  if (notHeld !== undefined) return notHeld;
+  const otherRequest = await requestHeld(binding, parsed.value, resourceRequest);
+  if (otherRequest !== undefined) return otherRequest;
   if (!isFullCoverage(binding) && agreement === undefined) {
     return declined("agreement-not-offered", "The pairing's payment carries no public proof and the offer names no agreement URL.");
   }
 
   const unsigned = await buildWith(piece, b, chosen, computed, bytes);
   if (isRefusal(unsigned)) {
-    if (NOTHING_TO_SIGN.test(unsigned.code)) return { chosen, request: null, bytes, h: computed };
+    if (NOTHING_TO_SIGN.test(unsigned.code)) return { chosen, request: null, count: 0, bytes, h: computed };
     return declined("offer-unreadable", unsigned.code);
   }
   const request = piece.request(unsigned);
   if (isRefusal(request)) return declined("offer-unreadable", request.code);
-  return { chosen: keptWith(piece, chosen, unsigned), request, bytes, h: computed };
+  const kept = keptWith(piece, chosen, unsigned);
+  if (request === null) return { chosen: kept, request, count: 0, bytes, h: computed };
+  const summary = shown(binding, request, bytes, inputs, ceilings);
+  if ("decline" in summary) return summary;
+  return { chosen: kept, request, summary, count: stepsOf(unsigned), bytes, h: computed };
 }
 
 /** `chosen` with what the build drew itself, where the piece keeps it, so a rebuild gives the request the signer saw. */
@@ -304,20 +372,29 @@ async function buildWith(
 
 /**
  * Rebuilds the payment from `chosen` and the bytes, joins the signer's answer, and returns the payment only when the
- * pairing's `bound` reads the hash of these bytes from the completed payment. For a pairing whose payment is not a
+ * pairing's `bound` reads the hash of these bytes from the completed payment. A later step's request is returned as
+ * `next` only once it has a summary and is within the pairing's ceiling, `ceilings` raising it (checks 10 and 11). For a pairing whose payment is not a
  * public proof and whose `bound` finds no signed place for the hash, the proof is the agreement payment, and the
  * completed payment is returned as it is. Where the signer moved the payment itself, a decline keeps it as `moved`.
  * Where the completion carried the landed receipt `bound` reads and the payment sent leaves it out, `landed` is
  * returned beside the payment as JSON, each integer a decimal string, so `check` and `openChannel` can later read the
  * payment with it.
  */
-export function finish(
+export async function finish(
   bytes: Uint8Array,
   chosen: Chosen,
   signature: Signature,
   binding: Binding,
+  options?: FinishOptions,
 ): Promise<{ signed: Presented; landed?: unknown; h: AtrHash } | { next: SigningRequest; h: AtrHash } | Declined> {
-  return finishAs(bytes, chosen, signature, binding, "payment");
+  const given: unknown = options;
+  const ceilings: unknown = isObject(given) ? given["ceilings"] : undefined;
+  const ok = given === undefined || (isObject(given) && Object.keys(given).every((k) => k === "ceilings") && isCeilings(ceilings));
+  if (!ok) return declined("no-payable-option", `${namespaceOf(binding)}/input-malformed`);
+  const out = await finishAs(bytes, chosen, signature, binding, "payment");
+  if (!("next" in out)) return out;
+  const summary = shown(binding, out.next, bytes, {}, ceilings as Ceilings | undefined);
+  return "decline" in summary ? summary : out;
 }
 
 /**
@@ -428,7 +505,8 @@ export async function check(
 /**
  * Builds and signs the payment `chosen` names, for the act, with the hash of `bytes`: the signer is called once, or, for
  * a pairing signed in steps, once per step in order, and the payment is returned only through `finish`. `signed` is
- * null where the pairing has nothing for the buyer to sign.
+ * null where the pairing has nothing for the buyer to sign. With `approval`, each signing is first held to its summary
+ * and ceiling and asked of the approver.
  */
 export async function pay(
   binding: Binding,
@@ -436,6 +514,7 @@ export async function pay(
   signer: Signer,
   bytes: Uint8Array,
   act: Act = "payment",
+  approval?: Approval,
 ): Promise<{ signed: Presented | null; landed?: unknown; h: AtrHash } | Declined> {
   const piece = pieceOf(binding);
   if (piece === undefined) return unsupported(binding);
@@ -447,12 +526,14 @@ export async function pay(
   }
   const request = piece.request(unsigned);
   if (isRefusal(request)) return declined("offer-unreadable", request.code);
-  return signSteps(binding, keptWith(piece, chosen, unsigned), request, signer, bytes, h, act);
+  return signSteps(binding, keptWith(piece, chosen, unsigned), request, signer, bytes, h, act, approval, stepsOf(unsigned));
 }
 
 /**
  * The signer, once per step in order, then `finish` over its answers. A request of null is a build that is itself the
- * payment: `finish` completes it with no signer call.
+ * payment: `finish` completes it with no signer call. With `approval`, each step's request is held to its summary and
+ * its ceiling and asked of the approver before the signer is called for it (checks 10 to 12); `count` is the number of
+ * signings the build takes.
  */
 export async function signSteps(
   binding: Binding,
@@ -462,6 +543,8 @@ export async function signSteps(
   bytes: Uint8Array,
   h: AtrHash,
   act: Act = "payment",
+  approval?: Approval,
+  count = 1,
 ): Promise<{ signed: Presented | null; landed?: unknown; h: AtrHash } | Declined> {
   if (first === null) {
     const whole = await finishAs(bytes, chosen, null, binding, act);
@@ -475,6 +558,12 @@ export async function signSteps(
   const answers: Signature[] = [];
   let request: SigningRequest = first;
   for (let step = 0; step < MAX_STEPS; step++) {
+    if (approval !== undefined) {
+      const refused = await approves(binding, act, request, bytes, { index: step, count: Math.max(count, step + 1) }, approval);
+      if (refused !== undefined) {
+        return moves && answers.length > 0 ? { ...refused, moved: { signed: answers.length === 1 ? answers[0] : answers, bytes, h } } : refused;
+      }
+    }
     try {
       answers.push(await signer.sign(request));
     } catch {

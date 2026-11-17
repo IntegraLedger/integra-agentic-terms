@@ -16,6 +16,7 @@ import { confirm, transact, type Binding, type Inputs } from "../src/index.js";
 import { PIECES } from "../src/pairings/index.js";
 import { ABC, counting, serving, vectors } from "./support.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 interface B2 {
   name: string;
   pairing: string;
@@ -71,8 +72,8 @@ async function offeredAlone(b2: B2, challenge: MppChallenge): Promise<void> {
   const signer = counting(b2.input.account, async () => {
     throw new Error("the signer was called");
   });
-  const out = await transact([structuredClone(challenge)], binding, signer, fetch, { inputs });
-  const confirmed = await confirm([structuredClone(challenge)], binding, b2.input.account, fetch, inputs);
+  const out = await transact([structuredClone(challenge)], binding, signer, fetch, { ...GATE, inputs });
+  const confirmed = await confirm([structuredClone(challenge)], binding, b2.input.account, fetch, { ...CONFIRMING, inputs: inputs });
   if (!PIECES.has(b2.pairing)) {
     expect(["decline" in out && out.decline.code, "decline" in confirmed && confirmed.decline.code]).toEqual([
       "pairing-not-supported",

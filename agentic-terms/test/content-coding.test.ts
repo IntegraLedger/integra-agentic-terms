@@ -12,6 +12,7 @@ import type { AtrHash } from "@integraledger/lcp";
 import { exactEip3009, type Eip3009TypedData, type PaymentRequired } from "@integraledger/lcp/x402";
 import { agree, confirm, transact, type Declined, type Fetch, type Signer, type SigningRequest } from "../src/index.js";
 
+import { CONFIRMING, GATE } from "./support.js";
 const B = JSON.parse(
   readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/buyer.json", import.meta.url), "utf8"),
 );
@@ -91,14 +92,14 @@ afterEach(() => {
 describe("the ATR fetch", () => {
   it("asks for the identity coding", async () => {
     const fetch = recording(() => new Response(new Uint8Array(A), { status: 200 }));
-    const out = await confirm(D, exactEip3009, ACCOUNT, fetch);
+    const out = await confirm(D, exactEip3009, ACCOUNT, fetch, CONFIRMING);
     expect((out as { h: AtrHash }).h).toBe(H);
     expect(fetch.calls[0]!.init.headers).toEqual({ "Accept-Encoding": "identity" });
   });
 
   it.each(["identity", " IDENTITY ", ""])("a 200 with Content-Encoding %j is read as sent", async (coding) => {
     const fetch = recording(() => new Response(new Uint8Array(A), { status: 200, headers: { "content-encoding": coding } }));
-    const out = await confirm(D, exactEip3009, ACCOUNT, fetch);
+    const out = await confirm(D, exactEip3009, ACCOUNT, fetch, CONFIRMING);
     expect((out as { h: AtrHash; bytes: Uint8Array }).h).toBe(H);
     expect((out as { bytes: Uint8Array }).bytes).toEqual(A);
   });
@@ -107,7 +108,7 @@ describe("the ATR fetch", () => {
     const { seen, body } = observed(gzipSync(A));
     const fetch = recording(() => ({ status: 200, headers: new Headers({ "content-encoding": coding }), body }) as unknown as Response);
     const signer = counting();
-    expect(decline(await transact(D, exactEip3009, signer, fetch))).toEqual({ code: "atr-unfetchable", detail: IDENTITY_DETAIL });
+    expect(decline(await transact(D, exactEip3009, signer, fetch, GATE))).toEqual({ code: "atr-unfetchable", detail: IDENTITY_DETAIL });
     expect(seen.pulled).toBe(0);
     expect(seen.cancelled).toBe(true);
     expect(signer.requests.length).toBe(0);
@@ -115,7 +116,7 @@ describe("the ATR fetch", () => {
 
   it("gzip bytes served with no Content-Encoding are hashed as sent, so they do not match the ATR's hash", async () => {
     const fetch = recording(() => new Response(new Uint8Array(gzipSync(A)), { status: 200 }));
-    expect(decline(await confirm(D, exactEip3009, ACCOUNT, fetch))?.code).toBe("hash-mismatch");
+    expect(decline(await confirm(D, exactEip3009, ACCOUNT, fetch, CONFIRMING))?.code).toBe("hash-mismatch");
   });
 });
 
