@@ -10,6 +10,15 @@ from typing import Any
 
 from ._types import Inputs, Payee, Summary, Validity
 from ._summary_checkout import acp_allowance, ap2_checkout_mandate, ucp_checkout, ucp_legal_context
+from ._summary_rail import (
+    aptos_transaction,
+    cardano_transaction,
+    casper_transfer_with_authorization,
+    ccd_transfer,
+    starknet_transfer,
+    substrate_transfer,
+    sui_transaction,
+)
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
@@ -106,6 +115,13 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "ucp/booking/ap2-mandate": SummaryEntry(show=ucp_checkout),
     "ucp/checkout/agent-signed": SummaryEntry(show=ucp_legal_context),
     "acp/checkout/delegated": SummaryEntry(show=acp_allowance),
+    "x402/exact/casper": SummaryEntry(show=casper_transfer_with_authorization),
+    "x402/exact/starknet": SummaryEntry(show=starknet_transfer),
+    "x402/exact/ccd": SummaryEntry(show=ccd_transfer),
+    "x402/exact/polkadot/lcp-assets-remark": SummaryEntry(show=substrate_transfer),
+    "x402/exact/aptos": SummaryEntry(show=aptos_transaction),
+    "x402/exact/cardano": SummaryEntry(show=cardano_transaction),
+    "x402/exact/sui": SummaryEntry(show=sui_transaction),
 }
 
 

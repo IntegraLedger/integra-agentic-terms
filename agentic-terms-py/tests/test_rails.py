@@ -343,6 +343,7 @@ CASPER = Pairing(
     doc=x402_doc(CS_F["O"], CS_F["resource"]),
     account=f"{CS_F['O']['network']}:{CS_F['from']}",
     answer=lambda r: {"publicKey": CS_F["publicKey"], "signature": CS_F["signature"]},
+    placed=lambda h: x402_doc(CS_F["O"], CS_F["resource"], h),
 )
 
 def test_casper_b6_c1_typed_data_and_the_answer_completes_c2_payload_bound_to_h(clock: Any) -> None:
@@ -575,6 +576,10 @@ APTOS = Pairing(
     doc=x402_doc(AP_F["O"], AP_F["resource"]),
     account=f"{AP_F['O']['network']}:{AP_FX['sender']}",
     answer=ap_answer,
+    placed=lambda h: x402_doc(AP_F["O"], AP_F["resource"], h),
+    # The request names no expiry, the wallet's to set, so the payment signs no end (terms' profile buyer-gate.md,
+    # rule 8): the caller raises the pairing's ceiling to pay it.
+    ceilings={"x402/exact/aptos": "no-end"},
 )
 
 def test_aptos_b6_request_is_the_vectors_and_the_answer_completes_a_payment_bound_to_h(clock: Any) -> None:
