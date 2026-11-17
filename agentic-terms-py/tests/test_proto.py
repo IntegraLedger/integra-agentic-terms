@@ -684,7 +684,7 @@ CARD_REFUSALS: dict[str, Callable[[], list[object]]] = {
         CARD_MASTERCARD_VI_IMMEDIATE.build(42, CARD["fixed"]["H"]),
         CARD_MASTERCARD_VI_IMMEDIATE.build({"checkout": [], "shown": CARD["C2"]["build"]["doc"]}, CARD["fixed"]["H"]),
     ],
-    "VI Immediate build of a checkout payload over 12288 bytes of JSON": lambda: [
+    "VI Immediate build of a checkout payload over 11520 bytes of JSON": lambda: [
         CARD_MASTERCARD_VI_IMMEDIATE.build({"checkout": {"pad": "a" * 12288}, "shown": CARD["C2"]["build"]["doc"]}, CARD["fixed"]["H"]),
     ],
     "VI read or build of a checkout_jwt over 16384 characters": lambda: [
