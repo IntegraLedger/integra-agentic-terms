@@ -38,6 +38,17 @@ def payments_in(value: Any) -> Iterator[dict[str, Any]]:
 
 PAYMENTS = [payment for name in X402_FILES for payment in payments_in(load(name))]
 
+# The x402 pairings whose profile states that nothing the payer signs carries H (the protocol package's
+# x402-upto-xrpl.md, rule 7): each one's bound takes a payment by refusing it x402/no-signed-place once the payment
+# passes its gates.
+NO_SIGNED_PLACE = {"x402/upto/xrpl"}
+
+
+def takes(pairing: str, answer: object) -> bool:
+    """Whether the pairing's bound takes a payment: it binds it, or, on a pairing of NO_SIGNED_PLACE, refuses it
+    x402/no-signed-place. Any other pairing's refusal, that code included, is not taking it."""
+    return not isinstance(answer, Refusal) or (pairing in NO_SIGNED_PLACE and answer.code == "x402/no-signed-place")
+
 
 def test_the_x402_bindings_are_the_pairings_the_vector_files_name() -> None:
     named = {row["pairing"] for name in X402_FILES for row in load(name).get("boundAccepted", {}).get("rows", [])}
@@ -60,7 +71,7 @@ def test_a_presented_payment_whose_accepted_is_not_an_object_is_payload_malforme
     """A vector payment the pairing's bound binds, with accepted replaced by each value that is not an object, or
     removed: bound refuses it x402/payload-malformed."""
     binding = BINDINGS[pairing]
-    payment = next((p for p in PAYMENTS if not isinstance(binding.bound(p), Refusal)), None)
+    payment = next((p for p in PAYMENTS if takes(pairing, binding.bound(p))), None)
     assert payment is not None, f"no vector payment that {pairing}'s bound binds"
     for what, value in NOT_AN_OBJECT:
         presented = {k: v for k, v in payment.items() if k != "accepted"}
@@ -110,7 +121,7 @@ def test_a_bound_accepted_row_is_refused_with_its_code(name: str, i: int, row: d
     """The file's payment, which the row's pairing binds, presented under the row's option, which its read does not
     offer: bound refuses it with the row's code."""
     binding = BINDINGS[row["pairing"]]
-    assert not isinstance(binding.bound(payment), Refusal), row["case"]
+    assert takes(row["pairing"], binding.bound(payment)), row["case"]
     assert binding.bound({**payment, "accepted": row["accepted"]}) == Refusal(row["expect"]), row["case"]
     assert binding.read(offering(row["accepted"])) == Refusal("x402/no-payable-option"), row["case"]
 

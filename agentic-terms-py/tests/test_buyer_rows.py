@@ -77,12 +77,14 @@ def test_b2_the_plant(file: str, row: dict[str, Any], monkeypatch: pytest.Monkey
     def never(request: Any) -> Any:
         raise AssertionError("the signer is never called on a plant")
 
-    signer = Recording(given["account"], never)
+    # A row that names no account is one whose pairing's choice reads none: it is given the empty account.
+    account = given.get("account", "")
+    signer = Recording(account, never)
     out = run(lambda c: transact(copy.deepcopy(given["doc"]), binding, signer, c, inputs=inputs), serving(served))
     assert isinstance(out, Declined) and out.code == row["expect"]["decline"], out
     assert len(signer.requests) == row["expect"]["signCalls"]
     link = serving(served)
-    confirmed = run(lambda c: confirm(copy.deepcopy(given["doc"]), binding, given["account"], c, inputs), link)
+    confirmed = run(lambda c: confirm(copy.deepcopy(given["doc"]), binding, account, c, inputs), link)
     assert isinstance(confirmed, Declined) and confirmed.code == row["expect"]["decline"], confirmed
     assert link.calls == 1
 

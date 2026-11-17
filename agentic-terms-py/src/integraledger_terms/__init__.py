@@ -87,6 +87,9 @@ from .bindings.x402_exact_sui import X402ExactSui
 from .bindings.mpp_charge_usdc_stacks import MppChargeUsdcStacks
 from .bindings.mpp_charge_xrpl import MppChargeXrpl
 from .bindings.mpp_session_xrpl import MppSessionXrpl
+from .bindings.mpp_session_xrpl_stock import MppSessionXrplStock
+from .bindings.mpp_session_hedera_stock import MppSessionHederaStock
+from .bindings.x402_upto_xrpl import X402UptoXrpl
 from .bindings.x402_exact_algorand import X402ExactAlgorand
 from .bindings.x402_exact_xrpl import X402ExactXrpl
 
@@ -143,6 +146,9 @@ X402_EXACT_ALGORAND: Binding = X402ExactAlgorand()
 MPP_CHARGE_XRPL: Binding = MppChargeXrpl()
 MPP_CHARGE_USDC_STACKS: Binding = MppChargeUsdcStacks()
 MPP_SESSION_XRPL: Binding = MppSessionXrpl()
+MPP_SESSION_XRPL_STOCK: Binding = MppSessionXrplStock()
+MPP_SESSION_HEDERA_STOCK: Binding = MppSessionHederaStock()
+X402_UPTO_XRPL: Binding = X402UptoXrpl()
 
 __all__ = [
     "ACK_PAYMENT_REQUEST",
@@ -204,6 +210,9 @@ __all__ = [
     "MPP_CHARGE_XRPL",
     "MPP_CHARGE_USDC_STACKS",
     "MPP_SESSION_XRPL",
+    "MPP_SESSION_XRPL_STOCK",
+    "MPP_SESSION_HEDERA_STOCK",
+    "X402_UPTO_XRPL",
     "Advertised",
     "Agreed",
     "AgreementPayment",

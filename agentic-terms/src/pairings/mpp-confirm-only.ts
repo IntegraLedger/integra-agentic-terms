@@ -1,7 +1,8 @@
 /**
- * The buyer piece for MPP's `card` and `stripe` pairings: the first challenge, in document order, that offers the
- * pairing. Nothing in the card or Stripe payment carries the hash, and the binding builds nothing for the buyer to sign:
- * the proof of the hash is the agreement payment the offer's agreement URL asks for, whose signed payload carries it.
+ * The buyer piece for MPP's `card` and `stripe` pairings and its stock sessions: the first challenge, in document order,
+ * that offers the pairing. Nothing in the card or Stripe payment, or in a stock session's opening, carries the hash, and
+ * nothing is built for the buyer to sign: the proof of the hash is the agreement payment the offer's agreement URL asks
+ * for, whose signed payload carries it.
  */
 import type { Json, Refusal } from "@integraledger/lcp/core";
 import type { MppChallenge } from "@integraledger/lcp/mpp";

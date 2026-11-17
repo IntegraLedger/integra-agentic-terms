@@ -221,8 +221,13 @@ MEMBER_ROWS = [
 ]
 
 
+# The x402 pairings the protocol package builds nothing for: x402/upto/xrpl, whose payer's own client opens the
+# channel and signs its claim (x402-upto-xrpl.md, rule 1), so its binding's build answers x402/nothing-to-sign.
+NO_BUILD = {"x402/upto/xrpl"}
+
+
 def test_every_x402_build_has_a_row() -> None:
-    assert sorted(ROWS) == sorted(BINDINGS)
+    assert sorted(ROWS) == sorted(p for p in BINDINGS if p not in NO_BUILD)
 
 
 @pytest.mark.parametrize(("pairing", "h"), H_ROWS, ids=[f"{p} {h}" for p, h in H_ROWS])

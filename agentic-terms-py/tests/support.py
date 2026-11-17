@@ -54,10 +54,8 @@ PENDING: frozenset[str] = frozenset(
         "mpp/charge/solana/unsponsored",
         "mpp/charge/tempo/split-memo",
         "mpp/charge/tempo/split-memo/push",
-        "mpp/session/hedera/stock",
         "mpp/session/solana/memo",
         "mpp/session/solana/stock",
-        "mpp/session/xrpl/stock",
         "mpp/subscription/solana",
         "spend-permissions/eip155",
         "ucp/checkout/agent-signed",
@@ -65,7 +63,6 @@ PENDING: frozenset[str] = frozenset(
         "x402/exact/eip155/gateway-batched",
         "x402/exact/lnbtc/payment-hash",
         "x402/exact/stellar/precondition",
-        "x402/upto/xrpl",
     }
 )
 

@@ -43,10 +43,8 @@ const PENDING: ReadonlySet<string> = new Set([
   "mpp/charge/solana/unsponsored",
   "mpp/charge/tempo/split-memo",
   "mpp/charge/tempo/split-memo/push",
-  "mpp/session/hedera/stock",
   "mpp/session/solana/memo",
   "mpp/session/solana/stock",
-  "mpp/session/xrpl/stock",
   "mpp/subscription/solana",
   "spend-permissions/eip155",
   "ucp/checkout/agent-signed",
@@ -54,7 +52,6 @@ const PENDING: ReadonlySet<string> = new Set([
   "x402/exact/eip155/gateway-batched",
   "x402/exact/lnbtc/payment-hash",
   "x402/exact/stellar/precondition",
-  "x402/upto/xrpl",
 ]);
 
 interface Row {
@@ -138,7 +135,9 @@ describe("every vector file's buyer rows, through the gate", () => {
       }
       const binding = bindingOf(row.pairing);
       const inputs = row.input.inputs ?? {};
-      const signer = counting(row.input.account!, async () => {
+      // A row that names no account is one whose pairing's choice reads none: it is given the empty account.
+      const account = row.input.account ?? "";
+      const signer = counting(account, async () => {
         throw new Error("the signer is never called on a plant");
       });
       const served = fromHex(row.input.servesHex!);
@@ -147,7 +146,7 @@ describe("every vector file's buyer rows, through the gate", () => {
       expect("decline" in out ? out.decline.code : "signed").toBe(expected.decline);
       expect(signer.requests.length).toBe(expected.signCalls);
       const fetch = serving(served);
-      const confirmed = await confirm(structuredClone(row.input.doc), binding, row.input.account!, fetch, { ...CONFIRMING, inputs: inputs });
+      const confirmed = await confirm(structuredClone(row.input.doc), binding, account, fetch, { ...CONFIRMING, inputs: inputs });
       expect("decline" in confirmed ? confirmed.decline.code : "confirmed").toBe(expected.decline);
       expect(confirmed).not.toHaveProperty("request");
       expect(fetch.calls).toBe(1);

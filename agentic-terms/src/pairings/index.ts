@@ -25,6 +25,8 @@ import { mppSubscriptionStripe } from "./mpp-subscription-stripe.js";
 import { mppChargeSolana } from "./mpp-charge-solana.js";
 import { mppChargeXrpl } from "./mpp-charge-xrpl.js";
 import { mppSessionXrpl } from "./mpp-session-xrpl.js";
+import { mppSessionXrplStock } from "./mpp-session-xrpl-stock.js";
+import { mppSessionHederaStock } from "./mpp-session-hedera-stock.js";
 import { ucpBookingAp2Mandate } from "./ucp-booking-ap2-mandate.js";
 import { ucpBookingUnsigned } from "./ucp-booking-unsigned.js";
 import { ucpCheckoutAp2Mandate } from "./ucp-checkout-ap2-mandate.js";
@@ -48,6 +50,7 @@ import { x402ExactSolana } from "./x402-exact-solana.js";
 import { x402ExactXrpl } from "./x402-exact-xrpl.js";
 import { x402UptoEip155Permit2 } from "./x402-upto-eip155-permit2.js";
 import { x402UptoSolana } from "./x402-upto-solana.js";
+import { x402UptoXrpl } from "./x402-upto-xrpl.js";
 import { x402ExactAptos } from "./x402-exact-aptos.js";
 import { x402ExactCardano } from "./x402-exact-cardano.js";
 import { x402ExactNear } from "./x402-exact-near.js";
@@ -117,4 +120,7 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["mpp/charge/usdc/solana", mppChargeUsdcSolana],
   ["mpp/charge/usdc/stacks", mppChargeUsdcStacks],
   ["mpp/charge/usdc/gateway", mppChargeUsdcGateway],
+  ["mpp/session/hedera/stock", mppSessionHederaStock],
+  ["mpp/session/xrpl/stock", mppSessionXrplStock],
+  ["x402/upto/xrpl", x402UptoXrpl],
 ]);
