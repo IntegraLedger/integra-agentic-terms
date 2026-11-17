@@ -68,7 +68,6 @@ function fromHexBytes(h: string): Uint8Array {
  */
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
   ["batch", ["x402/batch-settlement/solana"]],
-  ["eip712", ["mpp/session/evm", "mpp/session/tempo"]],
 ]);
 
 /** Whether the gate has no summary yet of the request `pairing`'s build hands the signer: SUMMARY_PENDING lists it. */

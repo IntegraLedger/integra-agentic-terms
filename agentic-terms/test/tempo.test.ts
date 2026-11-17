@@ -119,3 +119,77 @@ describe("mpp/session/tempo's opening: the tempo-call summary", () => {
     expect(addressOf(word(opened!.data, 1))).toBe(transfer!.address);
   });
 });
+
+// mpp/session/tempo's voucher, shown from the opening the gate hands its summary with the signer's account: L1's live v2
+// open, whose receipt's ChannelOpened names the channel id (topic 1) the protocol package's tempoChannelId gives over the
+// opening's call, L1's recorded sender and the expiring nonce hash of L1's signed bytes; and TS5's v1 opening on the
+// earlier escrow, with TS2's validBefore, whose channel id TS5 holds for fixed.payer. The voucher is the one the build
+// hands after an opening, cumulativeAmount 0, under the escrow's voucher domain as TS4 and TS5 name each. A voucher
+// naming another channel, TS3's, has no summary.
+describe("mpp/session/tempo's voucher: the opened channel's facts", () => {
+  const T = vectors<Loose>("mpp-session-tempo.json");
+  const L1 = T.L1;
+  const voucher = (name: string, width: string, escrow: string, channelId: string): SigningRequest =>
+    ({
+      kind: "eip712",
+      typedData: {
+        domain: { name, version: "1", chainId: 42431, verifyingContract: escrow },
+        primaryType: "Voucher",
+        types: { Voucher: [{ name: "channelId", type: "bytes32" }, { name: "cumulativeAmount", type: width }] },
+        message: { channelId, cumulativeAmount: 0n },
+      },
+    }) as unknown as SigningRequest;
+
+  /** The opening's summary, as the gate hands it to the voucher's, without the ATR's bytes. */
+  async function openedBy(request: SigningRequest, signature: string) {
+    const shown = await summaryOf("mpp/session/tempo", request, A);
+    if (shown === undefined) throw new Error("no opening summary");
+    const { atr: _atr, ...summary } = shown;
+    return { request, summary, signature };
+  }
+  /** What the voucher's summary shows: the opening's payee, asset, network and validity, with amount 0. */
+  const shownFor = (o: { summary: Loose }) => ({
+    amount: "0",
+    payees: [{ account: o.summary.payees[0].account, amount: "0" }],
+    asset: o.summary.asset,
+    network: o.summary.network,
+    validity: o.summary.validity,
+    atr: A,
+  });
+
+  it("L1 (v2): the voucher on the receipt's channel shows L1's payee, token and network; TS3's channel shows nothing", async () => {
+    const tx = decodeTempoTx(fromHex(L1.raw));
+    if ("code" in tx) throw new Error(tx.code);
+    const call = tx.calls[0]!;
+    const request = {
+      kind: "tempo-call",
+      chainId: Number(tx.chainId),
+      call: { to: call.to, data: toHex(call.input) },
+      validBefore: Number(tx.validBefore),
+      broadcast: false,
+    } as unknown as SigningRequest;
+    const opened = await openedBy(request, L1.raw);
+    const channel = (L1.receipt.logs as { topics: string[] }[])[1]!.topics[1]!;
+    expect([channel.slice(0, 10), channel.slice(-8)]).toEqual([L1.expectChannelId.prefix, L1.expectChannelId.suffix]);
+    const account = `eip155:42431:${L1.sender}`;
+    const v = voucher("TIP20 Channel Reserve", "uint96", call.to!, channel);
+    expect(await summaryOf("mpp/session/tempo", v, A, undefined, opened, account)).toEqual(shownFor(opened));
+    const other = voucher("TIP20 Channel Reserve", "uint96", call.to!, T.TS3.expectChannelId);
+    expect(await summaryOf("mpp/session/tempo", other, A, undefined, opened, account)).toBeUndefined();
+  });
+
+  it("TS5 (v1): the voucher on TS5's channel for fixed.payer shows the opening's payee, token and network", async () => {
+    const f = T.fixed;
+    const request = {
+      kind: "tempo-call",
+      chainId: f.chainId,
+      call: { to: f.escrowV1, data: T.TS5.expectOpenCalldata },
+      validBefore: 1790000060,
+      broadcast: false,
+    } as unknown as SigningRequest;
+    const opened = await openedBy(request, "0x00");
+    const v = voucher("Tempo Stream Channel", "uint128", f.escrowV1, T.TS5.expectChannelId);
+    expect(await summaryOf("mpp/session/tempo", v, A, undefined, opened, `eip155:42431:${f.payer}`)).toEqual(shownFor(opened));
+    expect(opened.summary.payees[0]!.account).toBe(f.recipient.toLowerCase());
+  });
+});

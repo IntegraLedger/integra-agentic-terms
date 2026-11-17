@@ -12,6 +12,7 @@ import { batchCloudflare, batchEvm, batchSvm } from "@integraledger/lcp/x402-bat
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import { isRefusal, pairingOf, type AtrHash } from "@integraledger/lcp";
 import { check, confirm, finish, transact, type Binding, type Signature, type SigningRequest } from "../src/index.js";
+import { summaryOf } from "../src/summary.js";
 import {
   A as ATR_A,
   ABC,
@@ -27,7 +28,6 @@ import {
   pieceConfirm,
   receiptFor,
   serving,
-  summaryPending,
   vectors,
   type Pairing,
 } from "./support.js";
@@ -403,11 +403,12 @@ type Fixed = { payerKey: Hex; payer: Hex; now: number };
 
 describe("mpp/session/evm", () => {
   const E = vectors<{
-    fixed: Fixed & { request: string; deposit: string; tokenDomain: { name: string; version: string } };
-    ES1: { expectChannelId: string };
+    fixed: Fixed & { request: string; deposit: string; tokenDomain: { name: string; version: string }; recipient: string; usdc: string; escrow: string };
+    ES1: { expectChannelId: string; expectChannelIdH2: { whole: string } };
     ES3: { expectNonce: string };
     ES4: { expectDigest: string; expectSignature: { prefix: string; suffix: string } };
     ES5: { expectVoucherDigest: string };
+    ES6: { expectDigest: string; expectNonce: string };
   }>("mpp-session-evm.json");
   const f = E.fixed;
   const doc = mppDoc(sessionEvm, issued("evm", "session", f.request));
@@ -442,6 +443,71 @@ describe("mpp/session/evm", () => {
       expect(payload["channelId"]).toBe(E.ES1.expectChannelId);
       expect(payload["salt"]).toBe(H);
       expect(sessionEvm.channel.kind(signed as never)).toBe("open");
+      // Each summary as transact shows it: the opening, whose nonce ES3's is, recomputed over the payee, salt and
+      // authorized signer the request names; then ES5's voucher on ES1's channel for the payer.
+      const funding = seen[0]!;
+      const shown = await summaryOf("mpp/session/evm", funding, ABC);
+      const m = (funding as unknown as { typedData: { message: { validBefore: bigint } } }).typedData.message;
+      expect(shown).toEqual({
+        payees: [{ account: E.fixed.recipient, amount: f.deposit }],
+        asset: E.fixed.usdc,
+        network: "eip155:84532",
+        validity: { notBefore: "0", notAfter: m.validBefore.toString(), unit: "seconds" },
+        deposit: f.deposit,
+        grant: { escrow: E.fixed.escrow, authorizedSigner: "0x0000000000000000000000000000000000000000" },
+        atr: ABC,
+      });
+      const { atr: _atr, ...summary } = shown!;
+      const opened = { request: funding, summary, signature: payload["signature"] as string };
+      expect(await summaryOf("mpp/session/evm", voucher, ABC, undefined, opened, account)).toEqual({
+        amount: "0",
+        payees: [{ account: E.fixed.recipient, amount: "0" }],
+        asset: E.fixed.usdc,
+        network: "eip155:84532",
+        validity: summary.validity,
+        atr: ABC,
+      });
+    }));
+  // The Permit2 opening the file's ES6 signs (its digest, under fixed's values with credentialType permit2), then the
+  // voucher the build hands for the payer's signature over it, on ES1's channel: each summary as transact shows it, the
+  // voucher's with the opening and the signer's account.
+  it("ES6 (permit2): the opening shows the witness's payee and the deposit; ES1's voucher shows that payee", () =>
+    at(f.now, async () => {
+      const u = await sessionEvm.build({ challenge: doc[0], from: f.payer, now: f.now, deposit: BigInt(f.deposit), credentialType: "permit2" } as never, H);
+      if (isRefusal(u) || u.funding.kind !== "eip712") throw new Error("no Permit2 funding");
+      const funding = u.funding as unknown as SigningRequest;
+      expect(hashTypedData(typedDataOf(u.funding.typedData))).toBe(E.ES6.expectDigest);
+      const m = u.funding.typedData.message as unknown as { spender: string; deadline: bigint; nonce: bigint };
+      expect(m.nonce.toString()).toBe(E.ES6.expectNonce);
+      const shown = await summaryOf("mpp/session/evm", funding, ABC);
+      expect(shown).toEqual({
+        payees: [{ account: E.fixed.recipient, amount: f.deposit }],
+        asset: E.fixed.usdc,
+        network: "eip155:84532",
+        validity: { notBefore: null, notAfter: m.deadline.toString(), unit: "seconds" },
+        deposit: f.deposit,
+        grant: { escrow: E.fixed.escrow, authorizedSigner: "0x0000000000000000000000000000000000000000" },
+        atr: ABC,
+      });
+      expect(m.spender).toBe(E.fixed.escrow);
+      const { atr: _atr, ...summary } = shown!;
+      const signature = await payer.signTypedData(typedDataOf(u.funding.typedData));
+      const typedData = u.voucher(signature as never);
+      if (isRefusal(typedData)) throw new Error(typedData.code);
+      expect(typedData.message.channelId).toBe(E.ES1.expectChannelId);
+      const opened = { request: funding, summary, signature };
+      const voucherRequest = { kind: "eip712", typedData } as unknown as SigningRequest;
+      expect(await summaryOf("mpp/session/evm", voucherRequest, ABC, undefined, opened, account)).toEqual({
+        amount: "0",
+        payees: [{ account: E.fixed.recipient, amount: "0" }],
+        asset: E.fixed.usdc,
+        network: "eip155:84532",
+        validity: summary.validity,
+        atr: ABC,
+      });
+      // The voucher of the channel with salt H2, ES1's other channel, is not the opened one.
+      const other = { kind: "eip712", typedData: { ...typedData, message: { ...typedData.message, channelId: E.ES1.expectChannelIdH2.whole } } };
+      expect(await summaryOf("mpp/session/evm", other as unknown as SigningRequest, ABC, undefined, opened, account)).toBeUndefined();
     }));
   it("B10: an http link is unreadable, detail mpp/link-not-https; 0 fetches", () =>
     at(f.now, () => b10(mppHttpLink(doc), sessionEvm, account, "mpp", authorization.inputs)));
@@ -580,10 +646,10 @@ describe("mpp/session/tempo", () => {
         const r = confirmed.request;
         if (r?.kind !== "tempo-call") throw new Error("not a tempo call");
         const chosen = JSON.parse(JSON.stringify(confirmed.chosen));
-        // finish shows the voucher it asks for next: until the pairing has a summary, it declines it unshown.
+        // finish asks for the voucher next and shows it: the voucher's channel id, which hashes the payer's address, is
+        // recomputed for the account the opening was confirmed for.
         const first = await finish(ABC, chosen, await openWire(r), sessionTempo);
-        if (summaryPending("mpp/session/tempo")) expect(code(first), row.case).toBe("summary-missing");
-        else expect(first, row.case).toHaveProperty("next");
+        expect(!isDeclined(first) && "next" in first && first.summary !== undefined, row.case).toBe(true);
         let wire: Hex;
         if (row.transactionChainId !== undefined) {
           wire = await openWire({ ...r, chainId: row.transactionChainId });

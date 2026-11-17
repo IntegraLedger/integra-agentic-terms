@@ -12,6 +12,7 @@ import { keyAuthorization } from "./summary/tempo-key-authorization.js";
 import { authCaptureEip3009, authCapturePermit2 } from "./summary/auth-capture.js";
 import { batchEvmOpening } from "./summary/batch-settlement.js";
 import { tempoOpen } from "./summary/tempo-call.js";
+import { evmSessionOpen, sessionVoucher } from "./summary/session-voucher.js";
 import { algorandTransfer } from "./summary/algorand-txn.js";
 import { hederaExecutor, hederaTransfer } from "./summary/hedera-body.js";
 import { solanaSessionOpen, solanaTransfer, solanaUptoOpen } from "./summary/solana-message.js";
@@ -187,7 +188,8 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/lnbtc/payment-hash", { show: bolt11Pay }],
   ["mpp/charge/lightning", { show: bolt11Pay }],
   ["mpp/session/lightning", { show: bolt11Deposit }],
-  ["mpp/session/tempo", { show: tempoOpen }],
+  ["mpp/session/tempo", { show: (r, n, o, a) => tempoOpen(r) ?? sessionVoucher(r, n, o, a) }],
+  ["mpp/session/evm", { show: (r, n, o, a) => evmSessionOpen(r) ?? sessionVoucher(r, n, o, a) }],
   ["x402/exact/eip155/gateway-batched", { show: gatewayBatched }],
   ["mpp/charge/usdc/gateway", { show: gatewayBurnIntent }],
 ]);

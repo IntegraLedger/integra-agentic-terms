@@ -2,7 +2,7 @@
  * `eip712` requests of x402's `auth-capture` scheme on the commerce-payments escrow (profile `buyer-gate.md`, rule 13):
  * the token authorization the payer signs, an EIP-3009 `ReceiveWithAuthorization` to the escrow's EIP-3009 collector or
  * a Permit2 `PermitTransferFrom` to its Permit2 collector, whose nonce is the escrow's payment hash of a `PaymentInfo`
- * with the payer the zero address. The operator, the receiver and both expiries are behind that hash, so the summary
+ * with the payer the zero address. The operator, the receiver, the fee and both expiries are behind that hash, so the summary
  * shows them from the `paymentInfo` and `escrow` the request carries only once `paymentHash` over them, under the typed
  * data's chain id, is the signed nonce; a request without them, or whose nonce they do not hash to, has no summary.
  */
@@ -85,11 +85,26 @@ function noncesTo(nonce: unknown, chain: string, deployment: Deployment, info: P
   return n !== undefined && BigInt(n) === BigInt(hash);
 }
 
-/** The summary of an authorization of `value` of `info.token` on `chain`, from `notBefore` to `notAfter`. */
+/**
+ * The fee's payee: the escrow lets the fee receiver take up to `maxFeeBps` of each capture, its share of the maximum
+ * `value` x `maxFeeBps` / 10,000, rounded down as the escrow rounds each fee. It is `paymentInfo.feeReceiver` where that
+ * is set; where it is the zero address the operator names the fee receiver at capture, so the operator is the account
+ * able to take that share. None where `maxFeeBps` is 0.
+ */
+function feePayee(info: PaymentInfo, value: string): { account: string; amount: string }[] {
+  if (info.maxFeeBps === 0) return [];
+  const account = sameAddress(info.feeReceiver, ZERO_ADDRESS) ? info.operator : info.feeReceiver;
+  return [{ account, amount: ((BigInt(value) * BigInt(info.maxFeeBps)) / 10_000n).toString() }];
+}
+
+/**
+ * The summary of an authorization of `value` of `info.token` on `chain`, from `notBefore` to `notAfter`: the receiver
+ * with the whole maximum, and the fee's payee with its share.
+ */
 function shown(info: PaymentInfo, value: string, chain: string, notBefore: string | null, notAfter: string): Shown {
   return {
     maximum: value,
-    payees: [{ account: info.receiver, amount: value }],
+    payees: [{ account: info.receiver, amount: value }, ...feePayee(info, value)],
     operator: info.operator,
     authorizationExpiry: info.authorizationExpiry.toString(),
     refundExpiry: info.refundExpiry.toString(),
@@ -103,7 +118,7 @@ function shown(info: PaymentInfo, value: string, chain: string, notBefore: strin
  * `x402/auth-capture/eip155/eip3009`: a `ReceiveWithAuthorization` of `m.value` to the EIP-3009 collector of the
  * deployment whose escrow is `escrow`, in the domain of `paymentInfo.token`, whose `m.nonce` is
  * `paymentHash(d.chainId, escrow, paymentInfo)`. The maximum and the one payee's part are `m.value`, which the operator
- * captures for the payee up to; the payee `paymentInfo.receiver`; the operator `paymentInfo.operator`; the
+ * captures for the payee up to; the payees `paymentInfo.receiver` and the fee's (`feePayee`); the operator `paymentInfo.operator`; the
  * authorization's and the refund's expiries `paymentInfo.authorizationExpiry` and `paymentInfo.refundExpiry`; the asset
  * `d.verifyingContract`; the network `eip155:` and `d.chainId`; and the validity `m.validAfter` to `m.validBefore`.
  */

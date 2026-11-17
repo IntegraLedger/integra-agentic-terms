@@ -298,11 +298,23 @@ def _nonces_to(nonce: object, chain: str, deployment: Escrow, info: PaymentInfo)
     return n is not None and int(n) == int(digest, 16)
 
 
+def _fee_payee(info: PaymentInfo, value: str) -> tuple[Payee, ...]:
+    """The fee's payee: the escrow lets the fee receiver take up to max_fee_bps of each capture, its share of the
+    maximum value x max_fee_bps / 10,000, rounded down as the escrow rounds each fee. It is paymentInfo.feeReceiver
+    where that is set; where it is the zero address the operator names the fee receiver at capture, so the operator is
+    the account able to take that share. None where max_fee_bps is 0."""
+    if info.max_fee_bps == 0:
+        return ()
+    account = info.operator if _same(info.fee_receiver, _ZERO_ADDRESS) else info.fee_receiver
+    return (Payee(account=account, amount=str(int(value) * info.max_fee_bps // 10_000)),)
+
+
 def _auth_capture(info: PaymentInfo, value: str, chain: str, not_before: str | None, not_after: str) -> Summary:
-    """The summary of an authorization of value of info.token on chain, from not_before to not_after."""
+    """The summary of an authorization of value of info.token on chain, from not_before to not_after: the receiver
+    with the whole maximum, and the fee's payee with its share."""
     return Summary(
         maximum=value,
-        payees=(Payee(account=info.receiver, amount=value),),
+        payees=(Payee(account=info.receiver, amount=value), *_fee_payee(info, value)),
         operator=info.operator,
         authorization_expiry=str(info.authorization_expiry),
         refund_expiry=str(info.refund_expiry),

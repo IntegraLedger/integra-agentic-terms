@@ -377,7 +377,7 @@ def build(c: Json, h: AtrHash) -> BatchUnsigned | Refusal:
             },
         )
 
-    return BatchUnsigned(requests=requests, complete=complete, config=dict(config))
+    return BatchUnsigned(requests=requests, complete=complete, config=dict(config), auth_salt=auth_salt)
 
 
 def build_within(w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:

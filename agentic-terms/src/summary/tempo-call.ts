@@ -20,26 +20,31 @@ const OPEN_V2 = new RegExp(`^0x(?:edc53b00)${ADDRESS_WORD}${ADDRESS_WORD}${ADDRE
 const OPEN_V1 = new RegExp(`^0x(?:c79ea485)${ADDRESS_WORD}${ADDRESS_WORD}${WORD}${WORD}${ADDRESS_WORD}$`, "i");
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-interface Open {
+export interface Open {
+  /** `v2`, the TIP-20 channel reserve's `open`, or `v1`, the earlier escrow's. */
+  version: "v1" | "v2";
   payee: string;
   operator?: string;
   token: string;
   deposit: bigint;
+  salt: string;
   authorizedSigner: string;
 }
 
 /** The `open` call's members, each address in lowercase hex; undefined for any other data or a deposit out of range. */
-function openOf(data: string): Open | undefined {
+export function openOf(data: string): Open | undefined {
   const v2 = OPEN_V2.exec(data);
   if (v2 !== null) {
     const deposit = BigInt(`0x${v2[4]!}`);
     if (deposit >= 1n << 96n) return undefined;
     const operator = `0x${v2[2]!.toLowerCase()}`;
     return {
+      version: "v2",
       payee: `0x${v2[1]!.toLowerCase()}`,
       ...(operator === ZERO ? {} : { operator }),
       token: `0x${v2[3]!.toLowerCase()}`,
       deposit,
+      salt: `0x${v2[5]!.toLowerCase()}`,
       authorizedSigner: `0x${v2[6]!.toLowerCase()}`,
     };
   }
@@ -47,7 +52,14 @@ function openOf(data: string): Open | undefined {
   if (v1 === null) return undefined;
   const deposit = BigInt(`0x${v1[3]!}`);
   if (deposit >= 1n << 128n) return undefined;
-  return { payee: `0x${v1[1]!.toLowerCase()}`, token: `0x${v1[2]!.toLowerCase()}`, deposit, authorizedSigner: `0x${v1[5]!.toLowerCase()}` };
+  return {
+    version: "v1",
+    payee: `0x${v1[1]!.toLowerCase()}`,
+    token: `0x${v1[2]!.toLowerCase()}`,
+    deposit,
+    salt: `0x${v1[4]!.toLowerCase()}`,
+    authorizedSigner: `0x${v1[5]!.toLowerCase()}`,
+  };
 }
 
 /**

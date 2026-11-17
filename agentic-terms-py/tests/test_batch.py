@@ -482,6 +482,8 @@ def test_eb4_permit2_deposit() -> None:
     assert auth["primaryType"] == "PermitWitnessTransferFrom"
     assert digest(auth) == BV["EB4"]["digest"]
     assert str(auth["message"]["nonce"]) == BV["EB4"]["nonce"] and str(auth["message"]["deadline"]) == BV["EB4"]["deadline"]
+    # The build gives the deposit authorization's salt, the permit's nonce as a uint256, as the protocol package's does.
+    assert unsigned.auth_salt is not None and int(unsigned.auth_salt, 16) == int(BV["EB4"]["nonce"])
 
 
 def test_eb6_kinds_bound_and_plant() -> None:

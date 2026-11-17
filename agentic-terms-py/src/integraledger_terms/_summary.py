@@ -18,6 +18,7 @@ from ._summary_evm import (
     mpp_permit2,
     upto_permit2,
 )
+from ._summary_session import evm_session, tempo_session
 from ._summary_tempo import tempo_open
 from ._types import Inputs, Payee, Summary, Validity
 from ._summary_bolt11 import bolt11_deposit, bolt11_pay
@@ -193,7 +194,8 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/lnbtc/payment-hash": SummaryEntry(show=bolt11_pay),
     "mpp/charge/lightning": SummaryEntry(show=bolt11_pay),
     "mpp/session/lightning": SummaryEntry(show=bolt11_deposit),
-    "mpp/session/tempo": SummaryEntry(show=tempo_open),
+    "mpp/session/tempo": SummaryEntry(show=tempo_open, with_account=tempo_session),
+    "mpp/session/evm": SummaryEntry(show=evm_session, with_account=evm_session),
     "x402/exact/eip155/gateway-batched": SummaryEntry(show=gateway_batched),
     "mpp/charge/usdc/gateway": SummaryEntry(show=gateway_burn_intent),
 }

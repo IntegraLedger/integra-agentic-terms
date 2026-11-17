@@ -27,11 +27,15 @@ _ZERO = "0x" + "0" * 40
 
 
 @dataclass(frozen=True, slots=True)
-class _Open:
+class Open:
+    """The open call's members: version, v2 for the TIP-20 channel reserve's open or v1 for the earlier escrow's."""
+
+    version: str
     payee: str
     operator: str | None
     token: str
     deposit: int
+    salt: str
     authorized_signer: str
 
 
@@ -42,7 +46,7 @@ def _decimal(v: object) -> str | None:
     return v if isinstance(v, str) and _DECIMAL.fullmatch(v) is not None else None
 
 
-def _open_of(data: str) -> _Open | None:
+def open_of(data: str) -> Open | None:
     """The open call's members, each address in lower-case hex; None for any other data or a deposit out of range."""
     v2 = _OPEN_V2.fullmatch(data)
     if v2 is not None:
@@ -50,11 +54,13 @@ def _open_of(data: str) -> _Open | None:
         if deposit >= 1 << 96:
             return None
         operator = "0x" + v2.group(2).lower()
-        return _Open(
+        return Open(
+            version="v2",
             payee="0x" + v2.group(1).lower(),
             operator=None if operator == _ZERO else operator,
             token="0x" + v2.group(3).lower(),
             deposit=deposit,
+            salt="0x" + v2.group(5).lower(),
             authorized_signer="0x" + v2.group(6).lower(),
         )
     v1 = _OPEN_V1.fullmatch(data)
@@ -63,11 +69,13 @@ def _open_of(data: str) -> _Open | None:
     deposit = int(v1.group(3), 16)
     if deposit >= 1 << 128:
         return None
-    return _Open(
+    return Open(
+        version="v1",
         payee="0x" + v1.group(1).lower(),
         operator=None,
         token="0x" + v1.group(2).lower(),
         deposit=deposit,
+        salt="0x" + v1.group(4).lower(),
         authorized_signer="0x" + v1.group(5).lower(),
     )
 
@@ -87,7 +95,7 @@ def tempo_open(request: Mapping[str, Any], network: str | None = None, opened: "
     escrow, data = call.get("to"), call.get("data")
     if not isinstance(escrow, str) or _ADDRESS.fullmatch(escrow) is None or not isinstance(data, str):
         return None
-    found = _open_of(data)
+    found = open_of(data)
     if chain is None or before is None or before == "0" or found is None:
         return None
     deposit = str(found.deposit)

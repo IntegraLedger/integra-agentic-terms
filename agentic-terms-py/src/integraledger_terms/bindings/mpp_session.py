@@ -115,6 +115,21 @@ def evm_channel_id(payer: object, payee: object, token: object, salt: object, au
     )
 
 
+def evm_session_authorization_nonce(from_: object, payee: object, token: object, salt: object, authorized_signer: object) -> str | Refusal:
+    """The nonce an mpp/session/evm opening funded by an EIP-3009 authorization signs: keccak256(abi.encode(address
+    from, address payee, address token, bytes32 salt, address authorizedSigner)), which the escrow recomputes in
+    openWithAuthorization before it receives the deposit. Any value that is not an address, or a salt that is not a
+    32-byte hash, is mpp/input-malformed (the protocol package's evmSessionAuthorizationNonce)."""
+    s = normal_hash(salt)
+    for a in (from_, payee, token, authorized_signer):
+        if not is_address(a):
+            return Refusal("mpp/input-malformed")
+    if s is None:
+        return Refusal("mpp/input-malformed")
+    assert isinstance(from_, str) and isinstance(payee, str) and isinstance(token, str) and isinstance(authorized_signer, str)
+    return to_hex(keccak256(address_word(from_) + address_word(payee) + address_word(token) + bytes.fromhex(s[2:]) + address_word(authorized_signer)))
+
+
 def _payload_of(presented: object) -> Mapping[str, Any] | Refusal:
     if not is_object(presented) or not is_object(presented.get("payload")):
         return Refusal("mpp/credential-malformed")
@@ -439,9 +454,9 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
             or td["version"] == ""
         ):
             return Refusal("mpp/input-malformed")
-        nonce = to_hex(
-            keccak256(address_word(from_) + address_word(recipient) + address_word(currency) + bytes.fromhex(salt[2:]) + address_word(signer))
-        )
+        nonce = evm_session_authorization_nonce(from_, recipient, currency, salt, signer)
+        if isinstance(nonce, Refusal):
+            return nonce
         typed_data = receive_typed_data(
             network=f"eip155:{chain_id}",
             asset=currency,
@@ -493,7 +508,10 @@ def _evm_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
             "payload": {**base, "type": kind, "authorization": authorization, "signature": funded, "voucherSignature": voucher_signature},
         })
 
-    return SessionUnsigned({"kind": "eip712", "typedData": typed_data}, voucher_for(complete_signed), complete_signed)
+    # An authorization funding carries what its nonce commits to besides from and the token, as the protocol package's
+    # does, so a client shows the payee and the authorized signer and holds the nonce to them.
+    opening = {"opening": {"payee": recipient, "salt": salt, "authorizedSigner": signer}} if kind == "authorization" else {}
+    return SessionUnsigned({"kind": "eip712", "typedData": typed_data, **opening}, voucher_for(complete_signed), complete_signed)
 
 
 # ── mpp/session/tempo.

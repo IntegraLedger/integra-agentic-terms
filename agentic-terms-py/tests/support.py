@@ -417,14 +417,7 @@ def approve_all(to_sign: ToSign) -> bool:
 # which assert that decline and that no signer was called, and report the test as an expected failure naming the kind
 # and the pairing, never skipped silently; a pairing of the same kind that is not listed, such as one whose summary is
 # filled, fails instead. A change that fills a kind's summary for a pairing removes the pairing here.
-SUMMARY_PENDING: Mapping[str, frozenset[str]] = {
-    "eip712": frozenset(
-        {
-            "mpp/session/evm",
-            "mpp/session/tempo",
-        }
-    ),
-}
+SUMMARY_PENDING: Mapping[str, frozenset[str]] = {}
 
 _MISSING = re.compile(r"The gate has no summary of the (.+) request of (.+)\.")
 

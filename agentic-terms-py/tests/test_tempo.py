@@ -24,7 +24,7 @@ from breadth import ABC, Pairing, confirms_only, never
 from support import load
 
 from integraledger_terms import MPP_CHARGE_TEMPO_SPLIT_MEMO, MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH, Checked, Declined, check
-from integraledger_terms._summary import summary_of
+from integraledger_terms._summary import Opened, summary_of
 from integraledger_terms._types import Payee, Summary, Validity
 from integraledger_terms.bindings._tempo import TempoTx, decode_tempo_tx
 
@@ -102,3 +102,62 @@ def test_the_tempo_call_summary_of_l1_is_its_receipts() -> None:
         grant={"escrow": opened["address"], "authorizedSigner": address(word(2))},
         atr=A,
     )
+
+
+# mpp/session/tempo's voucher, shown from the opening the gate hands its summary with the signer's account: L1's live v2
+# open, whose receipt's ChannelOpened names the channel id (topic 1) the protocol package's tempoChannelId gives over the
+# opening's call, L1's recorded sender and the expiring nonce hash of L1's signed bytes; and TS5's v1 opening on the
+# earlier escrow, with TS2's validBefore, whose channel id TS5 holds for fixed.payer. The voucher is the one the build
+# hands after an opening, cumulativeAmount 0, under the escrow's voucher domain as TS4 and TS5 name each. A voucher
+# naming another channel, TS3's, has no summary.
+T = load("mpp-session-tempo.json")
+
+
+def _voucher(name: str, width: str, escrow: str, channel: str) -> dict[str, Any]:
+    return {
+        "kind": "eip712",
+        "typedData": {
+            "domain": {"name": name, "version": "1", "chainId": 42431, "verifyingContract": escrow},
+            "primaryType": "Voucher",
+            "types": {"Voucher": [{"name": "channelId", "type": "bytes32"}, {"name": "cumulativeAmount", "type": width}]},
+            "message": {"channelId": channel, "cumulativeAmount": 0},
+        },
+    }
+
+
+def _opened_by(request: dict[str, Any], signature: str) -> Opened:
+    shown = summary_of("mpp/session/tempo", request, A)
+    assert shown is not None
+    return Opened(request=request, summary=shown, signature=signature)
+
+
+def _shown_for(o: Opened) -> Summary:
+    """What the voucher's summary shows: the opening's payee, asset, network and validity, with amount 0."""
+    s = o.summary
+    return Summary(amount="0", payees=(Payee(account=s.payees[0].account, amount="0"),), asset=s.asset, network=s.network, validity=s.validity, atr=A)  # fmt: skip
+
+
+def test_the_voucher_on_l1s_channel_shows_l1s_payee_token_and_network() -> None:
+    l1 = T["L1"]
+    tx = decode_tempo_tx(bytes.fromhex(l1["raw"][2:]))
+    assert isinstance(tx, TempoTx)
+    call = tx.calls[0]
+    assert call.to is not None
+    request = {"kind": "tempo-call", "chainId": tx.chain_id, "call": {"to": call.to, "data": "0x" + call.input.hex()}, "validBefore": tx.valid_before, "broadcast": False}  # fmt: skip
+    opened = _opened_by(request, l1["raw"])
+    channel = l1["receipt"]["logs"][1]["topics"][1]
+    assert (channel[:10], channel[-8:]) == (l1["expectChannelId"]["prefix"], l1["expectChannelId"]["suffix"])
+    account = f"eip155:42431:{l1['sender']}"
+    voucher = _voucher("TIP20 Channel Reserve", "uint96", call.to, channel)
+    assert summary_of("mpp/session/tempo", voucher, A, None, opened, account) == _shown_for(opened)
+    other = _voucher("TIP20 Channel Reserve", "uint96", call.to, T["TS3"]["expectChannelId"])
+    assert summary_of("mpp/session/tempo", other, A, None, opened, account) is None
+
+
+def test_the_voucher_on_ts5s_channel_shows_the_v1_openings_payee_token_and_network() -> None:
+    f = T["fixed"]
+    request = {"kind": "tempo-call", "chainId": f["chainId"], "call": {"to": f["escrowV1"], "data": T["TS5"]["expectOpenCalldata"]}, "validBefore": 1790000060, "broadcast": False}  # fmt: skip
+    opened = _opened_by(request, "0x00")
+    voucher = _voucher("Tempo Stream Channel", "uint128", f["escrowV1"], T["TS5"]["expectChannelId"])
+    assert summary_of("mpp/session/tempo", voucher, A, None, opened, f"eip155:42431:{f['payer']}") == _shown_for(opened)
+    assert opened.summary.payees[0].account == f["recipient"].lower()

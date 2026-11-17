@@ -34,6 +34,8 @@ from integraledger_terms import (
 from support import confirm
 from integraledger_terms import _gate
 from integraledger_terms._keccak import keccak256
+from integraledger_terms._summary import Opened, summary_of
+from integraledger_terms._types import Payee, Summary, Validity
 from integraledger_terms.bindings._mpp import pairings_of
 from integraledger_terms.bindings._rlp import rlp_bytes, rlp_list, rlp_uint_bytes
 from integraledger_terms.bindings._tempo import encode_key_authorization, expiring_nonce_hash, tempo_channel_id
@@ -124,6 +126,22 @@ def test_mpp_session_evm_b6_authorization_es4_funding_then_es5_voucher() -> None
     assert voucher["kind"] == "eip712"
     assert digest(voucher["typedData"]) == EVM["ES5"]["expectVoucherDigest"]
     assert signed["payload"]["channelId"] == EVM["ES1"]["expectChannelId"]
+    # Each summary as transact shows it: the opening, whose nonce ES3's is, recomputed over the payee, salt and
+    # authorized signer the request names; then ES5's voucher on ES1's channel for the payer.
+    funding = answer.seen[0]
+    opening = summary_of("mpp/session/evm", funding, ABC)
+    assert opening == Summary(
+        payees=(Payee(account=EF["recipient"], amount=EF["deposit"]),),
+        asset=EF["usdc"],
+        network="eip155:84532",
+        validity=Validity(not_before="0", not_after=str(funding["typedData"]["message"]["validBefore"]), unit="seconds"),
+        deposit=EF["deposit"],
+        grant={"escrow": EF["escrow"], "authorizedSigner": "0x" + "0" * 40},
+        atr=ABC,
+    )
+    opened = Opened(request=funding, summary=opening, signature=signed["payload"]["signature"])
+    shown = summary_of("mpp/session/evm", voucher, ABC, None, opened, EVM_ACCOUNT)
+    assert shown == Summary(amount="0", payees=(Payee(account=EF["recipient"], amount="0"),), asset=EF["usdc"], network="eip155:84532", validity=opening.validity, atr=ABC)  # fmt: skip
     assert signed["payload"]["salt"] == H
     assert MPP_SESSION_EVM.channel.kind(signed) == "open"  # type: ignore[attr-defined]
 
@@ -149,6 +167,31 @@ def test_mpp_session_evm_b6_permit2_es6_funding_then_es5_voucher() -> None:
     assert signed["payload"]["channelId"] == EVM["ES1"]["expectChannelId"]
     assert signed["payload"]["salt"] == H
     assert MPP_SESSION_EVM.bound(signed) == H
+    # Each summary as transact shows it: the opening, the witness's payee with the deposit; then the voucher, on ES1's
+    # channel for the payer, with the opening and the signer's account. The voucher of the channel with salt H2, ES1's
+    # other channel, is not the opened one.
+    funding, voucher = answer.seen[:2]
+    opening = summary_of("mpp/session/evm", funding, ABC)
+    assert opening == Summary(
+        payees=(Payee(account=EF["recipient"], amount=EF["deposit"]),),
+        asset=EF["usdc"],
+        network="eip155:84532",
+        validity=Validity(not_before=None, not_after=str(funding["typedData"]["message"]["deadline"]), unit="seconds"),
+        deposit=EF["deposit"],
+        grant={"escrow": EF["escrow"], "authorizedSigner": "0x" + "0" * 40},
+        atr=ABC,
+    )
+    opened = Opened(request=funding, summary=opening, signature=signed["payload"]["signature"])
+    assert summary_of("mpp/session/evm", voucher, ABC, None, opened, EVM_ACCOUNT) == Summary(
+        amount="0",
+        payees=(Payee(account=EF["recipient"], amount="0"),),
+        asset=EF["usdc"],
+        network="eip155:84532",
+        validity=opening.validity,
+        atr=ABC,
+    )
+    other = {**voucher, "typedData": {**voucher["typedData"], "message": {**voucher["typedData"]["message"], "channelId": EVM["ES1"]["expectChannelIdH2"]["whole"]}}}  # fmt: skip
+    assert summary_of("mpp/session/evm", other, ABC, None, opened, EVM_ACCOUNT) is None
 
 
 def test_mpp_session_evm_b10_http_link() -> None:

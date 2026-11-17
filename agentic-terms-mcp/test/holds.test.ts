@@ -396,7 +396,10 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
     await c.close();
     expect(at(first, "result.structuredContent.decline.code")).toBe("chosen-unverified");
     expect(at(second, "result.structuredContent.decline.code")).toBe("chosen-unverified");
-    expect(at(next, "result.structuredContent.next.kind")).toBe("eip712");
+    // atr_finish asks for the voucher next and returns its summary: the voucher's channel id, which hashes the payer's
+    // address, is recomputed for the account the opening was confirmed for.
+    expect(at(next, "result.structuredContent.decline")).toBeUndefined();
+    expect(at(next, "result.structuredContent.summary")).toBeDefined();
     expect(at(opened, "result.isError")).toBeUndefined();
     expect(at(opened, "result.structuredContent.mac")).toMatch(/^0x[0-9a-f]{64}$/);
   });
