@@ -65,7 +65,8 @@ async function signsOver(
   if (doc === undefined) expect(PIECE_ONLY.has(p.binding.id), `${p.binding.id} is not in PIECE_ONLY`).toBe(true);
   if (doc !== undefined) {
     const signer = counting(p.account, p.answer);
-    const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {} });
+    const ceilings = p.ceilings === undefined ? {} : { ceilings: p.ceilings };
+    const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {}, ...ceilings });
     if (summaryPending(p.binding.id)) {
       expect([code(whole), signer.requests.length]).toEqual(["summary-missing", 0]);
     } else {
@@ -589,6 +590,9 @@ describe("ap2/checkout-mandate", () => {
     binding: checkoutMandate,
     doc: J,
     account: BUYER,
+    // The request names no expiry, which the mandate's signer sets, so the payment signs no end (profile
+    // buyer-gate.md, rule 8): the caller raises the pairing's ceiling to pay it.
+    ceilings: { "ap2/checkout-mandate": "no-end" },
     answer: async (r) => {
       expect(r).toEqual({
         kind: "ap2-checkout-mandate",
@@ -684,6 +688,9 @@ describe("ucp", () => {
       binding,
       doc,
       account: BUYER,
+      // The checkout names no expiry, so the payment signs no end (profile buyer-gate.md, rule 8): the caller raises
+      // the pairing's ceiling to pay it.
+      ceilings: { [binding.id]: "no-end" },
       answer: async (r) => {
         expect(r).toEqual({ kind: "ucp-checkout", checkout: doc });
         return M;

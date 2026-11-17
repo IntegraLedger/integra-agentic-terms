@@ -8,6 +8,7 @@ FAMILY: dict[str, Piece] = {
     acp_checkout.UNDELEGATED_PIECE.pairing: acp_checkout.UNDELEGATED_PIECE,
     ack_payment_request.PIECE.pairing: ack_payment_request.PIECE,
     ap2_checkout_mandate.PIECE.pairing: ap2_checkout_mandate.PIECE,
+    ap2_checkout_mandate.X402_PIECE.pairing: ap2_checkout_mandate.X402_PIECE,
     card.VISA_TAP_PIECE.pairing: card.VISA_TAP_PIECE,
     card.VI_IMMEDIATE_PIECE.pairing: card.VI_IMMEDIATE_PIECE,
     card.VI_AUTONOMOUS_PIECE.pairing: card.VI_AUTONOMOUS_PIECE,
@@ -16,6 +17,7 @@ FAMILY: dict[str, Piece] = {
     lightning.MPP_SESSION_PIECE.pairing: lightning.MPP_SESSION_PIECE,
     ucp.CHECKOUT_AP2_MANDATE_PIECE.pairing: ucp.CHECKOUT_AP2_MANDATE_PIECE,
     ucp.CHECKOUT_UNSIGNED_PIECE.pairing: ucp.CHECKOUT_UNSIGNED_PIECE,
+    ucp.CHECKOUT_AGENT_SIGNED_PIECE.pairing: ucp.CHECKOUT_AGENT_SIGNED_PIECE,
     ucp.BOOKING_AP2_MANDATE_PIECE.pairing: ucp.BOOKING_AP2_MANDATE_PIECE,
     ucp.BOOKING_UNSIGNED_PIECE.pairing: ucp.BOOKING_UNSIGNED_PIECE,
 }

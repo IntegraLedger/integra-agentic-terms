@@ -6,6 +6,7 @@ import { ackPaymentRequest } from "./ack-payment-request.js";
 import { acpCheckoutDelegated } from "./acp-checkout-delegated.js";
 import { acpCheckoutUndelegated } from "./acp-checkout-undelegated.js";
 import { ap2CheckoutMandate } from "./ap2-checkout-mandate.js";
+import { ap2CheckoutMandateX402 } from "./ap2-checkout-mandate-x402.js";
 import { cardMastercardViAutonomous } from "./card-mastercard-vi-autonomous.js";
 import { cardMastercardViImmediate } from "./card-mastercard-vi-immediate.js";
 import { cardSellerReference } from "./card-seller-reference.js";
@@ -33,6 +34,7 @@ import { mppSessionHederaStock } from "./mpp-session-hedera-stock.js";
 import { ucpBookingAp2Mandate } from "./ucp-booking-ap2-mandate.js";
 import { ucpBookingUnsigned } from "./ucp-booking-unsigned.js";
 import { ucpCheckoutAp2Mandate } from "./ucp-checkout-ap2-mandate.js";
+import { ucpCheckoutAgentSigned } from "./ucp-checkout-agent-signed.js";
 import { ucpCheckoutUnsigned } from "./ucp-checkout-unsigned.js";
 import { x402AuthCaptureEip155Eip3009 } from "./x402-auth-capture-eip155-eip3009.js";
 import { x402AuthCaptureEip155Permit2 } from "./x402-auth-capture-eip155-permit2.js";
@@ -133,4 +135,6 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["mpp/charge/lcp/hedera", mppChargeLcpHedera],
   ["mpp/charge/solana/unsponsored", mppChargeSolanaUnsponsored],
   ["mpp/subscription/solana", mppSubscriptionSolana],
+  ["ap2/checkout-mandate/x402", ap2CheckoutMandateX402],
+  ["ucp/checkout/agent-signed", ucpCheckoutAgentSigned],
 ]);

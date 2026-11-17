@@ -1,10 +1,11 @@
-"""The buyer halves of the UCP pairings ucp/checkout/ap2-mandate, ucp/checkout/unsigned, ucp/booking/ap2-mandate and
-ucp/booking/unsigned: read, build with complete, and bound.
+"""The buyer halves of the UCP pairings ucp/checkout/ap2-mandate, ucp/checkout/unsigned, ucp/checkout/agent-signed,
+ucp/booking/ap2-mandate and ucp/booking/unsigned: read, build with complete, and bound.
 
 The ATR hash and link ride as one links[] entry of type legal_context in the checkout response. The ap2-mandate
 pairings read the hash from the checkout JWT presented beside the buyer's checkout mandate, after AP2's checkout_hash
-check, the mandate presented alone or last in AP2's chain; the unsigned pairings have nothing signed to read. Nothing
-here takes a key, signs or verifies a signature.
+check, the mandate presented alone or last in AP2's chain; the agent-signed pairing reads it from the legal_context
+member of the platform's signed request that completes the checkout; the unsigned pairings have nothing signed to read.
+Nothing here takes a key, signs or verifies a signature.
 """
 
 import re
@@ -12,15 +13,25 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .._core import AtrHash, hash_equals
+from .._core import AtrHash, atr_hash, hash_equals
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
-from ._codec import b64u_encode, canonical_or_none, text_encode
-from ._jose import MIB, js_length, json_bytes
-from ._lcp import agreement_fault, from_lcp_string, is_agreement_url, is_https_link, is_list, is_object, is_other_scheme_link
+from ._codec import b64_encode, b64u_encode, canonical_or_none, text_encode
+from ._jose import MIB, UNPARSED, js_length, json_bytes, parse_json, within_depth
+from ._lcp import (
+    agreement_fault,
+    from_lcp_string,
+    is_agreement_url,
+    is_https_link,
+    is_list,
+    is_object,
+    is_other_scheme_link,
+    normal_hash,
+)
 from .ap2_checkout_mandate import CHECKOUT_VCT, checkout_binding, checkout_hash_of
 
 CHECKOUT_AP2_MANDATE = "ucp/checkout/ap2-mandate"
 CHECKOUT_UNSIGNED = "ucp/checkout/unsigned"
+CHECKOUT_AGENT_SIGNED = "ucp/checkout/agent-signed"
 BOOKING_AP2_MANDATE = "ucp/booking/ap2-mandate"
 BOOKING_UNSIGNED = "ucp/booking/unsigned"
 
@@ -227,3 +238,69 @@ class UcpUnsignedPairing:
         """The payee broadcasts: the business's payment handler executes the payment the checkout or booking completed.
         bound applies no shape gate, so it answers whatever is presented."""
         return "payee"
+
+
+# ucp/checkout/agent-signed: H in a member of the platform's signed request.
+
+REQUEST_MEMBER = "legal_context"
+
+
+def _bound_agent_signed(presented: object) -> AtrHash | Refusal:
+    """The hash in the platform's signed request: the body's one legal_context member, once the Content-Digest value is
+    exactly sha-256=: and the standard base64 of the SHA-256 of the body's UTF-8 bytes and :, the comparison UCP's
+    request verification makes. No signature is verified and no key is read: the business verifies the platform's
+    signature, which covers content-digest, as UCP defines."""
+    if not is_object(presented):
+        return Refusal("ucp/request-malformed")
+    body = presented.get("body")
+    content_digest = presented.get("contentDigest")
+    if not isinstance(body, str) or not isinstance(content_digest, str):
+        return Refusal("ucp/request-malformed")
+    if js_length(body) > MIB or js_length(content_digest) > MAX_LINK:
+        return Refusal("ucp/too-large")
+    data = text_encode(body)
+    if len(data) > MIB:
+        return Refusal("ucp/too-large")
+    digest = bytes.fromhex(atr_hash(data)[2:])
+    if content_digest != f"sha-256=:{b64_encode(digest)}:":
+        return Refusal("ucp/content-digest-mismatch")
+    parsed = parse_json(body)
+    if parsed is UNPARSED or not isinstance(parsed, dict) or not within_depth(parsed):
+        return Refusal("ucp/request-malformed")
+    if REQUEST_MEMBER not in parsed:
+        return Refusal("ucp/no-legal-context")
+    lc = parsed[REQUEST_MEMBER]
+    if not isinstance(lc, dict) or len(lc) != 2 or lc.get("type") != "sha256":
+        return Refusal("ucp/legal-context-malformed")
+    h = normal_hash(lc.get("value"))
+    return h if h is not None else Refusal("ucp/legal-context-malformed")
+
+
+@dataclass(frozen=True, slots=True)
+class UcpAgentSigned:
+    id: str = CHECKOUT_AGENT_SIGNED
+    coverage: Coverage = "none"
+    agreement: AgreementData | None = None
+    agreement_on: str | None = "any"
+
+    def read(self, doc: Json) -> Advertised | Refusal:
+        return _read_shown(doc, False)
+
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> dict[str, Any] | Refusal:
+        """The member for the platform to write into its request body, once the checkout's link carries h."""
+        if not is_object(choice):
+            return Refusal("ucp/checkout-malformed")
+        r = _read(choice.get("checkout"), False)
+        if isinstance(r, Refusal):
+            return r
+        if not hash_equals(r.h, h):
+            return Refusal("ucp/hash-not-in-checkout")
+        return {REQUEST_MEMBER: {"type": "sha256", "value": r.h}}
+
+    def bound(self, presented: Json, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        return _bound_agent_signed(presented)
+
+    def broadcaster(self, presented: Json) -> Broadcaster | Refusal:
+        """The payee broadcasts: the business's payment handler executes the payment the signed request completes. A
+        value that is not a JSON object gets ucp/request-malformed, as bound refuses it."""
+        return "payee" if is_object(presented) else Refusal("ucp/request-malformed")

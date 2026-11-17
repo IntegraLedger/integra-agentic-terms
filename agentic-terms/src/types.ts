@@ -24,7 +24,7 @@ import type { SuiUnsigned } from "@integraledger/lcp/sui";
 import type { KeyAuthorizationUnsigned } from "@integraledger/lcp/tempo";
 import type { TronUnsigned } from "@integraledger/lcp/tron";
 import type { TvmUnsigned } from "@integraledger/lcp/tvm";
-import type { Unsigned as UcpUnsigned } from "@integraledger/lcp/ucp";
+import type { AgentSignedUnsigned, Checkout as UcpCheckout, Unsigned as UcpUnsigned } from "@integraledger/lcp/ucp";
 import type { Unsigned as Ap2Unsigned } from "@integraledger/lcp/ap2";
 import type { Unsigned as AcpUnsigned } from "@integraledger/lcp/acp";
 import type { HttpRequest, PaymentRequired, PaymentRequirements, ToolCall, X402Unsigned } from "@integraledger/lcp/x402";
@@ -54,8 +54,10 @@ export type Fetch = (
  * What a signer is handed: the `request` of the pairing's `build` result, exactly as built, one kind per signing
  * scheme. The protocol-group results that carry no kind of their own are tagged here: the TAP field (`tap-field`), VI's
  * checkout mandate (`vi-checkout-mandate`), AP2's checkout-mandate content (`ap2-checkout-mandate`), the UCP checkout
- * for the buyer's mandate issuer (`ucp-checkout`) and ACP's allowance (`acp-allowance`). `batch` is several requests,
- * signed in order, as are the requests of an in-channel payment. `ed25519-raw` is raw Ed25519 over the bytes given.
+ * for the buyer's mandate issuer (`ucp-checkout`), the `legal_context` member a UCP platform writes into the request
+ * that completes the checkout, beside that checkout (`ucp-legal-context`), and ACP's allowance (`acp-allowance`).
+ * `batch` is several requests, signed in order, as are the requests of an in-channel payment. `ed25519-raw` is raw
+ * Ed25519 over the bytes given.
  */
 export type SigningRequest =
   | Extract<X402Unsigned, unknown>["request"]
@@ -85,6 +87,7 @@ export type SigningRequest =
   | ({ kind: "vi-checkout-mandate" } & ViUnsigned)
   | { kind: "ap2-checkout-mandate"; content: Ap2Unsigned["content"] }
   | { kind: "ucp-checkout"; checkout: UcpUnsigned["checkout"] }
+  | { kind: "ucp-legal-context"; checkout: UcpCheckout; legal_context: AgentSignedUnsigned["legal_context"] }
   | { kind: "acp-allowance"; allowance: AcpUnsigned["allowance"] }
   | { kind: "batch"; requests: readonly (BatchRequest | WithinSigningRequest)[] }
   | Extract<BatchRequest, { kind: "ed25519-raw" }>;
@@ -366,6 +369,11 @@ export interface BuyerPiece {
   sent?(signed: Presented): Presented;
   /** True when the signer, handed this first request, moves the payment itself before the gate reads what was signed. */
   moves?(request: SigningRequest): boolean;
+  /**
+   * True when the signer's answer shows that its side moved the payment itself, where the request cannot tell: AP2's
+   * push funding, whose answer carries the receipt of the funds it sent.
+   */
+  movedBy?(signature: Signature): boolean;
 }
 
 export type { AtrHash };

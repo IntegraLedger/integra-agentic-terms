@@ -195,6 +195,18 @@ def _moves(piece: Piece, unsigned: Any) -> bool:
     return isinstance(request, Mapping) and moves(request) is True
 
 
+def _moved_by(piece: Piece, signature: Signature) -> bool:
+    """Whether the signer's answer shows that its side moved the payment itself, where the piece reads that from the
+    answer."""
+    moved_by = getattr(piece, "moved_by", None)
+    if moved_by is None:
+        return False
+    try:
+        return moved_by(signature) is True
+    except Exception:
+        return False
+
+
 def json_form(value: Any) -> Any:
     """A signing request as the signer receives it: every byte string as 0x and lowercase hex, the rest as given. It
     walks without recursion, each mapping and list formed once however often it is reached, and keeps each one it has
@@ -405,7 +417,7 @@ def _finish(atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Bin
     unsigned = _build(piece, binding, chosen, h, atr_bytes)
     if isinstance(unsigned, Refusal):
         return Declined("offer-unreadable", unsigned.code)
-    moves = signature is not None and _moves(piece, unsigned)
+    moves = signature is not None and (_moves(piece, unsigned) or _moved_by(piece, signature))
 
     def keep(code: DeclineCode, detail: str, signed: Any) -> Declined:
         return Declined(code, detail, Moved(signed, atr_bytes, h) if moves else None)

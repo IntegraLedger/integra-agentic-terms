@@ -169,10 +169,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `cardano-transaction`, whose transaction the wallet builds from `accepted`, an `exact` option: `x402/exact/cardano` | `amount`: `accepted.amount` | `accepted.payTo`, with `accepted.amount` | `accepted.asset` | `accepted.network` | none to none, slots: the request names no TTL, which the wallet sets | none |
     | `sui-transaction` whose `expiration` is `"epoch-bounded"`, whose transaction the wallet builds from `accepted`, an `exact` option: `x402/exact/sui` | `amount`: `accepted.amount` | `accepted.payTo`, with `accepted.amount` | `accepted.asset` | `accepted.network` | none to none, epochs: the request names no epoch, which the wallet sets | none |
     | `ack/payment-request` | | | | | | |
-    | `acp/checkout/delegated` | | | | | | |
     | `acp/checkout/undelegated` | | | | | | |
-    | `ap2/checkout-mandate` | | | | | | |
-    | `ap2/checkout-mandate/x402` | | | | | | |
     | `card/mastercard-agent-pay` | | | | | | |
     | `card/mastercard-vi/autonomous` | | | | | | |
     | `card/mastercard-vi/immediate` | | | | | | |
@@ -195,10 +192,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `mpp/session/xrpl/stock` | | | | | | |
     | `mpp/subscription/solana` | | | | | | |
     | `mpp/subscription/stripe` | | | | | | |
-    | `ucp/booking/ap2-mandate` | | | | | | |
     | `ucp/booking/unsigned` | | | | | | |
-    | `ucp/checkout/agent-signed` | | | | | | |
-    | `ucp/checkout/ap2-mandate` | | | | | | |
     | `ucp/checkout/unsigned` | | | | | | |
     | `x402/auth-capture/eip155/eip3009` | | | | | | |
     | `x402/auth-capture/eip155/permit2` | | | | | | |
@@ -220,6 +214,10 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | `hedera-body`, a crypto transfer: `x402/exact/hedera`, `mpp/charge/lcp/hedera` | `amount`: the sum of the credits | each row the transfer credits, with its credit | `0.0.0` for HBAR, or the token's id; one asset | the signer's account's network: the request names none | the transaction id's valid start to that plus `transactionValidDuration`, `seconds` | none. The body holds only `transactionID`, `nodeAccountID`, `transactionFee`, `transactionValidDuration`, `memo` and `cryptoTransfer` |
     | `hedera-executor`: `x402/exact/hedera/transfer-executor` | `amount`: `amount` | `payTo`, with `amount` | `asset` | `network` | none to `validBefore`, `seconds` | `grant`: `{executors, asset, payTo, amount}`, the authorization the executor tooling is asked for |
     | `stellar-precondition`, a Soroban authorization's `HashIDPreimage` (`ENVELOPE_TYPE_SOROBAN_AUTHORIZATION`, or its form with the address) whose invocation is one `transfer(from, to, amount)` on a contract with no sub-invocation, `from` and `to` accounts, and the 40-byte `payload` of the signed-payload precondition: `x402/exact/stellar/precondition` | `amount`: the `transfer`'s `amount`, an `i128` | `to`, as its `G…` strkey, with the amount | the contract, as its `C…` strkey | `stellar:pubnet` or `stellar:testnet`: the network whose passphrase's SHA-256 is the preimage's `networkID` | none to the preimage's `signatureExpirationLedger`, `ledger`, the window counted from `currentLedger`, the ledger the caller gave the build | none. The payload is H, then the preimage's `nonce`: a payload whose last 8 bytes are not that nonce, a negative amount, a form with the address whose address is not `from`, or any other invocation gives no summary |
+    | `ap2-checkout-mandate`, AP2's closed Checkout Mandate's claims `c`, which commit to `c.checkout_jwt` by `c.checkout_hash`, read only where that is the JWT's hash (the base64url of its SHA-256), the JWT's payload being `p`: `ap2/checkout-mandate`, `ap2/checkout-mandate/x402` | `amount`: the one entry of `p.totals` whose `type` is `total`, its `amount`, in the currency's minor units | `p.merchant.id`, with the amount, where the checkout names a merchant; none where it names none | `p.currency` | the signer's account's network: the request names none | none to none, seconds: the request names no expiry, which the mandate's signer sets | none |
+    | `ucp-checkout`, the checkout `k` the mandate issuer signs over: `ucp/checkout/ap2-mandate`, `ucp/booking/ap2-mandate` | `amount`: the one entry of `k.totals` whose `type` is `total`, its `amount`, in the currency's minor units | none: the request names no payee's account | `k.currency` | the signer's account's network: the request names none | none to none, seconds: the request names no expiry | none |
+    | `ucp-legal-context`, the member `{type, value}` the platform writes into the request that completes the checkout `k`, beside `k`: `ucp/checkout/agent-signed` | as the `ucp-checkout` row | as that row | as that row | as that row | as that row | none. `type` is `sha256` and `value` is H, `0x` and 64 lowercase hex digits |
+    | `acp-allowance`, ACP's allowance `a`: `acp/checkout/delegated` | `maximum`: `a.max_amount`, in the currency's minor units | `a.merchant_id`, with `a.max_amount` | `a.currency` | the signer's account's network: the request names none | none to `a.expires_at`, an RFC 3339 `date-time` (section 5.6), in Unix seconds, a fraction of a second rounded up | none |
 
 14. **The Gateway burn intent's inputs.** `mpp/charge/usdc/gateway`'s floor inputs are the three lcp's build takes, by the names rule 9 gives: `sourceNetwork`, `burnIntentExpirationHeight` and `withdrawalDelay`. The build signs `maxBlockHeight` as `burnIntentExpirationHeight` plus ceil(`withdrawalDelay` × 100 / 604,800), refuses an input absent or malformed, or a sum above 2^256 − 1, `mpp/input-malformed`, and its `complete` refuses a credential whose `sourceNetwork` is another (`mpp/input-malformed`) and a signed burn intent whose `maxBlockHeight` is not the one built (`mpp/max-block-height-changed`) (lcp profile `mpp-charge.md`, rule 8). So the buyer's own Gateway client does not choose `maxBlockHeight`, and the burn intent the gate shows ends at the served floor plus the margin, in the source network's blocks.
 

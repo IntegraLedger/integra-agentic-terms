@@ -10,7 +10,8 @@ import type { BuyerPiece, Chosen, Inputs, Presented, Read, Signature, SigningReq
 import { isObject, isRefusal, refuse } from "./common.js";
 import { confirmOnlyPiece, objectChoice, unnamedBuyer } from "./protocol-groups.js";
 
-function chooseCheckout(read: Read, account: string, _inputs: Inputs, _now: number, _ref: string) {
+/** The offer `read` gives, `{checkout}`, for a named buyer. */
+export function chooseCheckout(read: Read, account: string, _inputs: Inputs, _now: number, _ref: string) {
   const unnamed = unnamedBuyer(account, "ucp");
   if (unnamed !== undefined) return unnamed;
   if (!isObject(read.offer)) return refuse("ucp/no-payable-option");

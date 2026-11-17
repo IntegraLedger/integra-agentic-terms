@@ -54,7 +54,7 @@ from .bindings.mpp_session import MppSessionEvm, MppSessionTempo, MppSubscriptio
 from .bindings._channel import BatchUnsigned, ChannelRef
 from .bindings.ack_payment_request import AckPaymentRequest
 from .bindings.acp_checkout import AcpCheckoutDelegated, AcpCheckoutUndelegated
-from .bindings.ap2_checkout_mandate import Ap2CheckoutMandate
+from .bindings.ap2_checkout_mandate import Ap2CheckoutMandate, Ap2CheckoutMandateX402
 from .bindings.card import CardMastercardViAutonomous, CardMastercardViImmediate, CardSellerReference, CardVisaTap
 from .bindings.lightning import (
     MPP_CHARGE,
@@ -66,6 +66,7 @@ from .bindings.ucp import (
     BOOKING_UNSIGNED,
     CHECKOUT_AP2_MANDATE,
     CHECKOUT_UNSIGNED,
+    UcpAgentSigned,
     UcpAp2Mandate,
     UcpUnsignedPairing,
 )
@@ -119,8 +120,10 @@ ACP_CHECKOUT_DELEGATED: Binding = AcpCheckoutDelegated()
 ACP_CHECKOUT_UNDELEGATED: Binding = AcpCheckoutUndelegated()
 CARD_VISA_TAP: Binding = CardVisaTap()
 AP2_CHECKOUT_MANDATE: Binding = Ap2CheckoutMandate()
+AP2_CHECKOUT_MANDATE_X402: Binding = Ap2CheckoutMandateX402()
 UCP_CHECKOUT_AP2_MANDATE: Binding = UcpAp2Mandate(CHECKOUT_AP2_MANDATE)
 UCP_CHECKOUT_UNSIGNED: Binding = UcpUnsignedPairing(CHECKOUT_UNSIGNED)
+UCP_CHECKOUT_AGENT_SIGNED: Binding = UcpAgentSigned()
 UCP_BOOKING_AP2_MANDATE: Binding = UcpAp2Mandate(BOOKING_AP2_MANDATE)
 UCP_BOOKING_UNSIGNED: Binding = UcpUnsignedPairing(BOOKING_UNSIGNED)
 MPP_CHARGE_LIGHTNING: Binding = MppLightning(MPP_CHARGE)
@@ -173,6 +176,7 @@ __all__ = [
     "ACP_CHECKOUT_DELEGATED",
     "ACP_CHECKOUT_UNDELEGATED",
     "AP2_CHECKOUT_MANDATE",
+    "AP2_CHECKOUT_MANDATE_X402",
     "CARD_MASTERCARD_VI_AUTONOMOUS",
     "CARD_MASTERCARD_VI_IMMEDIATE",
     "CARD_SELLER_REFERENCE",
@@ -201,6 +205,7 @@ __all__ = [
     "UCP_BOOKING_UNSIGNED",
     "UCP_CHECKOUT_AP2_MANDATE",
     "UCP_CHECKOUT_UNSIGNED",
+    "UCP_CHECKOUT_AGENT_SIGNED",
     "X402_AUTH_CAPTURE_EIP155_EIP3009",
     "X402_AUTH_CAPTURE_EIP155_PERMIT2",
     "X402_BATCH_SETTLEMENT_CLOUDFLARE",

@@ -472,7 +472,7 @@ async function finishAs(
   const h = await hash(bytes);
   const unsigned = await buildWith(piece, b, chosen, h, bytes, act);
   if (isRefusal(unsigned)) return declined("offer-unreadable", unsigned.code);
-  const moves = signature !== null && movesWith(piece, unsigned);
+  const moves = signature !== null && (movesWith(piece, unsigned) || movedBy(piece, signature));
   const keep = (d: Declined, signed: unknown): Declined => (moves ? { ...d, moved: { signed, bytes, h } } : d);
 
   let signed: Presented | Next | Refusal;
@@ -505,6 +505,15 @@ function movesWith(piece: BuyerPiece, unsigned: unknown): boolean {
   if (piece.moves === undefined) return false;
   const request = piece.request(unsigned);
   return request !== null && !isRefusal(request) && piece.moves(request);
+}
+
+/** Whether the signer's answer shows that its side moved the payment itself, where the piece reads that from the answer. */
+function movedBy(piece: BuyerPiece, signature: Signature): boolean {
+  try {
+    return piece.movedBy?.(signature) === true;
+  } catch {
+    return false;
+  }
 }
 
 /** The binding's `bound`, given the act and the hash where the gate gives them, with a throw read as a refusal. */

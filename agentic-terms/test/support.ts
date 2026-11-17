@@ -67,8 +67,6 @@ function fromHexBytes(h: string): Uint8Array {
  * full.
  */
 export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
-  ["acp-allowance", ["acp/checkout/delegated"]],
-  ["ap2-checkout-mandate", ["ap2/checkout-mandate"]],
   ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
   ["cardano-transaction", ["x402/exact/cardano/lock"]],
   [
@@ -80,7 +78,6 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
   ["tempo-call", ["mpp/session/tempo"]],
   ["ton-w5", ["x402/exact/tvm"]],
   ["tron-txid", ["x402/exact/tron/lcp-trc20-memo"]],
-  ["ucp-checkout", ["ucp/booking/ap2-mandate", "ucp/checkout/ap2-mandate"]],
 ]);
 
 /** Whether the gate has no summary yet of the request `pairing`'s build hands the signer: SUMMARY_PENDING lists it. */
@@ -332,6 +329,7 @@ export const PIECE_ONLY: ReadonlyMap<string, string> = new Map([
   ["x402/exact/polkadot/lcp-assets-remark", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
   ["x402/exact/sui", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
   ["x402/exact/cardano", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
+  ["ucp/checkout/agent-signed", "the bound rows' signed request bodies carry H(abc); none is published for another H"],
 ]);
 
 /**

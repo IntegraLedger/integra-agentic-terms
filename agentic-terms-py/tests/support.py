@@ -64,7 +64,6 @@ O: dict[str, Any] = D["accepts"][0]
 # binding and piece removes it here.
 PENDING: frozenset[str] = frozenset(
     {
-        "ap2/checkout-mandate/x402",
         "card/mastercard-agent-pay",
         "card/visa-vic",
         "mpp/charge/tempo/split-memo",
@@ -72,7 +71,6 @@ PENDING: frozenset[str] = frozenset(
         "mpp/session/solana/memo",
         "mpp/session/solana/stock",
         "spend-permissions/eip155",
-        "ucp/checkout/agent-signed",
         "x402/exact/eip155/gateway-batched",
         "x402/exact/lnbtc/payment-hash",
     }
@@ -428,8 +426,6 @@ def approve_all(to_sign: ToSign) -> bool:
 # and the pairing, never skipped silently; a pairing of the same kind that is not listed, such as one whose summary is
 # filled, fails instead. A change that fills a kind's summary for a pairing removes the pairing here.
 SUMMARY_PENDING: Mapping[str, frozenset[str]] = {
-    "acp-allowance": frozenset({"acp/checkout/delegated"}),
-    "ap2-checkout-mandate": frozenset({"ap2/checkout-mandate"}),
     "eip712": frozenset(
         {
             "mpp/session/evm",
@@ -440,7 +436,6 @@ SUMMARY_PENDING: Mapping[str, frozenset[str]] = {
             "x402/upto/eip155/permit2",
         }
     ),
-    "ucp-checkout": frozenset({"ucp/booking/ap2-mandate", "ucp/checkout/ap2-mandate"}),
     "xrpl-session-open": frozenset({"mpp/session/xrpl"}),
 }
 

@@ -20,6 +20,7 @@ import { starknetTransfer } from "./summary/starknet-snip12.js";
 import { substrateTransfer } from "./summary/substrate-call.js";
 import { aptosTransaction, cardanoTransaction, suiTransaction } from "./summary/x402-wallet.js";
 import { stellarPrecondition, stellarStart } from "./summary/stellar-precondition.js";
+import { acpAllowance, ap2CheckoutMandate, ucpCheckout, ucpLegalContext } from "./summary/checkout.js";
 
 /** A summary without the ATR's bytes, which the gate adds. */
 export type Shown = Omit<Summary, "atr">;
@@ -145,6 +146,12 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["x402/exact/cardano", { show: cardanoTransaction }],
   ["x402/exact/sui", { show: suiTransaction }],
   ["x402/exact/stellar/precondition", { show: stellarPrecondition, start: stellarStart }],
+  ["ap2/checkout-mandate", { show: ap2CheckoutMandate }],
+  ["ap2/checkout-mandate/x402", { show: ap2CheckoutMandate }],
+  ["ucp/checkout/ap2-mandate", { show: ucpCheckout }],
+  ["ucp/booking/ap2-mandate", { show: ucpCheckout }],
+  ["ucp/checkout/agent-signed", { show: ucpLegalContext }],
+  ["acp/checkout/delegated", { show: acpAllowance }],
 ]);
 
 /**

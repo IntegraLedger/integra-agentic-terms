@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ._types import Inputs, Payee, Summary, Validity
+from ._summary_checkout import acp_allowance, ap2_checkout_mandate, ucp_checkout, ucp_legal_context
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
@@ -99,6 +100,12 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/eip155/eip3009": SummaryEntry(show=_transfer_with_authorization),
     "x402/exact/eip155/erc7710": SummaryEntry(show=_erc7710),
     "x402/exact/eip155/erc7710-salt": SummaryEntry(show=_erc7710),
+    "ap2/checkout-mandate": SummaryEntry(show=ap2_checkout_mandate),
+    "ap2/checkout-mandate/x402": SummaryEntry(show=ap2_checkout_mandate),
+    "ucp/checkout/ap2-mandate": SummaryEntry(show=ucp_checkout),
+    "ucp/booking/ap2-mandate": SummaryEntry(show=ucp_checkout),
+    "ucp/checkout/agent-signed": SummaryEntry(show=ucp_legal_context),
+    "acp/checkout/delegated": SummaryEntry(show=acp_allowance),
 }
 
 

@@ -1,0 +1,145 @@
+{
+  "about": "The approval summary (profile buyer-gate.md, rule 13) of the checkout protocols' requests, ap2-checkout-mandate, ucp-checkout, ucp-legal-context and acp-allowance, which the TypeScript and the Python tests both run. Each row names a pairing and a file of the protocol package's vectors; its request is the request the pairing's buyer piece hands the signer, each {\"$ref\": pointer} in it standing for the value at that JSON Pointer (RFC 6901) in the file; network is the signer's account's, the network of the files' buyer rows' account, since none of these requests names one; expect is the summary of the request without the ATR's bytes. Every value in expect is read from the rows `from` names: ap2-checkout-mandate.json V6's checkout JWT, AP2's published checkout (google-agentic-commerce/AP2 e1ea56db, docs/ap2/checkout_mandate.md, as the file's about states), its merchant.id, the amount of its totals' total and its currency; the same file's fixed.P0, the checkout the file's J signs, which names no merchant; ucp.json V2's checkout and ucp-checkout-agent-signed.json B2's, neither naming a payee; and acp-checkout.json V4's allowance, ACP's own example (agentic-commerce-protocol 7fdd78df, spec/2026-04-17/json-schema/schema.delegate_payment.json), whose expires_at 2026-09-21T14:23:20Z is 1790000600 Unix seconds by GNU coreutils 9.4 (date -u -d 2026-09-21T14:23:20Z +%s). Nothing here is terms' output.",
+  "rows": [
+    {
+      "pairing": "ap2/checkout-mandate",
+      "file": "ap2-checkout-mandate.json",
+      "from": "V6.checkoutJwt's payload: merchant.id, totals' total amount, currency",
+      "request": {
+        "kind": "ap2-checkout-mandate",
+        "content": {
+          "vct": "mandate.checkout.1",
+          "checkout_jwt": {
+            "$ref": "/V6/checkoutJwt"
+          },
+          "checkout_hash": {
+            "$ref": "/V6/expectCheckoutHash"
+          }
+        }
+      },
+      "network": "eip155:84532",
+      "expect": {
+        "amount": "19900",
+        "payees": [
+          {
+            "account": "merchant_1",
+            "amount": "19900"
+          }
+        ],
+        "asset": "USD",
+        "network": "eip155:84532",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "ap2/checkout-mandate/x402",
+      "file": "ap2-checkout-mandate.json",
+      "from": "built.J, whose payload is fixed.P0 with its legalContext: totals' total amount, currency, and no merchant",
+      "request": {
+        "kind": "ap2-checkout-mandate",
+        "content": {
+          "vct": "mandate.checkout.1",
+          "checkout_jwt": {
+            "$ref": "/built/J"
+          },
+          "checkout_hash": {
+            "$ref": "/V4/expectCheckoutHash"
+          }
+        }
+      },
+      "network": "eip155:84532",
+      "expect": {
+        "amount": "19900",
+        "payees": [],
+        "asset": "USD",
+        "network": "eip155:84532",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "ucp/checkout/ap2-mandate",
+      "file": "ucp.json",
+      "from": "V2.expectCheckout: totals' total amount and currency; it names no payee",
+      "request": {
+        "kind": "ucp-checkout",
+        "checkout": {
+          "$ref": "/V2/expectCheckout"
+        }
+      },
+      "network": "eip155:84532",
+      "expect": {
+        "amount": "19900",
+        "payees": [],
+        "asset": "USD",
+        "network": "eip155:84532",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "ucp/checkout/agent-signed",
+      "file": "ucp-checkout-agent-signed.json",
+      "from": "buyer B2's checkout: totals' total amount and currency; it names no payee; build[0]'s member",
+      "request": {
+        "kind": "ucp-legal-context",
+        "checkout": {
+          "$ref": "/buyer/rows/0/input/doc"
+        },
+        "legal_context": {
+          "$ref": "/build/0/expect/legal_context"
+        }
+      },
+      "network": "eip155:84532",
+      "expect": {
+        "amount": "19900",
+        "payees": [],
+        "asset": "USD",
+        "network": "eip155:84532",
+        "validity": {
+          "notBefore": null,
+          "notAfter": null,
+          "unit": "seconds"
+        }
+      }
+    },
+    {
+      "pairing": "acp/checkout/delegated",
+      "file": "acp-checkout.json",
+      "from": "V4.expectAllowance: max_amount, merchant_id, currency and expires_at",
+      "request": {
+        "kind": "acp-allowance",
+        "allowance": {
+          "$ref": "/V4/expectAllowance"
+        }
+      },
+      "network": "eip155:84532",
+      "expect": {
+        "maximum": "19900",
+        "payees": [
+          {
+            "account": "acct_123",
+            "amount": "19900"
+          }
+        ],
+        "asset": "usd",
+        "network": "eip155:84532",
+        "validity": {
+          "notBefore": null,
+          "notAfter": "1790000600",
+          "unit": "seconds"
+        }
+      }
+    }
+  ]
+}

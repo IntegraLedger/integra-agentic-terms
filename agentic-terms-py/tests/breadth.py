@@ -218,6 +218,7 @@ PIECE_ONLY: Mapping[str, str] = {
     "mpp/session/xrpl": _NO_RUN,
     "mpp/subscription/stripe": _NO_RUN,
     "mpp/subscription/tempo": _NO_RUN,
+    "ucp/checkout/agent-signed": "the bound rows' signed request bodies carry H(abc); none is published for another H",
     "x402/batch-settlement/eip155": _NO_RUN,
     "x402/batch-settlement/solana": _NO_RUN,
     "x402/exact/algorand": _NO_RUN,

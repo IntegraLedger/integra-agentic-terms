@@ -89,7 +89,8 @@ def signs_over(p: Pairing, atr: bytes, h: str) -> dict[str, Any]:
     """B6 over the given ATR and its hash: confirm gives the request, finish with the test signer's answer returns a
     payment bound to h, transact signs once, and check confirms the payment against the ATR and declines it against
     other bytes."""
-    confirmed = run(lambda c: confirm(p.doc, offered(p.binding), p.account, c, p.inputs), serving(atr))
+    ceilings = {} if p.ceilings is None else {"ceilings": p.ceilings}
+    confirmed = run(lambda c: confirm(p.doc, offered(p.binding), p.account, c, p.inputs, **ceilings), serving(atr))
     assert isinstance(confirmed, Confirmed), confirmed
     assert confirmed.h == h and confirmed.atr_bytes == atr
     assert confirmed.request is not None
@@ -99,7 +100,7 @@ def signs_over(p: Pairing, atr: bytes, h: str) -> dict[str, Any]:
     assert isinstance(done, Finished), done
     assert done.h == h
     signer = Recording(p.account, p.answer)
-    whole = run(lambda c: transact(p.doc, offered(p.binding), signer, c, inputs=p.inputs), serving(atr))
+    whole = run(lambda c: transact(p.doc, offered(p.binding), signer, c, inputs=p.inputs, **ceilings), serving(atr))
     assert isinstance(whole, Transacted), whole
     assert len(signer.requests) == 1
     assert whole.signed == done.signed and whole.atr_bytes == atr
@@ -857,7 +858,9 @@ def ap2_answer(request: Any) -> str:
     return AP2_M
 
 
-AP2_PAIRING = Pairing(AP2_CHECKOUT_MANDATE, AP2_J, BUYER, ap2_answer)
+# The request names no expiry, which the mandate's signer sets, so the payment signs no end (profile buyer-gate.md, rule
+# 8): the caller raises the pairing's ceiling to pay it.
+AP2_PAIRING = Pairing(AP2_CHECKOUT_MANDATE, AP2_J, BUYER, ap2_answer, ceilings={"ap2/checkout-mandate": "no-end"})
 
 
 def _b64u(text: str) -> str:
@@ -1061,7 +1064,9 @@ def _ucp_mandate_pairing(binding: Binding, payload: dict[str, Any]) -> tuple[Pai
         assert request == {"kind": "ucp-checkout", "checkout": doc}
         return m
 
-    return Pairing(binding, doc, BUYER, answer), j, m
+    # The checkout names no expiry, so the payment signs no end (profile buyer-gate.md, rule 8): the caller raises the
+    # pairing's ceiling to pay it.
+    return Pairing(binding, doc, BUYER, answer, ceilings={binding.id: "no-end"}), j, m
 
 @pytest.mark.parametrize(("binding", "payload"), UCP_MANDATES, ids=lambda v: getattr(v, "id", ""))
 def test_ucp_ap2_mandate_b6_the_checkout_goes_unchanged_and_the_mandate_completes(
