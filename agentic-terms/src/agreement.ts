@@ -456,16 +456,22 @@ async function paying(
  * profile `legal-context-return.md`): each option of `accepts`, in document order, with the charges it names as those
  * it serves (`servesOf`) and the read of the response holding only that option by the first x402 pairing, in the
  * protocol package's order, that reads it. Undefined unless `accepts` is a list of 1 to 32 options each of which names
- * the charges it serves and is read by such a pairing.
+ * the charges it serves and is read by such a pairing. A response none of whose options lacks the member, and one of
+ * whose options `servesOf` refuses, is declined `offer-unreadable` with that refusal's code: it offers no charge, and
+ * an agreement option that names its charges in no admitted form is never read as a charge.
  */
 export function agreementOptions(
   required: unknown,
-): { option: PaymentRequirements; read: Read; serves: readonly string[] }[] | undefined {
+): { option: PaymentRequirements; read: Read; serves: readonly string[] }[] | Declined | undefined {
   const accepts = isObject(required) ? required["accepts"] : undefined;
   if (!Array.isArray(accepts) || accepts.length === 0 || accepts.length > MAX_OPTIONS) return undefined;
+  const served = accepts.map((option) => servesOf(option));
+  if (served.some((s) => s === undefined)) return undefined;
+  const malformed = served.find((s) => isRefusal(s));
+  if (malformed !== undefined && isRefusal(malformed)) return declined("offer-unreadable", malformed.code);
   const out: { option: PaymentRequirements; read: Read; serves: readonly string[] }[] = [];
-  for (const option of accepts) {
-    const serves = servesOf(option);
+  for (const [i, option] of accepts.entries()) {
+    const serves = served[i];
     if (serves === undefined || isRefusal(serves)) return undefined;
     const only = { ...(required as object), accepts: [option] };
     const read = X402.map((b) => (b as unknown as { read(d: unknown): Read | Refusal }).read(only)).find((r) => !isRefusal(r));

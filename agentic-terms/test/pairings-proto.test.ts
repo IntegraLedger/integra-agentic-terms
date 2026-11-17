@@ -16,7 +16,7 @@ import { PIECES } from "../src/pairings/index.js";
 import type { BuyerPiece, Chosen, Read } from "../src/types.js";
 import { A as ATR_A, ABC, ABD, code, counting, H, HA, isDeclined, isPublicProof, LINK, offered, pieceConfirm, receiptFor, serving, summaryPending, vectors, type Pairing } from "./support.js";
 
-import { CONFIRMING, GATE } from "./support.js";
+import { CONFIRMING, GATE, PIECE_ONLY } from "./support.js";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type V = any;
 const CARD: V = vectors("card.json");
@@ -62,6 +62,7 @@ async function signsOver(
   expect(code(await check(ABD, done.signed, p.binding))).toBe("signed-not-bound");
 
   const [doc, bytes, gh] = atr === ABC ? [p.placed?.(HA), ATR_A, HA] : [p.doc, atr, h];
+  if (doc === undefined) expect(PIECE_ONLY.has(p.binding.id), `${p.binding.id} is not in PIECE_ONLY`).toBe(true);
   if (doc !== undefined) {
     const signer = counting(p.account, p.answer);
     const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {} });
@@ -92,6 +93,7 @@ async function confirmsOnly(p: Pairing, atr: Uint8Array, h: string): Promise<Cho
   expect(JSON.parse(JSON.stringify(confirmed.chosen))).toEqual(confirmed.chosen);
 
   const [doc, bytes, gh] = atr === ABC ? [p.placed?.(HA), ATR_A, HA] : [p.doc, atr, h];
+  if (doc === undefined) expect(PIECE_ONLY.has(p.binding.id), `${p.binding.id} is not in PIECE_ONLY`).toBe(true);
   if (doc !== undefined) {
     const gated = await confirm(doc, offered(p.binding), p.account, serving(bytes), { ...CONFIRMING, inputs: p.inputs });
     if (isDeclined(gated)) throw new Error(`${gated.decline.code}: ${gated.decline.detail}`);

@@ -349,7 +349,6 @@ describe("x402/exact/xrpl", () => {
   const p: Pairing = {
     binding: exactXrpl,
     doc: docOf(exactXrpl, f.option, f.resource),
-    placed: (h) => docOf(exactXrpl, f.option, f.resource, h),
     account: `${f.option.network}:${f.payer}`,
     inputs: X.V2.build,
     answer: answering((r) => {

@@ -76,15 +76,11 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
     ["mpp/charge/evm/permit2", "mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"],
   ],
   ["gateway-burn-intent", ["mpp/charge/usdc/gateway"]],
-  ["hedera-body", ["mpp/charge/lcp/hedera", "x402/exact/hedera"]],
   ["near-delegate", ["x402/exact/near"]],
-  ["solana-message", ["mpp/charge/solana", "mpp/charge/usdc/solana", "x402/exact/solana", "x402/upto/solana"]],
   ["tempo-call", ["mpp/session/tempo"]],
   ["ton-w5", ["x402/exact/tvm"]],
   ["tron-txid", ["x402/exact/tron/lcp-trc20-memo"]],
   ["ucp-checkout", ["ucp/booking/ap2-mandate", "ucp/checkout/ap2-mandate"]],
-  ["xrpl-session-open", ["mpp/session/xrpl"]],
-  ["xrpl-tx", ["mpp/charge/xrpl", "x402/exact/xrpl"]],
 ]);
 
 /** Whether the gate has no summary yet of the request `pairing`'s build hands the signer: SUMMARY_PENDING lists it. */
@@ -197,6 +193,8 @@ export interface Pairing {
    * the gate over `A`, its document placed for `HA`.
    */
   placed?: (h: AtrHash) => unknown;
+  /** Where a test pays the pairing by its own steps alone, with no `placed`, why: where its gate-level run is. */
+  pieceOnly?: string;
   account: string;
   inputs?: Inputs;
   /** The ceilings the payment through the gate is given, where the profile asks the caller to raise one. */
@@ -308,10 +306,39 @@ export async function throughGate(p: Pairing & { placed: (h: AtrHash) => unknown
 }
 
 /**
+ * THE PIECE-ONLY SET: the pairings a B6 test pays by the pairing's own steps alone, over `abc`, with no document placed
+ * for `HA` to pay them through the gate, each with where its gate-level run is or why it has none here. `buildAndSign`,
+ * and the protocol groups' B6 in pairings-proto.test.ts, assert that a pairing they cannot place is listed, or that the
+ * test gives its own reason (`pieceOnly`), so none is skipped unseen; whoever places one removes it.
+ */
+export const PIECE_ONLY: ReadonlyMap<string, string> = new Map([
+  ["x402/batch-settlement/eip155", "paid through the gate over A in channels.test.ts (opensThroughGate)"],
+  ["x402/batch-settlement/solana", "paid through the gate over A in channels.test.ts (opensThroughGate)"],
+  ["mpp/session/tempo", "paid through the gate over A in channels.test.ts (opensThroughGate)"],
+  ["mpp/session/evm", "not placed for A: no gate-level run of its two-step opening yet"],
+  ["mpp/subscription/tempo", "not placed for A: no gate-level run yet"],
+  ["card/visa-tap", "C2's TAP answer signs a nonce built for H(abc); no answer signed for another H is published"],
+  ["card/mastercard-vi/immediate", "C6's user credential is signed over the checkout mandate for H(abc); none is published for another H"],
+  ["card/mastercard-vi/autonomous", "C7's agent chain is signed over the checkout mandate for H(abc); none is published for another H"],
+  ["ack/payment-request", "K2's Payment Request token is signed with the id of H(abc), which the read holds the legal context to"],
+  ["mpp/charge/lightning", "L3's invoice commits to H(abc), and the protocol package refuses to place it again for another H"],
+  ["mpp/session/lightning", "the deposit invoice commits to H(abc), and the protocol package refuses to place it again for another H"],
+  ["mpp/charge/usdc/stacks", "M4's recorded transaction is signed over H(abc), so it carries no other ATR's hash"],
+  ["x402/exact/xrpl", "V2's recorded blob is signed over H(abc), so it carries no other ATR's hash"],
+  ["mpp/charge/xrpl", "V3's recorded blob is signed over H(abc), so it carries no other ATR's hash"],
+  ["mpp/session/xrpl", "XS2's recorded blob is signed over H(abc); buyer.json BX1 hands its opening to the signer through the gate over A"],
+  ["x402/exact/ccd", "D3's recorded transaction is bound to H(abc); no signer here makes one for another H"],
+  ["x402/exact/starknet", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
+  ["x402/exact/polkadot/lcp-assets-remark", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
+  ["x402/exact/sui", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
+  ["x402/exact/cardano", "the vectors' recorded payment is bound to H(abc); no signer here makes one for another H"],
+]);
+
+/**
  * B6 for a pairing, by its own steps with no gate: the build with the vector's H gives the request, which `inspect`
  * checks against the vectors; the test signer's answers complete a payment whose bound hash is H, the signer called
  * once per step; `check` confirms that payment against `abc` and declines it against `abd`. Where the pairing gives
- * `placed`, it is then paid through the gate over `A` (`throughGate`).
+ * `placed`, it is then paid through the gate over `A` (`throughGate`); where it gives none, PIECE_ONLY lists it.
  */
 export async function buildAndSign(
   p: Pairing,
@@ -333,5 +360,8 @@ export async function buildAndSign(
   expect(await check(ABC, done.signed, p.binding, done.landed)).toEqual({ h: H });
   expect(code(await check(ABD, done.signed, p.binding, done.landed))).toBe("signed-not-bound");
   if (p.placed !== undefined) await throughGate({ ...p, placed: p.placed }, signer.requests.length);
+  else if (p.pieceOnly === undefined) {
+    expect(PIECE_ONLY.has(p.binding.id), `${p.binding.id} is paid by its own steps alone and PIECE_ONLY does not list it`).toBe(true);
+  }
   return { signed: done.signed, request };
 }

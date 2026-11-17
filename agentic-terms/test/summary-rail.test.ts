@@ -46,7 +46,7 @@ describe("summary-rail.json: the summary of the request each pairing's piece bui
       const built = await pieceConfirm(structuredClone(b2.input.doc), bindingOf(row.pairing), b2.input.account, b2.input.inputs ?? {});
       if (isDeclined(built)) throw new Error(`${built.decline.code}: ${built.decline.detail}`);
       if (built.request === null) throw new Error("nothing to sign");
-      expect(summaryOf(row.pairing, built.request, ABC)).toEqual({ ...row.expect, atr: ABC });
+      expect(await summaryOf(row.pairing, built.request, ABC)).toEqual({ ...row.expect, atr: ABC });
     });
   }
 });

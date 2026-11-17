@@ -188,7 +188,6 @@ describe("mpp/charge/xrpl", () => {
   const p: Pairing = {
     binding: chargeXrpl,
     doc: docOf(chargeXrpl, V.challenge),
-    placed: (h) => docOf(chargeXrpl, V.challenge, h),
     account: `xrpl:1:${f.account}`,
     inputs: { fee: V.build.fee, sequence: V.build.sequence, lastLedgerSequence: V.build.lastLedgerSequence },
     answer: async (r) => {
@@ -280,7 +279,6 @@ describe("mpp/session/xrpl", () => {
   const p: Pairing = {
     binding: sessionXrpl,
     doc: docOf(sessionXrpl, V.SS1.xrpl.challenge),
-    placed: (h) => docOf(sessionXrpl, V.SS1.xrpl.challenge, h),
     account: `xrpl:1:${s.account}`,
     inputs: {
       deposit: s.deposit,

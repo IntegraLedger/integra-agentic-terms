@@ -9,8 +9,9 @@
 import { fromLegalContextHeader, toLegalContextHeader, type LegalContextReturn } from "@integraledger/lcp";
 import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash } from "@integraledger/lcp/core";
 import { agreementOptions, exchange } from "./agreement.js";
-import { isCeilings, parseAtr, requestHeld, type Approval } from "./checks.js";
+import { floorMissing, isCeilings, parseAtr, requestHeld, type Approval } from "./checks.js";
 import {
+  charged,
   declined,
   fetchAtr,
   gate,
@@ -41,8 +42,8 @@ import type {
 
 /**
  * The gate's checks, then, for a pairing whose payment is not itself a public proof, the agreement, paid only on an
- * option the pairing's `agreementOn` admits, then the signer, then `finish`. Without `approved`, an agreement not yet recorded is returned as `approve`, the agreement payment for
- * the agent to approve, and nothing is signed; with `approved`, that payment is asked of `approver`, signed and paid,
+ * option the pairing's `agreementOn` admits, then the signer, then `finish`. Without `approved`, an agreement not yet
+ * recorded is returned as `approve`, the agreement payment for the agent to approve, and nothing is signed; with `approved`, that payment is asked of `approver`, signed and paid,
  * and the resource's payment is asked of `approver` and signed only with the agreement's receipt in hand. On a decline
  * before the signer the signer is never called. Where the build is itself the payment the signer is not called; where
  * the pairing has nothing for the buyer to sign, `signed` is null after the comparison. `agreement` is the agreement's
@@ -50,6 +51,9 @@ import type {
  * exchange. Options that are not an object holding a function `approver` and an object `resourceRequest`, or that hold
  * a member of another name or form, or a signer or agreement signer whose `account` is not a string, are declined
  * `no-payable-option` with `<namespace>/input-malformed` before any fetch or signer call.
+ *
+ * With `chosen`, the payment `confirm` chose, unchanged, the gate builds that exact request, the one the approver
+ * approved, instead of choosing anew with its clock and a new reference.
  *
  * Where the pairing is paid after its agreement and the first response offers the agreement and no charge option, its
  * every option naming the charges it serves, `transact` pays the agreement and returns `ToReturn` (`toReturn`).
@@ -71,8 +75,10 @@ export async function transact(
 > {
   if (pieceOf(binding) === undefined) return unsupported(binding);
   const ns = namespaceOf(binding);
-  if (!optionsOk(options) || !hasAccount(signer)) return declined("no-payable-option", `${ns}/input-malformed`);
-  const { approver, resourceRequest, inputs = {}, ceilings, legalContext, agreementSigner, approved, signal } = options;
+  if (!optionsOk(options, String(binding.id)) || !hasAccount(signer)) return declined("no-payable-option", `${ns}/input-malformed`);
+  const { approver, resourceRequest, inputs = {}, ceilings, legalContext, agreementSigner, approved, signal, chosen: given } = options;
+  const floor = floorMissing(String(binding.id), inputs);
+  if (floor !== undefined) return floor;
   let returned: LegalContextReturn | undefined;
   if (legalContext !== undefined) {
     const read = fromLegalContextHeader(legalContext);
@@ -82,11 +88,12 @@ export async function transact(
   const approval = { approver, ceilings, inputs };
 
   const offers = ns === "x402" && !isFullCoverage(binding) ? agreementOptions(doc) : undefined;
+  if (offers !== undefined && !Array.isArray(offers)) return offers;
   if (offers !== undefined) {
     return toReturn(doc, binding, offers, { signer: agreementSigner ?? signer, account: signer.account, fetch, resourceRequest, returned, approval, signal });
   }
 
-  const confirmed = await gate(doc, binding, signer.account, fetch, { resourceRequest, inputs, ceilings });
+  const confirmed = await gate(doc, binding, signer.account, fetch, { resourceRequest, inputs, ceilings, chosen: given });
   if ("decline" in confirmed) return confirmed;
   const { bytes, chosen } = confirmed;
   if (returned !== undefined && !hashEquals(returned.h, confirmed.h)) {
@@ -126,15 +133,17 @@ function isAgreementOnly(binding: Binding): boolean {
  * The return after an agreement (the protocol package's profile `legal-context-return.md`): the ATR fetched from the
  * response's link, compared with its H and with the return value's, parsed, and its request commitment held to the
  * buyer's request; then, for each agreement option in document order and each charge it names as served, `x402/<i>`,
- * the option at index `i` of the ATR's `x402` slot, the first such charge the pairing reads and the account can pay is
- * chosen, and that agreement option is paid, asked of the approver as the act `agreement`, and its receipt awaited. No
- * charge is signed. A pairing whose agreement is never a charge, or a response with no such charge, is
+ * the option at index `i` of the ATR's `x402` slot, the first such charge the pairing reads, the account can pay and
+ * checks 9 to 11 pass on (its build with H, its summary and its ceiling) is chosen, and that agreement option is paid,
+ * asked of the approver as the act `agreement`, and its receipt awaited. No charge is signed, and no agreement is paid
+ * for a charge those checks decline: the next served charge is tried, and where every one is declined there, the first
+ * decline is returned. A pairing whose agreement is never a charge, or a response with no such charge, is
  * `no-payable-option`.
  */
 async function toReturn(
   doc: unknown,
   binding: Binding,
-  offers: NonNullable<ReturnType<typeof agreementOptions>>,
+  offers: Extract<ReturnType<typeof agreementOptions>, readonly unknown[]>,
   o: {
     signer: Signer;
     account: string;
@@ -168,6 +177,7 @@ async function toReturn(
   const piece = pieceOf(binding) as BuyerPiece;
   const reader = binding as unknown as { read(d: unknown): unknown };
   const inputs: Inputs = o.approval.inputs;
+  let first: Declined | undefined;
   for (const { option, serves } of offers) {
     for (const name of serves) {
       const at = /^x402\/([0-9]+)$/.exec(name);
@@ -178,6 +188,11 @@ async function toReturn(
       if (isRefusal(chargeRead)) continue;
       const chosen = await piece.choose(chargeRead as never, o.account, inputs, Math.floor(Date.now() / 1000), newRef(), only);
       if (isRefusal(chosen)) continue;
+      const checked = await charged(binding, { ...chosen, agreement: url }, o.account, bytes, h, inputs, o.approval.ceilings);
+      if ("decline" in checked) {
+        first ??= checked;
+        continue;
+      }
       const approved = { url, option, required: doc as never };
       const agreed = await exchange(bytes, url, o.signer, o.fetch, { approved, inputs, signal: o.signal, chosen }, "x402", binding, o.approval);
       if (!("receipt" in agreed)) return "decline" in agreed ? agreed : declined("agreement-failed", "The agreement was not paid.");
@@ -186,7 +201,7 @@ async function toReturn(
       return { agreement: agreed.receipt, legalContext: header, charge: name, bytes, h };
     }
   }
-  return declined("no-payable-option", "x402/no-payable-option");
+  return first ?? declined("no-payable-option", "x402/no-payable-option");
 }
 
 const OPTION_KEYS: readonly string[] = [
@@ -198,20 +213,22 @@ const OPTION_KEYS: readonly string[] = [
   "agreementSigner",
   "approved",
   "signal",
+  "chosen",
 ];
 
 /**
  * Whether `transact`'s options are an object holding `approver` (a function) and `resourceRequest` (an object), and
- * only these optional members: `inputs` (an object), `ceilings` (an object), `legalContext` (a string),
- * `agreementSigner` (an object with a `sign` function and a string `account`), `approved` (an object) and `signal` (an
- * `AbortSignal`).
+ * only these optional members: `inputs` (an object), `ceilings` (rule 8's form for `pairing`), `legalContext` (a
+ * string), `agreementSigner` (an object with a `sign` function and a string `account`), `approved` (an object),
+ * `signal` (an `AbortSignal`) and `chosen` (an object).
  */
-function optionsOk(options: unknown): options is TransactOptions {
+function optionsOk(options: unknown, pairing: string): options is TransactOptions {
   if (!isObject(options) || !Object.keys(options).every((k) => OPTION_KEYS.includes(k))) return false;
-  const { approver, resourceRequest, inputs, ceilings, legalContext, agreementSigner, approved, signal } = options;
+  const { approver, resourceRequest, inputs, ceilings, legalContext, agreementSigner, approved, signal, chosen } = options;
   if (typeof approver !== "function" || !isObject(resourceRequest)) return false;
+  if (chosen !== undefined && !isObject(chosen)) return false;
   if (inputs !== undefined && !isObject(inputs)) return false;
-  if (!isCeilings(ceilings)) return false;
+  if (!isCeilings(ceilings, pairing)) return false;
   if (legalContext !== undefined && typeof legalContext !== "string") return false;
   if (approved !== undefined && !isObject(approved)) return false;
   if (signal !== undefined && !(signal instanceof AbortSignal)) return false;

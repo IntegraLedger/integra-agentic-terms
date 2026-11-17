@@ -707,7 +707,8 @@ describe.each(rows.map((r) => [r.id, r] as const))("%s", (_id, row) => {
       const doc = structuredClone(p.doc) as Doc & { extensions: Record<string, unknown> };
       doc.extensions["payment-identifier"] = { info: {}, schema: {} };
       const { placed: _placed, ...piece } = p;
-      const { signed } = await buildAndSign({ ...piece, doc }, () => undefined);
+      const pieceOnly = "the payment identifier's variant; the plain B6 above pays the pairing through the gate";
+      const { signed } = await buildAndSign({ ...piece, doc, pieceOnly }, () => undefined);
       const ext = (signed as unknown as { extensions: Record<string, { info: { id?: string } }> }).extensions;
       expect(ext["payment-identifier"]!.info.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
     }));

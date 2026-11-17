@@ -5,7 +5,7 @@
  * summary, and the gate declines its request `summary-missing`: nothing is signed unshown.
  */
 import type { Json } from "@integraledger/lcp/core";
-import type { Inputs, SigningRequest, Summary } from "./types.js";
+import type { Inputs, Signature, SigningRequest, Summary } from "./types.js";
 import { exactPermit2, uptoPermit2 } from "./summary/eip712.js";
 import { erc20Transfer } from "./summary/evm-call.js";
 import { keyAuthorization } from "./summary/tempo-key-authorization.js";
@@ -24,12 +24,27 @@ import { aptosTransaction, cardanoTransaction, suiTransaction } from "./summary/
 export type Shown = Omit<Summary, "atr">;
 
 /**
+ * The step that opened a payment signed in steps, such as a session's or a channel's opening before its voucher: the
+ * request the signer was handed, its summary, whose payees, asset and network are the channel's, and the signer's
+ * answer to it.
+ */
+export interface Opened {
+  readonly request: SigningRequest;
+  readonly summary: Shown;
+  readonly signature: Signature;
+}
+
+/**
  * One pairing's summary. `show` reads the request handed to the signer, and answers undefined for a request it cannot
- * read. `start`, for a deadline signed as a height where the request signs no start, reads the height the caller gave
- * the build from its inputs.
+ * read; `network`, where the gate knows it, is the signing account's CAIP-2 network, which the summary names where the
+ * request names none, a request that names a network showing that one. `opened`, for a later step of a payment signed
+ * in steps, which names only the channel, is the step that opened that channel: the later step is shown with its
+ * payees, asset and network, and one whose channel is not the one it opened has no summary. `start`, for a deadline
+ * signed as a height where the request signs no start, reads the height the caller gave the build from its inputs.
+ * `show` may answer a promise, for a request read with an asynchronous decoder; the gate awaits it.
  */
 export interface SummaryEntry {
-  readonly show: (request: SigningRequest) => Shown | undefined;
+  readonly show: (request: SigningRequest, network?: string, opened?: Opened) => Shown | undefined | Promise<Shown | undefined>;
   readonly start?: (inputs: Inputs) => bigint | undefined;
 }
 
@@ -132,14 +147,23 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
 
 /**
  * The summary of `request`, a request of `pairing` handed to the signer, with `atr`, a copy of the ATR's bytes; or
- * undefined where the pairing has no summary or its entry cannot read the request. An entry that throws gives none.
+ * undefined where the pairing has no summary or its entry cannot read the request. An entry that throws, or whose
+ * promise rejects, gives none.
+ * `network` is the signing account's CAIP-2 network where the gate knows it, and `opened`, for a later step, the step
+ * that opened its channel, each given to the entry as it is given here.
  */
-export function summaryOf(pairing: string, request: SigningRequest, atr: Uint8Array): Summary | undefined {
+export async function summaryOf(
+  pairing: string,
+  request: SigningRequest,
+  atr: Uint8Array,
+  network?: string,
+  opened?: Opened,
+): Promise<Summary | undefined> {
   const entry = SUMMARIES.get(pairing);
   if (entry === undefined) return undefined;
   let shown: Shown | undefined;
   try {
-    shown = entry.show(request);
+    shown = await entry.show(request, network, opened);
   } catch {
     return undefined;
   }

@@ -320,7 +320,7 @@ describe("the summaries of the Solana, XRP Ledger, Algorand, Stacks and Hedera r
       if (row.network === undefined && row.expect !== undefined) {
         // A request that names its own network is summarised by the gate's registry as it stands.
         const atr = Uint8Array.of(0x7b, 0x7d);
-        expect(summaryOf(row.pairing, request, atr)).toEqual({ ...row.expect, atr });
+        expect(await summaryOf(row.pairing, request, atr)).toEqual({ ...row.expect, atr });
       }
     });
   }

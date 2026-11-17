@@ -8,7 +8,7 @@ import { canonicalJson } from "@integraledger/lcp/core";
 import { issuedDigest as mppIssuedDigest, type MppChallenge } from "@integraledger/lcp/mpp";
 import { requestCommitment, toolCallCommitment, type HttpRequest, type ToolCall } from "@integraledger/lcp/x402";
 import { isRefusal } from "./pairings/common.js";
-import { startOf, summaryOf } from "./summary.js";
+import { startOf, summaryOf, type Opened } from "./summary.js";
 import type {
   Approver,
   Binding,
@@ -311,14 +311,19 @@ export async function slotHolds(binding: Binding, chosen: Chosen, atr: unknown):
 
 // ── The buyer's request and the binding slot (rule 7).
 
-const HTTP_MEMBERS = ["bodyDigest", "method", "path", "query"];
-const MCP_MEMBERS = ["argumentsDigest", "tool"];
+const HTTP_MEMBERS: readonly string[] = ["bodyDigest", "method", "path", "query"];
+const HTTP_HEADERS_MEMBERS: readonly string[] = ["bodyDigest", "headers", "method", "path", "query"];
+const MCP_MEMBERS: readonly string[] = ["argumentsDigest", "tool"];
+
+/** Whether the sorted member names `keys` are exactly `names`, compared one by one. */
+const exactly = (keys: readonly string[], names: readonly string[]): boolean =>
+  keys.length === names.length && keys.every((k, i) => k === names[i]);
 
 /**
  * Where the binding slot is `x402` and holds a `request` member, `request-mismatch` unless it is the commitment the
  * protocol package computes of the buyer's request in the same form: over HTTP `requestCommitment` with the header
  * names it lists, in order; over MCP `toolCallCommitment`. A refused request gives the package's code as the detail; a
- * member of neither form is declined.
+ * member of neither form, its member names compared exactly, is declined, as is a request the package throws on.
  */
 export async function requestHeld(binding: Binding, atr: unknown, resourceRequest: ResourceRequest): Promise<Declined | undefined> {
   if (String(binding.id).split("/")[0] !== "x402" || !isObject(atr)) return undefined;
@@ -330,7 +335,7 @@ export async function requestHeld(binding: Binding, atr: unknown, resourceReques
   const keys = Object.keys(committed).sort();
   let computed: unknown;
   try {
-    if (keys.join() === HTTP_MEMBERS.join() || keys.join() === [...HTTP_MEMBERS, "headers"].sort().join()) {
+    if (exactly(keys, HTTP_MEMBERS) || exactly(keys, HTTP_HEADERS_MEMBERS)) {
       const listed: unknown = committed["headers"];
       let names: string[] | undefined;
       if (listed !== undefined) {
@@ -340,13 +345,13 @@ export async function requestHeld(binding: Binding, atr: unknown, resourceReques
         names = listed.map((h) => (h as { name: string }).name);
       }
       computed = await requestCommitment(resourceRequest as HttpRequest, names);
-    } else if (keys.join() === MCP_MEMBERS.join()) {
+    } else if (exactly(keys, MCP_MEMBERS)) {
       computed = await toolCallCommitment(resourceRequest as ToolCall);
     } else {
       return mismatch("The ATR's request commitment is of no form the protocol package writes.");
     }
   } catch {
-    return mismatch("x402/request-target-invalid");
+    return mismatch("The protocol package could not compute the commitment of the buyer's request.");
   }
   if (isRefusal(computed)) return mismatch(computed.code);
   const want = canonical(committed);
@@ -365,10 +370,22 @@ const FLOORS: ReadonlyMap<string, { readonly input: string; readonly margin: num
   ["x402/exact/eip155/gateway-batched", { input: "minValiditySeconds", margin: 100 }],
 ]);
 
-/** Seconds per unit of a deadline signed as a height, by the network's CAIP-2 namespace (the profile's pace table). */
+/**
+ * The floor inputs of the rails whose payment service serves a floor, by pairing (terms' profile `buyer-gate.md`, rule
+ * 9): the names `inputs` carries them under, which a host reads from the payment service and gives the gate.
+ */
+export const FLOOR_INPUTS: ReadonlyMap<string, readonly string[]> = new Map(
+  [...FLOORS].map(([pairing, floor]) => [pairing, Object.freeze([floor.input])] as const),
+);
+
+/**
+ * Seconds per unit of a deadline signed as a height, by the network's CAIP-2 namespace (the profile's pace table):
+ * Cardano's networks are named in the `cardano` and the `cip34` namespaces alike.
+ */
 const PACE: { readonly [namespace: string]: number } = {
   algorand: 2.82,
   cardano: 1,
+  cip34: 1,
   near: 0.6,
   polkadot: 6,
   solana: 0.3,
@@ -378,9 +395,13 @@ const PACE: { readonly [namespace: string]: number } = {
 
 const isPositiveSafe = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 
-/** Whether `ceilings` has rule 8's outer form, an object; each pairing's own value is read when that pairing is paid. */
-export function isCeilings(v: unknown): v is Ceilings | undefined {
-  return v === undefined || isObject(v);
+/**
+ * Whether `ceilings` has rule 8's form for a call that pays `pairing`: absent, or an object whose value for `pairing`,
+ * where it has one, is a positive safe integer or `"no-end"`. Another pairing's value, an agreement payment's among
+ * them, is read when that pairing is paid.
+ */
+export function isCeilings(v: unknown, pairing: string): v is Ceilings | undefined {
+  return v === undefined || (isObject(v) && raisedOf(v as Ceilings, pairing) !== null);
 }
 
 /** `pairing`'s raised ceiling: a positive safe integer, `"no-end"`, undefined where none is given, or malformed. */
@@ -400,8 +421,24 @@ export function floorMissing(pairing: string, inputs: Inputs): Declined | undefi
   return declined("floor-missing", floor.input);
 }
 
+/**
+ * The input that gives the start of a deadline signed as a height where neither the request nor the build signs one, by
+ * the network's CAIP-2 namespace: on the XRP Ledger `ledgerIndex`, the index of the validated ledger the caller read,
+ * since the protocol package's XRPL builds take `LastLedgerSequence` itself from the caller and sign no start.
+ */
+const STARTS: { readonly [namespace: string]: string } = { xrpl: "ledgerIndex" };
+
+const isIndex = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
 /** The pairing's network namespace, from the summary's CAIP-2 network. */
 const namespaceOfNetwork = (network: string): string => network.split(":")[0]!;
+
+/** The start the caller gives in `inputs` for a deadline signed as a height on `network`, where its chain has one. */
+function givenStart(network: string, inputs: Inputs): bigint | undefined {
+  const name = STARTS[namespaceOfNetwork(network)];
+  const v = name === undefined ? undefined : inputs[name];
+  return isIndex(v) ? BigInt(v) : undefined;
+}
 
 /** `read.life` in the pairing's data, in seconds, or undefined where the data states none or no pace converts it. */
 function lifeOf(binding: Binding, network: string): number | undefined {
@@ -422,8 +459,9 @@ function big(v: string | null): bigint | undefined {
 /**
  * How long the signed payment stays payable, in seconds, from the summary's validity: a deadline in seconds less the
  * gate's clock; a deadline signed as a height less the start the request signs, else the height the caller gave the
- * build, times the chain's pace; where the payer signs no deadline, the pairing's `read.life`; `"no-end"` where none of
- * these bounds it; undefined where the window cannot be read.
+ * build, else the start the caller gives in `inputs` (`ledgerIndex` on the XRP Ledger), times the chain's pace; where
+ * the payer signs no deadline, the pairing's `read.life`; `"no-end"` where none of these bounds it; undefined where the
+ * window cannot be read.
  */
 function windowOf(binding: Binding, v: Validity, network: string, now: number, inputs: Inputs): number | "no-end" | undefined {
   const until = big(v.notAfter);
@@ -431,7 +469,7 @@ function windowOf(binding: Binding, v: Validity, network: string, now: number, i
   if (until === undefined) return undefined;
   if (v.unit === "seconds") return Number(until - BigInt(now));
   const pace = PACE[namespaceOfNetwork(network)];
-  const from = big(v.notBefore) ?? startOf(String(binding.id), inputs);
+  const from = big(v.notBefore) ?? startOf(String(binding.id), inputs) ?? givenStart(network, inputs);
   if (pace === undefined || from === undefined) return undefined;
   return Number(until - from) * pace;
 }
@@ -439,7 +477,9 @@ function windowOf(binding: Binding, v: Validity, network: string, now: number, i
 /**
  * Check 11 on a summary: `no-end` for a payment that signs no end unless `ceilings` maps the pairing to `"no-end"`, and
  * `past-ceiling` for one payable longer than the pairing's ceiling: 600 seconds, or on a rail with a served floor that
- * floor plus the service's margin, raised to `ceilings`' value where it is larger.
+ * floor plus the service's margin, raised to `ceilings`' value where it is larger. A deadline signed as a height on a
+ * chain whose start the caller gives (`ledgerIndex` on the XRP Ledger), with no start signed or given, is
+ * `no-payable-option` with the chain's namespace's `input-missing` (`xrpl/input-missing`).
  */
 export function withinCeiling(
   binding: Binding,
@@ -452,7 +492,13 @@ export function withinCeiling(
   const ns = pairing.split("/")[0]!;
   const raised = raisedOf(ceilings, pairing);
   if (raised === null) return declined("no-payable-option", `${ns}/input-malformed`);
-  const window = windowOf(binding, summary.validity, summary.network, now, inputs);
+  const v = summary.validity;
+  const chain = namespaceOfNetwork(summary.network);
+  const startName = STARTS[chain];
+  if (v.unit !== "seconds" && v.notAfter !== null && v.notBefore === null && startName !== undefined) {
+    if (startOf(pairing, inputs) === undefined && !isIndex(inputs[startName])) return declined("no-payable-option", `${chain}/input-missing`);
+  }
+  const window = windowOf(binding, v, summary.network, now, inputs);
   if (window === "no-end") {
     return raised === "no-end" ? undefined : declined("no-end", `The payment through ${pairing} signs no end.`);
   }
@@ -480,7 +526,11 @@ export interface Approval {
   readonly inputs: Inputs;
 }
 
-/** A copy of `v` that shares no object or byte array with it, so nothing the approver does reaches the signer. */
+/**
+ * A copy of `v` that shares no object or byte array with it, so nothing the approver does reaches the signer. Every
+ * signing request kind is plain data, strings, numbers, bigints, booleans, null, byte arrays and arrays and objects of
+ * them, holding no function, map, set or date, so the copy is the request as the signer is handed it.
+ */
 function copyOf<T>(v: T): T {
   if (v instanceof Uint8Array) return v.slice() as T;
   if (Array.isArray(v)) return v.map((x) => copyOf(x)) as T;
@@ -497,15 +547,31 @@ export function stepsOf(unsigned: unknown): number {
   return isObject(unsigned) && typeof unsigned["voucher"] === "function" && Object.hasOwn(unsigned, "funding") ? 2 : 1;
 }
 
-/** Checks 10 and 11 on a request handed to the signer: its summary, or the decline. */
-export function shown(
+/**
+ * The CAIP-2 network of a CAIP-10 account, `<namespace>:<reference>:<address>`: its first two parts; undefined for an
+ * account of another form.
+ */
+export function networkOfAccount(account: unknown): string | undefined {
+  if (typeof account !== "string") return undefined;
+  const parts = account.split(":");
+  return parts.length === 3 && parts.every((p) => p !== "") ? `${parts[0]}:${parts[1]}` : undefined;
+}
+
+/**
+ * Checks 10 and 11 on a request handed to the signer: its summary, or the decline. `network` is the signing account's
+ * CAIP-2 network where the caller knows it, which the summary names where the request names none; `opened`, for a later
+ * step of a payment signed in steps, the step that opened its channel.
+ */
+export async function shown(
   binding: Binding,
   request: SigningRequest,
   bytes: Uint8Array,
   inputs: Inputs,
   ceilings: Ceilings | undefined,
-): Summary | Declined {
-  const summary = summaryOf(String(binding.id), request, bytes);
+  network?: string,
+  opened?: Opened,
+): Promise<Summary | Declined> {
+  const summary = await summaryOf(String(binding.id), request, bytes, network, opened);
   if (summary === undefined) {
     return declined("summary-missing", `The gate has no summary of the ${String((request as { kind?: unknown }).kind)} request of ${String(binding.id)}.`);
   }
@@ -514,7 +580,8 @@ export function shown(
 
 /**
  * Checks 10 to 12 on one signing: the summary, the ceiling, then the approver, asked once with `ToSign`; any answer but
- * `true`, a throw or a rejection is `not-approved`.
+ * `true`, a throw or a rejection is `not-approved`. `network` is the signing account's CAIP-2 network, and `opened`, for
+ * a later step, the step that opened its channel. The summary the approver approved, or the decline.
  */
 export async function approves(
   binding: Binding,
@@ -523,8 +590,10 @@ export async function approves(
   bytes: Uint8Array,
   step: SigningStep,
   approval: Approval,
-): Promise<Declined | undefined> {
-  const summary = shown(binding, request, bytes, approval.inputs, approval.ceilings);
+  network?: string,
+  opened?: Opened,
+): Promise<Summary | Declined> {
+  const summary = await shown(binding, request, bytes, approval.inputs, approval.ceilings, network, opened);
   if ("decline" in summary) return summary;
   const toSign: ToSign = { act, pairing: String(binding.id), request: copyOf(request), summary, step: { ...step } };
   let answer: unknown;
@@ -533,6 +602,6 @@ export async function approves(
   } catch {
     answer = undefined;
   }
-  return answer === true ? undefined : declined("not-approved", `The approver did not approve step ${step.index + 1} of ${step.count}.`);
+  return answer === true ? summary : declined("not-approved", `The approver did not approve step ${step.index + 1} of ${step.count}.`);
 }
 

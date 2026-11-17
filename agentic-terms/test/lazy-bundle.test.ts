@@ -19,7 +19,7 @@ const EXPORTS: Record<string, { default: string }> = JSON.parse(readFileSync(joi
 const ENTRIES: [string, string][] = Object.entries(EXPORTS).map(([key, target]) => [key, join(ROOT, target.default)]);
 /** The public functions of each entry point. */
 const PUBLIC: Record<string, string[]> = {
-  ".": ["agree", "check", "confirm", "finish", "openChannel", "recordCharge", "transact", "within"],
+  ".": ["FLOOR_INPUTS", "agree", "check", "confirm", "finish", "openChannel", "recordCharge", "transact", "within"],
 };
 
 const dir = mkdtempSync(join(tmpdir(), "terms-lazy-bundle-"));

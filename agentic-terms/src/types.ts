@@ -245,6 +245,11 @@ export interface TransactOptions {
   readonly agreementSigner?: Signer | undefined;
   readonly approved?: AgreementPayment | undefined;
   readonly signal?: AbortSignal | undefined;
+  /**
+   * The payment chosen, as `confirm` returned it in `chosen`, unchanged: `transact` builds that exact request, the one
+   * the approver approved, rather than choosing anew with its clock and a new reference.
+   */
+  readonly chosen?: Chosen | undefined;
 }
 
 /** `confirm`'s options: the buyer's own request, required; its chain values and floor inputs; the raised ceilings. */
