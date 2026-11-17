@@ -205,7 +205,6 @@ PIECE_ONLY: Mapping[str, str] = {
     "mpp/charge/lightning": "L3's invoice commits to H(abc), and the protocol package refuses to place it again for another H",
     "mpp/charge/nearintents": _NO_RUN,
     "mpp/charge/solana": _NO_RUN,
-    "mpp/charge/solana/unsponsored": "no Python summary of solana-message yet; paid through the gate in TypeScript",
     "mpp/charge/stripe": _NO_RUN,
     "mpp/charge/usdc/evm": _NO_RUN,
     "mpp/charge/usdc/gateway": _NO_RUN,

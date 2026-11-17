@@ -432,7 +432,6 @@ SUMMARY_PENDING: Mapping[str, frozenset[str]] = {
             "x402/auth-capture/eip155/permit2",
         }
     ),
-    "xrpl-session-open": frozenset({"mpp/session/xrpl"}),
 }
 
 _MISSING = re.compile(r"The gate has no summary of the (.+) request of (.+)\.")

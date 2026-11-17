@@ -21,6 +21,17 @@ from ._summary_rail import (
     substrate_transfer,
     sui_transaction,
 )
+from ._summary_sol import (
+    algorand_transfer,
+    hedera_executor,
+    hedera_transfer,
+    solana_session_open,
+    solana_transfer,
+    solana_upto_open,
+    stacks_transfer,
+    xrpl_payment,
+    xrpl_session_open,
+)
 
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 
@@ -137,6 +148,20 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "mpp/charge/evm/hash": SummaryEntry(show=erc20_transfer),
     "mpp/charge/evm/transaction": SummaryEntry(show=erc20_transfer),
     "mpp/subscription/tempo": SummaryEntry(show=key_authorization),
+    "x402/exact/solana": SummaryEntry(show=solana_transfer),
+    "mpp/charge/solana": SummaryEntry(show=solana_transfer),
+    "mpp/charge/solana/unsponsored": SummaryEntry(show=solana_transfer),
+    "mpp/charge/usdc/solana": SummaryEntry(show=solana_transfer),
+    "x402/upto/solana": SummaryEntry(show=solana_upto_open),
+    "mpp/session/solana/memo": SummaryEntry(show=solana_session_open),
+    "x402/exact/xrpl": SummaryEntry(show=xrpl_payment),
+    "mpp/charge/xrpl": SummaryEntry(show=xrpl_payment),
+    "mpp/session/xrpl": SummaryEntry(show=xrpl_session_open),
+    "x402/exact/algorand": SummaryEntry(show=algorand_transfer),
+    "mpp/charge/usdc/stacks": SummaryEntry(show=stacks_transfer),
+    "x402/exact/hedera": SummaryEntry(show=hedera_transfer),
+    "mpp/charge/lcp/hedera": SummaryEntry(show=hedera_transfer),
+    "x402/exact/hedera/transfer-executor": SummaryEntry(show=hedera_executor),
 }
 
 

@@ -2,10 +2,10 @@
 mpp-charge-solana.json and mpp-subscription-solana.json, as solcharge.test.ts runs them. The unsponsored charge is held
 to that file's unsponsored credential, whose transaction is the stock @solana/mpp 0.7.0 client's composition for the
 placed challenge, computed with @solana/kit 8.4.0 and not by the protocol package's builder: the payer pays its own fee,
-and the transfer and memo it signs are the stock client's. The payer's key is x402-exact-solana.json's fixed.payerSeed,
-whose address is the file's payer. The subscription's activation is the stock client's to compose and sign, so the gate
-hands the signer nothing: its challenge is the file's, placed with H and the link. The account and inputs are each
-file's B2 row's."""
+and the transfer and memo it signs are the stock client's; its challenge, placed for buyer.json's ATR A, is also paid
+through the gate. The payer's key is x402-exact-solana.json's fixed.payerSeed, whose address is the file's payer. The
+subscription's activation is the stock client's to compose and sign, so the gate hands the signer nothing: its challenge
+is the file's, placed with H and the link. The account and inputs are each file's B2 row's."""
 
 import base64
 from typing import Any
@@ -63,6 +63,7 @@ def test_mpp_charge_solana_unsponsored_the_payer_is_the_fee_payer_and_signs_the_
         account=row["input"]["account"],
         answer=signing(X["fixed"]["payerSeed"]),
         inputs=row["input"].get("inputs", {}),
+        placed=lambda h: place_carrier([u["challenge"]], h, LINK, u["challenge"], lcp_carrier(h, "svm/carrier-occupied")),
     )
     signed, _ = build_and_sign(p, inspect)
     assert signed["payload"]["type"] == "transaction"

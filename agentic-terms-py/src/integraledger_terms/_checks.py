@@ -245,11 +245,29 @@ def _big(v: str | None) -> int | None:
     return int(v) if v is not None and v.isascii() and v.isdigit() and len(v) <= 78 else None
 
 
+# The input that gives the start of a deadline signed as a height where neither the request nor the build signs one, by
+# the network's CAIP-2 namespace: on the XRP Ledger ledgerIndex, the index of the validated ledger the caller read,
+# since the protocol package's XRPL builds take LastLedgerSequence itself from the caller and sign no start.
+_STARTS: Mapping[str, str] = {"xrpl": "ledgerIndex"}
+
+
+def _is_index(v: object) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= MAX_SAFE_INTEGER
+
+
+def _given_start(network: str | None, inputs: Inputs) -> int | None:
+    """The start the caller gives in inputs for a deadline signed as a height on network, where its chain has one."""
+    name = _STARTS.get(_namespace(network))
+    v = None if name is None else inputs.get(name)
+    return v if isinstance(v, int) and _is_index(v) else None
+
+
 def _window(pairing: str, v: Validity, network: str | None, now: int, inputs: Inputs) -> float | Literal["no-end"] | None:
     """How long the signed payment stays payable, in seconds, from the summary's validity: a deadline in seconds less
     the gate's clock; a deadline signed as a height less the start the request signs, else the height the caller gave
-    the build, times the chain's pace; where the payer signs no deadline, the pairing's read.life; "no-end" where none
-    of these bounds it; None where the window cannot be read."""
+    the build, else the start the caller gives in inputs (ledgerIndex on the XRP Ledger), times the chain's pace; where
+    the payer signs no deadline, the pairing's read.life; "no-end" where none of these bounds it; None where the window
+    cannot be read."""
     if v.not_after is None:
         life = _life_of(pairing, network)
         return "no-end" if life is None else life
@@ -262,6 +280,8 @@ def _window(pairing: str, v: Validity, network: str | None, now: int, inputs: In
     start = _big(v.not_before)
     if start is None:
         start = start_of(pairing, inputs)
+    if start is None:
+        start = _given_start(network, inputs)
     if pace is None or start is None:
         return None
     return (until - start) * pace
@@ -270,11 +290,19 @@ def _window(pairing: str, v: Validity, network: str | None, now: int, inputs: In
 def within_ceiling(pairing: str, summary: Summary, inputs: Inputs, ceilings: Ceilings | None, now: int) -> Declined | None:
     """Check 11 on a summary: no-end for a payment that signs no end unless ceilings maps the pairing to "no-end", and
     past-ceiling for one payable longer than the pairing's ceiling: 600 seconds, or on a rail with a served floor that
-    floor plus the service's margin, raised to ceilings' value where it is larger."""
+    floor plus the service's margin, raised to ceilings' value where it is larger. A deadline signed as a height on a
+    chain whose start the caller gives (ledgerIndex on the XRP Ledger), with no start signed or given, is
+    no-payable-option with the chain's namespace's input-missing (xrpl/input-missing)."""
     ns = pairing.split("/", 1)[0]
     raised = _raised(ceilings, pairing)
     if isinstance(raised, Refusal):
         return _declined("no-payable-option", f"{ns}/input-malformed")
+    v = summary.validity
+    chain = _namespace(summary.network)
+    start_name = _STARTS.get(chain)
+    if v.unit != "seconds" and v.not_after is not None and v.not_before is None and start_name is not None:
+        if start_of(pairing, inputs) is None and not _is_index(inputs.get(start_name)):
+            return _declined("no-payable-option", f"{chain}/input-missing")
     window = _window(pairing, summary.validity, summary.network, now, inputs)
     if window == "no-end":
         return None if raised == "no-end" else _declined("no-end", f"The payment through {pairing} signs no end.")
