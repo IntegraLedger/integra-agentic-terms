@@ -1,9 +1,10 @@
-"""The buyer half of the pairing x402/exact/cardano, the address method (extra.assetTransferMethod absent or "default"):
-read, build with complete, and bound.
+"""The buyer half of the pairings x402/exact/cardano, the address method (extra.assetTransferMethod absent or
+"default"), and x402/exact/cardano/lock, the two lock methods ("masumi" and "script"): read, build with complete, and
+bound.
 
 The ATR hash rides as a CIP-20 message (metadata label 674) that the payer's signed body commits to through
-auxiliary_data_hash. The two lock methods, "masumi" and "script", are another pairing's. Nothing here fetches, hashes
-the ATR or signs.
+auxiliary_data_hash, the same on both pairings. A lock is a deposit into an escrow or a contract the seller defines,
+which is a charge and never an agreement. Nothing here fetches, hashes the ATR or signs.
 """
 
 import hashlib
@@ -18,9 +19,19 @@ from ._cbor_spans import CborError, Item, SpanReader
 from ._codec import canonical_or_none
 from ._lcp import from_lcp_string, is_object, normal_hash
 from ._rail_bytes import base64_bytes
-from ._x402 import chosen, is_amount, payment_with, presented_with, read_for, timeout_seconds, x402_broadcaster
+from ._x402 import (
+    OptionFilter,
+    chosen,
+    is_amount,
+    payment_with,
+    presented_with,
+    read_for,
+    timeout_seconds,
+    x402_broadcaster,
+)
 
 ID = "x402/exact/cardano"
+LOCK_ID = "x402/exact/cardano/lock"
 
 # CIP-20 line 1 of the carrier; line 2 is the hash's 64 lower-case hex digits.
 LCP_MARKER = "lcp:sha256:0x"
@@ -35,6 +46,7 @@ NETWORKS = {
 }
 # The address method, also when unnamed; the two lock methods are x402/exact/cardano/lock's.
 _ADDRESS_METHODS = (None, "default")
+_LOCK_METHODS = ("masumi", "script")
 _INPUT_NONCE = re.compile(r"([0-9a-fA-F]{64})#(0|[1-9][0-9]{0,9})")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _DECIMAL = re.compile(r"[0-9]{1,78}")
@@ -254,9 +266,10 @@ def decode_cardano_tx(transaction: object) -> CardanoTx | Refusal:
     return _decode_bytes(data)
 
 
-def cardano_option_check(option: object) -> Refusal | None:
-    """None for an option this pairing can pay, or the refusal naming why not: the address method alone, and an
-    areFeesSponsored, where present, false, since the published scheme sponsors no fee."""
+def cardano_option_check(option: object, methods: tuple[str | None, ...] = _ADDRESS_METHODS) -> Refusal | None:
+    """None for an option the pairing of methods can pay, or the refusal naming why not: one of its methods (the
+    address method by default), and an areFeesSponsored, where present, false, since the published scheme sponsors no
+    fee."""
     if not is_object(option) or option.get("scheme") != "exact":
         return Refusal("x402/option-not-this-pairing")
     network = option.get("network")
@@ -268,7 +281,7 @@ def cardano_option_check(option: object) -> Refusal | None:
         return Refusal("x402/option-not-this-pairing")
     extra = option.get("extra")
     method = extra.get("assetTransferMethod") if is_object(extra) else None
-    if method not in _ADDRESS_METHODS or (is_object(extra) and "assetTransferMethod" in extra and method is None):
+    if method not in methods or (is_object(extra) and "assetTransferMethod" in extra and method is None):
         return Refusal("x402/option-not-this-pairing")
     if is_object(extra) and "paymentFlow" in extra and extra["paymentFlow"] != "authorization":
         return Refusal("x402/option-not-this-pairing")
@@ -287,10 +300,19 @@ def _check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
     return True if refused is None else refused
 
 
-def _presented_tx(presented: object) -> CardanoTx | Refusal:
+def _lock_check(option: Mapping[str, Any]) -> Literal[True] | Refusal | None:
+    refused = cardano_option_check(option, _LOCK_METHODS)
+    return True if refused is None else refused
+
+
+def _checks(lock: bool) -> OptionFilter:
+    return _lock_check if lock else _check
+
+
+def _presented_tx(presented: object, lock: bool = False) -> CardanoTx | Refusal:
     """The presented payment's transaction, decoded, its body read whole (cardano/tx-malformed where an input, an output
     or a value is not in the ledger's form)."""
-    parts = presented_with(presented, _check)
+    parts = presented_with(presented, _checks(lock))
     if isinstance(parts, Refusal):
         return parts
     _, payload, _ = parts
@@ -305,17 +327,18 @@ def _presented_tx(presented: object) -> CardanoTx | Refusal:
     return tx
 
 
-def _bound(presented: object) -> AtrHash | Refusal:
-    tx = _presented_tx(presented)
+def _bound(presented: object, lock: bool = False) -> AtrHash | Refusal:
+    tx = _presented_tx(presented, lock)
     return tx if isinstance(tx, Refusal) else tx.h
 
 
-def _reference_refuses(presented: object) -> bool:
+def _reference_refuses(presented: object, lock: bool = False) -> bool:
     """Whether the payment's reference, as the protocol package makes it for the option the payment accepted, refuses
     it or names no TTL: its transaction does not decode, carries no hash, or spends no input payload.nonce names; the
     option's payTo is not a non-empty string; the option has no RFC 8785 form to compare the payment's accepted with;
-    or the body has no TTL."""
-    tx = _presented_tx(presented)
+    the body has no TTL; or, on a Masumi lock, the option's extra.terms.sellerAddress, the seller, is not the address of
+    a public-key payment credential, or its payTo, the escrow, holds no payment credential."""
+    tx = _presented_tx(presented, lock)
     if isinstance(tx, Refusal) or isinstance(tx.h, Refusal) or tx.ttl_slot is None or tx.inputs is None:
         return True
     payload = presented.get("payload") if is_object(presented) else None
@@ -324,7 +347,68 @@ def _reference_refuses(presented: object) -> bool:
         return True
     accepted = presented.get("accepted") if is_object(presented) else None
     pay_to = accepted.get("payTo") if is_object(accepted) else None
-    return not isinstance(pay_to, str) or pay_to == "" or canonical_or_none(accepted) is None
+    if not isinstance(pay_to, str) or pay_to == "" or canonical_or_none(accepted) is None:
+        return True
+    extra = accepted.get("extra") if is_object(accepted) else None
+    if not lock or not is_object(extra) or extra.get("assetTransferMethod") != "masumi":
+        return False
+    terms = extra.get("terms")
+    seller = terms.get("sellerAddress") if is_object(terms) else None
+    seller_credential = credential_of_text(seller) if isinstance(seller, str) else None
+    return seller_credential is None or not seller_credential.startswith("key:") or credential_of_text(pay_to) is None
+
+
+# BIP 173's Bech32: its alphabet and its checksum's generator.
+_BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+_BECH32_INDEX = {c: i for i, c in enumerate(_BECH32)}
+_BECH32_GENERATOR = (0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3)
+_BECH32_MAX = 1023
+
+
+def address_bytes(text: str) -> bytes | None:
+    """A Shelley address in Bech32 (CIP-19's addr and addr_test prefixes) as its bytes, or None: BIP 173's decoding,
+    of 8 to 1,023 characters of one case, the checksum's constant 1, and the data regrouped from 5 bits to 8 with
+    nothing left over but fewer than 5 zero bits."""
+    if not 8 <= len(text) <= _BECH32_MAX or not text.isascii():
+        return None
+    lowered = text.lower()
+    if text != lowered and any(c.islower() or not "!" <= c <= "~" for c in text):
+        return None
+    separator = lowered.rfind("1")
+    prefix, data = lowered[:separator], lowered[separator + 1 :]
+    if separator < 1 or prefix not in ("addr", "addr_test") or len(data) < 6:
+        return None
+    if any(c not in _BECH32_INDEX for c in data):
+        return None
+    values = [_BECH32_INDEX[c] for c in data]
+    check = 1
+    for v in [ord(c) >> 5 for c in prefix] + [0] + [ord(c) & 31 for c in prefix] + values:
+        top = check >> 25
+        check = ((check & 0x1FFFFFF) << 5) ^ v
+        for i, g in enumerate(_BECH32_GENERATOR):
+            if (top >> i) & 1:
+                check ^= g
+    if check != 1:
+        return None
+    out = bytearray()
+    carry = bits = 0
+    for v in values[:-6]:
+        carry = (carry << 5) | v
+        bits += 5
+        if bits >= 8:
+            bits -= 8
+            out.append((carry >> bits) & 0xFF)
+        carry &= (1 << bits) - 1
+    return bytes(out) if bits < 5 and carry == 0 else None
+
+
+def credential_of_text(text: str) -> str | None:
+    """The payment credential of an address in Bech32: "key:" or "script:" and its 28 bytes in hex, for a Shelley base,
+    pointer or enterprise address (header types 0 to 7, CIP-19); None for any other address, a Byron one among them."""
+    data = address_bytes(text)
+    if data is None or len(data) < 29 or data[0] >> 4 > 7:
+        return None
+    return f"{'key' if (data[0] >> 4) % 2 == 0 else 'script'}:{data[1:29].hex()}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,15 +420,35 @@ class CardanoUnsigned:
     _required: Mapping[str, Any]
     _accepted: Mapping[str, Any]
     _expected: AtrHash
+    _lock: bool = False
 
     def complete(self, signed: Mapping[str, str]) -> dict[str, Any] | Refusal:
         """The payment, when what the payer signed carries the built hash, spends the input its nonce names and has a
-        TTL."""
+        TTL, and, on a Masumi lock, the option names a seller and an escrow the read can hold it to."""
         payment = payment_with(self._required, self._accepted, signed)
-        got = _bound(payment)
-        if isinstance(got, Refusal) or got != self._expected or _reference_refuses(payment):
+        got = _bound(payment, self._lock)
+        if isinstance(got, Refusal) or got != self._expected or _reference_refuses(payment, self._lock):
             return Refusal("x402/signed-not-bound")
         return payment
+
+
+def _build(choice: Json, h: AtrHash, lock: bool) -> CardanoUnsigned | Refusal:
+    """The wallet request: the scheme's payment with a TTL, and these auxiliary data committed in the signed body. H is
+    checked first, then the document and the option."""
+    expected = normal_hash(h)
+    if expected is None:
+        return Refusal("x402/payload-malformed")
+    c = choice if is_object(choice) else {}
+    required, accepted = c.get("required"), c.get("accepted")
+    ok = chosen(required, accepted, _checks(lock))
+    if ok is not True:
+        return ok
+    assert is_object(required) and is_object(accepted)
+    aux = auxiliary_data(expected)
+    if isinstance(aux, Refusal):
+        return aux
+    request = {"kind": "cardano-transaction", "accepted": accepted, "auxiliaryData": aux}
+    return CardanoUnsigned(request=request, _required=required, _accepted=accepted, _expected=expected, _lock=lock)
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,24 +464,41 @@ class X402ExactCardano:
     def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> CardanoUnsigned | Refusal:
         """The wallet request: the scheme's payment with a TTL, and these auxiliary data committed in the signed
         body. H is checked first, then the document and the option."""
-        expected = normal_hash(h)
-        if expected is None:
-            return Refusal("x402/payload-malformed")
-        c = choice if is_object(choice) else {}
-        required, accepted = c.get("required"), c.get("accepted")
-        ok = chosen(required, accepted, _check)
-        if ok is not True:
-            return ok
-        assert is_object(required) and is_object(accepted)
-        aux = auxiliary_data(expected)
-        if isinstance(aux, Refusal):
-            return aux
-        request = {"kind": "cardano-transaction", "accepted": accepted, "auxiliaryData": aux}
-        return CardanoUnsigned(request=request, _required=required, _accepted=accepted, _expected=expected)
+        return _build(choice, h, False)
 
     def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
         """The hash in the CIP-20 message the signed body commits to. Witnesses are not verified here."""
         return _bound(presented)
+
+    def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
+        """The payee broadcasts: the seller's facilitator submits the transaction the payer signed. The payment is held
+        to x402_shape's gate, the one bound applies first; any other gets its refusal."""
+        return x402_broadcaster(presented, "payee")
+
+
+@dataclass(frozen=True, slots=True)
+class X402ExactCardanoLock:
+    """x402/exact/cardano/lock, the two lock methods (extra.assetTransferMethod "masumi" or "script"): a deposit into
+    an escrow or a contract the seller defines, a charge and never an agreement. Its payee is the seller the option's
+    extra.terms.sellerAddress names on a Masumi lock, whose payTo is the escrow every seller of the deployment shares,
+    and payTo on a script lock."""
+
+    id: str = LOCK_ID
+    coverage: Coverage = "full"
+    agreement: AgreementData | None = None
+
+    def read(self, doc: Any) -> Advertised | Refusal:
+        """H, the link, and the options this pairing can pay, in document order."""
+        return read_for(_lock_check)(doc)
+
+    def build(self, choice: Json, h: AtrHash, act: Act | None = None) -> CardanoUnsigned | Refusal:
+        """The wallet request: the scheme's lock with a TTL, which a lock must carry, and these auxiliary data
+        committed in the signed body. H is checked first, then the document and the option."""
+        return _build(choice, h, True)
+
+    def bound(self, presented: Any, given: Mapping[str, Any] | None = None) -> AtrHash | Refusal:
+        """The hash in the CIP-20 message the signed body commits to. Witnesses are not verified here."""
+        return _bound(presented, True)
 
     def broadcaster(self, presented: Any) -> Broadcaster | Refusal:
         """The payee broadcasts: the seller's facilitator submits the transaction the payer signed. The payment is held

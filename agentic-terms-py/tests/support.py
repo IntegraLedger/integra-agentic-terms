@@ -59,7 +59,6 @@ PENDING: frozenset[str] = frozenset(
         "mpp/subscription/solana",
         "spend-permissions/eip155",
         "ucp/checkout/agent-signed",
-        "x402/exact/cardano/lock",
         "x402/exact/eip155/gateway-batched",
         "x402/exact/lnbtc/payment-hash",
         "x402/exact/stellar/precondition",

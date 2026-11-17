@@ -70,6 +70,7 @@ export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<s
   ["acp-allowance", ["acp/checkout/delegated"]],
   ["ap2-checkout-mandate", ["ap2/checkout-mandate"]],
   ["batch", ["x402/batch-settlement/eip155", "x402/batch-settlement/solana"]],
+  ["cardano-transaction", ["x402/exact/cardano/lock"]],
   [
     "eip712",
     ["mpp/charge/evm/permit2", "mpp/session/evm", "x402/auth-capture/eip155/eip3009", "x402/auth-capture/eip155/permit2"],

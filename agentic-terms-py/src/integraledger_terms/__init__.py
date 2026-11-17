@@ -82,7 +82,7 @@ from .bindings.x402_exact_casper import X402ExactCasper
 from .bindings.x402_exact_aptos import X402ExactAptos
 from .bindings.x402_exact_polkadot_lcp_assets_remark import X402ExactPolkadotLcpAssetsRemark
 from .bindings.x402_exact_ccd import X402ExactCcd
-from .bindings.x402_exact_cardano import X402ExactCardano
+from .bindings.x402_exact_cardano import X402ExactCardano, X402ExactCardanoLock
 from .bindings.x402_exact_sui import X402ExactSui
 from .bindings.mpp_charge_usdc_stacks import MppChargeUsdcStacks
 from .bindings.mpp_charge_xrpl import MppChargeXrpl
@@ -139,6 +139,7 @@ X402_EXACT_APTOS: Binding = X402ExactAptos()
 X402_EXACT_POLKADOT_LCP_ASSETS_REMARK: Binding = X402ExactPolkadotLcpAssetsRemark()
 X402_EXACT_CCD: Binding = X402ExactCcd()
 X402_EXACT_CARDANO: Binding = X402ExactCardano()
+X402_EXACT_CARDANO_LOCK: Binding = X402ExactCardanoLock()
 X402_EXACT_SUI: Binding = X402ExactSui()
 
 X402_EXACT_XRPL: Binding = X402ExactXrpl()
@@ -188,6 +189,7 @@ __all__ = [
     "X402_BATCH_SETTLEMENT_SOLANA",
     "X402_EXACT_APTOS",
     "X402_EXACT_CARDANO",
+    "X402_EXACT_CARDANO_LOCK",
     "X402_EXACT_CASPER",
     "X402_EXACT_CCD",
     "X402_EXACT_EIP155_EIP3009",

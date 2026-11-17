@@ -87,6 +87,7 @@ const RAILS = {
   "x402/exact/tron/lcp-trc20-memo": "TRON",
   "x402/exact/tvm": "TON",
   "x402/exact/cardano": "Cardano",
+  "x402/exact/cardano/lock": "Cardano",
   "x402/exact/casper": "Casper",
   "x402/exact/ccd": "Concordium",
   "mpp/charge/usdc/stacks": "Stacks",

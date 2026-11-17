@@ -212,6 +212,7 @@ ROWS: dict[str, tuple[dict[str, Any], str, list[tuple[str, Any, str]]]] = {
     "x402/exact/sui": ({}, "x402/payload-malformed", []),
     "x402/exact/aptos": ({}, "x402/payload-malformed", []),
     "x402/exact/cardano": ({}, "x402/payload-malformed", []),
+    "x402/exact/cardano/lock": ({}, "x402/payload-malformed", []),
     "x402/exact/polkadot/lcp-assets-remark": ({}, "x402/payload-malformed", []),
 }
 

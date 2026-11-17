@@ -53,6 +53,7 @@ import { x402UptoSolana } from "./x402-upto-solana.js";
 import { x402UptoXrpl } from "./x402-upto-xrpl.js";
 import { x402ExactAptos } from "./x402-exact-aptos.js";
 import { x402ExactCardano } from "./x402-exact-cardano.js";
+import { x402ExactCardanoLock } from "./x402-exact-cardano-lock.js";
 import { x402ExactNear } from "./x402-exact-near.js";
 import { x402ExactPolkadotLcpAssetsRemark } from "./x402-exact-polkadot-lcp-assets-remark.js";
 import { x402ExactStarknet } from "./x402-exact-starknet.js";
@@ -91,6 +92,7 @@ export const PIECES: ReadonlyMap<string, BuyerPiece> = new Map<string, BuyerPiec
   ["x402/exact/sui", x402ExactSui],
   ["x402/exact/aptos", x402ExactAptos],
   ["x402/exact/cardano", x402ExactCardano],
+  ["x402/exact/cardano/lock", x402ExactCardanoLock],
   ["x402/exact/casper", x402ExactCasper],
   ["x402/exact/ccd", x402ExactCcd],
   ["mpp/charge/lightning", mppChargeLightning],

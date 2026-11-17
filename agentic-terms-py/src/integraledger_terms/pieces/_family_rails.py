@@ -7,6 +7,7 @@ from . import x402_exact_aptos
 from . import x402_exact_polkadot_lcp_assets_remark
 from . import x402_exact_ccd
 from . import x402_exact_cardano
+from . import x402_exact_cardano_lock
 from . import x402_exact_sui
 
 FAMILY: dict[str, Piece] = {
@@ -16,5 +17,6 @@ FAMILY: dict[str, Piece] = {
     x402_exact_polkadot_lcp_assets_remark.PIECE.pairing: x402_exact_polkadot_lcp_assets_remark.PIECE,
     x402_exact_ccd.PIECE.pairing: x402_exact_ccd.PIECE,
     x402_exact_cardano.PIECE.pairing: x402_exact_cardano.PIECE,
+    x402_exact_cardano_lock.PIECE.pairing: x402_exact_cardano_lock.PIECE,
     x402_exact_sui.PIECE.pairing: x402_exact_sui.PIECE,
 }
