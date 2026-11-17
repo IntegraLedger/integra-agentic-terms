@@ -58,6 +58,7 @@ const RAILS = {
   "mpp/charge/usdc/evm": "EVM",
   "mpp/charge/usdc/gateway": "EVM",
   "mpp/session/evm": "EVM",
+  "spend-permissions/eip155": "EVM",
   "mpp/charge/tempo/memo": "Tempo",
   "mpp/charge/tempo/push": "Tempo",
   "mpp/session/tempo": "Tempo",

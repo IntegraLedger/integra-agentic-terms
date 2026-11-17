@@ -12,6 +12,7 @@ from ._summary_evm import erc20_transfer, exact_permit2, key_authorization, mpp_
 from ._types import Inputs, Payee, Summary, Validity
 from ._summary_card import tap_field, vi_checkout_mandate, vi_immediate, vic_reference
 from ._summary_checkout import acp_allowance, ap2_checkout_mandate, ucp_checkout, ucp_legal_context
+from ._summary_spend import spend_permission
 from ._summary_rail import (
     aptos_transaction,
     cardano_lock,
@@ -168,6 +169,7 @@ SUMMARIES: dict[str, SummaryEntry] = {
     "x402/exact/near": SummaryEntry(show=near_delegate, start=near_start),
     "x402/exact/tron/lcp-trc20-memo": SummaryEntry(show=tron_txid),
     "x402/exact/tvm": SummaryEntry(show=ton_w5),
+    "spend-permissions/eip155": SummaryEntry(show=spend_permission),
 }
 
 

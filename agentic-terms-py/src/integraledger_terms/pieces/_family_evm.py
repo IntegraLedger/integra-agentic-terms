@@ -9,7 +9,7 @@ from ..bindings.x402_evm import (
     EXACT_PERMIT2,
     UPTO_PERMIT2,
 )
-from . import x402_batch_settlement_cloudflare, x402_batch_settlement_eip155
+from . import spend_permissions_eip155, x402_batch_settlement_cloudflare, x402_batch_settlement_eip155
 from .evm_x402 import EvmX402Piece
 
 FAMILY: dict[str, Piece] = {
@@ -26,4 +26,5 @@ FAMILY: dict[str, Piece] = {
     },
     x402_batch_settlement_eip155.PIECE.pairing: x402_batch_settlement_eip155.PIECE,
     x402_batch_settlement_cloudflare.PIECE.pairing: x402_batch_settlement_cloudflare.PIECE,
+    spend_permissions_eip155.PIECE.pairing: spend_permissions_eip155.PIECE,
 }

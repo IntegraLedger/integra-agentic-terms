@@ -40,7 +40,6 @@ const PENDING: ReadonlySet<string> = new Set([
   "mpp/charge/tempo/split-memo/push",
   "mpp/session/solana/memo",
   "mpp/session/solana/stock",
-  "spend-permissions/eip155",
   "x402/exact/eip155/gateway-batched",
   "x402/exact/lnbtc/payment-hash",
 ]);

@@ -19,6 +19,7 @@ import type {
 import type { NearUnsigned } from "@integraledger/lcp/near";
 import type { PolkadotUnsigned } from "@integraledger/lcp/polkadot";
 import type { StarknetUnsigned } from "@integraledger/lcp/starknet";
+import type { SpendPermissionUnsigned } from "@integraledger/lcp/spend-permissions";
 import type { StellarUnsigned } from "@integraledger/lcp/stellar";
 import type { SuiUnsigned } from "@integraledger/lcp/sui";
 import type { KeyAuthorizationUnsigned } from "@integraledger/lcp/tempo";
@@ -71,6 +72,7 @@ export type SigningRequest =
   | SessionUnsigned["funding"]
   | Exclude<RailSessionUnsigned["request"], { kind: "hedera-session-open" }>
   | KeyAuthorizationUnsigned["request"]
+  | { kind: "eip712"; typedData: SpendPermissionUnsigned["typedData"] }
   | SvmUnsigned["request"]
   | XrplUnsigned<unknown>["request"]
   | HederaUnsigned["request"]
