@@ -2,11 +2,19 @@
 // or to the built `terms-mcp` binary, run as a child process. Raw JSON-RPC lines in, the answers read back by id.
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { PassThrough, type Readable, type Writable } from "node:stream";
 import { StdioServerTransport, serveStdio } from "@modelcontextprotocol/server/stdio";
 import type { Fetch, Signer } from "@integraledger/terms";
 import { createBuyerServer } from "../src/index.js";
+
+/**
+ * Whether the gate has no summary yet of the request the pairing's build hands the signer: terms' own SUMMARY_PENDING
+ * set (agentic-terms/test/support.ts), the one list of them. A test that pays such a pairing through a tool asserts the
+ * decline summary-missing with no signer call while it is listed, and pays it in full once it is not.
+ */
+export { summaryPending } from "../../agentic-terms/test/support.js";
 
 export type Message = { id?: number; result?: unknown; error?: { code: number; message: string; data?: unknown } };
 
@@ -14,15 +22,49 @@ export type Message = { id?: number; result?: unknown; error?: { code: number; m
 export const at = (v: unknown, path: string): unknown =>
   path.split(".").reduce<unknown>((o, k) => (typeof o === "object" && o !== null ? (o as Record<string, unknown>)[k] : undefined), v);
 
-/** One stdio connection to a server from the factory: writes JSON-RPC lines, reads the answers by id. */
 /**
- * What the host gives every test server whose subject is not the approval or the ceiling: an approver approving every
- * signing, and the delegation forms, which sign no end, raised to "no-end", as terms' profile asks a caller to raise them.
+ * The buyer's request the 402 answered, as the tools take it: the protocol package's x402-request-commitment.json
+ * http[0].request, a POST with a query and a JSON body, its body's bytes as base64.
+ */
+const COMMITTED = JSON.parse(
+  readFileSync(new URL("../node_modules/@integraledger/lcp/vectors/x402-request-commitment.json", import.meta.url), "utf8"),
+).http[0].request as { method: string; target: string; bodyUtf8: string };
+export const REQUEST = {
+  method: COMMITTED.method,
+  target: COMMITTED.target,
+  body: Buffer.from(COMMITTED.bodyUtf8, "utf8").toString("base64"),
+};
+
+/**
+ * What the host gives every test server whose subject is not the ceiling: the delegation forms, which sign no end,
+ * raised to "no-end", as terms' profile asks a caller to raise them.
  */
 const HOST = {
-  approver: () => true,
   ceilings: { "x402/exact/eip155/erc7710": "no-end", "x402/exact/eip155/erc7710-salt": "no-end" },
 } as const;
+
+type Requests = { request(method: string, params?: object): Promise<unknown> };
+
+/**
+ * `atr_transact` as an agent that approves each signing it is shown: while the result holds `approve`, the call is made
+ * again with `approved` set to `approve`, unchanged, at most `rounds` times. The last result, and each `approve` shown.
+ */
+export async function transacted(
+  c: Requests,
+  args: object,
+  meta: object,
+  rounds = 6,
+): Promise<{ m: Message; shown: unknown[] }> {
+  const shown: unknown[] = [];
+  let m = (await c.request("tools/call", { name: "atr_transact", arguments: args, _meta: meta })) as Message;
+  for (let i = 0; i < rounds; i++) {
+    const approve = at(m, "result.structuredContent.approve");
+    if (approve === undefined || at(m, "result.isError") === true) break;
+    shown.push(approve);
+    m = (await c.request("tools/call", { name: "atr_transact", arguments: { ...args, approved: approve }, _meta: meta })) as Message;
+  }
+  return { m, shown };
+}
 
 export function connect(
   options: Parameters<typeof createBuyerServer>[0],

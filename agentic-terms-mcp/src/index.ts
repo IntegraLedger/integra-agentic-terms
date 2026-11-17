@@ -30,9 +30,11 @@ import {
   type ResourceRequest,
   type Signature,
   type Signer,
+  type Summary,
+  type ToSign,
 } from "@integraledger/terms";
-import { BINDINGS as LCP_BINDINGS, hashEquals, type Json } from "@integraledger/lcp";
-import { fromBase64, toBase64 } from "@integraledger/lcp/core";
+import { BINDINGS as LCP_BINDINGS, hashEquals, LEGAL_CONTEXT_META, type Json } from "@integraledger/lcp";
+import { canonicalJson, fromBase64, hash, toBase64 } from "@integraledger/lcp/core";
 import { macOf, seal, unseal, verifies, type HoldJson } from "./hold.js";
 import { VERSION } from "./version.js";
 
@@ -42,11 +44,15 @@ export const BINDINGS: readonly Binding[] = LCP_BINDINGS;
 const DESCRIPTIONS = {
   atr_confirm:
     "Before approving a payment: reads the ATR hash the seller advertised, fetches the ATR from the seller's link and " +
-    "confirms its SHA-256 matches. On a match returns the ATR's exact bytes, `chosen`, and the signing request built " +
-    "with that hash; sign exactly that request, then call atr_finish with `chosen` and the signature. On a mismatch " +
-    "returns an error and nothing to sign. `chosen` is opaque: pass it back exactly as returned, `mac` included. Where " +
-    "`chosen.agreement` names an agreement URL, the signing request is returned only when you pass that agreement's " +
-    "`receipt` for this ATR hash.",
+    "confirms its SHA-256 matches. On a match returns the ATR's exact bytes, `chosen`, the signing request built with " +
+    "that hash, and `summary`, which names every authority signing that request grants: read both before your wallet " +
+    "signs. Sign exactly that request, then call atr_finish with `chosen` and the signature. On a mismatch returns an " +
+    "error and nothing to sign. Pass as `resourceRequest` the request the seller's 402 answered: over HTTP " +
+    "`{method, target, body, headers?}`, the method and request-target as sent, `body` the body's bytes as base64 " +
+    "(\"\" for none) and `headers` the header fields as sent; over MCP `{name, arguments?}`, the tool call's name and " +
+    "arguments. Where the ATR commits to a request, any other request is declined. `chosen` is opaque: pass it back " +
+    "exactly as returned, `mac` included. Where `chosen.agreement` names an agreement URL, the signing request is " +
+    "returned only when you pass that agreement's `receipt` for this ATR hash.",
   atr_finish:
     "Rebuilds the payment from `chosen` and the ATR bytes and joins your wallet's signature. Returns `signed` only " +
     "when the pairing reads the ATR hash from the completed payment, or, where the proof is the agreement payment, " +
@@ -60,10 +66,22 @@ const DESCRIPTIONS = {
     "payment, whose single-use value is the agreement's own value for the ATR hash; it is \"payment\" otherwise. A " +
     "payment from which the pairing reads no ATR hash is declined.",
   atr_transact:
-    "Confirms the ATR hash and, only on a match, signs the payment carrying it with this host's signer. Returns the " +
-    "payment to send and the ATR's exact bytes to keep. Where the pairing needs an agreement payment first, returns it " +
-    "as `approve` and signs nothing: its `option` holds the amount, asset, payee (`payTo`) and network it pays. To " +
-    "approve it, call atr_transact again with the same arguments and `approved` set to `approve`, unchanged.",
+    "Confirms the ATR hash and, only on a match, signs the payment carrying it with this host's signer, and only what " +
+    "you approved. Takes `resourceRequest` as atr_confirm does. Before each signing it returns `approve` and signs " +
+    "nothing: the last entry of `approve.signings` is the signing asked now, its `request` and the `summary` naming " +
+    "every authority it grants. To approve it, call atr_transact again with the same arguments and `approved` set to " +
+    "`approve`, unchanged. A payment signed in several steps, and an agreement payment, return each signing this way. " +
+    "Where the pairing needs an agreement payment first, `approve.agreement` holds it before any signing: its `option` " +
+    "holds the amount, asset, payee (`payTo`) and network it pays; approve it the same way. A signing built again " +
+    "differently is returned again to approve, never signed. Returns the payment to send and the ATR's exact bytes to " +
+    "keep. Where the seller's first response offers only the agreement, it pays the agreement and returns its " +
+    "`agreement` receipt, `legalContext` and the `charge` chosen, signing no charge: repeat your request with " +
+    "`legalContext` as its Legal-Context header, or over MCP under `params._meta` \"" +
+    LEGAL_CONTEXT_META +
+    "\", then call atr_transact with the second response. Pass as `legalContext` the first response's Legal-Context " +
+    "header, or its result's `_meta` \"" +
+    LEGAL_CONTEXT_META +
+    "\", where it carried one.",
   atr_agree:
     "The agreement payment for the agreement URL in the `chosen` that atr_confirm returned, for the ATR you confirmed; " +
     "pass `chosen` exactly as returned, since a changed `chosen` is declined. Only an agreement option that the " +
@@ -234,27 +252,51 @@ async function signedOf(
   return { signed, ...landed, mac: await macOf("opening", { pairing: binding.id, signed, ...landed }) };
 }
 
+/** The summary as JSON: each integer a decimal string, and its `atr` written as a result's own `atr` is. */
+function summaryJson(summary: Summary): Json {
+  const { atr, ...shown } = summary;
+  return { ...(jsonOf(shown) as { [k: string]: Json }), atr: atrOf(atr) };
+}
+
+/** A signing as the gate asks about it, as JSON: the act, the pairing, the request, its summary and the step. */
+function signingJson(toSign: ToSign): Json {
+  const { act, pairing, request, summary, step } = toSign;
+  return { act, pairing, request: jsonOf(request), summary: summaryJson(summary), step: { index: step.index, count: step.count } };
+}
+
+/** Whether two JSON values are the same value: equal in their RFC 8785 form, as the protocol package writes it. */
+function same(a: Json, b: Json): boolean {
+  const x = canonicalJson(a);
+  return typeof x === "string" && x === canonicalJson(b);
+}
+
 /**
- * The buyer's request the gate is given while the tools take none: a tool call the protocol package refuses
- * (`x402/tool-call-malformed`), so an ATR that commits to a request is declined `request-mismatch`, and one that commits
- * to none is compared with nothing.
+ * The floor inputs of the rails whose payment service serves a floor, by pairing (terms' profile `buyer-gate.md`, rule
+ * 9): the host gives them through `floors`, and no tool input names them.
  */
-const NO_REQUEST: ResourceRequest = { name: "" };
-
-/** The approver where the host gives none: it approves nothing, so `atr_transact` signs nothing unapproved. */
-const APPROVES_NOTHING: Approver = () => false;
+const FLOOR_INPUTS: ReadonlyMap<string, readonly string[]> = new Map([["x402/exact/eip155/gateway-batched", ["minValiditySeconds"]]]);
 
 /**
- * The buyer's tools. `approver`, the host's, is asked before each signing `atr_transact` makes, with the signing
- * request and its summary; where the host gives none, every signing is declined `not-approved`. `ceilings`, the host's,
- * raises a pairing's ceiling on how long a signed payment stays payable; no tool input raises one.
+ * The floor inputs of rule 9 for a pairing on a network (a CAIP-2 id, the account's), as the host reads them from the
+ * payment service: an object or a promise of one, or `undefined` for none.
+ */
+export type Floors = (pairing: string, network: string) => Inputs | undefined | Promise<Inputs | undefined>;
+
+/** The CAIP-2 network of a CAIP-10 account: its namespace and reference. */
+const networkOf = (account: string): string => account.split(":").slice(0, 2).join(":");
+
+/**
+ * The buyer's tools. `ceilings`, the host's, raises a pairing's ceiling on how long a signed payment stays payable, and
+ * `floors`, the host's, answers the floor a rail's payment service serves; neither is a tool input, so no text the
+ * agent reads raises a ceiling or names a floor. `atr_transact` signs only what the agent approved: each signing is
+ * returned to approve, and signed when the call is made again with it approved, unchanged.
  */
 export function createBuyerServer(options: {
   fetch: Fetch;
   signer?: Signer;
   agreementSigner?: Signer;
-  approver?: Approver;
   ceilings?: Ceilings;
+  floors?: Floors;
 }): McpServer {
   const byId = new Map(BINDINGS.map((b) => [b.id as string, b]));
   const ids = [...byId.keys()] as [string, ...string[]];
@@ -264,18 +306,55 @@ export function createBuyerServer(options: {
    * the protocol package's reader. Any other value fails the tool's input schema, as any malformed argument does, so
    * the tool fetches and signs nothing for it.
    */
-  const atr = z.base64().transform((base64, ctx): Uint8Array => {
-    const bytes = fromBase64(base64);
-    if (bytes !== null) return bytes;
-    ctx.addIssue({ code: "custom", input: base64, message: "Not padded standard base64 in its canonical form (RFC 4648 §3.5)" });
-    return z.NEVER;
-  });
+  const bytesOf = () =>
+    z.base64().transform((base64, ctx): Uint8Array => {
+      const bytes = fromBase64(base64);
+      if (bytes !== null) return bytes;
+      ctx.addIssue({ code: "custom", input: base64, message: "Not padded standard base64 in its canonical form (RFC 4648 §3.5)" });
+      return z.NEVER;
+    });
+  const atr = bytesOf();
+  /**
+   * The request the seller's 402 answered, in the form the protocol package's request commitment reads it (terms'
+   * profile `buyer-gate.md`, rules 2 and 16): over HTTP `{method, target, body, headers?}`, `body` the body's bytes as
+   * `atr` is read, `""` for none, and `headers` each field's value or its lines in the order sent; over MCP the tool call
+   * `{name, arguments?}`. Each holds no other member.
+   */
+  const resourceRequest = z.union([
+    z.strictObject({
+      method: z.string(),
+      target: z.string(),
+      body: bytesOf(),
+      headers: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
+    }),
+    z.strictObject({ name: z.string(), arguments: z.record(z.string(), JSON_VALUE).optional() }),
+  ]);
   const inputs = z.record(z.string(), JSON_VALUE).optional();
   const approved = z.record(z.string(), JSON_VALUE).optional();
+  /** What `atr_transact` returned as `approve`: the agreement payment, where there is one, and each signing approved. */
+  const approval = z.strictObject({ agreement: z.record(z.string(), JSON_VALUE).optional(), signings: z.array(JSON_VALUE) }).optional();
   const bindingOf = (id: string): Binding => byId.get(id)!;
-  const { fetch, signer, agreementSigner, approver = APPROVES_NOTHING, ceilings } = options;
+  const { fetch, signer, agreementSigner, ceilings, floors } = options;
   const raised = ceilings === undefined ? {} : { ceilings };
   const payer = agreementSigner ?? signer;
+
+  /**
+   * The inputs the gate is given for a pairing paid from `account`: the tool's own, without the pairing's floor inputs,
+   * and over them the floor inputs `floors` answers for the pairing on the account's network. A `floors` that throws or
+   * rejects, or answers anything but an object, gives none.
+   */
+  async function gateInputs(id: string, account: string, given: Inputs | undefined): Promise<Inputs> {
+    const names = FLOOR_INPUTS.get(id) ?? [];
+    const own = Object.fromEntries(Object.entries(given ?? {}).filter(([k]) => !names.includes(k)));
+    let served: unknown;
+    try {
+      served = floors === undefined ? undefined : await floors(id, networkOf(account));
+    } catch {
+      served = undefined;
+    }
+    const isInputs = typeof served === "object" && served !== null && !Array.isArray(served);
+    return isInputs ? { ...own, ...(served as Inputs) } : own;
+  }
 
   const server = new McpServer({ name: "integraledger-terms", version: VERSION }, { capabilities: { tools: {} } });
 
@@ -283,25 +362,34 @@ export function createBuyerServer(options: {
     "atr_confirm",
     {
       description: DESCRIPTIONS.atr_confirm,
-      inputSchema: z.object({ pairing, document: JSON_VALUE, account: z.string(), inputs, receipt: JSON_VALUE.optional() }),
+      inputSchema: z.object({
+        pairing,
+        document: JSON_VALUE,
+        account: z.string(),
+        resourceRequest,
+        inputs,
+        receipt: JSON_VALUE.optional(),
+      }),
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async (a) => {
       const out = await confirm(a.document, bindingOf(a.pairing), a.account, fetch, {
-        resourceRequest: NO_REQUEST,
-        inputs: (a.inputs ?? {}) as Inputs,
+        resourceRequest: a.resourceRequest as ResourceRequest,
+        inputs: await gateInputs(a.pairing, a.account, a.inputs as Inputs | undefined),
         ...raised,
       });
       if ("decline" in out) return declinedResult(out);
       const confirmed = { atrHash: out.h, atr: atrOf(out.bytes), chosen: await sealChosen(out.chosen) };
-      if (out.chosen.agreement === undefined) return result({ ...confirmed, request: jsonOf(out.request) });
+      // The signing request, with the summary of it the gate computed, where there is one to sign.
+      const shown = { request: jsonOf(out.request), ...(out.summary === undefined ? {} : { summary: summaryJson(out.summary) }) };
+      if (out.chosen.agreement === undefined) return result({ ...confirmed, ...shown });
       if (a.receipt === undefined) return result(confirmed);
       if (!isReceiptFor(a.receipt, out.h)) {
         return declinedResult({
           decline: { code: "agreement-failed", detail: "The agreement receipt is not a recorded agreement for this ATR hash." },
         });
       }
-      return result({ ...confirmed, request: jsonOf(out.request) });
+      return result({ ...confirmed, ...shown });
     },
   );
 
@@ -349,21 +437,51 @@ export function createBuyerServer(options: {
       "atr_transact",
       {
         description: DESCRIPTIONS.atr_transact,
-        inputSchema: z.object({ pairing, document: JSON_VALUE, inputs, approved }),
+        inputSchema: z.object({
+          pairing,
+          document: JSON_VALUE,
+          resourceRequest,
+          inputs,
+          approved: approval,
+          legalContext: z.string().optional(),
+        }),
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       },
       async (a, ctx) => {
+        const signings = a.approved?.signings ?? [];
+        // The approver approves nothing itself: a signing the agent approved, unchanged, and no other. The first other
+        // is kept, with the ATR's bytes its summary holds, and returned to approve.
+        let asked: { signing: Json; bytes: Uint8Array } | undefined;
+        const approver: Approver = (toSign) => {
+          const signing = signingJson(toSign);
+          if (signings.some((s) => same(s, signing))) return true;
+          asked ??= { signing, bytes: toSign.summary.atr };
+          return false;
+        };
+        // The approved agreement payment is paid only until a payment was asked after it: the gate asks one only once
+        // the agreement is recorded, and an agreement payment passed again would be signed and sent again.
+        const paid = signings.some((s) => typeof s === "object" && s !== null && (s as { act?: Json }).act === "payment");
+        const agreed = a.approved?.agreement;
         const out = await transact(a.document, bindingOf(a.pairing), signer, fetch, {
           approver,
-          resourceRequest: NO_REQUEST,
-          inputs: (a.inputs ?? {}) as Inputs,
+          resourceRequest: a.resourceRequest as ResourceRequest,
+          inputs: await gateInputs(a.pairing, signer.account, a.inputs as Inputs | undefined),
           ...raised,
           agreementSigner,
-          approved: a.approved as AgreementPayment | undefined,
+          ...(agreed === undefined || paid ? {} : { approved: agreed as unknown as AgreementPayment }),
+          ...(a.legalContext === undefined ? {} : { legalContext: a.legalContext }),
           signal: ctx.mcpReq.signal,
         });
+        if ("decline" in out && out.decline.code === "not-approved" && asked !== undefined && out.moved === undefined) {
+          // Nothing is signed: the signing asked now is returned last, after those the agent approved.
+          const approve = { ...(agreed === undefined ? {} : { agreement: agreed }), signings: [...signings, asked.signing] };
+          return result({ atrHash: await hash(asked.bytes), atr: atrOf(asked.bytes), approve });
+        }
         if ("decline" in out) return declinedResult(out);
-        if ("approve" in out) return result({ atrHash: out.h, atr: atrOf(out.bytes), approve: jsonOf(out.approve) });
+        if ("approve" in out) {
+          // An agreement payment to approve before any signing, nothing signed.
+          return result({ atrHash: out.h, atr: atrOf(out.bytes), approve: { agreement: jsonOf(out.approve), signings: [] } });
+        }
         if ("legalContext" in out) {
           // The agreement is paid and no charge is signed: the value the buyer's repeated request carries.
           const { agreement, legalContext, charge } = out;

@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BINDINGS } from "../src/index.js";
-import { at, connect } from "./stdio.js";
+import { at, connect, REQUEST } from "./stdio.js";
 
 const vectors = (name: string) =>
   JSON.parse(readFileSync(new URL(`../node_modules/@integraledger/lcp/vectors/${name}`, import.meta.url), "utf8"));
@@ -29,7 +29,7 @@ describe("atr_confirm carries the agreement URL of a pairing at coverage none", 
     expect(binding.data.coverage).toBe("none");
     const document = binding.advertise({ x402Version: 2, resource: E.fixed.resource, accepts: [E.fixed.option] }, H, LINK, E.fixed.option, AGREEMENT_URL);
     const c = connect({ fetch: async () => new Response(new Uint8Array(A), { status: 200 }) });
-    const m = await c.request("tools/call", { name: "atr_confirm", arguments: { pairing, document, account: B.fixed.account }, _meta: M });
+    const m = await c.request("tools/call", { name: "atr_confirm", arguments: { pairing, document, account: B.fixed.account, resourceRequest: REQUEST }, _meta: M });
     await c.close();
     expect(at(m, "result.isError")).toBeUndefined();
     expect(at(m, "result.structuredContent.chosen.agreement")).toBe(AGREEMENT_URL);

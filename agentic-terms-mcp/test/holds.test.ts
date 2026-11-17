@@ -6,13 +6,15 @@
 // declined `hold-unverified`. The signer is never called for either. JSON objects are unordered (RFC 8259 §4), so a hold
 // whose members arrive in another order is the same hold. A voucher's
 // `maxClaimableAmount` is the recorded charge plus the option's amount (x402 batch-settlement's client rule:
-// "`chargedCumulativeAmount + amount`"). The ATR, its hash and the batch-settlement opening's signatures are the lcp
-// vector files'.
+// "`chargedCumulativeAmount + amount`"). The ATR is buyer.json's JSON ATR A, each offer placed for its hash by the
+// pairing's own advertise, and the batch-settlement opening's signatures are the lcp vector files'. While terms'
+// SUMMARY_PENDING lists the batch openings' request, the gate declines them summary-missing before any signer call, and
+// each test here asserts that and ends; once it is filled, each runs in full.
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
 import { BINDINGS } from "../src/index.js";
-import { at, connect, spawnBin } from "./stdio.js";
+import { at, connect, REQUEST, spawnBin, summaryPending, transacted } from "./stdio.js";
 
 const vectors = (name: string) =>
   JSON.parse(readFileSync(new URL(`../node_modules/@integraledger/lcp/vectors/${name}`, import.meta.url), "utf8"));
@@ -20,26 +22,27 @@ const BV = vectors("x402-batch-settlement.json");
 const EV = BV.fixed.evm;
 const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} };
 
-/** `abc`, whose SHA-256 (FIPS 180-2) is the hash the batch-settlement vectors carry, and its link. */
-const ABC = new TextEncoder().encode("abc");
-const H_ABC = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-const LINK_ABC: string = vectors("mpp-challenge.json").fixed.link;
-const atr = Buffer.from(ABC).toString("base64");
+const B = vectors("buyer.json");
+/** buyer.json's JSON ATR A, its hash and its link. */
+const A = Uint8Array.from(Buffer.from(B.fixed.A, "hex"));
+const H: string = B.rows.find((r: { name: string }) => r.name === "B1").expect.h;
+const LINK: string = B.fixed.link;
+const atr = Buffer.from(A).toString("base64");
 
 const pairing = "x402/batch-settlement/eip155";
 type Advertises = { advertise(d: object, h: string, l: string, o: object, ...rest: unknown[]): object };
 const document = () =>
   (BINDINGS.find((b) => b.id === pairing) as unknown as Advertises).advertise(
     { x402Version: 2, resource: BV.fixed.resource, accepts: [EV.option] },
-    H_ABC,
-    LINK_ABC,
+    H,
+    LINK,
     EV.option,
   );
 const account = `eip155:84532:${EV.payer}`;
 const inputs = { payerAuthorizer: EV.payerAuthorizer, deposit: EV.deposit, authSalt: EV.authSalt };
 
 const fetch = (async (url: string) =>
-  url === LINK_ABC ? new Response(new Uint8Array(ABC), { status: 200 }) : new Response(null, { status: 404 })) as unknown as Fetch;
+  url === LINK ? new Response(new Uint8Array(A), { status: 200 }) : new Response(null, { status: 404 })) as unknown as Fetch;
 
 type Recording = Signer & { requests: SigningRequest[] };
 /** The payer signs the deposit authorization (EB3) and the payer authorizer the first voucher (EB2). */
@@ -60,18 +63,30 @@ const call = (c: Connection, name: string, args: object) => c.request("tools/cal
 
 type Opened = { signed: { payload: { voucher: Record<string, unknown> } }; mac: string };
 
-/** The signed opening and its `mac`, from `atr_transact` on `c` with the vector signatures. */
-async function openedOn(c: Connection): Promise<Opened> {
-  const opened = await call(c, "atr_transact", { pairing, document: document(), inputs });
+/**
+ * The signed opening and its `mac`, from `atr_transact` on `c` with the vector signatures, each signing approved; or,
+ * while the gate shows no summary of the opening's request, undefined, once that decline and no signer call are
+ * asserted.
+ */
+async function openedOn(c: Connection, signer?: Recording): Promise<Opened | undefined> {
+  const { m: opened } = await transacted(c, { pairing, document: document(), resourceRequest: REQUEST, inputs }, M);
+  if (summaryPending(pairing)) {
+    expect(at(opened, "result.structuredContent.decline.code")).toBe("summary-missing");
+    expect(signer?.requests ?? []).toHaveLength(0);
+    return undefined;
+  }
   expect(at(opened, "result.isError")).toBeUndefined();
   return at(opened, "result.structuredContent") as Opened;
 }
 
-/** A hold returned by `atr_channel_open` on `c`, from an opening and its `mac` this process returned. */
-async function holdFrom(c: Connection): Promise<Record<string, unknown>> {
-  const opener = connect({ fetch, signer: recording() });
-  const { signed, mac } = await openedOn(opener);
+/** A hold returned by `atr_channel_open` on `c`, from an opening and its `mac` this process returned; as openedOn. */
+async function holdFrom(c: Connection): Promise<Record<string, unknown> | undefined> {
+  const signer = recording();
+  const opener = connect({ fetch, signer });
+  const opened = await openedOn(opener, signer);
   await opener.close();
+  if (opened === undefined) return undefined;
+  const { signed, mac } = opened;
   const held = await call(c, "atr_channel_open", { pairing, atr, signed, mac });
   expect(at(held, "result.isError")).toBeUndefined();
   return at(held, "result.structuredContent.hold") as Record<string, unknown>;
@@ -85,16 +100,20 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
   afterEach(() => vi.useRealTimers());
 
   it("atr_transact returns a channel opening with a mac beside signed, a 32-byte tag in 0x hex", async () => {
-    const c = connect({ fetch, signer: recording() });
-    const opened = await openedOn(c);
+    const signer = recording();
+    const c = connect({ fetch, signer });
+    const opened = await openedOn(c, signer);
     await c.close();
+    if (opened === undefined) return;
     expect(opened.mac).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
   it("atr_channel_open declines opening-unverified, and returns no hold, for an opening whose voucher ceiling is raised with its signatures kept", async () => {
     const signer = recording();
     const c = connect({ fetch, signer });
-    const { signed, mac } = await openedOn(c);
+    const opened = await openedOn(c, signer);
+    if (opened === undefined) return c.close();
+    const { signed, mac } = opened;
     const before = signer.requests.length;
     const raised = { ...signed, payload: { ...signed.payload, voucher: { ...signed.payload.voucher, maxClaimableAmount: "1000000000000" } } };
     const m = await call(c, "atr_channel_open", { pairing, atr, signed: raised, mac });
@@ -106,9 +125,12 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
   });
 
   it("atr_channel_open declines opening-unverified for an opening under another pairing, with another mac, or with a hold's mac", async () => {
-    const c = connect({ fetch, signer: recording() });
-    const { signed, mac } = await openedOn(c);
-    const hold = await holdFrom(c);
+    const signer = recording();
+    const c = connect({ fetch, signer });
+    const opened = await openedOn(c, signer);
+    if (opened === undefined) return c.close();
+    const { signed, mac } = opened;
+    const hold = (await holdFrom(c))!;
     const codes = [];
     for (const args of [
       { pairing: "x402/batch-settlement/solana", atr, signed, mac },
@@ -125,8 +147,9 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     const c = connect({ fetch });
     const hold = await holdFrom(c);
     await c.close();
+    if (hold === undefined) return;
     expect(hold["mac"]).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(hold).toMatchObject({ pairing, h: H_ABC, atr, charged: "0", signedMax: BV.EB2.maxClaimableAmount });
+    expect(hold).toMatchObject({ pairing, h: H, atr, charged: "0", signedMax: BV.EB2.maxClaimableAmount });
     expect(Object.keys(hold).sort()).toEqual(["atr", "channel", "charged", "h", "mac", "network", "opening", "pairing", "signedMax"]);
   });
 
@@ -134,6 +157,7 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     const signer = recording();
     const c = connect({ fetch, signer });
     const hold = await holdFrom(c);
+    if (hold === undefined) return c.close();
     const m = await call(c, "atr_channel_within", { pairing, hold: { ...hold, charged: "1000000000000" }, document: document() });
     await c.close();
     expect(at(m, "result.isError")).toBe(true);
@@ -146,6 +170,7 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     const signer = recording();
     const c = connect({ fetch, signer });
     const hold = await holdFrom(c);
+    if (hold === undefined) return c.close();
     const edited = { ...hold, charged: "1000000000000", signedMax: "1000000000000" };
     const m = await call(c, "atr_channel_within", { pairing, hold: edited, document: document() });
     await c.close();
@@ -157,6 +182,7 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     const signer = recording();
     const c = connect({ fetch, signer });
     const hold = await holdFrom(c);
+    if (hold === undefined) return c.close();
     const without = (k: string) => Object.fromEntries(Object.entries(hold).filter(([m]) => m !== k));
     const opening = hold["opening"] as { payload: { voucher: Record<string, unknown> } };
     const edits: Record<string, unknown>[] = [
@@ -186,6 +212,7 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
   it("atr_channel_record_charge declines hold-unverified for an edited hold, so an edited hold is never returned with a mac", async () => {
     const c = connect({ fetch });
     const hold = await holdFrom(c);
+    if (hold === undefined) return c.close();
     const edited = { ...hold, signedMax: "1000000000000" };
     const m = await call(c, "atr_channel_record_charge", { hold: edited, charged: "1000000000000" });
     await c.close();
@@ -198,6 +225,7 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     const signer = recording();
     const c = connect({ fetch, signer });
     const hold = await holdFrom(c);
+    if (hold === undefined) return c.close();
     const reordered = Object.fromEntries(Object.entries(hold).reverse());
     const m = await call(c, "atr_channel_within", { pairing, hold: reordered, document: document() });
     await c.close();
@@ -211,6 +239,7 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
     const opener = connect({ fetch });
     const hold = await holdFrom(opener);
     await opener.close();
+    if (hold === undefined) return;
     const signer = recording();
     const c = connect({ fetch, signer });
     const m = await call(c, "atr_channel_within", { pairing, hold, document: document() });
@@ -220,11 +249,17 @@ describe("channel openings and holds over MCP carry this process's mac", () => {
   });
 
   it("a chosen, an opening and a hold this process returned are declined by the terms-mcp binary in its own process, and used here", async () => {
-    const c = connect({ fetch, signer: recording() });
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, inputs });
+    const signer = recording();
+    const c = connect({ fetch, signer });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST, inputs });
     const chosen = at(confirmed, "result.structuredContent.chosen");
-    const { signed, mac } = await openedOn(c);
-    const hold = await holdFrom(c);
+    const opening = await openedOn(c, signer);
+    if (opening === undefined) {
+      expect(at(confirmed, "result.structuredContent.decline.code")).toBe("summary-missing");
+      return c.close();
+    }
+    const { signed, mac } = opening;
+    const hold = (await holdFrom(c))!;
     const other = spawnBin();
     const finished = await call(other, "atr_finish", { pairing, atr, chosen, signature: [BV.EB3.signature, BV.EB2.signature] });
     const opened = await call(other, "atr_channel_open", { pairing, atr, signed, mac });
@@ -264,8 +299,13 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
   };
   const signature = [BV.EB3.signature, BV.EB2.signature];
 
-  async function chosenOn(c: Connection): Promise<Chosen> {
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, inputs });
+  /** The chosen atr_confirm returns; undefined, once the decline summary-missing is asserted, while it is pending. */
+  async function chosenOn(c: Connection): Promise<Chosen | undefined> {
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST, inputs });
+    if (summaryPending(pairing)) {
+      expect(at(confirmed, "result.structuredContent.decline.code")).toBe("summary-missing");
+      return undefined;
+    }
     expect(at(confirmed, "result.isError")).toBeUndefined();
     return at(confirmed, "result.structuredContent.chosen") as Chosen;
   }
@@ -273,6 +313,7 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
   it("the chosen atr_confirm returned, unchanged: the opening and its mac, held with EB2's signedMax", async () => {
     const c = connect({ fetch });
     const chosen = await chosenOn(c);
+    if (chosen === undefined) return c.close();
     const finished = await call(c, "atr_finish", { pairing, atr, chosen, signature });
     expect(at(finished, "result.isError")).toBeUndefined();
     const { signed, mac } = at(finished, "result.structuredContent") as Opened;
@@ -284,6 +325,7 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
   it("a chosen with its amount, deposit or payee changed, its mac kept, is declined chosen-unverified with no opening", async () => {
     const c = connect({ fetch });
     const chosen = await chosenOn(c);
+    if (chosen === undefined) return c.close();
     expect(chosen.choice.accepted["amount"]).toBe(EV.option.amount);
     expect(chosen.choice.deposit).toBe(EV.deposit);
     expect(chosen.choice.accepted["payTo"]).toBe(EV.option.payTo);
@@ -305,7 +347,9 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
 
   it("a chosen whose mac is replaced or removed is declined chosen-unverified", async () => {
     const c = connect({ fetch });
-    const { mac: _mac, ...bare } = await chosenOn(c);
+    const chosen = await chosenOn(c);
+    if (chosen === undefined) return c.close();
+    const { mac: _mac, ...bare } = chosen;
     const forged = await call(c, "atr_finish", { pairing, atr, chosen: { ...bare, mac: `0x${"00".repeat(32)}` }, signature });
     const missing = await call(c, "atr_finish", { pairing, atr, chosen: bare, signature });
     await c.close();
@@ -324,7 +368,7 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
       request: Buffer.from(SE.fixed.request, "utf8").toString("base64url"),
       expires: MC.fixed.expires,
     };
-    const doc = (BINDINGS.find((b) => b.id === session) as unknown as Advertises).advertise([issued], H_ABC, LINK_ABC, issued, 0);
+    const doc = (BINDINGS.find((b) => b.id === session) as unknown as Advertises).advertise([issued], H, LINK, issued, 0);
     const sessionInputs = { deposit: SE.fixed.deposit, credentialType: "authorization", tokenDomain: SE.fixed.tokenDomain };
     /** A 65-byte answer of the form the funding and the voucher take; no signature is verified by the gate. */
     const answer = `0x${"11".repeat(65)}`;
@@ -334,8 +378,14 @@ describe("atr_finish of a channel pairing reads chosen only when its mac verifie
       pairing: session,
       document: doc,
       account: `eip155:84532:${SE.fixed.payer}`,
+      resourceRequest: REQUEST,
       inputs: sessionInputs,
     });
+    if (summaryPending(session)) {
+      await c.close();
+      expect(at(confirmed, "result.structuredContent.decline.code")).toBe("summary-missing");
+      return;
+    }
     const chosen = at(confirmed, "result.structuredContent.chosen") as Chosen;
     expect(chosen.choice.deposit).toBe(SE.fixed.deposit);
     const edited = { ...chosen, choice: { ...chosen.choice, deposit: "999999999999" } };

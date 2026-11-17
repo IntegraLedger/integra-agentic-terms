@@ -1,14 +1,15 @@
 // The `atr` argument of every tool that takes one is the ATR's bytes as padded standard base64 in its canonical form
 // (RFC 4648 §3.5). Any other spelling fails the tool's input schema, as any malformed argument does, so the tool
-// fetches and signs nothing for it. The ATR is the byte 0xff: its padded standard base64 is `/w==` (RFC 4648 §4), and
-// its SHA-256 is node:crypto's. The offers, the agreement and the channel opening are the lcp vector files' (buyer.json,
+// fetches and signs nothing for it. The ATR is buyer.json's JSON ATR A: its padded standard base64 is node:buffer's, and
+// its SHA-256 node:crypto's. The offers, the agreement and the channel opening are the lcp vector files' (buyer.json,
 // x402-exact-eip155-erc7710.json and x402-batch-settlement.json), each placed for that hash by its pairing's advertise.
+// The spellings refused are each a spelling of the byte 0xff, whose canonical form is `/w==` (RFC 4648 §4).
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
 import { BINDINGS } from "../src/index.js";
-import { at, connect, type Message } from "./stdio.js";
+import { at, connect, REQUEST, summaryPending, transacted, type Message } from "./stdio.js";
 
 const vectors = (name: string) =>
   JSON.parse(readFileSync(new URL(`../node_modules/@integraledger/lcp/vectors/${name}`, import.meta.url), "utf8"));
@@ -19,13 +20,13 @@ const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelco
 const AG = B.fixed.agreement;
 const S: string = B.rows.find((r: { name: string }) => r.name === "B6").input.then.finish.signature;
 
-const FF = Uint8Array.of(0xff);
-const H = `0x${createHash("sha256").update(FF).digest("hex")}`;
+const ATR = Uint8Array.from(Buffer.from(B.fixed.A, "hex"));
+const H = `0x${createHash("sha256").update(ATR).digest("hex")}`;
 const LINK = `https://atr.seller.example/${randomUUID()}`;
-/** 0xff in padded standard base64: `/` holds six one bits, and `w` two one bits and four zero pad bits. */
-const CANONICAL = "/w==";
+/** A in padded standard base64. */
+const CANONICAL = Buffer.from(ATR).toString("base64");
 
-/** Every other spelling: none is the canonical padded standard base64 of any bytes. */
+/** Spellings of 0xff other than `/w==`: none is the canonical padded standard base64 of any bytes. */
 const SPELLINGS: [string, unknown][] = [
   ["a pad bit set past the last byte, /x==", "/x=="],
   ["a pad bit set past the last byte, one = form, //9=", "//9="],
@@ -58,11 +59,11 @@ const REQUIRED = bindingOf("x402/exact/eip155/eip3009").advertise(
 
 type Counted = { fetches: number; signs: number };
 
-/** The ATR link serves 0xff; the agreement URL answers 402 with REQUIRED. Every fetch is counted. */
+/** The ATR link serves A; the agreement URL answers 402 with REQUIRED. Every fetch is counted. */
 function seller(n: Counted): Fetch {
   return (async (url: string) => {
     n.fetches++;
-    if (url === LINK) return new Response(new Uint8Array(FF), { status: 200 });
+    if (url === LINK) return new Response(new Uint8Array(ATR), { status: 200 });
     if (url === AG.url) {
       const header = Buffer.from(JSON.stringify(REQUIRED), "utf8").toString("base64");
       return new Response(null, { status: 402, headers: { "payment-required": header } });
@@ -86,8 +87,11 @@ type Conn = ReturnType<typeof connect>;
 const call = (c: Conn, name: string, args: object) => c.request("tools/call", { name, arguments: args, _meta: M });
 
 type Tool = {
-  /** A connection, and the tool's arguments other than `atr`, from the calls that come before it. */
-  open(n: Counted): Promise<{ c: Conn; args: Record<string, unknown> }>;
+  /**
+   * A connection, and the tool's arguments other than `atr`, from the calls that come before it; or, where the gate
+   * shows no summary yet of the pairing's request (terms' SUMMARY_PENDING), the decline that ends those calls.
+   */
+  open(n: Counted): Promise<{ c: Conn; args: Record<string, unknown>; pending?: Message }>;
   /** What the canonical spelling returns. */
   control(m: Message, n: Counted): void;
 };
@@ -110,7 +114,7 @@ const TOOLS: Record<string, Tool> = {
       document.extensions.legalContext.info.legalContextUrl = LINK;
       const c = connect({ fetch: seller(n) });
       const pairing = "x402/exact/eip155/eip3009";
-      const confirmed = await call(c, "atr_confirm", { pairing, document, account: B.fixed.account });
+      const confirmed = await call(c, "atr_confirm", { pairing, document, account: B.fixed.account, resourceRequest: REQUEST });
       return { c, args: { pairing, chosen: at(confirmed, "result.structuredContent.chosen"), signature: S } };
     },
     control(m) {
@@ -132,7 +136,12 @@ const TOOLS: Record<string, Tool> = {
         AG.url,
       );
       const c = connect({ fetch: seller(n), agreementSigner: signer(n, B.fixed.account, () => S) });
-      const confirmed = await call(c, "atr_confirm", { pairing, document, account: `${E.fixed.option.network}:${E.fixed.payer}` });
+      const confirmed = await call(c, "atr_confirm", {
+        pairing,
+        document,
+        account: `${E.fixed.option.network}:${E.fixed.payer}`,
+        resourceRequest: REQUEST,
+      });
       return { c, args: { chosen: at(confirmed, "result.structuredContent.chosen") } };
     },
     control(m, n) {
@@ -151,9 +160,10 @@ const TOOLS: Record<string, Tool> = {
         r.kind === "batch" && r.requests.length === 2 ? [BV.EB3.signature, BV.EB2.signature] : [BV.EB2.signature];
       const c = connect({ fetch: seller(n), signer: signer(n, account, answer) });
       const inputs = { payerAuthorizer: EV.payerAuthorizer, deposit: EV.deposit, authSalt: EV.authSalt };
-      const opened = await call(c, "atr_transact", { pairing, document, inputs });
+      const { m: opened } = await transacted(c, { pairing, document, resourceRequest: REQUEST, inputs }, M);
       const signed = at(opened, "result.structuredContent.signed");
-      return { c, args: { pairing, signed, mac: at(opened, "result.structuredContent.mac") } };
+      const pending = summaryPending(pairing) ? { pending: opened } : {};
+      return { c, args: { pairing, signed, mac: at(opened, "result.structuredContent.mac") }, ...pending };
     },
     control(m) {
       expect(at(m, "result.structuredContent.atrHash")).toBe(H);
@@ -173,9 +183,15 @@ describe("the atr argument: padded standard base64 in its canonical form", () =>
   describe.each(Object.keys(TOOLS))("%s", (name) => {
     const tool = TOOLS[name]!;
 
-    it(`${CANONICAL} is read as the byte 0xff`, async () => {
+    it("A's canonical spelling is read as its bytes", async () => {
       const n: Counted = { fetches: 0, signs: 0 };
-      const { c, args } = await tool.open(n);
+      const { c, args, pending } = await tool.open(n);
+      if (pending !== undefined) {
+        await c.close();
+        expect(at(pending, "result.structuredContent.decline.code")).toBe("summary-missing");
+        expect(n.signs).toBe(0);
+        return;
+      }
       const before = { ...n };
       const m = await call(c, name, { ...args, atr: CANONICAL });
       await c.close();
@@ -198,8 +214,9 @@ describe("the atr argument: padded standard base64 in its canonical form", () =>
   });
 });
 
-// RFC 4648 §10's test vectors, and every byte value in order (encoded by node:buffer): atr_confirm returns the ATR's
-// bytes as `atr.base64`, that encoding, and atr_check, given that text back, reads the same bytes.
+// RFC 4648 §10's test vectors, and every byte value in order (encoded by node:buffer): atr_check, given that text,
+// reads those bytes. None of them is one JSON text, so no tool returns them as an ATR: the gate declines them
+// atr-malformed before anything is built. atr_confirm writes A as node:buffer does (tools.test.ts).
 const EVERY_BYTE = Uint8Array.from({ length: 256 }, (_, i) => i);
 const ROUND_TRIPS: [string, Uint8Array, string][] = [
   ...(
@@ -215,25 +232,12 @@ const ROUND_TRIPS: [string, Uint8Array, string][] = [
   ["every byte value", EVERY_BYTE, Buffer.from(EVERY_BYTE).toString("base64")],
 ];
 
-describe("atr.base64 from atr_confirm, read back by atr_check", () => {
-  beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(B.fixed.now * 1000);
-  });
-  afterEach(() => vi.useRealTimers());
-
+describe("an atr in RFC 4648's base64, read by atr_check as its bytes", () => {
   it.each(ROUND_TRIPS)("%s", async (_, bytes, base64) => {
     const h = `0x${createHash("sha256").update(bytes).digest("hex")}`;
-    const document = structuredClone(B.fixed.D);
-    document.extensions.legalContext.info.value = h;
-    document.extensions.legalContext.info.legalContextUrl = `https://atr.seller.example/${randomUUID()}`;
-    const c = connect({ fetch: (async () => new Response(new Uint8Array(bytes), { status: 200 })) as unknown as Fetch });
-    const pairing = "x402/exact/eip155/eip3009";
-    const confirmed = await call(c, "atr_confirm", { pairing, document, account: B.fixed.account });
-    const returned = at(confirmed, "result.structuredContent.atr.base64");
-    const checked = await call(c, "atr_check", { pairing, atr: returned, presented: paymentFor(h) });
+    const c = connect({ fetch: (async () => new Response(null, { status: 404 })) as unknown as Fetch });
+    const checked = await call(c, "atr_check", { pairing: "x402/exact/eip155/eip3009", atr: base64, presented: paymentFor(h) });
     await c.close();
-    expect(returned).toBe(base64);
     expect(at(checked, "result.structuredContent")).toEqual({ atrHash: h });
   });
 });

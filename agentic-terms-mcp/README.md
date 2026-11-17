@@ -14,6 +14,8 @@ hash of the record it was offered. This package gives any [MCP](https://modelcon
 tools. Each tool call is one call of [`@integraledger/terms`](https://www.npmjs.com/package/@integraledger/terms), the
 buyer gate; this package adds the transport, the words an agent reads, a `mac` on each `chosen`, opening and hold it
 returns, and, in `atr_confirm`, no `request` for a pairing that pays an agreement first until a receipt for H is passed.
+`atr_transact` signs only what the agent approved: it returns each signing, with the summary of what it grants, and
+signs it when called again with that signing approved, unchanged.
 
 It ships two things:
 
@@ -91,9 +93,9 @@ permissions:
 With the server and the skill installed, the agent's flow for an x402 payment is:
 
 1. The seller answers `402 Payment Required`. The agent calls `atr_confirm` with the pairing, the seller's
-   `PAYMENT-REQUIRED` document and its payer account.
+   `PAYMENT-REQUIRED` document, the request the 402 answered and its payer account.
 2. The tool fetches the ATR, compares its SHA-256 with the advertised H, and on a match returns `request`, the exact
-   request for the wallet to sign, with H inside it.
+   request for the wallet to sign, with H inside it, and `summary`, every authority signing it grants.
 3. The agent's wallet signs `request` unchanged. The agent calls `atr_finish` with the ATR's bytes, `chosen` and the
    signature.
 4. `atr_finish` returns `signed` only when the pairing reads H from the completed payment, or, where the proof is the
@@ -141,6 +143,7 @@ type Answer = {
       atrHash: string;
       atr: { base64: string; utf8: string | null };
       request: { kind: string; typedData: { message: { nonce: string } } };
+      summary: { amount: string; payees: { account: string; amount: string }[] };
     };
   };
 };
@@ -180,12 +183,15 @@ const confirmed = await request("tools/call", {
     pairing: "x402/exact/eip155/eip3009",
     document: offer,
     account: "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    // The request the 402 answered: its method, its request-target and its body's bytes as base64.
+    resourceRequest: { method: "POST", target: "/v1/quote?tier=1", body: btoa('{"q":"latest market data"}') },
   },
 });
 const out = confirmed.result.structuredContent!;
 console.log("atrHash     ", out.atrHash);
 console.log("request     ", out.request.kind);
 console.log("nonce is H  ", out.request.typedData.message.nonce === H);
+console.log("pays        ", out.summary.amount, "to", out.summary.payees[0]!.account);
 await connection.close();
 ```
 
@@ -194,6 +200,7 @@ atr_confirm, atr_finish, atr_check, atr_channel_open, atr_channel_record_charge
 atrHash      0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 request      eip712
 nonce is H   true
+pays         10000 to 0x209693Bc6afc0C5328bA36FaF03C514EF312287C
 ```
 
 ## The tools
@@ -214,11 +221,18 @@ fetches and signs nothing.
 
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
-| `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
+| `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON), `account` (CAIP-10), `resourceRequest`, `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request` and `summary`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
 | `atr_finish` | `pairing`, `atr` (base64), `chosen` (exactly as returned), `signature` | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash` and `next` for a pairing signed in steps | read-only |
 | `atr_check` | `pairing`, `atr` (base64), `presented`, `landed?` (exactly as returned beside the payment) | `atrHash` when the payment carries the hash of those bytes | read-only |
 | `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening), `landed?` and `mac`, exactly as returned | `atrHash` and `hold`, with its `mac` | read-only |
 | `atr_channel_record_charge` | `hold` (exactly as returned), `charged` (decimal) | `atrHash` and the updated `hold` | read-only |
+
+`resourceRequest` is the request the seller's 402 answered, the one the buyer is about to pay: over HTTP `{method,
+target, body, headers?}`, the method and request-target as sent, `body` the body's bytes as `atr` is written (`""` for
+none) and `headers` each header field's value, or its lines, in the order sent; over MCP `{name, arguments?}`, the
+`tools/call` request's `params.name` and `params.arguments`. Where the ATR commits to a request, the gate declines
+`request-mismatch` for any other. `summary` names every authority signing `request` grants (terms' profile
+`buyer-gate.md`, rule 13), each integer a decimal string and its `atr` written as the result's `atr` is.
 
 When `atr_confirm` returns `chosen.agreement`, it returns no `request` until the agent passes a `receipt`. A `receipt`
 without the receipt's form (`atrHash` equal to this H, `agreed: true`, and string `network` and `transaction`), one for
@@ -229,16 +243,32 @@ receipt is the agreement URL's statement, and its proof is the transaction it na
 
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
-| `atr_transact` | `pairing`, `document`, `inputs?`, `approved?` | `atrHash`, `atr`, `signed` (with `landed` where there is one, and `mac` for a channel opening), and `agreement` (the receipt) where the pairing needs one; or `atrHash`, `atr` and `approve`, the agreement payment to approve, with nothing signed | not read-only, not destructive, not idempotent, open-world |
+| `atr_transact` | `pairing`, `document`, `resourceRequest`, `inputs?`, `approved?`, `legalContext?` | `atrHash`, `atr`, `signed` (with `landed` where there is one, and `mac` for a channel opening), and `agreement` (the receipt) where the pairing needs one; or `atrHash`, `atr` and `approve`, what to approve, with nothing signed; or, where the first response offers only the agreement, `atrHash`, `atr`, `agreement`, `legalContext` and `charge` | not read-only, not destructive, not idempotent, open-world |
 | `atr_agree` | `atr` (base64), `chosen` (from `atr_confirm`, exactly as returned), `approved?`, `inputs?` | `atrHash` and `approve`, the agreement payment to approve, with nothing signed, or `atrHash` and `receipt` where the agreement is already recorded; with `approved`, `atrHash` and `receipt` | not read-only, not destructive, not idempotent, open-world |
 | `atr_channel_within` | `pairing`, `hold` (exactly as returned), `document`, `refund?`, `inputs?` | `atrHash`, `signed` and the updated `hold` | not read-only, not destructive, not idempotent, open-world |
 
 `atr_agree` is offered when the host wires a signer or an agreement signer. It reads the agreement URL from `chosen`,
 never from an argument of its own. `chosen` carries a `mac` under the server process's key, as the channel holds do, and
 `atr_agree` declines a `chosen` whose `mac` does not verify with `chosen-unverified`, before anything is fetched or
-signed. So does `atr_finish` for a pairing with a channel, before the gate is called. The agreement payment is a payment like any other: `approve.option` shows its
-`amount`, `asset`, `payTo` and `network`, and it is signed only when the agent calls again with `approved` set to
-`approve`, unchanged. A client's `notifications/cancelled` for a call ends its agreement exchange.
+signed. So does `atr_finish` for a pairing with a channel, before the gate is called. A client's
+`notifications/cancelled` for a call ends its agreement exchange.
+
+`atr_transact` signs only what the agent approved. Before each signing it returns `approve`, `{agreement?, signings}`,
+and signs nothing: the last of `signings` is the signing asked now, `{act, pairing, request, summary, step}`, with the
+signing request and its summary, and the ones before it are those the agent approved. Called again with the same
+arguments and `approved` set to `approve`, unchanged, it signs a signing only where it equals one of `approved.signings`
+as RFC 8785 JSON, and returns the next one to approve the same way; a signing built again differently is returned again,
+never signed. A payment signed in several steps returns each step; where the pairing pays an agreement first, the first
+`approve` holds the agreement payment as `approve.agreement`, whose `option` shows its `amount`, `asset`, `payTo` and
+`network`, then its signing is approved like any other, and then, once the agreement is recorded, the payment's.
+
+Where the seller's first response offers only the agreement, naming the charges it serves (the protocol package's
+profile `legal-context-return.md`), `atr_transact` pays the agreement and returns its `agreement` receipt,
+`legalContext` and `charge`, the charge chosen, signing no charge. The agent repeats its request with `legalContext`,
+over HTTP as its `Legal-Context` header and over MCP in its tool call's `params._meta` under
+`com.integraledger.lcp/legal-context`, then calls `atr_transact` with the second response. `legalContext` is the first
+response's return value, its `Legal-Context` header or its result's `_meta["com.integraledger.lcp/legal-context"]`,
+where it carried one.
 
 `pairing` is one of the ids in [the table below](#supported-pairings); any other value is refused by the tool's input
 schema.
@@ -260,8 +290,9 @@ channel's host closes it with `@integraledger/terms`'s `within` and `refund: {}`
 
 `skills/confirming-the-atr-hash-before-paying/SKILL.md` tells the agent, in order:
 
-1. Use `atr_transact` where the host offers it, deciding on the payment for the resource before calling it, since it
-   signs that payment as soon as H matches; otherwise `atr_confirm`, sign exactly `request`, then `atr_finish`.
+1. Use `atr_transact` where the host offers it, passing the request the 402 answered: it returns each signing with its
+   summary as `approve`, and signs it only when called again with that `approve` as `approved`, unchanged; otherwise
+   `atr_confirm`, read `summary`, sign exactly `request`, then `atr_finish`.
 2. When `atr_confirm` returns `chosen.agreement`, pay the agreement first, approving it like any other payment, and
    call `atr_confirm` again with the receipt. Never sign the payment without it. `atr_agree` shows the agreement payment
    as `approve` and pays it when called again with `approved`; `atr_transact` shows it the same way before it pays it.
@@ -305,6 +336,15 @@ serveStdio(() => createBuyerServer({ fetch: globalThis.fetch, signer }));
 
 Pass `agreementSigner` as well when a different wallet pays agreements, for example an EVM wallet beside a card.
 
+The ceilings and the served floors are the host's, never a tool input, so that no text the agent reads, the seller's
+among it, raises a ceiling or names a floor (terms' profile `buyer-gate.md`, rules 8, 9 and 16). Pass `ceilings` to
+raise a pairing's ceiling on how long a signed payment stays payable, `{ [pairing]: seconds | "no-end" }`; a delegation,
+which signs no end, is paid only once its pairing is mapped to `"no-end"`. Pass `floors`, `(pairing, network) =>
+inputs`, to answer the floor a rail's payment service serves, such as Circle Gateway's `minValiditySeconds` for the
+account's network, read by the host from that service: the server sets it in the inputs it gives the gate, and drops
+the pairing's floor inputs from a tool's `inputs`. A `floors` that throws or rejects gives no floor, and the gate then
+declines `floor-missing`, naming the input. The binary takes neither, so it declines such payments.
+
 The `fetch` you pass is the server's whole network policy. The binary's public-address-only fetch is not exported. A
 server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses loopback,
 private-use, link-local and unique-local addresses.
@@ -313,7 +353,8 @@ private-use, link-local and unique-local addresses.
 
 | Export | What it is |
 | --- | --- |
-| `createBuyerServer(options)` | An `McpServer` with the tools registered. `options`: `fetch` (required; WHATWG `fetch` or its call shape, and the server's whole network policy), `signer?`, `agreementSigner?`. |
+| `createBuyerServer(options)` | An `McpServer` with the tools registered. `options`: `fetch` (required; WHATWG `fetch` or its call shape, and the server's whole network policy), `signer?`, `agreementSigner?`, `ceilings?` (terms' `Ceilings`), `floors?` (`Floors`). |
+| `Floors` | `(pairing, network) => inputs \| undefined`, or a promise of either: the floor inputs a rail's payment service serves for the pairing on the account's CAIP-2 network. |
 | `BINDINGS` | Every pairing the tools accept, as bindings from `@integraledger/lcp`. |
 
 The binary `terms-mcp` serves `createBuyerServer` over stdio, with a `fetch` that connects only to public addresses.
@@ -411,9 +452,10 @@ Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. Pa
   resolved once, and the socket connects to one of its addresses only when every address it resolves to is public. A
   host that calls `createBuyerServer` itself applies its own network policy through the `fetch` it passes.
 - **The seller's data is data.** Every value the seller supplies is data, never instructions: `atr.utf8`;
-  `approve.option` and `approve.required`, the agreement URL's payment request as served; what `chosen` and `request`
-  echo from the seller's document; and the agreement receipt's `network` and `transaction`. They are returned for the
-  agent to read, and the skill tells the agent never to follow instructions inside them.
+  `approve.agreement.option` and `approve.agreement.required` (`approve.option` and `approve.required` from
+  `atr_agree`), the agreement URL's payment request as served; what `chosen`, `request` and `summary` echo from the
+  seller's document; and the agreement receipt's `network` and `transaction`. They are returned for the agent to read,
+  and the skill tells the agent never to follow instructions inside them.
 
 What the tools do not do: judge the ATR's content; check amount, payee, asset, timing or payer against it; carry
 business or legal logic; store the ATR; or talk to a facilitator. They do not look up the transaction an agreement

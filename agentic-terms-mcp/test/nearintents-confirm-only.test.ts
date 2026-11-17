@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BINDINGS } from "../src/index.js";
-import { at, connect } from "./stdio.js";
+import { at, connect, REQUEST } from "./stdio.js";
 
 const vectors = (name: string) =>
   JSON.parse(readFileSync(new URL(`../node_modules/@integraledger/lcp/vectors/${name}`, import.meta.url), "utf8"));
@@ -45,7 +45,7 @@ describe("atr_confirm on mpp/charge/nearintents", () => {
     const call = (receipt?: unknown) =>
       c.request("tools/call", {
         name: "atr_confirm",
-        arguments: { pairing, document: doc, account: `${MD.originNetwork}:${MD.refundTo}`, ...(receipt ? { receipt } : {}) },
+        arguments: { pairing, document: doc, account: `${MD.originNetwork}:${MD.refundTo}`, resourceRequest: REQUEST, ...(receipt ? { receipt } : {}) },
         _meta: M,
       });
     const unpaid = await call();

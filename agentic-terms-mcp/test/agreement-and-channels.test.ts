@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
 import { BINDINGS, createBuyerServer } from "../src/index.js";
-import { at, connect } from "./stdio.js";
+import { at, connect, REQUEST, summaryPending, transacted } from "./stdio.js";
 
 const vectors = (name: string) =>
   JSON.parse(readFileSync(new URL(`../node_modules/@integraledger/lcp/vectors/${name}`, import.meta.url), "utf8"));
@@ -42,24 +42,21 @@ function recording(account: string, answer: (r: SigningRequest) => unknown): Rec
   return s;
 }
 
-/** `abc`, whose SHA-256 (FIPS 180-2) is the hash the batch-settlement vectors carry, and its link. */
-const ABC = new TextEncoder().encode("abc");
-const H_ABC = "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-const LINK_ABC: string = vectors("mpp-challenge.json").fixed.link;
 
 /**
- * The ATR links serve A and `abc`; the agreement URL answers 402 with the vector challenge unpaid, and the receipt once
- * paid, keeping each payment it was sent.
+ * The ATR link serves A; the agreement URL answers 402 with the vector challenge unpaid, and the receipt once
+ * paid, keeping each payment it was sent. With `records`, it answers an unpaid request with the receipt once a payment
+ * was sent, as an agreement resource answers once the agreement is recorded.
  */
-function seller(): Fetch & { paid: number; sent: string[] } {
+function seller(records = false): Fetch & { paid: number; sent: string[] } {
   const f = (async (url: string, init: { headers?: Record<string, string> }) => {
     if (url === LINK) return new Response(new Uint8Array(A), { status: 200 });
-    if (url === LINK_ABC) return new Response(new Uint8Array(ABC), { status: 200 });
     if (url === AG.url && init.headers?.["PAYMENT-SIGNATURE"] !== undefined) {
       f.paid++;
       f.sent.push(init.headers["PAYMENT-SIGNATURE"]);
       return new Response(JSON.stringify(AG.receipt), { status: 200 });
     }
+    if (url === AG.url && records && f.paid > 0) return new Response(JSON.stringify(AG.receipt), { status: 200 });
     if (url === AG.url) return new Response(null, { status: 402, headers: { "payment-required": base64Json(AG.required) } });
     return new Response(null, { status: 404 });
   }) as unknown as Fetch & { paid: number; sent: string[] };
@@ -71,6 +68,17 @@ function seller(): Fetch & { paid: number; sent: string[] } {
 const call = (c: ReturnType<typeof connect>, name: string, args: object) =>
   c.request("tools/call", { name, arguments: args, _meta: M });
 
+/**
+ * Whether the opening `m` answered is the decline the gate gives while terms' SUMMARY_PENDING lists the batch openings'
+ * request: then it is summary-missing, and no signer was called.
+ */
+function pendingDeclined(m: unknown, signer: Recording, pairing: string): boolean {
+  if (!summaryPending(pairing)) return false;
+  expect(at(m, "result.structuredContent.decline.code")).toBe("summary-missing");
+  expect(signer.requests).toHaveLength(0);
+  return true;
+}
+
 describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is not itself a public proof", () => {
   const pairing = "x402/exact/eip155/erc7710";
   const document = () =>
@@ -79,7 +87,7 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
 
   it("atr_confirm without a receipt carries the agreement URL in chosen and returns no request", async () => {
     const c = connect({ fetch: seller() });
-    const m = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const m = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST });
     await c.close();
     expect(at(m, "result.isError")).toBeUndefined();
     expect(at(m, "result.structuredContent.chosen.agreement")).toBe(AG.url);
@@ -89,8 +97,8 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
 
   it("atr_confirm with the receipt for H returns the request; with a receipt for another hash it declines agreement-failed", async () => {
     const c = connect({ fetch: seller() });
-    const ok = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receipt });
-    const other = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receiptOtherHash });
+    const ok = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST, receipt: AG.receipt });
+    const other = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST, receipt: AG.receiptOtherHash });
     await c.close();
     expect(at(ok, "result.isError")).toBeUndefined();
     expect(at(ok, "result.structuredContent.request.kind")).toBe("erc7710");
@@ -104,7 +112,7 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     const fetch = seller();
     const agreementSigner = recording(B.fixed.account, () => S);
     const c = connect({ fetch, agreementSigner });
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST });
     const chosen = at(confirmed, "result.structuredContent.chosen");
     const atr = Buffer.from(A).toString("base64");
     const shown = await call(c, "atr_agree", { atr, chosen });
@@ -154,7 +162,7 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     }) as unknown as Fetch;
     const agreementSigner = recording(B.fixed.account, () => S);
     const c = connect({ fetch: counted, agreementSigner });
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST });
     const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
     expect(chosen["agreement"]).toBe(AG.url);
     expect(chosen["mac"]).toMatch(/^0x[0-9a-f]{64}$/);
@@ -175,7 +183,7 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     const fetch = seller();
     const agreementSigner = recording(B.fixed.account, () => S);
     const c = connect({ fetch, agreementSigner });
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST });
     const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
     const reordered = Object.fromEntries(Object.entries(chosen).reverse());
     const m = await call(c, "atr_agree", { atr: Buffer.from(A).toString("base64"), chosen: reordered });
@@ -192,7 +200,7 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     }) as unknown as Fetch;
     const agreementSigner = recording(B.fixed.account, () => S);
     const c = connect({ fetch: served, agreementSigner });
-    const confirmed = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: B.fixed.D, account: B.fixed.account });
+    const confirmed = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: B.fixed.D, account: B.fixed.account, resourceRequest: REQUEST });
     const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
     expect(chosen).not.toHaveProperty("agreement");
     const before = requests;
@@ -212,7 +220,7 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
 
   it("atr_finish takes the sealed chosen as returned", async () => {
     const c = connect({ fetch: seller() });
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receipt });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST, receipt: AG.receipt });
     const chosen = at(confirmed, "result.structuredContent.chosen") as Record<string, unknown>;
     expect(chosen["mac"]).toMatch(/^0x[0-9a-f]{64}$/);
     const m = await call(c, "atr_finish", {
@@ -253,7 +261,7 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
       };
       return server;
     });
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST });
     const chosen = at(confirmed, "result.structuredContent.chosen");
     const atr = Buffer.from(A).toString("base64");
     const shown = await call(c, "atr_agree", { atr, chosen });
@@ -272,19 +280,23 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
   });
 
   it("atr_transact returns the agreement payment to approve, then pays it with the agreement signer and hands the full payment to the payment signer", async () => {
-    const fetch = seller();
+    const fetch = seller(true);
     const agreementSigner = recording(B.fixed.account, () => S);
     const signer = recording(account, () => {
       throw new Error("declined by the test wallet");
     });
     const c = connect({ fetch, signer, agreementSigner });
-    const shown = await call(c, "atr_transact", { pairing, document: document() });
+    const args = { pairing, document: document(), resourceRequest: REQUEST };
+    const shown = await call(c, "atr_transact", args);
     expect(at(shown, "result.isError")).toBeUndefined();
-    expect(at(shown, "result.structuredContent.approve")).toEqual({ url: AG.url, option: AG.option, required: AG.required });
+    expect(at(shown, "result.structuredContent.approve")).toEqual({
+      agreement: { url: AG.url, option: AG.option, required: AG.required },
+      signings: [],
+    });
     expect(at(shown, "result.structuredContent.atrHash")).toBe(H);
     expect(agreementSigner.requests.length + signer.requests.length).toBe(0);
     const approved = at(shown, "result.structuredContent.approve");
-    const m = await call(c, "atr_transact", { pairing, document: document(), approved });
+    const { m } = await transacted(c, { ...args, approved }, M);
     await c.close();
     expect(agreementSigner.requests.map((r) => r.kind)).toEqual(["eip712"]);
     expect(signer.requests.map((r) => r.kind)).toEqual(["erc7710"]);
@@ -303,10 +315,10 @@ describe("x402/batch-settlement/cloudflare over MCP, whose build is the payment"
 
   it("atr_finish with signature null returns the payment, which atr_check reads H from", async () => {
     const c = connect({ fetch: seller() });
-    const unpaid = await call(c, "atr_confirm", { pairing, document: document(), account });
+    const unpaid = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST });
     expect(at(unpaid, "result.structuredContent.chosen.agreement")).toBe(AG.url);
     expect(at(unpaid, "result.structuredContent")).not.toHaveProperty("request");
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receipt });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST, receipt: AG.receipt });
     expect(at(confirmed, "result.isError")).toBeUndefined();
     expect(at(confirmed, "result.structuredContent.request")).toBeNull();
     const atr = at(confirmed, "result.structuredContent.atr.base64");
@@ -324,7 +336,7 @@ describe("x402/batch-settlement/cloudflare over MCP, whose build is the payment"
 
   it("atr_check with landed null reads the payment alone, as with no landed", async () => {
     const c = connect({ fetch: seller() });
-    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, receipt: AG.receipt });
+    const confirmed = await call(c, "atr_confirm", { pairing, document: document(), account, resourceRequest: REQUEST, receipt: AG.receipt });
     const atr = at(confirmed, "result.structuredContent.atr.base64");
     const chosen = at(confirmed, "result.structuredContent.chosen");
     const m = await call(c, "atr_finish", { pairing, atr, chosen, signature: null });
@@ -340,12 +352,12 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
   const pairing = "x402/batch-settlement/eip155";
   const EV = BV.fixed.evm;
   const document = () =>
-    bindingOf(pairing).advertise({ x402Version: 2, resource: BV.fixed.resource, accepts: [EV.option] }, H_ABC, LINK_ABC, EV.option);
+    bindingOf(pairing).advertise({ x402Version: 2, resource: BV.fixed.resource, accepts: [EV.option] }, H, LINK, EV.option);
   const account = `eip155:84532:${EV.payer}`;
   const inputs = { payerAuthorizer: EV.payerAuthorizer, deposit: EV.deposit, authSalt: EV.authSalt };
   // The opening's two signatures: EB3's deposit authorization by the payer, EB2's first voucher by the payer authorizer.
   const opening = () => recording(account, (r) => (r.kind === "batch" && r.requests.length === 2 ? [BV.EB3.signature, BV.EB2.signature] : [BV.EB2.signature]));
-  const atr = Buffer.from(ABC).toString("base64");
+  const atr = Buffer.from(A).toString("base64");
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -356,7 +368,8 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
   it("atr_channel_open holds the opening with EB6's channel; atr_channel_record_charge stays within what was signed; atr_channel_within signs the next voucher at charge plus amount", async () => {
     const signer = opening();
     const c = connect({ fetch: seller(), signer });
-    const opened = await call(c, "atr_transact", { pairing, document: document(), inputs });
+    const { m: opened } = await transacted(c, { pairing, document: document(), resourceRequest: REQUEST, inputs }, M);
+    if (pendingDeclined(opened, signer, pairing)) return c.close();
     expect(at(opened, "result.isError")).toBeUndefined();
     const signed = at(opened, "result.structuredContent.signed");
     const mac = at(opened, "result.structuredContent.mac");
@@ -366,7 +379,7 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
       pairing,
       network: BV.EB6.expectRef.network,
       channel: BV.EB6.expectRef.channel,
-      h: H_ABC,
+      h: H,
       atr,
       charged: "0",
       signedMax: BV.EB2.maxClaimableAmount,
@@ -391,8 +404,10 @@ describe("a channel over MCP: x402/batch-settlement/eip155", () => {
   });
 
   it("atr_channel_open refuses an opening against other bytes", async () => {
-    const c = connect({ fetch: seller(), signer: opening() });
-    const opened = await call(c, "atr_transact", { pairing, document: document(), inputs });
+    const signer = opening();
+    const c = connect({ fetch: seller(), signer });
+    const { m: opened } = await transacted(c, { pairing, document: document(), resourceRequest: REQUEST, inputs }, M);
+    if (pendingDeclined(opened, signer, pairing)) return c.close();
     const m = await call(c, "atr_channel_open", {
       pairing,
       atr: Buffer.from("abd").toString("base64"),
@@ -412,7 +427,7 @@ describe("a Solana channel's refund over MCP: x402/batch-settlement/solana", () 
   // PAYMENT-RESPONSE errorReason x402's reference client/refund.ts reads first).
   const RETRY = "invalid_batch_settlement_svm_receiver_binding_unavailable";
   const document = () =>
-    bindingOf(pairing).advertise({ x402Version: 2, resource: BV.fixed.resource, accepts: [BS.option] }, H_ABC, LINK_ABC, BS.option);
+    bindingOf(pairing).advertise({ x402Version: 2, resource: BV.fixed.resource, accepts: [BS.option] }, H, LINK, BS.option);
   const account = `${BS.option.network}:${BS.payer}`;
   const inputs = { payerAuthorizer: BS.payer, openSlot: BS.openSlot, tokenProgram: BS.tokenProgram, recentBlockhash: BS.blockhash, deposit: BS.deposit };
   const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -428,10 +443,12 @@ describe("a Solana channel's refund over MCP: x402/batch-settlement/solana", () 
   // Each request answered with 64 bytes in base58; bound reads the memos and verifies no signature.
   const signer = () =>
     recording(account, (r) => (r.kind === "batch" ? r.requests.map((_, i) => base58(new Uint8Array(64).fill(i + 1))) : []));
-  const atr = Buffer.from(ABC).toString("base64");
+  const atr = Buffer.from(A).toString("base64");
 
-  async function held(c: ReturnType<typeof connect>): Promise<object> {
-    const opened = await call(c, "atr_transact", { pairing, document: document(), inputs });
+  /** The hold of the opening atr_transact signs; undefined while the gate shows no summary of the opening's request. */
+  async function held(c: ReturnType<typeof connect>, s: Recording): Promise<object | undefined> {
+    const { m: opened } = await transacted(c, { pairing, document: document(), resourceRequest: REQUEST, inputs }, M);
+    if (pendingDeclined(opened, s, pairing)) return undefined;
     expect(at(opened, "result.isError")).toBeUndefined();
     const signed = at(opened, "result.structuredContent.signed");
     const mac = at(opened, "result.structuredContent.mac");
@@ -441,7 +458,8 @@ describe("a Solana channel's refund over MCP: x402/batch-settlement/solana", () 
   it("atr_channel_within passes refund.paymentResponse to within: its errorReason takes the refund again, with the request_close", async () => {
     const s = signer();
     const c = connect({ fetch: seller(), signer: s });
-    const hold = await held(c);
+    const hold = await held(c, s);
+    if (hold === undefined) return c.close();
     const first = await call(c, "atr_channel_within", { pairing, hold, document: document(), refund: {} });
     const again = await call(c, "atr_channel_within", {
       pairing,
@@ -463,7 +481,8 @@ describe("a Solana channel's refund over MCP: x402/batch-settlement/solana", () 
   it("atr_channel_within declines x402/input-malformed, and calls no signer, for a paymentResponse that is a string or whose errorReason is not a string", async () => {
     const s = signer();
     const c = connect({ fetch: seller(), signer: s });
-    const hold = await held(c);
+    const hold = await held(c, s);
+    if (hold === undefined) return c.close();
     const before = s.requests.length;
     const declines = [];
     for (const paymentResponse of [RETRY, { errorReason: 5 }, { errorReason: [RETRY] }]) {

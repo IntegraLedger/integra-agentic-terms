@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Fetch, Signer, SigningRequest } from "@integraledger/terms";
 import { BINDINGS } from "../src/index.js";
-import { at, connect, type Message } from "./stdio.js";
+import { at, connect, REQUEST, summaryPending, transacted, type Message } from "./stdio.js";
 import { chargeUsdcGateway, evmAuthorization, usdcGatewaySalt, type GatewayPreimage } from "@integraledger/lcp/mpp";
 
 const B = JSON.parse(
@@ -111,7 +111,7 @@ describe("the MCP server over stdio", () => {
 
   it("plant: atr_confirm where the link serves C is hash-mismatch, with no request", async () => {
     const c = connect({ fetch: serving(C) });
-    const m = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: D, account: ACCOUNT });
+    const m = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: D, account: ACCOUNT, resourceRequest: REQUEST });
     results.push(m);
     expect(at(m, "result.isError")).toBe(true);
     expect(at(m, "result.structuredContent.decline.code")).toBe("hash-mismatch");
@@ -122,7 +122,7 @@ describe("the MCP server over stdio", () => {
   it("plant: atr_transact where the link serves C never calls the signer", async () => {
     const signer = counting();
     const c = connect({ fetch: serving(C), signer });
-    const m = await call(c, "atr_transact", { pairing: "x402/exact/eip155/eip3009", document: D });
+    const m = await call(c, "atr_transact", { pairing: "x402/exact/eip155/eip3009", document: D, resourceRequest: REQUEST });
     results.push(m);
     expect(at(m, "result.isError")).toBe(true);
     expect(at(m, "result.structuredContent.decline.code")).toBe("hash-mismatch");
@@ -133,7 +133,7 @@ describe("the MCP server over stdio", () => {
   let chosen: object;
   it("atr_confirm where the link serves A", async () => {
     const c = connect({ fetch: serving(A) });
-    const m = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: D, account: ACCOUNT });
+    const m = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: D, account: ACCOUNT, resourceRequest: REQUEST });
     results.push(m);
     const s = (k: string) => at(m, `result.structuredContent.${k}`);
     expect(s("atrHash")).toBe("0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938");
@@ -142,6 +142,10 @@ describe("the MCP server over stdio", () => {
     );
     expect(s("request.typedData.message.nonce")).toBe(s("atrHash"));
     expect(s("chosen.choice.accepted")).toEqual(D.accepts[0]);
+    // The summary beside the request: the amount, payee, asset and network of D's option, and the ATR as `atr` is written.
+    const option = D.accepts[0];
+    expect(s("summary")).toMatchObject({ amount: option.amount, payees: [{ account: option.payTo, amount: option.amount }], asset: option.asset, network: option.network });
+    expect(s("summary.atr")).toEqual(s("atr"));
     chosen = s("chosen") as object;
     await c.close();
   });
@@ -183,18 +187,26 @@ describe("the MCP server over stdio", () => {
     await c.close();
   });
 
-  it("atr_confirm over the byte 0xff advertised as its hash: utf8 null, base64 /w==", async () => {
+  it("atr_confirm over the byte 0xff advertised as its hash: the bytes are no JSON text, atr-malformed, with no request", async () => {
     const h = "0xa8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89";
     const doc = structuredClone(D);
     doc.extensions.legalContext.info.value = h;
     doc.extensions.legalContext.info.legalContextUrl = `https://atr.seller.example/${randomUUID()}`;
     const c = connect({ fetch: serving(Uint8Array.of(0xff)) });
-    const m = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: doc, account: ACCOUNT });
+    const m = await call(c, "atr_confirm", { pairing: "x402/exact/eip155/eip3009", document: doc, account: ACCOUNT, resourceRequest: REQUEST });
     results.push(m);
-    expect(at(m, "result.isError")).toBeUndefined();
-    expect(at(m, "result.structuredContent.atr")).toEqual({ base64: "/w==", utf8: null });
+    expect(at(m, "result.isError")).toBe(true);
+    expect(at(m, "result.structuredContent.decline.code")).toBe("atr-malformed");
+    expect(at(m, "result.structuredContent")).not.toHaveProperty("request");
+    expect(at(m, "result.structuredContent")).not.toHaveProperty("atr");
     await c.close();
   });
+
+  // The MPP breadth pairings pay buyer.json's JSON ATR A, each challenge placed for H(A) by the pairing's own advertise.
+  // While terms' SUMMARY_PENDING lists a pairing, the gate shows no summary of its request and declines it
+  // summary-missing before any signer call; once it is filled, the pairing is paid through the tools in full.
+  const HA: `0x${string}` = row("B1").expect.h;
+  const LINK: string = B.fixed.link;
 
   it("a breadth pairing: MPP's EVM authorization, a list of challenges and the buyer's inputs, through confirm and finish", async () => {
     const V = vectors("mpp-challenge.json");
@@ -206,20 +218,28 @@ describe("the MCP server over stdio", () => {
       request: Buffer.from(V.fixed.R_E, "utf8").toString("base64url"),
       expires: V.fixed.expires,
     };
-    const document = evmAuthorization.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never, 0);
-    const c = connect({ fetch: serving(new TextEncoder().encode("abc")) });
+    const document = evmAuthorization.advertise([issued] as never, HA, LINK, issued as never, 0);
+    const c = connect({ fetch: serving(A) });
     const pairing = "mpp/charge/evm/authorization";
     const account = `eip155:84532:${Z.fixed.payer}`;
-    const confirmed = await call(c, "atr_confirm", { pairing, document, account, inputs: { tokenDomain: Z.fixed.tokenDomain } });
-    expect(at(confirmed, "result.structuredContent.request.typedData.message.nonce")).toBe(Z.MV5.expectNonce);
+    const inputs = { tokenDomain: Z.fixed.tokenDomain };
+    const confirmed = await call(c, "atr_confirm", { pairing, document, account, resourceRequest: REQUEST, inputs });
+    if (summaryPending(pairing)) {
+      expect(at(confirmed, "result.structuredContent.decline.code")).toBe("summary-missing");
+      expect(at(confirmed, "result.structuredContent")).not.toHaveProperty("request");
+      await c.close();
+      return;
+    }
+    // MV5's nonce is the challenge's hash, whose id carries H: the vectors hold it for H(abc), which the pairing's own
+    // rows check with no gate; validBefore and the payer's source do not depend on H.
     expect(at(confirmed, "result.structuredContent.request.typedData.message.validBefore")).toBe(Z.MV5.expectValidBefore);
     const finished = await call(c, "atr_finish", {
       pairing,
-      atr: Buffer.from("abc").toString("base64"),
+      atr: Buffer.from(A).toString("base64"),
       chosen: at(confirmed, "result.structuredContent.chosen"),
       signature: Z.MV5.expectSignature,
     });
-    expect(at(finished, "result.structuredContent.atrHash")).toBe(H_ABC);
+    expect(at(finished, "result.structuredContent.atrHash")).toBe(HA);
     expect(at(finished, "result.structuredContent.signed.source")).toBe(Z.MV5.expectSource);
     await c.close();
   });
@@ -236,21 +256,16 @@ describe("the MCP server over stdio", () => {
     };
     // The pairing is at coverage none: its offer names the agreement URL, which answers the agreement's receipt for H in
     // buyer.json's receipt form, and the full payment is built once that receipt is in hand.
-    const document = chargeUsdcGateway.advertise([issued] as never, H_ABC, ABC_FIXED.link, issued as never, 0, "payment", ABC_FIXED.agreementUrl);
-    const receipt = { ...B.fixed.agreement.receipt, atrHash: H_ABC };
-    const sellerAbc: Fetch = async (url) =>
-      url === ABC_FIXED.agreementUrl
-        ? new Response(JSON.stringify(receipt), { status: 200 })
-        : new Response(new TextEncoder().encode("abc"), { status: 200 });
+    const document = chargeUsdcGateway.advertise([issued] as never, HA, LINK, issued as never, 0, "payment", ABC_FIXED.agreementUrl);
+    const receipt = { ...B.fixed.agreement.receipt, atrHash: HA };
+    const seller: Fetch = async (url) =>
+      url === ABC_FIXED.agreementUrl ? new Response(JSON.stringify(receipt), { status: 200 }) : new Response(new Uint8Array(A), { status: 200 });
     const pairing = "mpp/charge/usdc/gateway";
-    const preimage = { id: f.MV1, realm: f.realm, requestHash: G.M5.expectRequestHash, recipient: G.M5.saltInput.recipient };
     // The build's inputs, as the vector file's B2 row gives the buyer; their ceiling is M5's maxBlockHeight.
     const inputs = G.buyer.rows.find((r: { name: string }) => r.name === "B2").input.inputs;
     const maxBlockHeight: string = G.ceiling.good.expectMaxBlockHeight;
-    const c = connect({ fetch: sellerAbc });
-    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source, inputs, receipt });
-    expect(at(confirmed, "result.structuredContent.atrHash")).toBe(H_ABC);
-    expect(at(confirmed, "result.structuredContent.request")).toEqual({ kind: "gateway-burn-intent", preimage, maxBlockHeight });
+    const c = connect({ fetch: seller });
+    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source, resourceRequest: REQUEST, inputs, receipt });
     await c.close();
 
     const { recipient: _r, ...own } = G.M5.saltInput;
@@ -268,16 +283,26 @@ describe("the MCP server over stdio", () => {
         return { source: G.M5.source, ...routes, burnIntent, signature: `0x${"11".repeat(65)}` };
       },
     };
-    const t = connect({ fetch: sellerAbc, signer });
-    const m = await call(t, "atr_transact", { pairing, document, inputs });
+    const t = connect({ fetch: seller, signer });
+    const { m } = await transacted(t, { pairing, document, resourceRequest: REQUEST, inputs }, M);
+    await t.close();
+    if (summaryPending(pairing)) {
+      expect(at(confirmed, "result.structuredContent.decline.code")).toBe("summary-missing");
+      expect(at(m, "result.structuredContent.decline.code")).toBe("summary-missing");
+      expect(handed).toEqual([]);
+      return;
+    }
+    // The preimage's id is the challenge's as the pairing's advertise placed it for H(A).
+    const placed = (document as unknown as { id: string }[])[0]!;
+    const preimage = { id: placed.id, realm: f.realm, requestHash: G.M5.expectRequestHash, recipient: G.M5.saltInput.recipient };
+    expect(at(confirmed, "result.structuredContent.atrHash")).toBe(HA);
+    expect(at(confirmed, "result.structuredContent.request")).toEqual({ kind: "gateway-burn-intent", preimage, maxBlockHeight });
     expect(handed).toEqual([{ kind: "gateway-burn-intent", preimage, maxBlockHeight }]);
     expect(at(m, "result.isError")).toBeUndefined();
-    expect(at(m, "result.structuredContent.atrHash")).toBe(H_ABC);
-    expect(at(m, "result.structuredContent.signed.payload.authorization.transfer.burnIntent.spec.salt")).toBe(G.M5.expectSalt);
-    await t.close();
+    expect(at(m, "result.structuredContent.atrHash")).toBe(HA);
   });
 
-  it("plant: atr_transact on a pairing with no public proof returns the agreement payment to approve, then the receipt beside the payment", async () => {
+  it("plant: atr_transact on a pairing with no public proof returns the agreement payment to approve, then each signing, then the receipt beside the payment", async () => {
     const E = vectors("x402-exact-eip155-erc7710.json");
     const AG = B.fixed.agreement;
     const H: string = row("B1").expect.h;
@@ -309,21 +334,23 @@ describe("the MCP server over stdio", () => {
       },
     };
     const c = connect({ fetch, signer });
-    const shown = await call(c, "atr_transact", { pairing, document });
+    const args = { pairing, document, resourceRequest: REQUEST };
+    const shown = await call(c, "atr_transact", args);
     expect(at(shown, "result.isError")).toBeUndefined();
-    expect(at(shown, "result.structuredContent.approve.option")).toEqual(AG.option);
+    expect(at(shown, "result.structuredContent.approve.agreement.option")).toEqual(AG.option);
     expect(at(shown, "result.structuredContent")).not.toHaveProperty("signed");
     expect(kinds).toEqual([]);
     const approved = at(shown, "result.structuredContent.approve");
-    const m = await call(c, "atr_transact", { pairing, document, approved });
+    // Approved, the agreement payment's signing is shown, then, once the agreement is recorded, the payment's.
+    const { m, shown: signings } = await transacted(c, { ...args, approved }, M);
+    expect(signings.map((s) => (s as { signings: { act: string }[] }).signings.map((x) => x.act))).toEqual([["agreement"], ["agreement", "payment"]]);
     expect(at(m, "result.isError")).toBeUndefined();
     expect(at(m, "result.structuredContent.atrHash")).toBe(H);
     expect(at(m, "result.structuredContent.agreement")).toEqual(AG.receipt);
     expect(at(m, "result.structuredContent.signed.payload.delegator")).toBe(E.fixed.payer);
     expect(kinds).toEqual(["eip712", "erc7710"]);
-    expect(agreementCalls).toBe(2);
-    const plain = await call(connect({ fetch: serving(A), signer: counting() }), "atr_transact", { pairing: "x402/exact/eip155/eip3009", document: D });
-    expect(at(plain, "result.structuredContent")).not.toHaveProperty("agreement");
+    const plain = await transacted(connect({ fetch: serving(A), signer: counting() }), { pairing: "x402/exact/eip155/eip3009", document: D, resourceRequest: REQUEST }, M);
+    expect(at(plain.m, "result.structuredContent")).not.toHaveProperty("agreement");
     await c.close();
   });
 
