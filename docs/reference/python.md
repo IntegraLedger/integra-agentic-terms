@@ -12,8 +12,8 @@ raise.
 | Function | Signature | Returns |
 | --- | --- | --- |
 | `transact` | `async transact(doc, binding, signer, fetch, *, approver, resource_request, inputs=None, ceilings=None, legal_context=None, agreement_signer=None, approved=None, signal=None, chosen=None)` | `Transacted \| ToApprove \| AgreementChallenges \| ToReturn \| Declined` |
-| `confirm` | `async confirm(doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None)` | `Confirmed \| Declined` |
-| `finish` | `finish(atr_bytes, chosen, signature, binding, *, ceilings=None)` | `Finished \| Next \| Declined` |
+| `confirm` | `async confirm(doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None, act="payment")` | `Confirmed \| Declined` |
+| `finish` | `finish(atr_bytes, chosen, signature, binding, *, ceilings=None, act="payment")` | `Finished \| Next \| Declined` |
 | `check` | `check(atr_bytes, presented, binding, landed=None, act="payment")` | `Checked \| Declined` |
 | `agree` | `async agree(atr_bytes, url, signer, fetch, *, approved=None, inputs=None, ceilings=None, signal=None, chosen=None)` | `ToApprove \| AgreementChallenges \| Agreed \| Declined` |
 | `open_channel` | `open_channel(atr_bytes, opened, binding, landed=None)` | `ChannelHold \| Declined` |
@@ -34,8 +34,11 @@ full. `approved` is the `AgreementPayment` a previous call returned in `ToApprov
 `approver` is `Callable[[ToSign], bool | Awaitable[bool]]`, and approves only by answering `True`; `resource_request`
 is an `HttpRequest` (`{"method", "target", "body", "headers"?}`, `target` in origin form, the path and query starting
 with `/`, and `body` as `bytes`) or a `ToolCall` (`{"name", "arguments"?}`); `ceilings` maps a pairing id to an `int`
-of seconds, never a `bool`, or to `"no-end"`; `chosen` is `Confirmed.chosen`, unchanged; `check`'s `act` is
-`"agreement"` for an agreement payment and `"payment"`, the default, for any other.
+of seconds, never a `bool`, or to `"no-end"`; `chosen` is `Confirmed.chosen`, unchanged; the `act` of `confirm`,
+`finish` and `check` is `"agreement"` for an agreement payment and `"payment"`, the default, for any other: `confirm`
+given `act="agreement"` builds the agreement payment an agreement URL's payment request asks for, as `agree` does, and
+returns it with `chosen.act` `"agreement"`, which `finish` rebuilds as the agreement payment; a pairing whose payment
+cannot be an agreement is declined `no-payable-option`.
 
 `signal` is an `asyncio.Event`: setting it ends the agreement exchange as aborting the `AbortSignal` does in
 TypeScript. Before the agreement payment is sent, the call declines `agreement-failed` and nothing was signed or sent;

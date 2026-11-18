@@ -87,7 +87,8 @@ A signer that raises is a `Declined("signer-failed", …)`.
 - **Two calls:** `await confirm(doc, binding, account, client, resource_request=…, inputs=…)`, which returns the request
   with its `summary` and calls no approver, then your signer, then `finish(atr_bytes, chosen, signature, binding)`,
   which returns `Finished` with the payment to send, or, for a payment signed in steps, `Next(next, summary, h)` for
-  the later step to show and sign.
+  the later step to show and sign. To pay an agreement by hand, pass `act="agreement"` to both, `confirm` given the
+  agreement URL's payment request: it builds the agreement payment as `agree` does.
 - **Later:** `check(atr_bytes, presented, binding, landed=…, act=…)`, `act` being `"agreement"` for an agreement
   payment. The caller passes as `landed` only the receipt its own
   reader read for the payment, as `finish` or `transact` returned it, never a value another party sent.

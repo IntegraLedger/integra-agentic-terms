@@ -47,6 +47,7 @@ from ._types import (
     ToReturn,
     Transacted,
     Act,
+    agreement_of,
     bound_act,
     build_act,
     coverage_of,
@@ -97,6 +98,11 @@ def _account(signer: object) -> Any:
 
 def _unsupported(binding: Binding) -> Declined:
     return Declined("pairing-not-supported", f"The gate has no buyer piece for the pairing {getattr(binding, 'id', None)}.")
+
+
+def _is_act(v: object) -> bool:
+    """Whether v is an act the gate builds: "payment" or "agreement"."""
+    return v == "payment" or v == "agreement"
 
 
 # HTTP whitespace, as the Fetch standard names it: tab, LF, CR and space.
@@ -260,6 +266,7 @@ async def confirm(
     resource_request: ResourceRequest,
     inputs: Inputs | None = None,
     ceilings: Ceilings | None = None,
+    act: Act = "payment",
 ) -> Confirmed | Declined:
     """Read the offer (the seller's document as given: an object, a list of challenges, or a string), choose the option,
     fetch the ATR and compare hashes; parse the bytes, hold the option chosen to the ATR's binding slot and the buyer's
@@ -267,14 +274,21 @@ async def confirm(
     and its ceiling (terms' profile buyer-gate.md, checks 1 to 11). request is what the signer is handed, with its
     summary, or None when nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build
     is itself the payment, which finish completes with no signature. For a pairing at coverage none, whose payment is
-    not itself a public proof, chosen.agreement is the agreement URL the offer names. A resource_request that is not a
-    mapping, inputs that are not a mapping, or ceilings that are not a mapping are declined no-payable-option with
-    <namespace>/input-malformed before the offer is read."""
+    not itself a public proof, chosen.agreement is the agreement URL the offer names. With act="agreement", the offer is
+    an agreement URL's payment request and the payment is built as the agreement payment, as agree builds it, for a
+    caller that pays the agreement by hand: the pairing's payment must be able to be an agreement (its registry data
+    holds agreement), else it is declined no-payable-option with <namespace>/no-payable-option, and the option and the
+    request are not held to the ATR's binding slot, which lists the charge's options and commits to the charge's
+    request; chosen.act is then "agreement". A resource_request that is not a mapping, inputs that are not a mapping,
+    ceilings that are not a mapping, or an act that is neither "payment" nor "agreement" are declined
+    no-payable-option with <namespace>/input-malformed before the offer is read."""
     if _piece(binding) is None:
         return _unsupported(binding)
-    if not _args_ok(resource_request, inputs, ceilings, str(binding.id)):
+    if not _args_ok(resource_request, inputs, ceilings, str(binding.id)) or not _is_act(act):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
-    gated = await _gate(doc, binding, account, fetch, resource_request, inputs if inputs is not None else {}, ceilings)
+    gated = await _gate(
+        doc, binding, account, fetch, resource_request, inputs if inputs is not None else {}, ceilings, act=act
+    )
     return gated if isinstance(gated, Declined) else gated[0]
 
 
@@ -314,13 +328,18 @@ async def _gate(
     inputs: Inputs,
     ceilings: Ceilings | None,
     given: Chosen | None = None,
+    act: Act = "payment",
 ) -> tuple[Confirmed, int] | Declined:
     """Checks 3 to 11 of the profile, for confirm and transact, once the pairing and the arguments are known good: the
     confirmed payment and the number of signings it takes. Given the payment confirm chose, its choice is built again
-    exactly rather than chosen anew with the gate's clock and a new reference."""
+    exactly rather than chosen anew with the gate's clock and a new reference. act is the act the payment is built as:
+    for "agreement", the pairing's payment must be able to be an agreement, and the option and the request are not held
+    to the binding slot."""
     piece = _piece(binding)
     if piece is None:
         return _unsupported(binding)
+    if act == "agreement" and agreement_of(binding) is None:
+        return Declined("no-payable-option", f"{_namespace(binding)}/no-payable-option")
     floor = floor_missing(str(binding.id), inputs)
     if floor is not None:
         return floor
@@ -334,6 +353,8 @@ async def _gate(
     if isinstance(choice, Refusal):
         return Declined("no-payable-option", choice.code)
     chosen = choice if agreement is None else replace(choice, agreement=agreement)
+    if act == "agreement":
+        chosen = replace(chosen, act="agreement")
     if not is_https_link(advertised.link):
         return Declined("link-not-https", _link_refusal(binding, advertised.link))
     fetched = await _fetch(fetch, advertised.link)
@@ -345,12 +366,14 @@ async def _gate(
     parsed = parse_atr(fetched)
     if isinstance(parsed, Declined):
         return parsed
-    not_held = slot_holds(binding, chosen, parsed.value)
-    if not_held is not None:
-        return not_held
-    other_request = request_held(binding, parsed.value, resource_request)
-    if other_request is not None:
-        return other_request
+    # The binding slot lists the charge's options and commits to the charge's request: no agreement payment is held to it.
+    if act == "payment":
+        not_held = slot_holds(binding, chosen, parsed.value)
+        if not_held is not None:
+            return not_held
+        other_request = request_held(binding, parsed.value, resource_request)
+        if other_request is not None:
+            return other_request
     if not _full(binding) and agreement is None:
         return Declined(
             "agreement-not-offered", "The pairing's payment carries no public proof and the offer names no agreement URL."
@@ -393,17 +416,29 @@ def _built(
 
 
 def finish(
-    atr_bytes: bytes, chosen: Chosen, signature: Signature, binding: Binding, *, ceilings: Ceilings | None = None
+    atr_bytes: bytes,
+    chosen: Chosen,
+    signature: Signature,
+    binding: Binding,
+    *,
+    ceilings: Ceilings | None = None,
+    act: Act = "payment",
 ) -> Finished | Next | Declined:
     """Rebuild the payment from chosen and the bytes, join the signer's answer, and return the payment only when the
     pairing's bound reads the hash of these bytes from the completed payment. For a pairing at coverage none, whose
     payment is not a public proof, and whose bound finds no signed place for the hash, the proof is the agreement payment, and the
     completed payment is returned as it is. A payment signed in steps returns the next request with its summary, only
     once it has a summary and is within the pairing's ceiling, ceilings raising it (checks 10 and 11). Where the signer
-    moved the payment itself, a decline keeps it as moved. ceilings that are not a mapping are declined
-    no-payable-option with <namespace>/input-malformed."""
-    if not ceilings_ok(ceilings, str(getattr(binding, "id", ""))):
+    moved the payment itself, a decline keeps it as moved. act is the act confirm built the payment as: "agreement" for
+    an agreement payment paid by hand, which is rebuilt as the agreement payment and whose hash bound reads where it
+    carries the agreement's own single-use value; "payment", the default, for any other. A chosen whose act is
+    "agreement", as confirm returns it for that act, is rebuilt as the agreement payment either way. ceilings that are
+    not a mapping, or an act that is neither "payment" nor "agreement", are declined no-payable-option with
+    <namespace>/input-malformed."""
+    if not ceilings_ok(ceilings, str(getattr(binding, "id", ""))) or not _is_act(act):
         return Declined("no-payable-option", f"{_namespace(binding)}/input-malformed")
+    if act == "agreement" and isinstance(chosen, Chosen):
+        chosen = replace(chosen, act="agreement")
     out = _finish(atr_bytes, chosen, signature, binding)
     if not isinstance(out, Step):
         return out

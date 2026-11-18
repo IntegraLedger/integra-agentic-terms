@@ -28,6 +28,7 @@ from integraledger_terms import (
     Confirmed,
     X402_EXACT_EIP155_ERC7710,
     Declined,
+    Finished,
     Json,
     Moved,
     Refusal,
@@ -766,6 +767,25 @@ def test_agree_holds_the_approved_payment_to_its_pairings_ceiling_past_600_s_pas
         atr_hash=AG["receipt"]["atrHash"], agreed=True, network=AG["receipt"]["network"], transaction=AG["receipt"]["transaction"]
     )
     assert [out, len(signer.requests), len(raised.paid())] == [Agreed(receipt), 1, 1]
+
+
+# An agreement paid by hand (profile rules 1 and 12): confirm, given the agreement URL's 402 payment request and
+# act="agreement", builds the agreement payment, its message buyer.json's BA1 agreement message, its nonce the
+# agreement's own value for H; finish, given BA1's agreement signature and the same act, completes it; and check
+# confirms it against A as an agreement. The clock reads buyer.json's fixed.now.
+def test_an_agreement_paid_by_hand_confirm_and_finish_with_act_agreement_build_and_complete_ba1s_agreement_payment() -> None:
+    ba1 = row("BA1")["expect"]
+    request = {"method": "GET", "target": "/" + URL.split("/", 3)[3], "body": b""}
+    confirmed = run(
+        Seller([]).link(), lambda c: confirm(AG["required"], BINDING, ACCOUNT, c, resource_request=request, act="agreement")
+    )
+    assert isinstance(confirmed, Confirmed) and confirmed.request is not None, confirmed
+    message = confirmed.request["typedData"]["message"]
+    assert {k: str(message[k]) for k in ba1["agreementMessage"]} == ba1["agreementMessage"]
+    done = _gate.finish(A, confirmed.chosen, ba1["agreementSignature"], BINDING, act="agreement")
+    assert isinstance(done, Finished), done
+    assert done.signed["payload"]["authorization"]["nonce"] == ba1["agreementMessage"]["nonce"]
+    assert check(A, done.signed, BINDING, act="agreement") == Checked(h=HASH_A)
 
 
 def test_an_approved_payment_for_another_agreement_url_fails_with_nothing_signed_or_sent() -> None:

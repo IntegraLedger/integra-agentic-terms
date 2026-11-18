@@ -337,13 +337,14 @@ returns it as `signed`, and after `confirm` you get it with `finish(bytes, chose
 in hand.
 
 To pay the agreement without `agree`, request `chosen.agreement` yourself: it answers `402` with an x402 payment
-request. Call `confirm` on that payment request with `act: "agreement"`, through the x402 pairing of the option you
-pay, and `finish` with the same `act`. The request `confirm` returns is then the agreement payment, built as `agree`
-builds it: on a pairing whose agreement has its own single-use value, such as `x402/exact/eip155/eip3009`, it carries
-that value in place of H. A pairing whose payment cannot be an agreement is declined `no-payable-option`, and the
-option and `resourceRequest` are not held to the ATR's binding slot, which lists the charge's options. Check that the
-`h` `confirm` returns is the H of the charge, sign, send the payment `finish` returns to the agreement URL until it
-answers `200` with the receipt, and keep it: `check(bytes, payment, binding, undefined, "agreement")` reads H from it.
+request. Call `confirm` on that payment request with `act: "agreement"` (in Python `act="agreement"`), through the x402
+pairing of the option you pay, and `finish` with the same `act`. The request `confirm` returns is then the agreement
+payment, built as `agree` builds it: on a pairing whose agreement has its own single-use value, such as
+`x402/exact/eip155/eip3009`, it carries that value in place of H. A pairing whose payment cannot be an agreement is
+declined `no-payable-option`, and the option and `resourceRequest` are not held to the ATR's binding slot, which lists
+the charge's options. Check that the `h` `confirm` returns is the H of the charge, sign, send the payment `finish`
+returns to the agreement URL until it answers `200` with the receipt, and keep it: `check(bytes, payment, binding,
+undefined, "agreement")` (in Python `check(atr_bytes, payment, binding, act="agreement")`) reads H from it.
 
 The MCP tools keep the same order: `atr_confirm` returns no `request` until you pass a `receipt` for H, and `atr_agree`
 returns the agreement payment to approve before it signs anything, or the agreement resource's MPP agreement challenges

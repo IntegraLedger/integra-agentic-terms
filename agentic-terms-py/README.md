@@ -388,6 +388,16 @@ payment: with the agreement's receipt in hand, `finish(confirmed.atr_bytes, conf
 it. For every other such pairing, the comparison and, where the pairing needs one, the agreement payment are the whole
 of the buyer's step.
 
+To pay the agreement without `agree`, request `chosen.agreement` yourself: it answers `402` with an x402 payment
+request. Call `confirm` on that payment request with `act="agreement"`, through the x402 pairing of the option you pay,
+and `finish` with the same `act`. The request `confirm` returns is then the agreement payment, built as `agree` builds
+it, and `confirmed.chosen.act` is `"agreement"`: on a pairing whose agreement has its own single-use value, such as
+`x402/exact/eip155/eip3009`, it carries that value in place of H. A pairing whose payment cannot be an agreement is
+declined `no-payable-option`, and the option and `resource_request` are not held to the ATR's binding slot, which lists
+the charge's options. Check that the `h` `confirm` returns is the H of the charge, sign, send the payment `finish`
+returns to the agreement URL until it answers `200` with the receipt, and keep it: `check(atr_bytes, payment, binding,
+act="agreement")` reads H from it.
+
 ### Pay the agreement first
 
 Some payments are not a public proof of H: a card charge, a Stripe payment, a Lightning invoice, a checkout in which
@@ -671,8 +681,8 @@ Everything below is exported from `integraledger_terms`.
 | Export | Signature | What it does |
 | --- | --- | --- |
 | `transact` | `async (doc, binding, signer, fetch, *, approver, resource_request, inputs=None, ceilings=None, legal_context=None, agreement_signer=None, approved=None, signal=None, chosen=None) -> Transacted \| ToApprove \| AgreementChallenges \| ToReturn \| Declined` | Compare and check, pay the approved agreement first where needed, ask the approver, sign, finish. |
-| `confirm` | `async (doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None) -> Confirmed \| Declined` | Read, fetch, compare and check, and build the signing request with H, with its summary. `request` is `None` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
-| `finish` | `(atr_bytes, chosen, signature, binding, *, ceilings=None) -> Finished \| Next \| Declined` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. A later step is returned with its summary, held to the ceiling. |
+| `confirm` | `async (doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None, act="payment") -> Confirmed \| Declined` | Read, fetch, compare and check, and build the signing request with H, with its summary. `request` is `None` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. With `act="agreement"`, build the agreement payment an agreement URL's payment request asks for, as `agree` does. |
+| `finish` | `(atr_bytes, chosen, signature, binding, *, ceilings=None, act="payment") -> Finished \| Next \| Declined` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. A later step is returned with its summary, held to the ceiling. `act` is the act `confirm` built the payment as. |
 | `check` | `(atr_bytes, presented, binding, landed=None, act="payment") -> Checked \| Declined` | Confirm a held payment carries the hash of the kept bytes, as the act it was paid as. |
 | `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, ceilings=None, signal=None, chosen=None) -> ToApprove \| AgreementChallenges \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing, or, where the agreement URL answers that unpaid request with a receipt, that receipt with `unpaid=True`, nothing paid or read; with it, pay that payment and return the receipt. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
 | `open_channel` | `(atr_bytes, opened, binding, landed=None) -> ChannelHold \| Declined` | Hold a channel opened for the compared ATR. Pass `landed` where `transact` returned one. |
