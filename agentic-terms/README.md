@@ -4,7 +4,7 @@ The buyer gate for agents that pay: before your wallet signs anything, it confir
 hashes to the value the payment will carry, and builds the payment with that hash.
 
 ```sh
-npm install @integraledger/terms@0.4.1 @integraledger/lcp@0.5.1
+npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
 ```
 
 ## What it is
@@ -61,7 +61,7 @@ Python gate alike, by the profile [`profiles/buyer-gate.md`](./profiles/buyer-ga
 ## Install
 
 ```sh
-npm install @integraledger/terms@0.4.1 @integraledger/lcp@0.5.1
+npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
 ```
 
 - Node.js `>=24.22.1`. ESM only.
