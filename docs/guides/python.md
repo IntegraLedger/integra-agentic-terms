@@ -93,7 +93,8 @@ A signer that raises is a `Declined("signer-failed", …)`.
   reader read for the payment, as `finish` or `transact` returned it, never a value another party sent.
 - **Agreement:** `await agree(atr_bytes, url, signer, client, chosen=…)` returns `ToApprove` (or `AgreementChallenges`,
   where the agreement URL offers only MPP agreement challenges), signing nothing; once your
-  agent approves it, `await agree(atr_bytes, url, signer, client, approved=…, chosen=…)` pays it and returns `Agreed`.
+  agent approves it, `await agree(atr_bytes, url, signer, client, approved=…, chosen=…)` holds it to its summary and
+  its pairing's ceiling (`ceilings=` raises it), pays it and returns `Agreed`.
 - **Channels:** `open_channel(atr_bytes, opened, binding, landed=…)`, `await within(doc, hold, binding, signer)`,
   `record_charge(hold, charged)`. The caller passes as `landed` only the receipt its own reader read for the opening,
   as `transact` returned it, never a value another party sent.

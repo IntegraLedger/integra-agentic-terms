@@ -510,9 +510,11 @@ def within_ceiling(pairing: str, summary: Summary, inputs: Inputs, ceilings: Cei
 
 @dataclass(frozen=True, slots=True)
 class Approval:
-    """What the approver and the ceiling read beside each signing: the callback, the raised ceilings and the inputs."""
+    """What the approver and the ceiling read beside each signing: the callback, the raised ceilings and the inputs.
+    Without approver, as agree gives it, each signing is still held to its summary and its ceiling, and no approver is
+    asked."""
 
-    approver: Approver
+    approver: Approver | None
     ceilings: Ceilings | None
     inputs: Inputs
 
@@ -573,11 +575,13 @@ async def approves(
     account: str | None = None,
 ) -> Summary | Declined:
     """Checks 10 to 12 on one signing: the summary, read with network, the signing account's CAIP-2 network, and
-    opened, for a later step, the step that opened its channel; the ceiling; then the approver, asked once with ToSign;
-    any answer but True, a raise or a failed awaitable is not-approved. The summary the approver approved, or the
-    decline."""
+    opened, for a later step, the step that opened its channel; the ceiling; then the approver, where approval has one,
+    asked once with ToSign; any answer but True, a raise or a failed awaitable is not-approved. The summary the approver
+    approved, or, with no approver, the summary within the ceiling; or the decline."""
     summary = shown(binding, request, atr_bytes, approval.inputs, approval.ceilings, network, opened, account)
     if isinstance(summary, Declined):
+        return summary
+    if approval.approver is None:
         return summary
     to_sign = ToSign(act=act, pairing=str(binding.id), request=copy.deepcopy(request), summary=summary, step=step)
     try:

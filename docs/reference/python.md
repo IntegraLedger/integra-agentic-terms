@@ -15,7 +15,7 @@ raise.
 | `confirm` | `async confirm(doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None)` | `Confirmed \| Declined` |
 | `finish` | `finish(atr_bytes, chosen, signature, binding, *, ceilings=None)` | `Finished \| Next \| Declined` |
 | `check` | `check(atr_bytes, presented, binding, landed=None, act="payment")` | `Checked \| Declined` |
-| `agree` | `async agree(atr_bytes, url, signer, fetch, *, approved=None, inputs=None, signal=None, chosen=None)` | `ToApprove \| AgreementChallenges \| Agreed \| Declined` |
+| `agree` | `async agree(atr_bytes, url, signer, fetch, *, approved=None, inputs=None, ceilings=None, signal=None, chosen=None)` | `ToApprove \| AgreementChallenges \| Agreed \| Declined` |
 | `open_channel` | `open_channel(atr_bytes, opened, binding, landed=None)` | `ChannelHold \| Declined` |
 | `within` | `async within(doc, hold, binding, signer, refund=None, inputs=None)` | `Within \| Declined` |
 | `record_charge` | `record_charge(hold, charged_cumulative_amount)` | `ChannelHold \| Declined` |

@@ -746,6 +746,23 @@ def test_the_approved_payment_is_signed_as_shown() -> None:
     assert all("payment-signature" in q.headers for q in seller.agreement_requests()[1:])
 
 
+# Profile rules 12 and 8: the agreement payment is held to its own pairing's ceiling, 600 seconds unless ceilings=
+# raises it, before it is signed. agree asks no approver and holds it all the same. The option is AG's, payable for
+# 3,600 seconds.
+def test_agree_holds_the_approved_payment_to_its_pairings_ceiling_past_600_s_past_ceiling_unsigned_unsent_raised_paid() -> None:
+    long = {**OPTION, "maxTimeoutSeconds": 3600}
+    signer = RecordingSigner()
+    seller = Challenging(RECORDED, header=with_accepts([long]))
+    out = run(seller.link(), lambda c: approve_and_agree(signer, c))
+    assert [out.code if isinstance(out, Declined) else out, len(signer.requests), len(seller.paid())] == ["past-ceiling", 0, 0]
+    raised = Challenging(RECORDED, header=with_accepts([long]))
+    out = run(raised.link(), lambda c: approve_and_agree(signer, c, ceilings={"x402/exact/eip155/eip3009": 3600}))
+    receipt = AgreementReceipt(
+        atr_hash=AG["receipt"]["atrHash"], agreed=True, network=AG["receipt"]["network"], transaction=AG["receipt"]["transaction"]
+    )
+    assert [out, len(signer.requests), len(raised.paid())] == [Agreed(receipt), 1, 1]
+
+
 def test_an_approved_payment_for_another_agreement_url_fails_with_nothing_signed_or_sent() -> None:
     seller = Seller(row("BA1")["input"]["agreement"])
     signer = RecordingSigner()

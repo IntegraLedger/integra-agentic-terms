@@ -8,6 +8,10 @@ and after.
 
 ## [Unreleased]
 
+### Added
+
+- `ceilings=` in `agree`, which raises the agreement payment's pairing's ceiling as `transact`'s does.
+
 ### Fixed
 
 - The gate holds the option chosen to the ATR's binding slot on every protocol the profile's rule 6 names, as it did on
@@ -15,6 +19,11 @@ and after.
   slot does not list is declined `option-not-in-atr` before anything is signed. On `card`, whose documents do not show
   the seller's checkout id, a listed option of the pairing's `scheme` holds it. The shared `vectors/buyer-gate.json`
   holds a declining and an accepted case for each of the five, which the Python tests run.
+- `agree` holds the agreement payment to its summary and its own pairing's ceiling before it is signed, as `transact`
+  does and the profile's rule 12 states: a request it has no summary for is declined `summary-missing`, one payable
+  past the ceiling `past-ceiling` or `no-end`, and a wallet that picks its expiry (Aptos, Cardano, Sui, Polkadot) is
+  handed the latest deadline it may sign and held to it. An agreement payment payable longer than 600 seconds is now
+  paid only once `ceilings=` raises its pairing. `agree` still calls no approver.
 
 ## 0.5.0 - 2026-11-18
 

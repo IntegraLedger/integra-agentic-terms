@@ -431,10 +431,11 @@ before anything is signed:
   `AgreementChallenges(agreement_challenges, atr_bytes, h)`, the challenges in the seller's order: terms does not send
   an MPP credential to the agreement URL, so your own MPP client pays one there, and a later call finds the agreement
   recorded and pays the charge.
-- `await agree(atr_bytes, url, signer, fetch, approved=…, inputs=…, signal=…, chosen=…)` runs the exchange on its own,
-  in the same two calls. It takes no approver, computes no summary and holds the agreement payment to no ceiling:
-  showing the agreement payment before it is signed, and judging how long it stays payable, is then your step. With
-  `confirm` and `finish`, call it before you sign: see [Sign elsewhere](#sign-elsewhere-confirm-then-finish).
+- `await agree(atr_bytes, url, signer, fetch, approved=…, inputs=…, ceilings=…, signal=…, chosen=…)` runs the exchange
+  on its own, in the same two calls. It takes no approver: showing the agreement payment before it is approved is then
+  your step. It holds the agreement payment to its summary and its own pairing's ceiling before it is signed, as
+  `transact` does, `ceilings` raising it. With `confirm` and `finish`, call it before you sign: see
+  [Sign elsewhere](#sign-elsewhere-confirm-then-finish).
 
 ### Paid after its agreement
 
@@ -672,7 +673,7 @@ Everything below is exported from `integraledger_terms`.
 | `confirm` | `async (doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None) -> Confirmed \| Declined` | Read, fetch, compare and check, and build the signing request with H, with its summary. `request` is `None` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
 | `finish` | `(atr_bytes, chosen, signature, binding, *, ceilings=None) -> Finished \| Next \| Declined` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. A later step is returned with its summary, held to the ceiling. |
 | `check` | `(atr_bytes, presented, binding, landed=None, act="payment") -> Checked \| Declined` | Confirm a held payment carries the hash of the kept bytes, as the act it was paid as. |
-| `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, signal=None, chosen=None) -> ToApprove \| AgreementChallenges \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing, or the receipt where the agreement is already recorded; with it, pay that payment and return the receipt. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
+| `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, ceilings=None, signal=None, chosen=None) -> ToApprove \| AgreementChallenges \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing, or the receipt where the agreement is already recorded; with it, pay that payment and return the receipt. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
 | `open_channel` | `(atr_bytes, opened, binding, landed=None) -> ChannelHold \| Declined` | Hold a channel opened for the compared ATR. Pass `landed` where `transact` returned one. |
 | `within` | `async (doc, hold, binding, signer, refund=None, inputs=None) -> Within \| Declined` | Sign a later voucher, or a refund with `refund`, in a held channel. |
 | `record_charge` | `(hold, charged_cumulative_amount) -> ChannelHold \| Declined` | Record the seller's cumulative charge, between the last recorded and the most signed. |
@@ -851,9 +852,9 @@ What the gate guarantees, in the code:
 - **The option is one the ATR commits to.** Where the ATR's binding slot lists the options offered, the option paid is
   one of them (on card, whose documents do not show the seller's checkout id, one of the pairing's `scheme`); where the
   `x402` slot holds a commitment to the buyer's request, the request is the buyer's own.
-- **A bounded window, in `transact`, `confirm` and `finish`.** A payment that would stay payable past its pairing's
-  ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's ceiling.
-  `agree` called on its own and `within` apply no ceiling.
+- **A bounded window, in `transact`, `confirm`, `finish` and `agree`.** A payment that would stay payable past its
+  pairing's ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's
+  ceiling. `within` applies no ceiling: a voucher stays payable as long as its channel.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB (1,048,576 bytes) read as sent.
 - **Exact bytes.** The ATR is hashed as received and returned as received, and the bytes parsed are the bytes hashed,

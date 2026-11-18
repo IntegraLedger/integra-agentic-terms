@@ -2,8 +2,9 @@
 challenge and returns the agreement payment for the buyer's agent to approve, signing nothing: the challenge's first
 option, in document order, that the signer can pay with a pairing whose payment can itself be the agreement: a pairing
 at coverage full whose registry data holds agreement, and, for transact, one the charge's agreementOn admits. The payment is built and checked for the act agreement, so on a
-pairing whose single-use value is H itself it carries the agreement's own value. Called with the payment the agent approved, it signs exactly that payment, sends it, and returns the resource's
-receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is sent
+pairing whose single-use value is H itself it carries the agreement's own value. Called with the payment the agent approved, it builds exactly that payment, holds it to
+its summary and its own pairing's ceiling, signs it, sends it, and returns the resource's receipt once the payment is
+recorded. Nothing is signed when the challenge advertises another hash, and nothing is sent
 unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again after
 each 202, 5xx or timeout, each paid request bounded by min(maxTimeoutSeconds, 120) + 60 + 10 seconds and the whole
 exchange by the paid option's maxTimeoutSeconds + 180 seconds; no second agreement payment is signed, and every decline
@@ -21,7 +22,7 @@ from typing import Any, TypeVar, cast
 import httpx
 
 from . import _gate
-from ._checks import Approval
+from ._checks import Approval, is_ceilings
 from ._core import AtrHash, hash_equals, is_hash
 from ._core import atr_hash as hash_of
 from .bindings._codec import b64_decode, js_json
@@ -39,6 +40,7 @@ from ._types import (
     AgreementReceipt,
     Agreed,
     Binding,
+    Ceilings,
     Chosen,
     Declined,
     Inputs,
@@ -469,6 +471,7 @@ async def agree(
     *,
     approved: AgreementPayment | None = None,
     inputs: Inputs | None = None,
+    ceilings: Ceilings | None = None,
     signal: asyncio.Event | None = None,
     chosen: Chosen | None = None,
 ) -> ToApprove | AgreementChallenges | Agreed | Declined:
@@ -478,17 +481,23 @@ async def agree(
     refuses for a fault of its own (its version, legal context or agreement URL, or an accepts that is not a list of at
     most 32 entries holding a mapping) is declined as the unpaid request declines that challenge, and one whose option
     is not one of that challenge's accepts, by RFC 8785 form, is declined offer-unreadable with
-    x402/option-not-in-document, each before any fetch or signer call.
+    x402/option-not-in-document, each before any fetch or signer call. Before the signer is called, the agreement
+    payment is held to its summary and its own pairing's ceiling, as transact holds it (terms' profile buyer-gate.md,
+    checks 9 to 11, rule 12): a request the gate has no summary for is declined summary-missing, one payable past the
+    ceiling past-ceiling or no-end, and a wallet that picks its expiry is handed the latest deadline it may sign and
+    held to it. ceilings raises that ceiling as it does in transact. agree calls no approver: showing the agreement
+    payment before it is approved is the caller's step.
     atr_bytes are the ATR the gate compared, whose hash the agreement payment carries; inputs are the buyer's own chain
     values; setting signal ends the exchange; chosen is the charge the agreement is for, exactly as confirm returned
     it, and only an option its pairing's agreementOn admits is paid (any option where chosen is not given). An approved
-    value that is not of the agreement payment's form, inputs that are not a mapping, a signal that is not an
-    asyncio.Event, a chosen that is not a Chosen naming a pairing of this package, or a signer whose account is not a
-    string is declined no-payable-option with x402/input-malformed before any fetch or signer call. A url that is not an https URL is
+    value that is not of the agreement payment's form, inputs or ceilings that are not a mapping, a signal that is not
+    an asyncio.Event, a chosen that is not a Chosen naming a pairing of this package, or a signer whose account is not
+    a string is declined no-payable-option with x402/input-malformed before any fetch or signer call; a ceilings value
+    not of the profile's rule 8 form for the pairing paid is declined so before the signer is called. A url that is not an https URL is
     declined link-not-https with x402/link-not-https for an absolute URL of another scheme and
     x402/legal-context-malformed for any other value, before any fetch."""
     return await exchange(
-        atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, signal=signal, ns=None, chosen=chosen
+        atr_bytes, url, signer, fetch, approved=approved, inputs=inputs, ceilings=ceilings, signal=signal, ns=None, chosen=chosen
     )
 
 
@@ -515,15 +524,16 @@ async def exchange(
     inputs: Inputs | None,
     signal: asyncio.Event | None,
     ns: str | None,
+    ceilings: Ceilings | None = None,
     approval: Approval | None = None,
     chosen: Chosen | None = None,
     charge: Binding | None = None,
 ) -> ToApprove | AgreementChallenges | Agreed | Declined:
     """agree, where ns is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
     declines link-not-https, its detail the protocol package's code in that namespace, link-not-https for an absolute
-    URL of another scheme and legal-context-malformed for any other value. With approval, transact's, the agreement
-    payment is held to its summary and its own pairing's ceiling and asked of the approver, as the act agreement, before
-    it is signed. With chosen, the charge the agreement is for as confirm chose it, paid through charge, or where no
+    URL of another scheme and legal-context-malformed for any other value. The agreement payment is held to its summary
+    and its own pairing's ceiling before it is signed, ceilings raising it: approval's, transact's, which also asks its
+    approver, as the act agreement; else ceilings, agree's, with no approver. With chosen, the charge the agreement is for as confirm chose it, paid through charge, or where no
     charge is given through this package's binding of the pairing chosen names, only an agreement option the charge's
     agreementOn admits is paid (_admitting)."""
     if not is_https_link(url):
@@ -533,6 +543,7 @@ async def exchange(
     if (
         (approved is not None and not _is_agreement_payment(approved))
         or (inputs is not None and not isinstance(inputs, Mapping))
+        or not is_ceilings(ceilings)
         or (signal is not None and not isinstance(signal, asyncio.Event))
         or not isinstance(_gate._account(signer), str)
         or (chosen is not None and (not isinstance(chosen, Chosen) or through is None))
@@ -552,8 +563,8 @@ async def exchange(
     if isinstance(found, Declined):
         return found
     selected, (request_s, exchange_s) = found
-    asked = None if approval is None else replace(approval, inputs=given)
-    paid = await _gate.pay(selected.binding, selected.chosen, signer, atr_bytes, asked)
+    held = Approval(approver=None, ceilings=ceilings, inputs=given) if approval is None else replace(approval, inputs=given)
+    paid = await _gate.pay(selected.binding, selected.chosen, signer, atr_bytes, held)
     if isinstance(paid, Declined):
         return paid
     if paid is None:
