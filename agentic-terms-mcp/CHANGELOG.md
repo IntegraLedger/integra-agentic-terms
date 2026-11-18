@@ -6,7 +6,7 @@ release may change the tools, their arguments and their results, so pin the exac
 is marked **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md)
 shows each call before and after.
 
-## [Unreleased]
+## [0.5.1] - 2026-11-18
 
 ### Added
 

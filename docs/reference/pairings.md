@@ -274,7 +274,7 @@ network and transaction.
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/ccd` | full | no | no | no | `exactCcd` from `@integraledger/lcp/ccd` | `X402_EXACT_CCD` |
 
-**`x402/exact/ccd`**: The payer signed a Concordium transaction one of whose transfers carries this ATR's hash, in LCP string form, as its memo. The chain accepted the transaction only with the sender's valid signature, and the memo is on chain in the finalized transfer event. Where the transfer moved an amount, zero included, the payer paid it to the account the transfer names. As an agreement, it shows that this account signed the transfer carrying the hash. It does not show that amount, token or timing match the ATR's content.
+**`x402/exact/ccd`**: The payer signed a Concordium transaction one of whose transfers carries this ATR's hash, in LCP string form, as its memo. The chain accepted the transaction only with the sender's valid signature, and the memo is on chain in the finalized transfer event. Where the transfer moved an amount, zero included, the payer paid it to the account the transfer names. It does not show that amount, token or timing match the ATR's content.
 
 ## Stacks
 
@@ -304,7 +304,7 @@ network and transaction.
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/batch-settlement/cloudflare` | none | no | yes, any network | no | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_CLOUDFLARE` |
 
-**`x402/batch-settlement/cloudflare`**: Before this payment was taken, an account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>; this shows neither that the account is the payer nor what the agreement moved. The request whose payment echoed this ATR's hash in the legalContext entry of x402's extensions was signed with an HTTP message signature key registered with Cloudflare, which Cloudflare verifies, billing that key's registered identity off chain; no public ledger records the payment. This does not show that amount, asset or timing match the ATR's content.
+**`x402/batch-settlement/cloudflare`**: The request whose payment echoed this ATR's hash in the legalContext entry of x402's extensions was signed with an HTTP message signature key registered with Cloudflare, which Cloudflare verifies, billing that key's registered identity off chain. The echoed hash only locates the sale: the pairing follows no agreement, and no public ledger records the payment. This does not show that amount, asset or timing match the ATR's content.
 
 ## Card
 

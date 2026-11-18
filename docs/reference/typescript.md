@@ -16,7 +16,7 @@ nothing the approver answers makes it throw. The checks, their order and their d
 This page documents `@integraledger/terms` 0.5.0:
 
 ```sh
-npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
+npm install @integraledger/terms@0.5.1 @integraledger/lcp@0.6.1
 ```
 
 - `@integraledger/lcp` is a peer dependency, `~0.6.0`: any 0.6.x release. Import the bindings you pass in from that one

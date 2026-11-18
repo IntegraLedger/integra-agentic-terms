@@ -22,7 +22,7 @@ Most MCP clients take a configuration like this:
   "mcpServers": {
     "terms": {
       "command": "npx",
-      "args": ["-y", "@integraledger/terms-mcp@0.5.0"]
+      "args": ["-y", "@integraledger/terms-mcp@0.5.1"]
     }
   }
 }
@@ -37,7 +37,7 @@ The skill is `skills/confirming-the-atr-hash-before-paying/SKILL.md` in the pack
 skills directory (for Claude Code, `.claude/skills/`), or paste the file into the agent's instructions:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.0
+npm install @integraledger/terms-mcp@0.5.1
 cp -r node_modules/@integraledger/terms-mcp/skills/confirming-the-atr-hash-before-paying .claude/skills/
 ```
 
@@ -194,7 +194,7 @@ sample imports; `@integraledger/lcp` is a peer dependency (`~0.6.0`), and `creat
 `@modelcontextprotocol/server` 2.3.1, the version to serve it with:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.0 @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0 @modelcontextprotocol/server@2.3.1
+npm install @integraledger/terms-mcp@0.5.1 @integraledger/terms@0.5.1 @integraledger/lcp@0.6.1 @modelcontextprotocol/server@2.3.1
 ```
 
 ```ts no-run

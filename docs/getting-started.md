@@ -16,13 +16,13 @@ values every time.
 ## Install
 
 ```sh
-npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
+npm install @integraledger/terms@0.5.1 @integraledger/lcp@0.6.1
 ```
 
 `@integraledger/terms` is the gate. `@integraledger/lcp` exports the bindings you pass to it, one per pairing.
 
 ```sh
-pip install integraledger-terms==0.5.0
+pip install integraledger-terms==0.5.1
 ```
 
 The Python package is self-contained: its bindings are part of it.

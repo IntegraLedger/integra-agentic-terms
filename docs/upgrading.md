@@ -21,9 +21,9 @@ change of the release.
 - Security fixes are released for the latest published version of each package only.
 
 ```sh
-npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
-npx -y @integraledger/terms-mcp@0.5.0
-pip install integraledger-terms==0.5.0
+npm install @integraledger/terms@0.5.1 @integraledger/lcp@0.6.1
+npx -y @integraledger/terms-mcp@0.5.1
+pip install integraledger-terms==0.5.1
 ```
 
 ## From 0.4.x to 0.5.0
