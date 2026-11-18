@@ -137,7 +137,8 @@ if (!("decline" in confirmed) && confirmed.request !== null) {
 `body` the body's bytes as padded standard base64 (`""` for none), or over MCP `{ name, arguments? }`. A 0.4 call of
 `atr_confirm` or `atr_transact` fails the tool's input schema: `isError: true` with one text block,
 `Input validation error: …`, and nothing is fetched or signed. The binary takes neither `ceilings` nor `floors`, so it
-declines a payment past 600 seconds, one that signs no end, and the two Gateway rails. A host that calls
+declines a payment past 600 seconds, one that signs no end, and `x402/exact/eip155/gateway-batched` (`floor-missing`);
+in 0.5.0 it passes `mpp/charge/usdc/gateway`'s floor inputs through from a tool's `inputs`. A host that calls
 `createBuyerServer` installs `@integraledger/lcp` `~0.6.0` beside it, on Node.js `>=24.22.1`. The `pairing` argument no
 longer accepts the nine retired pairings. See the [MCP guide](./guides/mcp.md).
 
