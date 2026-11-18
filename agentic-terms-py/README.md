@@ -16,8 +16,8 @@ statement of what it proves says so.
 
 That only holds if the hash in the payment is the hash of the record you can read. This package is the check that makes
 sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, parses the bytes,
-holds, on x402 and MPP, the option you pay (and on x402 the request you make) to what the record's binding slot commits
-to, and only then builds a request with that hash. Before your signer is called, it shows your approver what the
+holds the option you pay (and on x402 the request you make) to what the record's binding slot commits to, and only
+then builds a request with that hash. Before your signer is called, it shows your approver what the
 signature grants (the amount, the payees, the asset, the network and how long the payment stays payable) and declines a
 payment that would stay payable past its ceiling. After your signer answers, the pairing reads the hash back from the
 completed payment, and the payment is returned only if it is the hash of the bytes you received, or, where the proof is
@@ -186,9 +186,9 @@ If the link had served one byte more, less or different, `transact` would have r
 2. **Compare.** The gate fetches the link once, with your `httpx.AsyncClient`, and hashes the bytes it received. No
    match: a `Declined`, and no signer call.
 3. **Parse and hold.** The gate parses the bytes it hashed, by one grammar both languages read alike. Where the ATR's
-   `x402` slot lists `accepts`, or its `mpp` slot `challenges`, the option chosen must be one of them; where the `x402`
-   slot holds a commitment to the buyer's request, `resource_request` must be that request. Other slots are not
-   compared.
+   binding slot lists the options offered (`accepts` in `x402`, `challenges` in `mpp`, `options` in `acp`, `ap2`,
+   `card` and `ucp`, `paymentOptions` in `ack`), the option chosen must be one of them, on card one of the pairing's
+   `scheme`; where the `x402` slot holds a commitment to the buyer's request, `resource_request` must be that request.
 4. **Build.** The gate builds the payment with the hash it computed, not the string the seller advertised.
 5. **Show.** The gate computes the summary of the request your signer would be handed, declines a payment that would
    stay payable past its ceiling, and asks your approver.
@@ -649,7 +649,7 @@ new one, and for an agreement payment, call again without `approved` to collect 
 | `agreement-failed` | The unpaid request: the agreement URL could not be reached, or answered a status other than `200`, `202` or `402`, or a `402` without a readable `PAYMENT-REQUIRED`. The paid request: any answer but `200`, `202` or `5xx`, a `402` included. Either request: a `200` or `402` with a `Content-Encoding` other than `identity`, or a `200` that is not a receipt for this H (a receipt over 64 KiB included). Also: the approved payment names another agreement URL, or `signal` ended the exchange before the payment is sent. |
 | `not-approved` | Your approver answered anything but `True`, raised or failed, for the signing it was asked about. The signer was not called for it. |
 | `atr-malformed` | The ATR's bytes are not one JSON text the gate reads alike in both languages: not UTF-8, a byte-order mark, `NaN` or `Infinity`, a repeated member name, a number past a double or an integer past 2^53 − 1, or nesting past 64 levels. |
-| `option-not-in-atr` | The ATR's `x402` slot lists `accepts`, or its `mpp` slot `challenges`, and none is the option chosen. Other slots are not compared. |
+| `option-not-in-atr` | The ATR's binding slot lists the options offered (`accepts` in `x402`, `challenges` in `mpp`, `options` in `acp`, `ap2`, `card` and `ucp`, `paymentOptions` in `ack`), and none is the option chosen. |
 | `request-mismatch` | The ATR's `x402` slot holds a request commitment that is not your request's; a `target` that is not in origin form gives the detail `x402/request-target-invalid`. |
 | `summary-missing` | The request for the signer is of a kind the gate cannot summarize, so it is not signed unshown. |
 | `past-ceiling` | The signed payment would stay payable longer than its pairing's ceiling. |
@@ -848,9 +848,9 @@ What the gate guarantees, in the code:
   among them, is asked of your approver with its summary, computed from the request the signer is handed, and the
   signer is called only on `True`. This holds of `transact` alone: a payment you sign yourself from `confirm` and
   `finish`, and the payments `agree` and `within` sign, which take no approver, are shown only where you show them.
-- **On x402 and MPP, the option is one the ATR commits to.** Where the ATR's `x402` slot lists `accepts`, or its `mpp`
-  slot `challenges`, the option paid is one of them; where the `x402` slot holds a commitment to the buyer's request,
-  the request is the buyer's own. The options of other protocols are not compared: only your approval holds them.
+- **The option is one the ATR commits to.** Where the ATR's binding slot lists the options offered, the option paid is
+  one of them (on card, whose documents do not show the seller's checkout id, one of the pairing's `scheme`); where the
+  `x402` slot holds a commitment to the buyer's request, the request is the buyer's own.
 - **A bounded window, in `transact`, `confirm` and `finish`.** A payment that would stay payable past its pairing's
   ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's ceiling.
   `agree` called on its own and `within` apply no ceiling.
@@ -866,8 +866,8 @@ What the gate guarantees, in the code:
 
 What it does not do:
 
-- It judges none of the ATR's terms: it parses the bytes, and reads only the options of its `x402` or `mpp` slot and
-  the `x402` slot's request commitment.
+- It judges none of the ATR's terms: it parses the bytes, and reads only the binding slot's options and, on x402, its
+  request commitment.
 - It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit. It shows
   them; a discrepancy is between the parties, and what to approve is your approver's decision.
 - `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. With `confirm` and

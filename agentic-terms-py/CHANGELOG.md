@@ -6,6 +6,16 @@ change the public API, so pin the exact version. A change a caller must make is 
 [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each call before
 and after.
 
+## [Unreleased]
+
+### Fixed
+
+- The gate holds the option chosen to the ATR's binding slot on every protocol the profile's rule 6 names, as it did on
+  x402 and MPP alone: the `options` of `acp`, `ap2`, `card` and `ucp` and the `paymentOptions` of `ack`. An option the
+  slot does not list is declined `option-not-in-atr` before anything is signed. On `card`, whose documents do not show
+  the seller's checkout id, a listed option of the pairing's `scheme` holds it. The shared `vectors/buyer-gate.json`
+  holds a declining and an accepted case for each of the five, which the Python tests run.
+
 ## 0.5.0 - 2026-11-18
 
 Brings the Python gate to the calls of `@integraledger/terms` 0.5.0, and builds and reads every pairing as

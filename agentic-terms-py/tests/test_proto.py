@@ -60,7 +60,7 @@ from integraledger_terms import (
     Transacted,
     check,
 )
-from support import confirm, finish, transact
+from support import confirm, finish, piece_confirm, transact
 from integraledger_terms.bindings._jose import disclosure_digest
 from integraledger_terms.bindings.ap2_checkout_mandate import checkout_binding, checkout_jwt_of, read_mandate
 from integraledger_terms.bindings import card as card_binding
@@ -122,6 +122,21 @@ def confirms_only_over(p: Pairing, atr: bytes, h: str) -> Chosen:
     assert whole == Transacted(signed=None, atr_bytes=atr, h=h, agreement=agreement)
     assert signer.requests == []
     return confirmed.chosen
+
+
+def not_in_atr_over(p: Pairing, atr: bytes, h: str) -> Confirmed:
+    """B6 for a pairing whose document advertises an ATR whose binding slot lists no option the document offers: by the
+    pairing's own steps over atr, with no gate, the build gives the request; through the gate, confirm and transact
+    decline option-not-in-atr before anything is signed (profile buyer-gate.md, rule 6)."""
+    ceilings = {} if p.ceilings is None else {"ceilings": p.ceilings}
+    gated = run(lambda c: confirm(p.doc, offered(p.binding), p.account, c, p.inputs, **ceilings), serving(atr))
+    signer = Recording(p.account, never)
+    whole = run(lambda c: transact(p.doc, offered(p.binding), signer, c, inputs=p.inputs, **ceilings), serving(atr))
+    assert [code(gated), code(whole), signer.requests] == ["option-not-in-atr", "option-not-in-atr", []]
+    confirmed = piece_confirm(p.doc, offered(p.binding), p.account, p.inputs, atr)
+    assert isinstance(confirmed, Confirmed), confirmed
+    assert confirmed.h == h and confirmed.atr_bytes == atr
+    return confirmed
 
 
 def unpayable(p: Pairing, accounts: list[str]) -> None:
@@ -1070,12 +1085,25 @@ def _ucp_mandate_pairing(binding: Binding, payload: dict[str, Any]) -> tuple[Pai
     # pairing's ceiling to pay it.
     return Pairing(binding, doc, BUYER, answer, ceilings={binding.id: "no-end"}), j, m
 
+def _booking(binding: Binding) -> bool:
+    """ucp.json's V2b advertises the booking bkg_1 for A's H, and A's ucp slot lists the checkout chk_1 alone: through
+    the gate a booking is declined option-not-in-atr (profile buyer-gate.md, rule 6)."""
+    return binding.id.startswith("ucp/booking/")
+
+
 @pytest.mark.parametrize(("binding", "payload"), UCP_MANDATES, ids=lambda v: getattr(v, "id", ""))
 def test_ucp_ap2_mandate_b6_the_checkout_goes_unchanged_and_the_mandate_completes(
     binding: Binding, payload: dict[str, Any]
 ) -> None:
     p, j, m = _ucp_mandate_pairing(binding, payload)
-    signed = signs_over(p, UCP_ATR, UCP_F["H"])
+    if _booking(binding):
+        confirmed = not_in_atr_over(p, UCP_ATR, UCP_F["H"])
+        assert confirmed.request is not None
+        done = finish(UCP_ATR, confirmed.chosen, p.answer(confirmed.request), binding)
+        assert isinstance(done, Finished) and done.h == UCP_F["H"], done
+        signed = done.signed
+    else:
+        signed = signs_over(p, UCP_ATR, UCP_F["H"])
     assert signed == {"checkout_mandate": m, "checkout_jwt": j}
     assert binding.bound(signed) == UCP["V4"]["expectBound"]
 
@@ -1099,7 +1127,11 @@ UCP_CONFIRM_ONLY = [
 @pytest.mark.parametrize(("binding", "doc"), UCP_CONFIRM_ONLY, ids=lambda v: getattr(v, "id", ""))
 def test_ucp_unsigned_b6_confirm_only(binding: Binding, doc: dict[str, Any]) -> None:
     assert binding.build({"checkout": doc}, UCP_F["H"]) == refusal(UCP["V4"]["expectUnsignedBuild"])
-    confirms_only_over(Pairing(binding, doc, BUYER, never), UCP_ATR, UCP_F["H"])
+    p = Pairing(binding, doc, BUYER, never)
+    if _booking(binding):
+        assert not_in_atr_over(p, UCP_ATR, UCP_F["H"]).request is None
+    else:
+        confirms_only_over(p, UCP_ATR, UCP_F["H"])
 
 
 @pytest.mark.parametrize(("binding", "doc"), UCP_CONFIRM_ONLY, ids=lambda v: getattr(v, "id", ""))

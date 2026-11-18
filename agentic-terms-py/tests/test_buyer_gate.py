@@ -1,6 +1,7 @@
 """The gate's own vectors, terms' profile buyer-gate.md (vectors/buyer-gate.json, which the TypeScript gate runs too).
-Each row runs through transact with the row's pairing, document, ATR bytes, request, inputs and ceilings, the clock at
-the file's now, an approver that answers the row's approves, and a signer that is the file's payer key where the row
+Each row runs through transact with the row's pairing, document, link, account, ATR bytes, request, inputs and ceilings
+(a row's own document, link and account where it names them, else the file's), the clock at the file's now, an approver
+that answers the row's approves, and a signer that is the file's payer key where the row
 is signed; the decline, the signer's and the approver's call counts and what the approver was asked are the row's. A
 row whose pairing has no buyer piece yet answers pairing-not-supported, the gate's first check, with no call, asserted
 and never skipped. The parse's rows are the file's and the protocol package's check-8 rows in core-vectors.json
@@ -34,8 +35,8 @@ BINDINGS = {getattr(b, "id"): b for b in (getattr(terms, n) for n in terms.__all
 class Payer:
     """The file's payer key, signing the typed data it is handed, counting its requests."""
 
-    def __init__(self, signs: bool) -> None:
-        self.account: str = V["fixed"]["account"]
+    def __init__(self, signs: bool, account: str | None = None) -> None:
+        self.account: str = V["fixed"]["account"] if account is None else account
         self.signs = signs
         self.requests: list[Any] = []
 
@@ -62,13 +63,21 @@ def resource_request(row: dict[str, Any]) -> dict[str, Any]:
     return {"method": r["method"], "target": r["target"], "body": r["bodyUtf8"].encode("utf-8")}
 
 
+def document_of(row: dict[str, Any]) -> Any:
+    """The row's document: its own, as written, or the file's for its pairing advertising the row's ATR."""
+    if "document" in row:
+        return copy.deepcopy(row["document"])
+    doc = copy.deepcopy(V["fixed"]["documents"][row["pairing"]])
+    doc["extensions"]["legalContext"]["info"]["value"] = row["atr"]["sha256"]
+    return doc
+
+
 @pytest.mark.parametrize("row", V["rows"], ids=[r["name"] for r in V["rows"]])
 def test_buyer_gate_rows_through_transact(row: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_gate, "_now", lambda: V["fixed"]["now"])
-    doc = copy.deepcopy(V["fixed"]["documents"][row["pairing"]])
-    doc["extensions"]["legalContext"]["info"]["value"] = row["atr"]["sha256"]
+    doc = document_of(row)
     body = bytes.fromhex(row["atr"]["hex"])
-    signer = Payer(row["expect"]["signerCalls"] > 0)
+    signer = Payer(row["expect"]["signerCalls"] > 0, row.get("account"))
     asked: list[ToSign] = []
 
     def approver(to_sign: ToSign) -> bool:
@@ -80,7 +89,7 @@ def test_buyer_gate_rows_through_transact(row: dict[str, Any], monkeypatch: pyte
     binding = BINDINGS[row["pairing"]] if row["pairing"] in BINDINGS else type("Unbound", (), {"id": row["pairing"]})()
 
     async def go() -> tuple[Any, list[str]]:
-        client, calls = serving(V["fixed"]["link"], body)
+        client, calls = serving(row.get("link", V["fixed"]["link"]), body)
         async with client:
             out = await terms.transact(
                 doc,

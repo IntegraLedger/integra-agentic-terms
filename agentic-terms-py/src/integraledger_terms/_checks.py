@@ -51,18 +51,57 @@ _LISTING: Mapping[str, str] = {
 
 def _unplaced(binding: Binding, option: object) -> object:
     """The option as the pairing's unplaced gives it: the binding's own, where it has one, else the protocol package's
-    rule for the pairing (_commitment.x402_unplaced)."""
+    rule for the pairing (_commitment.x402_unplaced), which leaves the option of acp, ap2, ucp and ack unchanged, as
+    their unplaced does, and refuses one that carries a refused member."""
     own = getattr(binding, "unplaced", None)
     return own(option) if callable(own) else x402_unplaced(str(binding.id), option)
 
 
+# The scheme of each card pairing's option, {scheme, checkout}, as the protocol package's card entry point names it.
+_CARD_SCHEMES: Mapping[str, str] = {
+    "card/visa-tap": "visa-tap",
+    "card/mastercard-agent-pay": "mastercard-agent-pay",
+    "card/visa-vic": "visa-vic",
+    "card/mastercard-vi/immediate": "mastercard-vi",
+    "card/mastercard-vi/autonomous": "mastercard-vi",
+    "card/seller-reference": "seller-reference",
+}
+
+# What a choice holds that _chosen_option finds no option in.
+_NONE = object()
+
+
+def _chosen_option(pairing: str, protocol: str, choice: Mapping[str, Any]) -> object:
+    """The option chosen, as the binding slot of acp, ap2, ucp and ack lists it, from the choice the pairing's piece
+    made: ACP's handler option, {"requires_delegate_payment"}, True on acp/checkout/delegated; AP2's {"checkout"}, the
+    id of the checkout_jwt's payload; UCP's {"checkout"}, or {"booking"} on a booking pairing, the checkout's id; ACK's
+    payment option chosen from the signed Payment Request. _NONE where the choice holds no such value."""
+    if protocol == "acp":
+        return {"requires_delegate_payment": pairing == "acp/checkout/delegated"}
+    if protocol == "ap2":
+        checkout = choice.get("checkout")
+        return {"checkout": checkout} if isinstance(checkout, str) else _NONE
+    if protocol == "ucp":
+        shown = choice.get("checkout")
+        checkout_id = shown.get("id") if isinstance(shown, Mapping) else None
+        if not isinstance(checkout_id, str):
+            return _NONE
+        return {"booking": checkout_id} if pairing.startswith("ucp/booking/") else {"checkout": checkout_id}
+    if protocol == "ack":
+        return choice["option"] if "option" in choice else _NONE
+    return _NONE
+
+
 def slot_holds(binding: Binding, chosen: Chosen, atr: object) -> Declined | None:
     """Where the ATR's binding slot lists the options offered, option-not-in-atr for an option chosen that equals none
-    of them: an x402 option as the pairing's unplaced gives it against each member as the slot holds it, by RFC 8785
-    form; an MPP challenge and each member by their bound members (issuedDigest's, without id and the protocol
-    package's opaque members). The option chosen is the choice's accepted (x402) or challenge (MPP); a pairing whose
-    choice holds neither is not compared."""
-    protocol = str(binding.id).split("/", 1)[0]
+    of them. An x402 option, and the option chosen on acp, ap2, ucp and ack (_chosen_option), as the pairing's unplaced
+    gives it, against each member as the slot holds it, by RFC 8785 form; an MPP challenge and each member by their
+    bound members (issuedDigest's, without id and the protocol package's opaque members). On card, whose option
+    {scheme, checkout} names the seller's own checkout id, which no card document shows the buyer, a member that is a
+    mapping whose scheme is the pairing's holds it. The x402 option chosen is the choice's accepted, and the MPP one its
+    challenge: an x402 or MPP choice that holds neither is not compared."""
+    pairing = str(binding.id)
+    protocol = pairing.split("/", 1)[0]
     listing = _LISTING.get(protocol)
     if listing is None or not isinstance(atr, Mapping):
         return None
@@ -83,10 +122,20 @@ def slot_holds(binding: Binding, chosen: Chosen, atr: object) -> Declined | None
             return None if any(issued_form(m) == want for m in members) else not_held
         except Exception:
             return not_held
-    if protocol != "x402" or "accepted" not in choice:
-        return None
+    if protocol == "card":
+        scheme = _CARD_SCHEMES.get(pairing)
+        held = scheme is not None and any(isinstance(m, Mapping) and m.get("scheme") == scheme for m in members)
+        return None if held else not_held
+    if protocol == "x402":
+        if "accepted" not in choice:
+            return None
+        offered: object = choice["accepted"]
+    else:
+        offered = _chosen_option(pairing, protocol, choice) if isinstance(chosen.choice, Mapping) else _NONE
+        if offered is _NONE:
+            return not_held
     try:
-        option = _unplaced(binding, choice["accepted"])
+        option = _unplaced(binding, offered)
     except Exception:
         return not_held
     text = None if isinstance(option, Refusal) else canonical_or_none(option)
