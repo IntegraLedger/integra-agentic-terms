@@ -396,7 +396,11 @@ export function createBuyerServer(options: {
       if (a.receipt === undefined) return result(confirmed);
       if (!isReceiptFor(a.receipt, out.h)) {
         return declinedResult({
-          decline: { code: "agreement-failed", detail: "The agreement receipt is not a recorded agreement for this ATR hash." },
+          decline: {
+            code: "agreement-failed",
+            detail:
+              "The receipt is not an agreement receipt for this ATR hash: its atrHash must be this hash, agreed true, and network and transaction strings.",
+          },
         });
       }
       return result({ ...confirmed, ...shown });

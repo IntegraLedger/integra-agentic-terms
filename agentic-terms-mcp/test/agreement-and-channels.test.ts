@@ -106,6 +106,10 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     expect(at(ok, "result.structuredContent.request.salt")).toBe(H);
     expect(at(other, "result.isError")).toBe(true);
     expect(at(other, "result.structuredContent.decline.code")).toBe("agreement-failed");
+    // The tool checks the receipt's form and its atrHash, and reads no agreement: its detail says what it checked, and
+    // never that the receipt is not a recorded agreement.
+    expect(at(other, "result.structuredContent.decline.detail")).toMatch(/atrHash/);
+    expect(at(other, "result.structuredContent.decline.detail")).not.toMatch(/recorded/);
     expect(at(other, "result.structuredContent")).not.toHaveProperty("request");
   });
 
