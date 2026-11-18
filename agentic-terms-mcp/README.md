@@ -390,13 +390,11 @@ its pairing is mapped to `"no-end"`. Pass `floors`, `(pairing, network) => input
 payment service serves, read by the host from that service for the account's network: the server sets what it answers
 in the inputs it gives the gate, over a tool's own. A `floors` that throws or rejects gives no floor.
 
-The server drops a floor input from a tool's `inputs` for `x402/exact/eip155/gateway-batched` alone: its
-`minValiditySeconds` comes only from `floors`, and without it the gate declines `floor-missing`, naming the input. For
-`mpp/charge/usdc/gateway`, this version passes a tool's `sourceNetwork`, `burnIntentExpirationHeight` and
-`withdrawalDelay` through to the gate, so text the agent reads can name that rail's floor; a host that serves that
-pairing answers all three through `floors`, which override the tool's. The binary takes neither `ceilings` nor
-`floors`: it declines a `gateway-batched` payment `floor-missing`, and a Gateway burn intent unless the agent's
-`inputs` hold all three.
+The server drops from a tool's `inputs` every floor input the gate's `FLOOR_INPUTS` names for the pairing:
+`x402/exact/eip155/gateway-batched`'s `minValiditySeconds`, and `mpp/charge/usdc/gateway`'s `sourceNetwork`,
+`burnIntentExpirationHeight` and `withdrawalDelay`. Each comes only from `floors`, and without it the gate declines
+`floor-missing`, naming the input, so no text the agent reads names a floor. The binary takes neither `ceilings` nor
+`floors`: it declines a `gateway-batched` payment and a Gateway burn intent `floor-missing`.
 
 The `fetch` you pass is the server's whole network policy. The binary's public-address-only fetch is not exported. A
 server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses every address that
@@ -526,10 +524,8 @@ MPP agreement challenges as `agreementChallenges`, for the agent's own MPP clien
   of `required.accepts` and `required` advertises H; it does not compare it with the `approve` it returned, and a host
   that needs that compares them itself. `atr_channel_within` signs a later voucher in a channel whose opening was
   approved, with no approval of its own.
-- **The ceilings are the host's.** No tool input raises a ceiling, so no text the agent reads, the seller's among it,
-  can. The floors are the host's too, but for `mpp/charge/usdc/gateway`, whose floor inputs this version takes from a
-  tool's `inputs` where `floors` does not answer them (see
-  [Serving with your own signer](#serving-with-your-own-signer)).
+- **The ceilings and the floors are the host's.** No tool input raises a ceiling or names a floor, so no text the
+  agent reads, the seller's among it, can (see [Serving with your own signer](#serving-with-your-own-signer)).
 - **One bounded fetch per confirmation:** `https` only, no redirect, 10 seconds, at most 1 MiB, asking for
   `Accept-Encoding: identity`. A response with any other `Content-Encoding` is declined unread, so the bytes hashed are
   the bytes sent.

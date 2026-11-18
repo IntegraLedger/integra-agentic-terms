@@ -228,10 +228,9 @@ gate does. The gate applies no spending limit.
 The ceilings and the served floors are the host's: pass `ceilings` and `floors` to `createBuyerServer`. No tool input
 raises a ceiling, so no text the agent reads, the seller's among it, can. Without `ceilings`, a payment that signs no
 end is declined `no-end`. The server sets what `floors` answers in the inputs it gives the gate, over a tool's own, and
-drops a floor input from a tool's `inputs` for `x402/exact/eip155/gateway-batched` alone: without `floors`, that
-pairing is declined `floor-missing`. For `mpp/charge/usdc/gateway`, this version passes a tool's `sourceNetwork`,
-`burnIntentExpirationHeight` and `withdrawalDelay` through to the gate, so a host serving that pairing answers all
-three through `floors`, which override the tool's.
+drops from a tool's `inputs` every floor input the gate's `FLOOR_INPUTS` names: `x402/exact/eip155/gateway-batched`'s
+`minValiditySeconds`, and `mpp/charge/usdc/gateway`'s `sourceNetwork`, `burnIntentExpirationHeight` and
+`withdrawalDelay`. Without `floors`, those pairings are declined `floor-missing`.
 
 ## What the server guarantees
 

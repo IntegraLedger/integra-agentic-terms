@@ -172,6 +172,25 @@ describe("buyer-gate.json rows through the tools", () => {
     expect(at(m, "result.structuredContent.decline.detail")).toBe("minValiditySeconds");
   });
 
+  // Profile rules 9 and 16: a floor input is the host's, never a tool input. mpp/charge/usdc/gateway's three floor
+  // inputs, given in the tool's `inputs` with no `floors`, are dropped, and the gate declines floor-missing naming the
+  // first of them in rule 9's order, before it reads the offer. The values are lcp's mpp-charge-usdc-gateway.json
+  // ceiling.good.
+  it("mpp/charge/usdc/gateway's floor inputs in a tool's inputs reach no gate: floor-missing, sourceNetwork", async () => {
+    const { sourceNetwork, burnIntentExpirationHeight, withdrawalDelay } = vectors("mpp-charge-usdc-gateway.json").ceiling.good;
+    const fetch = serving(rowOf("floor-given"));
+    const c = connect({ fetch });
+    const m = await call(c, "atr_confirm", {
+      pairing: "mpp/charge/usdc/gateway",
+      document: {},
+      account: `${sourceNetwork}:${V.fixed.account.split(":")[2]}`,
+      resourceRequest: argsOf(rowOf("floor-given")).resourceRequest,
+      inputs: { sourceNetwork, burnIntentExpirationHeight, withdrawalDelay },
+    });
+    await c.close();
+    expect([code(m), at(m, "result.structuredContent.decline.detail"), fetch.calls]).toEqual(["floor-missing", "sourceNetwork", 0]);
+  });
+
   it("createBuyerServer as the binary calls it, with no ceilings, declines no-end; a floors that throws gives no floor", async () => {
     const raised = rowOf("no-end-raised");
     const plain = connect({ fetch: serving(raised) }, (options) => createBuyerServer({ fetch: options.fetch }));

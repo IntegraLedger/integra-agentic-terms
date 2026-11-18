@@ -102,10 +102,9 @@ every statement.
   not compare it with the `approve` it showed, so a host that needs that compares them itself. `atr_channel_within`
   signs a later voucher in a channel whose opening was approved, with no approval of its own.
 - The ceilings and the served floors are the host's (`createBuyerServer`'s `ceilings` and `floors`), never a tool
-  input. No tool input raises a ceiling. In 0.5.0 the server removes a floor input from a tool's `inputs` for
-  `x402/exact/eip155/gateway-batched` only: for `mpp/charge/usdc/gateway` it passes a tool's `sourceNetwork`,
-  `burnIntentExpirationHeight` and `withdrawalDelay` through to the gate, so a host serving that pairing answers them
-  through `floors`, which override the tool's.
+  input. No tool input raises a ceiling or names a floor: the server removes from a tool's `inputs` every floor input
+  the gate's `FLOOR_INPUTS` names for the pairing, those of `x402/exact/eip155/gateway-batched` and
+  `mpp/charge/usdc/gateway` alike.
 - A channel opening and a channel hold the tools return carry a `mac` under a key of the server process.
   `atr_channel_open` declines any other opening, `opening-unverified`, and `atr_channel_within` and
   `atr_channel_record_charge` decline any other hold, `hold-unverified`, before the gate is called.

@@ -13,6 +13,7 @@ import {
   check,
   confirm,
   finish,
+  FLOOR_INPUTS,
   openChannel,
   recordCharge,
   transact,
@@ -279,13 +280,6 @@ function same(a: Json, b: Json): boolean {
 }
 
 /**
- * The floor inputs this server drops from a tool's `inputs`, by pairing (terms' profile `buyer-gate.md`, rule 9): the
- * host gives them through `floors`. It names `x402/exact/eip155/gateway-batched` alone; the gate's `FLOOR_INPUTS` also
- * names `mpp/charge/usdc/gateway`, whose floor inputs a tool's `inputs` pass through to the gate.
- */
-const FLOOR_INPUTS: ReadonlyMap<string, readonly string[]> = new Map([["x402/exact/eip155/gateway-batched", ["minValiditySeconds"]]]);
-
-/**
  * The floor inputs of rule 9 for a pairing on a network (a CAIP-2 id, the account's), as the host reads them from the
  * payment service: an object or a promise of one, or `undefined` for none.
  */
@@ -297,11 +291,11 @@ const networkOf = (account: string): string => account.split(":").slice(0, 2).jo
 /**
  * The buyer's tools. `ceilings`, the host's, raises a pairing's ceiling on how long a signed payment stays payable; it
  * is not a tool input, so no text the agent reads raises a ceiling. `floors`, the host's, answers the floor a rail's
- * payment service serves, and what it answers is set over a tool's own `inputs`. The server drops a floor input from a
- * tool's `inputs` for `x402/exact/eip155/gateway-batched` alone: for `mpp/charge/usdc/gateway` a tool's
- * `sourceNetwork`, `burnIntentExpirationHeight` and `withdrawalDelay` reach the gate where `floors` does not answer
- * them. `atr_transact` signs only a signing equal to one the agent passes back approved: each signing is returned to
- * approve, and signed when the call is made again with it approved, unchanged.
+ * payment service serves, and what it answers is set over a tool's own `inputs`. The server drops from a tool's
+ * `inputs` every floor input the gate's own `FLOOR_INPUTS` names for the pairing (terms' profile `buyer-gate.md`, rules
+ * 9 and 16), so no floor reaches the gate but the host's. `atr_transact` signs only a signing equal to one the agent
+ * passes back approved: each signing is returned to approve, and signed when the call is made again with it approved,
+ * unchanged.
  */
 export function createBuyerServer(options: {
   fetch: Fetch;
@@ -353,9 +347,9 @@ export function createBuyerServer(options: {
   const payer = agreementSigner ?? signer;
 
   /**
-   * The inputs the gate is given for a pairing paid from `account`: the tool's own, without the floor inputs this
-   * server's `FLOOR_INPUTS` names for the pairing, and over them the floor inputs `floors` answers for the pairing on
-   * the account's network. A `floors` that throws or rejects, or answers anything but an object, gives none.
+   * The inputs the gate is given for a pairing paid from `account`: the tool's own, without the floor inputs the gate's
+   * `FLOOR_INPUTS` names for the pairing, and over them the floor inputs `floors` answers for the pairing on the
+   * account's network. A `floors` that throws or rejects, or answers anything but an object, gives none.
    */
   async function gateInputs(id: string, account: string, given: Inputs | undefined): Promise<Inputs> {
     const names = FLOOR_INPUTS.get(id) ?? [];

@@ -261,11 +261,13 @@ describe("the MCP server over stdio", () => {
     const seller: Fetch = async (url) =>
       url === ABC_FIXED.agreementUrl ? new Response(JSON.stringify(receipt), { status: 200 }) : new Response(new Uint8Array(A), { status: 200 });
     const pairing = "mpp/charge/usdc/gateway";
-    // The build's inputs, as the vector file's B2 row gives the buyer; their ceiling is M5's maxBlockHeight.
+    // The build's inputs, as the vector file's B2 row gives the buyer; their ceiling is M5's maxBlockHeight. They are
+    // the pairing's floor inputs, which the host answers through `floors`, never a tool's `inputs` (profile rule 16).
     const inputs = G.buyer.rows.find((r: { name: string }) => r.name === "B2").input.inputs;
+    const floors = (id: string) => (id === "mpp/charge/usdc/gateway" ? inputs : undefined);
     const maxBlockHeight: string = G.ceiling.good.expectMaxBlockHeight;
-    const c = connect({ fetch: seller });
-    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source, resourceRequest: REQUEST, inputs, receipt });
+    const c = connect({ fetch: seller, floors });
+    const confirmed = await call(c, "atr_confirm", { pairing, document, account: G.M5.source, resourceRequest: REQUEST, receipt });
     await c.close();
 
     const { recipient: _r, ...own } = G.M5.saltInput;
@@ -283,8 +285,8 @@ describe("the MCP server over stdio", () => {
         return { source: G.M5.source, ...routes, burnIntent, signature: `0x${"11".repeat(65)}` };
       },
     };
-    const t = connect({ fetch: seller, signer });
-    const { m } = await transacted(t, { pairing, document, resourceRequest: REQUEST, inputs }, M);
+    const t = connect({ fetch: seller, signer, floors });
+    const { m } = await transacted(t, { pairing, document, resourceRequest: REQUEST }, M);
     await t.close();
     if (summaryPending(pairing)) {
       expect(at(confirmed, "result.structuredContent.decline.code")).toBe("summary-missing");

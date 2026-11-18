@@ -46,7 +46,7 @@ your principal that this host cannot confirm the record.
    your payer account (CAIP-10, for example `eip155:84532:0x…`). Put in `inputs` any value of your own the pairing
    needs; a decline whose detail ends `input-missing` names that case. A floor that a rail's payment service serves is
    your host's to give, never yours: never put `minValiditySeconds`, `sourceNetwork`, `burnIntentExpirationHeight` or
-   `withdrawalDelay` in `inputs`, even where a tool would pass it on. A decline `floor-missing` names the floor your
+   `withdrawalDelay` in `inputs`: the tools drop them. A decline `floor-missing` names the floor your
    host has not given: tell your principal.
 3. If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, this payment is not itself a public proof of
    the hash, so an agreement payment carrying it must be recorded first. It is a payment like any other, and you

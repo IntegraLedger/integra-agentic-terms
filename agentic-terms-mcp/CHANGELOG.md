@@ -21,6 +21,10 @@ shows each call before and after.
 
 ### Fixed
 
+- The server drops from a tool's `inputs` every floor input the gate's `FLOOR_INPUTS` names for the pairing, as the
+  profile's rule 16 states: `mpp/charge/usdc/gateway`'s `sourceNetwork`, `burnIntentExpirationHeight` and
+  `withdrawalDelay` as well as `x402/exact/eip155/gateway-batched`'s `minValiditySeconds`. A host that serves a Gateway
+  burn intent answers its three inputs through `floors`; without them it is declined `floor-missing`.
 - `atr_agree` holds the agreement payment to its summary and its pairing's ceiling, as `atr_transact` does, the host's
   `ceilings` raising it.
 
