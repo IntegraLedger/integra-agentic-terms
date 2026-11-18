@@ -520,7 +520,9 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * read refuses for a fault of its own (its version, legal context or agreement URL, or an `accepts` that is not a list
  * of at most 32 entries holding an object) is declined as the unpaid request declines that challenge, and one whose
  * option is not one of that challenge's `accepts`, by RFC 8785 form, is declined `offer-unreadable` with
- * `x402/option-not-in-document`, each before any fetch or signer call.
+ * `x402/option-not-in-document`, each before any fetch or signer call. `agree` calls no approver, computes no summary
+ * and holds the agreement payment to no ceiling: a wallet that picks its expiry is handed no latest deadline. `transact`
+ * does all three.
  * `bytes` are the ATR the gate compared, whose hash the agreement payment carries; `inputs` are the buyer's own chain
  * values; `signal` ends the exchange; `chosen` is the charge the agreement is for, exactly as `confirm` returned it,
  * and only an option its pairing's `agreementOn` admits is paid (any option where `chosen` is not given). Options

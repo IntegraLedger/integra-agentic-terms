@@ -305,7 +305,8 @@ export async function openChannel(
  * that names another channel or another hash is declined, and one with no legal context is signed under the held
  * hash. A voucher's `maxClaimableAmount` is the recorded charge plus the option's amount; a refund's is the recorded
  * charge. `inputs` are the buyer's own chain values a refund's build takes; `inputs` that is not an object is declined
- * `no-payable-option` with `<namespace>/input-malformed`.
+ * `no-payable-option` with `<namespace>/input-malformed`. `within` calls no approver, computes no summary and holds the
+ * voucher to no ceiling: the opening was shown and approved.
  *
  * A Solana refund is the voucher alone. Taken again after the receiver's binding is unavailable, it also carries the
  * payer-signed `request_close`, built with the `recentBlockhash`, `computeUnitLimit` and `computeUnitPrice` of

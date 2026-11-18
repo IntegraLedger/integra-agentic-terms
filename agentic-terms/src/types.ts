@@ -179,7 +179,8 @@ export type Declined = {
 
 /**
  * The request the buyer is about to pay, the one the seller's offer answered, in the form the protocol package's request
- * commitment reads it: over HTTP `{method, target, body, headers?}`, over MCP the tool call `{name, arguments?}`.
+ * commitment reads it: over HTTP `{method, target, body, headers?}`, `target` the origin-form request-target as sent
+ * (the path and query, starting with `/`, never the full URL), over MCP the tool call `{name, arguments?}`.
  */
 export type ResourceRequest = HttpRequest | ToolCall;
 
