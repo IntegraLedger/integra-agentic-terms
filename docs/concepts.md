@@ -125,8 +125,8 @@ as the act `agreement`, pays it once approved, waits for its receipt, and only t
 seller's first response offers the agreement alone (below), `transact` pays it as soon as the approver approves it,
 without returning it first. On a pairing whose
 agreement has its own single-use value, the agreement payment carries that value, computed from H, where a payment for
-the resource would carry H. Where the agreement URL answers that the agreement is already recorded,
-`transact` takes that receipt without a payment. Where it offers only MPP agreement challenges, terms sends no MPP
+the resource would carry H. Where the agreement URL answers the unpaid request with a receipt, `transact` makes no
+agreement payment and goes on with that receipt, marked `unpaid: true`: the agreement URL's word alone. Where it offers only MPP agreement challenges, terms sends no MPP
 credential: the gate returns them, signing nothing, for the buyer's own MPP client to pay. The receipt is the agreement
 URL's statement: the gate checks its form
 and that its `atrHash` is H, and does not look up the transaction it names. `confirm` and `finish` neither pay nor

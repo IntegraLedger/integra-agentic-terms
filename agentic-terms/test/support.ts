@@ -95,6 +95,11 @@ export const AGREEMENT_URL = FIXED.agreementUrl;
 /** The agreement resource's receipt for `h`. */
 export const receiptFor = (h: string) => ({ atrHash: h, agreed: true, network: "eip155:84532", transaction: `0x${"cd".repeat(32)}` });
 export const RECEIPT = receiptFor(H);
+/**
+ * The receipt `serving`'s agreement URL answers the unpaid request with, as the gate returns it: marked `unpaid: true`,
+ * no agreement payment having been made or read (profile `buyer-gate.md`, rule 18).
+ */
+export const unpaidReceiptFor = (h: string) => ({ ...receiptFor(h), unpaid: true as const });
 
 /**
  * A fetch stub serving the bytes at every link, counting its calls; the agreement URL answers 200 with the receipt for
@@ -302,7 +307,7 @@ export async function throughGate(p: Pairing & { placed: (h: AtrHash) => unknown
   if ("approve" in whole || !("signed" in whole)) throw new Error("an agreement payment to approve");
   expect(signer.requests.length).toBe(count);
   expect(whole.bytes).toEqual(A);
-  expect(whole.agreement).toEqual(isPublicProof(p.binding) ? undefined : receiptFor(HA));
+  expect(whole.agreement).toEqual(isPublicProof(p.binding) ? undefined : unpaidReceiptFor(HA));
   expect(await check(A, whole.signed, p.binding, whole.landed)).toEqual({ h: HA });
 }
 

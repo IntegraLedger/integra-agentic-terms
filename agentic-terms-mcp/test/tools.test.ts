@@ -348,7 +348,9 @@ describe("the MCP server over stdio", () => {
     expect(signings.map((s) => (s as { signings: { act: string }[] }).signings.map((x) => x.act))).toEqual([["agreement"], ["agreement", "payment"]]);
     expect(at(m, "result.isError")).toBeUndefined();
     expect(at(m, "result.structuredContent.atrHash")).toBe(H);
-    expect(at(m, "result.structuredContent.agreement")).toEqual(AG.receipt);
+    // The last call, which signs the payment, makes no agreement payment: the agreement URL answers its unpaid request
+    // with the receipt, which the gate marks unpaid (profile buyer-gate.md, rule 18).
+    expect(at(m, "result.structuredContent.agreement")).toEqual({ ...AG.receipt, unpaid: true });
     expect(at(m, "result.structuredContent.signed.payload.delegator")).toBe(E.fixed.payer);
     expect(kinds).toEqual(["eip712", "erc7710"]);
     const plain = await transacted(connect({ fetch: serving(A), signer: counting() }), { pairing: "x402/exact/eip155/eip3009", document: D, resourceRequest: REQUEST }, M);

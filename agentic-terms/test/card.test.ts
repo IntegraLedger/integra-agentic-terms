@@ -7,7 +7,7 @@ import type { Json } from "@integraledger/lcp";
 import { agentPay, viImmediate, visaVic } from "@integraledger/lcp/card";
 import { check, finish, transact, viJson, type Binding, type SigningRequest, type ToSign } from "../src/index.js";
 import { summaryOf } from "../src/summary.js";
-import { A, ABC, ABD, code, counting, GATE, H, HA, isDeclined, LINK, offered, pieceConfirm, receiptFor, serving, vectors } from "./support.js";
+import { A, ABC, ABD, code, counting, GATE, H, HA, isDeclined, LINK, offered, pieceConfirm, receiptFor, unpaidReceiptFor, serving, vectors } from "./support.js";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type V = any;
@@ -69,7 +69,7 @@ describe("card/visa-vic", () => {
     const approver = (t: ToSign) => (shown.push(t), true);
     const out = await transact(doc, offered(visaVic), echo, serving(A), { ...GATE, approver, ceilings: { "card/visa-vic": "no-end" } });
     if (isDeclined(out) || "approve" in out) throw new Error(JSON.stringify(out));
-    expect([echo.requests.length, out.agreement]).toEqual([1, receiptFor(HA)]);
+    expect([echo.requests.length, out.agreement]).toEqual([1, unpaidReceiptFor(HA)]);
     expect(shown.map((t) => [t.act, t.request.kind, { ...t.summary, atr: undefined }])).toEqual([["payment", "vic-reference", { ...nothingNamed, atr: undefined }]]);
     expect(await check(A, out.signed, visaVic)).toEqual({ h: HA });
   });

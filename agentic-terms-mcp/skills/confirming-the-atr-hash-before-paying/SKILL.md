@@ -53,7 +53,8 @@ your principal that this host cannot confirm the record.
    approve it as you would any payment. If this host offers `atr_agree`, call it with `atr.base64` and `chosen`,
    exactly as `atr_confirm` returned it, `mac` included; a changed `chosen` is declined `chosen-unverified` and nothing
    is paid. It returns `approve`, whose `option` is the agreement payment's `amount`, `asset`, payee (`payTo`) and
-   `network`, and signs nothing; or, where the agreement is already recorded, the `receipt`; or `agreementChallenges`,
+   `network`, and signs nothing; or, where the agreement URL answered with a receipt before anything was paid, the
+   `receipt` marked `unpaid: true`, the seller's word alone; or `agreementChallenges`,
    MPP agreement challenges your own MPP client pays at the agreement URL, with nothing signed. To approve it, call
    `atr_agree` again with the same arguments and `approved` set to `approve`, exactly as returned; it returns the
    agreement's `receipt`.

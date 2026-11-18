@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { BINDINGS } from "@integraledger/lcp";
 import { finish, transact, type Binding, type SigningRequest, type ToSign } from "../src/index.js";
 import { SUMMARIES } from "../src/summary.js";
-import { counting, fromHex, GATE, isDeclined, offered, pieceConfirm, receiptFor, serving, vectors } from "./support.js";
+import { counting, fromHex, GATE, isDeclined, offered, pieceConfirm, receiptFor, unpaidReceiptFor, serving, vectors } from "./support.js";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type V = any;
@@ -58,7 +58,7 @@ describe("the checkout pieces by their own steps", () => {
       approver: (t) => (shown.push(t), true),
       ceilings: { "ap2/checkout-mandate/x402": "no-end" },
     });
-    expect(whole).toEqual({ signed: presented, bytes: atr, h, agreement: receiptFor(h) });
+    expect(whole).toEqual({ signed: presented, bytes: atr, h, agreement: unpaidReceiptFor(h) });
     expect([signer.requests, shown.map((t) => [t.act, t.request, t.summary])]).toEqual([
       [request],
       [["payment", request, { amount: "19900", payees: [], asset: "USD", network: null, validity: NO_END, atr }]],

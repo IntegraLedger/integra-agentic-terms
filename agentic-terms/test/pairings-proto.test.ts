@@ -15,7 +15,7 @@ import { ap2Mandate, bookingAp2Mandate, bookingUnsigned, unsigned } from "@integ
 import { check, confirm, finish, transact, type Binding, type Presented, type SigningRequest } from "../src/index.js";
 import { PIECES } from "../src/pairings/index.js";
 import type { BuyerPiece, Chosen, Read } from "../src/types.js";
-import { A as ATR_A, ABC, ABD, code, counting, H, HA, isDeclined, isPublicProof, LINK, offered, pieceConfirm, receiptFor, serving, summaryPending, vectors, type Pairing } from "./support.js";
+import { A as ATR_A, ABC, ABD, code, counting, H, HA, isDeclined, isPublicProof, LINK, offered, pieceConfirm, receiptFor, unpaidReceiptFor, serving, summaryPending, vectors, type Pairing } from "./support.js";
 
 import { CONFIRMING, GATE, PIECE_ONLY } from "./support.js";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -78,7 +78,7 @@ async function signsOver(
       expect(signer.requests.length).toBe(1);
       if (bytes === atr) expect(whole.signed).toEqual(done.signed);
       expect(whole.bytes).toEqual(bytes);
-      expect(whole.agreement).toEqual(isPublicProof(p.binding) ? undefined : receiptFor(gh));
+      expect(whole.agreement).toEqual(isPublicProof(p.binding) ? undefined : unpaidReceiptFor(gh));
       expect(await check(bytes, whole.signed, p.binding)).toEqual({ h: gh });
     }
   }
@@ -110,7 +110,7 @@ async function confirmsOnly(p: Pairing, atr: Uint8Array, h: string): Promise<Cho
     expect([gated.request, gated.h, gated.bytes]).toEqual([null, gh, bytes]);
     const signer = counting(p.account, never);
     const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {} });
-    expect(whole).toEqual({ signed: null, bytes, h: gh, ...(isPublicProof(p.binding) ? {} : { agreement: receiptFor(gh) }) });
+    expect(whole).toEqual({ signed: null, bytes, h: gh, ...(isPublicProof(p.binding) ? {} : { agreement: unpaidReceiptFor(gh) }) });
     expect(signer.requests.length).toBe(0);
   }
   return confirmed.chosen;

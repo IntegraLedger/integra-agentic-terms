@@ -134,7 +134,8 @@ agent approves it as it approves any payment:
 - where the host offers `atr_agree`, call it with `atr.base64` and `chosen`, exactly as returned, `mac` included (a
   changed `chosen` is declined `chosen-unverified`, and nothing is fetched or signed). It returns `approve`, the
   agreement payment, and signs nothing: `approve.option` is its `amount`, `asset`, `payTo` and `network`. Where the
-  agreement is already recorded, it returns the `receipt`; where the agreement URL offers only MPP agreement
+  agreement URL answers that unpaid request with a receipt, it returns the `receipt`, marked `unpaid: true`: nothing was
+  paid or read, and the receipt is the agreement URL's word alone; where the agreement URL offers only MPP agreement
   challenges, it returns them as `agreementChallenges`, signing nothing, for the agent's own MPP client to pay there.
   To approve the payment, call `atr_agree` again with `approved` set to `approve`, exactly as returned; it returns the
   `receipt`;

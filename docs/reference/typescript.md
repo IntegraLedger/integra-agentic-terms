@@ -192,8 +192,8 @@ declare function agree(
 ```
 
 The agreement for the hash of `bytes` at `url`, in two calls. Without `options.approved`, asks the agreement URL for its
-payment request and returns `{ approve, bytes, h }`, signing nothing; where the agreement is already recorded, returns
-its receipt; where its `402` carries no `PAYMENT-REQUIRED` and carries MPP agreement challenges, returns them as
+payment request and returns `{ approve, bytes, h }`, signing nothing; where it answers that unpaid request with a
+receipt, returns `{ receipt }`, the receipt marked `unpaid: true`, nothing paid or read; where its `402` carries no `PAYMENT-REQUIRED` and carries MPP agreement challenges, returns them as
 `{ agreementChallenges, bytes, h }`, signing nothing, for the caller's own MPP client to pay at `url`. With `options.approved`, the value of `approve` carried back unchanged, holds exactly that payment to its summary and its
 own pairing's ceiling, `options.ceilings` raising it, as `transact` does, then signs it with `signer`, sends it, and
 returns the receipt once recorded. Before anything is fetched or signed, an approved payment
@@ -212,7 +212,9 @@ and a `signer` whose `account` is not a string, are declined before any fetch.
 See [agreement payments](../guides/agreement-payments.md).
 
 The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not look
-up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded.
+up the transaction it names. `AgreementReceipt` is `{ atrHash, agreed, network, transaction, unpaid? }`: `unpaid` is
+`true` where the agreement URL answered the first, unpaid request with it, the gate having made no agreement payment and
+read none; a receipt answered to the paid request has no `unpaid`.
 
 Once the agreement payment is sent, every decline carries it as `moved`. The code is `agreement-pending` where it may
 settle yet: a `202`, a `5xx` or a timeout until the exchange's bound, or your `signal`. It is `agreement-failed` where

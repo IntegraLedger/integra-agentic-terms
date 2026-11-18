@@ -26,7 +26,7 @@ import {
   LINK,
   offered,
   pieceConfirm,
-  receiptFor,
+  receiptFor, unpaidReceiptFor,
   serving,
   vectors,
   type Pairing,
@@ -298,7 +298,7 @@ describe("x402/batch-settlement/cloudflare", () => {
     const whole = await transact(x402Doc(batchCloudflare, option, BV.fixed.resource, LINK, HA), offered(batchCloudflare), signer, serving(ATR_A), GATE);
     if (isDeclined(whole)) throw new Error(whole.decline.code);
     if ("approve" in whole) throw new Error("an agreement payment to approve");
-    expect(whole.agreement).toEqual(receiptFor(HA));
+    expect(whole.agreement).toEqual(unpaidReceiptFor(HA));
     expect(signer.requests.length).toBe(0);
     expect(await check(ABC, done.signed, batchCloudflare)).toEqual({ h: H });
     expect(code(await check(ABD, done.signed, batchCloudflare))).toBe("signed-not-bound");

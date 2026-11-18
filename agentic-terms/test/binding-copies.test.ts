@@ -36,7 +36,7 @@ import {
   type SigningRequest,
   type ToApprove,
 } from "../src/index.js";
-import { A, ABC, AGREEMENT_URL, code, H, HA, LINK, offered, piecePay, receiptFor, serving, summaryPending, transactApproved, vectors } from "./support.js";
+import { A, ABC, AGREEMENT_URL, code, H, HA, LINK, offered, piecePay, receiptFor, unpaidReceiptFor, serving, summaryPending, transactApproved, vectors } from "./support.js";
 
 import { CONFIRMING, GATE } from "./support.js";
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -214,7 +214,7 @@ describe("a binding from another copy: its build's refusal runs the gate's decli
         signed: null,
         bytes: A,
         h: HA,
-        agreement: receiptFor(HA),
+        agreement: unpaidReceiptFor(HA),
       });
       expect(s.kinds).toEqual([]);
     }

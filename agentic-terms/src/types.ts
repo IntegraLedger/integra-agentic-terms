@@ -372,12 +372,21 @@ export interface AgreementChallenges {
   readonly agreement?: never;
 }
 
-/** The agreement resource's answer once the agreement payment carrying the ATR hash is recorded. */
+/**
+ * The agreement resource's receipt: its statement that an agreement payment carrying the ATR hash is recorded, in
+ * `network` by `transaction`. The gate checks its form and that `atrHash` is H, and does not read the transaction.
+ */
 export interface AgreementReceipt {
   atrHash: AtrHash;
   agreed: true;
   network: string;
   transaction: string;
+  /**
+   * Present, `true`, where the agreement resource answered the unpaid request with this receipt: the call made no
+   * agreement payment and read none, so the receipt is the agreement resource's statement alone (terms' profile
+   * `buyer-gate.md`, rule 18).
+   */
+  unpaid?: true;
 }
 
 /** Which option to pay, chosen from the read, the account, the buyer's inputs, the clock and the payment's `ref`. */

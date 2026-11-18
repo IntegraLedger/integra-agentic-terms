@@ -421,8 +421,9 @@ before anything is signed:
   the paid option's `maxTimeoutSeconds` plus 180 seconds. Within one call it never signs a second agreement payment.
   `signal` ends the exchange sooner.
 - The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not
-  look up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded,
-  and the first call goes straight on to the main payment.
+  look up the transaction it names. A `200` to the first, unpaid request is the agreement URL's word alone: the gate
+  made no agreement payment and read none, returns that receipt marked `unpaid: true`, and the first call goes straight
+  on to the main payment.
 - A pairing that needs an agreement and whose offer names none is declined with `agreement-not-offered`.
 - Where the agreement URL answers with no x402 payment request and with MPP agreement challenges
   (`WWW-Authenticate: Payment`), the gate signs nothing and returns `AgreementChallenges`, `{ agreementChallenges,
@@ -817,8 +818,8 @@ What it does not do:
   them; a discrepancy is between the parties, and what to approve is your approver's decision.
 - It does not authenticate the agreement's receipt. The receipt is the agreement URL's statement: the gate checks its
   form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the first, unpaid
-  request is taken as an agreement already recorded. The public proof is the transaction the receipt names, on its
-  network.
+  request is the agreement URL's word alone, and the receipt it carries is returned marked `unpaid: true`. The public
+  proof is the transaction the receipt names, on its network.
 - It applies no address policy. The seller chooses the ATR's link and the agreement URL; the gate requires `https`
   and nothing else of the address, and fetches through the `fetch` you pass. Where your process can reach hosts a
   seller should not, pass a `fetch` that refuses loopback, private-use, link-local and unique-local addresses, as the

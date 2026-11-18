@@ -8,6 +8,11 @@ shows each call before and after.
 
 ## [Unreleased]
 
+### Changed
+
+- A receipt the agreement URL answers to the first, unpaid request carries `unpaid: true` wherever a tool returns it
+  (`atr_agree`'s `receipt`, `atr_transact`'s `agreement`): no agreement payment was made or read for it.
+
 ### Fixed
 
 - `atr_agree` holds the agreement payment to its summary and its pairing's ceiling, as `atr_transact` does, the host's

@@ -53,8 +53,8 @@ sequenceDiagram
 2. **Ask.** The gate sends one `GET` to the agreement URL, with no payment, no redirect and a 10-second deadline. This
    request and every paid one ask for `Accept-Encoding: identity`; a `200` or a `402` with any other `Content-Encoding` is
    `agreement-failed`, its body unread.
-   - `200`: taken as an agreement already recorded. The body must be the receipt for this H, and the gate goes on to
-     step 7.
+   - `200`: the agreement URL's word that an agreement is recorded. The body must be the receipt for this H. The gate
+     makes no agreement payment and reads none, marks the receipt `unpaid: true` and goes on to step 7.
    - `202`: another agreement payment for this ATR is settling. The gate declines `agreement-pending` and signs nothing.
    - `402`: the `PAYMENT-REQUIRED` header, padded standard base64 (RFC 4648 section 4) of an x402 document, is the
      agreement's payment request.
@@ -118,9 +118,9 @@ sequenceDiagram
 
    `atrHash` must be this H, `agreed` must be `true`, and `network` and `transaction` must be strings. Anything else is
    `agreement-failed`, and the payment for the resource is never signed. The receipt is the agreement URL's statement:
-   the gate checks its form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the
-   first, unpaid request is taken as an agreement already recorded. The public proof is that transaction on `network`,
-   which anyone can read.
+   the gate checks its form and that its `atrHash` is H, and does not look up the transaction it names. A receipt
+   answered to the first, unpaid request is marked `unpaid: true`: no agreement payment was made or read. The public
+   proof is that transaction on `network`, which anyone can read.
 
 7. **Pay the resource.** Only then does the gate ask your approver about the payment the offer asked for, which it built,
    unsigned, at the comparison, and sign it on `true`. `transact` returns the receipt beside the payment as
@@ -326,7 +326,7 @@ pairing admits by its `agreementOn`:
 
 1. `confirm` returns `chosen.agreement`, the URL, beside the request. Do not sign the request yet.
 2. Call `agree` with `confirmed.bytes`, that URL and your signer. It returns `{ approve, bytes, h }` and signs nothing,
-   or `{ receipt }` where the agreement is already recorded, or, where the agreement URL offers only MPP agreement
+   or `{ receipt }`, its `unpaid` `true`, where the agreement URL answers the unpaid request with a receipt, or, where the agreement URL offers only MPP agreement
    challenges, `{ agreementChallenges, bytes, h }`, signing nothing, for your own MPP client to pay there.
 3. Once your agent approves it, call `agree` again with `approved: approve`. It returns `{ receipt }`.
 4. Only with the receipt in hand, sign `confirmed.request` and call `finish`. `finish` takes no receipt: it completes

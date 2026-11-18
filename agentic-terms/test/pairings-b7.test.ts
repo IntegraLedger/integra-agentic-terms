@@ -19,7 +19,7 @@ import {
 } from "@integraledger/lcp/mpp";
 import { check, confirm, transact, type Binding, type SigningRequest } from "../src/index.js";
 import { summaryOf } from "../src/summary.js";
-import { A, ABC, AGREEMENT_URL as AGREEMENT, buildAndSign, counting, fromHex, H, HA, isDeclined, LINK, offered, receiptFor, serving, toHex, vectors, type Pairing } from "./support.js";
+import { A, ABC, AGREEMENT_URL as AGREEMENT, buildAndSign, counting, fromHex, H, HA, isDeclined, LINK, offered, receiptFor, unpaidReceiptFor, serving, toHex, vectors, type Pairing } from "./support.js";
 
 import { CONFIRMING, GATE } from "./support.js";
 // Vector files are read as loose JSON data; each row names the fields it uses.
@@ -77,7 +77,7 @@ describe.each(confirmOnly)("%s (confirm only)", (_id, binding, challenge) => {
     expect(confirmed.h).toBe(HA);
     expect(confirmed.request).toBeNull();
     const signer = counting(p.account, p.answer);
-    expect(await transact(p.placed!(HA), offered(p.binding), signer, serving(A), GATE)).toEqual({ signed: null, bytes: A, h: HA, agreement: receiptFor(HA) });
+    expect(await transact(p.placed!(HA), offered(p.binding), signer, serving(A), GATE)).toEqual({ signed: null, bytes: A, h: HA, agreement: unpaidReceiptFor(HA) });
     expect(signer.requests.length).toBe(0);
   });
 

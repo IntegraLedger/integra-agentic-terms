@@ -234,8 +234,9 @@ Offered with a host `signer` or `agreementSigner`. The agreement payment for the
 | `approved` | object, optional | The agreement payment the agent approved: `approve` from a previous call, unchanged. |
 | `inputs` | object, optional | The buyer's own values the agreement payment's build needs. |
 
-Without `approved`, returns `atrHash` and `approve`, the agreement payment, and signs nothing; where the agreement is
-already recorded, returns `atrHash` and `receipt`; where the agreement URL offers only MPP agreement challenges, returns
+Without `approved`, returns `atrHash` and `approve`, the agreement payment, and signs nothing; where the agreement URL
+answers that unpaid request with a receipt, returns `atrHash` and `receipt`, the receipt marked `unpaid: true`, nothing
+paid or read; where the agreement URL offers only MPP agreement challenges, returns
 `atrHash` and `agreementChallenges`, signing nothing. With `approved`, holds that payment to its summary and its
 pairing's ceiling, the host's `ceilings` raising it (`summary-missing`, `past-ceiling` or `no-end` otherwise, nothing
 signed), pays it with the host's agreement signer, or its signer, and returns `atrHash` and `receipt`. An `approved` whose `required` the protocol package's read refuses
@@ -251,8 +252,9 @@ Annotations: not read-only, not destructive, not idempotent, open-world.
 agreement URL is the one in `chosen`, its `option` is one of `required.accepts` and `required` advertises this H. A host
 that needs the approved payment to equal the one shown compares them itself. The receipt is the agreement URL's
 statement: the gate checks its form (`agreed: true`, string `network` and `transaction`) and that its `atrHash` is H,
-and does not look up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already
-recorded.
+and does not look up the transaction it names. A receipt answered to the first, unpaid request is the agreement URL's
+word alone: the gate made no agreement payment and read none, and marks it `unpaid: true` (terms' profile
+`buyer-gate.md`, rule 18), here and in `atr_transact`'s `agreement`.
 
 Once the agreement payment is sent, every decline of `atr_transact` or `atr_agree` carries it as `moved`:
 `agreement-pending` where it may settle yet, and `agreement-failed` where the agreement URL answered otherwise. Either

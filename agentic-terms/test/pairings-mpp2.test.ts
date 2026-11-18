@@ -28,7 +28,7 @@ import {
   LINK,
   offered,
   piecePay,
-  receiptFor,
+  receiptFor, unpaidReceiptFor,
   serving,
   toHex,
   vectors,
@@ -258,7 +258,7 @@ describe("mpp/charge/nearintents (confirm only)", () => {
     expect(confirmed.request).toBeNull();
     const signer = counting(p.account, p.answer);
     const whole = await transact(p.placed!(HA), offered(p.binding), signer, serving(ATR_A), GATE);
-    expect(whole).toEqual({ signed: null, bytes: ATR_A, h: HA, agreement: receiptFor(HA) });
+    expect(whole).toEqual({ signed: null, bytes: ATR_A, h: HA, agreement: unpaidReceiptFor(HA) });
     expect(signer.requests.length).toBe(0);
     const credential = { challenge: V.place.expect, payload: V.bound.payload };
     expect(await check(ABC, credential, p.binding)).toEqual({ h: V.bound.expect });

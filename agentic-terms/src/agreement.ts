@@ -246,9 +246,11 @@ function cancel(s: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint
 
 /**
  * The receipt a 200 carries, read as UTF-8 JSON text whose leading byte order mark is kept as a character, when it is
- * the agreement receipt for `h`.
+ * the agreement receipt for `h`: its form (`agreed: true`, string `network` and `transaction`) and its `atrHash` are
+ * checked, and the transaction it names is not read. `unpaid`, where the 200 answered the unpaid request, marks the
+ * receipt `unpaid: true`: this call made no agreement payment and read none.
  */
-function receiptOf(body: Uint8Array | null, h: AtrHash): { receipt: AgreementReceipt } | Declined {
+function receiptOf(body: Uint8Array | null, h: AtrHash, unpaid = false): { receipt: AgreementReceipt } | Declined {
   let parsed: unknown;
   try {
     parsed = parseJson(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body ?? new Uint8Array(0)));
@@ -263,7 +265,8 @@ function receiptOf(body: Uint8Array | null, h: AtrHash): { receipt: AgreementRec
   if (agreed !== true || typeof network !== "string" || typeof transaction !== "string") {
     return failed("The agreement receipt is not a recorded agreement.");
   }
-  return { receipt: { atrHash: atrHash as AtrHash, agreed, network, transaction } };
+  const receipt: AgreementReceipt = { atrHash: atrHash as AtrHash, agreed, network, transaction };
+  return { receipt: unpaid ? { ...receipt, unpaid: true } : receipt };
 }
 
 /**
@@ -516,7 +519,9 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
 
 /**
  * Without `approved`: asks the agreement URL for its challenge and returns the agreement payment to approve, signing
- * nothing, or the receipt where the agreement is already recorded. With `approved`: signs exactly that payment with
+ * nothing, or, where the agreement URL answers that unpaid request with a receipt, that receipt, marked `unpaid: true`:
+ * no agreement payment was made or read, and the receipt is the agreement URL's statement alone (terms' profile
+ * `buyer-gate.md`, rule 18). With `approved`: signs exactly that payment with
  * `signer`, sends it to `url`, and returns the receipt once recorded; a payment whose challenge the protocol package's
  * read refuses for a fault of its own (its version, legal context or agreement URL, or an `accepts` that is not a list
  * of at most 32 entries holding an object) is declined as the unpaid request declines that challenge, and one whose
@@ -660,7 +665,10 @@ function mppOnly(field: string, bytes: Uint8Array, h: AtrHash): AgreementChallen
   return { agreementChallenges: read.offer.challenges, bytes, h };
 }
 
-/** The unpaid request: the agreement payment to approve, the receipt of an agreement already recorded, or a decline. */
+/**
+ * The unpaid request: the agreement payment to approve; the receipt the agreement URL answered it with, `unpaid: true`,
+ * no agreement payment having been made or read; or a decline.
+ */
 async function offer(
   bytes: Uint8Array,
   h: AtrHash,
@@ -675,7 +683,8 @@ async function offer(
   if (isEnded(signal)) return ended();
   if ("decline" in unpaid) return unpaid;
   if ("unanswered" in unpaid) return failed("The agreement URL could not be reached.");
-  if (unpaid.status === 200) return receiptOf(unpaid.body, h);
+  // A 200 to the unpaid request is the agreement URL's statement alone: no agreement payment was made or read.
+  if (unpaid.status === 200) return receiptOf(unpaid.body, h, true);
   if (unpaid.status === 202) {
     return declined("agreement-pending", "An agreement payment for this ATR is already settling.");
   }

@@ -501,11 +501,13 @@ describe("agreement rows", () => {
 });
 
 describe("the agreement URL's other answers", () => {
-  it("a recorded agreement answers 200 at once: the receipt, with no signature", async () => {
+  // Profile rule 18: a 200 to the unpaid request is the agreement URL's statement alone, and the gate says so.
+  it("a 200 to the unpaid request: its receipt, marked unpaid, no agreement payment made or read, nothing signed", async () => {
     const signer = counting();
-    const out = await approveAndAgree(signer, seller([{ status: 200, body: "receipt" }]));
-    expect(out).toEqual({ receipt: AG.receipt });
-    expect(signer.requests.length).toBe(0);
+    const fetch = seller([{ status: 200, body: "receipt" }]);
+    const out = await approveAndAgree(signer, fetch);
+    expect(out).toEqual({ receipt: { ...AG.receipt, unpaid: true } });
+    expect([signer.requests.length, fetch.paid().length]).toEqual([0, 0]);
   });
 
   it.each([
