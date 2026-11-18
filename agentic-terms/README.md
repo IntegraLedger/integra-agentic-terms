@@ -564,12 +564,15 @@ voucher up to 1000
 voucher up to 2000
 ```
 
-The hold is plain JSON: store it, and pass the latest one to each call. `within` takes the bytes, H and the channel
-from the hold, and the amount from the new challenge. On x402's batch channels it signs only when that challenge
-advertises the held H and the payment it builds names the held channel. On an MPP session it declines a challenge that
-names another channel or another H, and signs one with no legal context under the held H. `within` takes no approver
-and holds a voucher to no summary or ceiling: the opening was shown to yours and approved, and a caller that wants each
-later voucher shown shows it before it calls `within`. `mpp/session/solana/memo` opens through the gate, but terms builds none of its vouchers, the protocol package giving
+The hold is plain JSON: store it, and pass the latest one to each call. `within` takes the bytes, H and the channel from
+the hold, and the amount from the new challenge. On x402's batch channels it signs only when that challenge advertises
+the held H and the payment it builds names the held channel. On an MPP session it declines a challenge that names
+another channel or another H, and signs one with no legal context under the held H. `within` takes no approver and holds
+a voucher to no summary or ceiling of its own, by rule: a voucher signs no deadline of its own and pays only from the
+deposit its opening moves, and the gate holds an opening it builds to its summary and its ceiling before it is signed,
+`transact` asking your approver too; the hold keeps no copy of the opening's request, which a voucher's summary is read
+with. A caller that wants each later voucher shown shows it before it calls `within`.
+`mpp/session/solana/memo` opens through the gate, but terms builds none of its vouchers, the protocol package giving
 that pairing no in-channel build: `within` declines it `pairing-not-supported`, and its buyer writes the 50 bytes a
 voucher signs with the protocol package's `solanaVoucher` (`@integraledger/lcp/svm`) and signs them itself.
 
@@ -631,7 +634,7 @@ Everything below is exported from `@integraledger/terms`.
 | `check` | `(bytes, presented, binding, landed?, act?) => Promise<{ h } \| Declined>` | Confirm a held payment carries the hash of the kept bytes, as the act it was paid as. |
 | `agree` | `(bytes, url, signer, fetch, options?) => Promise<ToApprove \| AgreementChallenges \| { receipt } \| Declined>` | Without `options.approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt, with no approver, summary or ceiling. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
 | `openChannel` | `(bytes, opened, binding, landed?) => Promise<ChannelHold \| Declined>` | Hold a channel opened for the compared ATR. |
-| `within` | `(doc, hold, binding, signer, refund?, inputs?) => Promise<{ signed, hold } \| Declined>` | Sign a later voucher, or a refund with `refund`, in a held channel, with no approver, summary or ceiling. |
+| `within` | `(doc, hold, binding, signer, refund?, inputs?) => Promise<{ signed, hold } \| Declined>` | Sign a later voucher, or a refund with `refund`, in a held channel, with no approver, and no summary or ceiling of its own: the gate holds an opening it builds to both. |
 | `recordCharge` | `(hold, chargedCumulativeAmount) => ChannelHold \| Declined` | Record the seller's cumulative charge, between the last recorded and the most signed. |
 | `viJson` | `(value) => string \| undefined` | The JSON text a Mastercard Verifiable Intent signer signs for a value (the protocol package's profile `card-mastercard-vi.md`, rule 7): compact, every character outside space to `~` escaped, members in the order the object holds them. Undefined for a value that is not JSON. |
 
@@ -798,7 +801,8 @@ What the gate guarantees, in the code:
   `x402` slot holds a commitment to the buyer's request, the request is the buyer's own.
 - **A bounded window, in `transact`, `confirm`, `finish` and `agree`.** A payment that would stay payable past its
   pairing's ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's
-  ceiling. `within` applies no ceiling: a voucher stays payable as long as its channel.
+  ceiling. `within` applies no ceiling of its own: a voucher signs no deadline and pays only from the deposit of its
+  opening, which the gate holds to its ceiling when it builds it.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB read. A declared or streamed length over the bound cancels the body.
 - **Exact bytes.** The ATR is hashed as received and returned as received, and the bytes parsed are the bytes hashed,

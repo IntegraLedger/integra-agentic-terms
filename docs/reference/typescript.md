@@ -269,7 +269,10 @@ Signs one later voucher, or a refund, in a held channel. The ATR's bytes, its ha
 and the amount from the new challenge. On x402's batch channels the challenge must advertise the held hash, and the
 payment the build returns must name the held channel before the signer is called. On an MPP session, a challenge that
 names another channel or another hash is declined before the signer is called, and one with no legal context is signed
-under the held hash. `within` takes no approver, and holds the voucher to no summary or ceiling. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
+under the held hash. `within` takes no approver, and holds the voucher to no summary or ceiling of its own, by rule: a
+voucher signs no deadline of its own and pays only from the deposit its opening moves, and the gate holds the opening
+to its summary and its ceiling before it is signed, in `transact` and `confirm`; the hold keeps no copy of the
+opening's request, which a voucher's summary is read with. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
 recorded charge. A Solana refund also carries the payer-signed `request_close` when it is taken again: when the
 `errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read first, or else the
 document's `error`, is `invalid_batch_settlement_svm_receiver_binding_unavailable`. See

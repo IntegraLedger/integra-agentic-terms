@@ -523,7 +523,8 @@ MPP agreement challenges as `agreementChallenges`, for the agent's own MPP clien
   `atr_agree` pays the agreement payment passed as `approved` once its URL is the one in `chosen`, its `option` is one
   of `required.accepts` and `required` advertises H; it does not compare it with the `approve` it returned, and a host
   that needs that compares them itself. `atr_channel_within` signs a later voucher in a channel whose opening was
-  approved, with no approval of its own.
+  approved, with no approval, summary or ceiling of its own: a voucher signs no deadline and pays only from the deposit
+  of that opening, which the gate holds to its summary and its ceiling when it builds it.
 - **The ceilings and the floors are the host's.** No tool input raises a ceiling or names a floor, so no text the
   agent reads, the seller's among it, can (see [Serving with your own signer](#serving-with-your-own-signer)).
 - **One bounded fetch per confirmation:** `https` only, no redirect, 10 seconds, at most 1 MiB, asking for

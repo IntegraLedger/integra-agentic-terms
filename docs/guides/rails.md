@@ -8,6 +8,8 @@ buyer can supply (a recent blockhash, an account sequence, a deposit), you pass 
 rail, the account form each pairing accepts, the kind of request your signer receives, and every input the build reads.
 In `transact`, every request is shown to your approver with its summary before it is signed, and held to the pairing's
 ceiling. `confirm` and `agree` compute the summary and hold the ceiling, but call no approver. `within` does neither
+for a voucher, which signs no deadline of its own and pays only from the deposit of its opening, which the gate holds
+to both when it builds it
 (see [Pay with the gate](./pay-with-the-gate.md#ceilings-and-floors)). A few inputs below exist for the ceiling alone.
 
 A missing or malformed input declines with `no-payable-option` and a detail ending in `/input-missing`, before any

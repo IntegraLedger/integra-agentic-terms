@@ -240,7 +240,8 @@ drops from a tool's `inputs` every floor input the gate's `FLOOR_INPUTS` names: 
   `approved.signings`. `atr_agree` pays the agreement payment passed as `approved` once its URL is the one in `chosen`,
   its `option` is one of `required.accepts` and `required` advertises H; it does not compare it with the `approve` it
   returned, and a host that needs that compares them itself. `atr_channel_within` signs a later voucher in a channel
-  whose opening was approved, with no approval of its own.
+  whose opening was approved, with no approval, summary or ceiling of its own: a voucher signs no deadline and pays only
+  from the deposit of that opening, which the gate holds to its summary and its ceiling when it builds it.
 - `atr_finish` returns `signed` only when the pairing reads the hash of the bytes it was given from the completed
   payment, or, where the proof is the agreement payment, without that reading.
 - `terms-mcp` holds no keys. With a host signer, only the host's code signs, and only after a match.

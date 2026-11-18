@@ -31,8 +31,13 @@ The gate follows that shape:
    takes the bytes, the hash and the channel from the hold, and the amount from the seller's new challenge. On x402's
    batch channels it signs only when that challenge advertises the held H and the payment it builds names the held
    channel. On an MPP session it declines a challenge that names another channel or another H, and signs one with no
-   legal context under the held H. `within` takes no approver and holds a voucher to no summary or ceiling: the opening
-   was shown and approved, and a caller that wants each later voucher shown shows it before it calls `within`.
+   legal context under the held H. `within` takes no approver and holds a voucher to no summary or ceiling of its own,
+   by rule: a voucher signs no deadline of its own and pays only from the deposit its opening moves, and the gate held
+   that opening to its summary and its ceiling before it was signed (**Open**, above), so every voucher in a channel
+   opened through the gate is bounded by an opening the gate checked. `within` computes no summary of a voucher because
+   the hold keeps the signed opening and no copy of the opening's request, which a voucher's summary is read with. A
+   caller that wants each later voucher shown shows it before it calls `within`. A Solana batch channel, opened outside
+   the gate (below), is bounded by what you checked of its opening.
 4. **Record the charge.** When the seller reports its cumulative charge, `recordCharge(hold, charged)` records it. The
    charge may not fall below the last one recorded, nor rise above the largest amount you signed.
 

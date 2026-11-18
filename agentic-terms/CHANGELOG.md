@@ -34,6 +34,12 @@ call before and after.
   handed the latest deadline it may sign and held to it. An agreement payment payable longer than 600 seconds is now
   paid only once `ceilings` raises its pairing. `agree` still calls no approver.
 
+### Documentation
+
+- The profile's rule 13 and the pages state why `within` holds a voucher to no summary or ceiling of its own: a voucher
+  signs no deadline and pays only from the deposit of its opening, which the gate holds to its summary and ceiling
+  before it is signed, and the hold keeps no copy of the opening's request.
+
 ## 0.5.0 - 2026-11-18
 
 The gate now checks what the buyer signs before it signs, and asks an approver first. The checks, their order and the
