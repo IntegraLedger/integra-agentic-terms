@@ -4,7 +4,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
 
 ## The arguments
 
-1. **`transact`, `confirm` and `finish` take these members as well as what they take today**, by these names:
+1. **`transact`, `confirm` and `finish` take these members**, by these names:
 
    | Member | TypeScript | Python | Required | Form |
    | --- | --- | --- | --- | --- |
@@ -15,7 +15,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
    | the first response's return value | `legalContext`, in `transact`'s options | `legal_context=`, keyword of `transact` | no | rule 12 |
    | the payment chosen | `chosen`, in `transact`'s options | `chosen=`, keyword of `transact` | no | `confirm`'s `chosen`, unchanged |
 
-   In TypeScript the options object is each function's last argument: `transact(doc, binding, signer, fetch, options)`, required, holding `approver` and `resourceRequest` and the optional `inputs`, `ceilings`, `legalContext`, `agreementSigner`, `approved`, `signal` and `chosen`; `confirm(doc, binding, account, fetch, options)`, required, holding `resourceRequest` and the optional `inputs` and `ceilings`, `confirm`'s `inputs` moving into it; and `finish(bytes, chosen, signature, binding, options?)`, holding the optional `ceilings`. In Python they are keyword-only: `transact(doc, binding, signer, fetch, *, approver, resource_request, inputs=None, ceilings=None, legal_context=None, agreement_signer=None, approved=None, signal=None, chosen=None)`, `confirm(doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None)` and `finish(atr_bytes, chosen, signature, binding, *, ceilings=None)`. Options that hold another member, an `approver` that is not callable, a `resourceRequest` that is not an object (in Python, not a mapping), `ceilings` not of rule 8's form, a `legalContext` that is not a string, or a `chosen` that is not an object of `confirm`'s `chosen` form for the pairing are declined `no-payable-option` with the detail `<namespace>/input-malformed`, as malformed `inputs` are, before anything is fetched or signed.
+   In TypeScript the options object is each function's last argument: `transact(doc, binding, signer, fetch, options)`, required, holding `approver` and `resourceRequest` and the optional `inputs`, `ceilings`, `legalContext`, `agreementSigner`, `approved`, `signal` and `chosen`; `confirm(doc, binding, account, fetch, options)`, required, holding `resourceRequest` and the optional `inputs` and `ceilings`; and `finish(bytes, chosen, signature, binding, options?)`, holding the optional `ceilings`. In Python they are keyword-only: `transact(doc, binding, signer, fetch, *, approver, resource_request, inputs=None, ceilings=None, legal_context=None, agreement_signer=None, approved=None, signal=None, chosen=None)`, `confirm(doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None)` and `finish(atr_bytes, chosen, signature, binding, *, ceilings=None)`. Options that hold another member, an `approver` that is not callable, a `resourceRequest` that is not an object (in Python, not a mapping), `ceilings` not of rule 8's form, a `legalContext` that is not a string, or a `chosen` that is not an object of `confirm`'s `chosen` form for the pairing are declined `no-payable-option` with the detail `<namespace>/input-malformed`, as malformed `inputs` are, before anything is fetched or signed.
 
 2. **The request argument** is the request the buyer is about to pay, the one the seller's offer answered, in the form lcp's request commitment reads it (lcp profile `x402-request-commitment.md`). Over HTTP it is lcp's `HttpRequest`, `{method, target, body, headers?}`: the method token and the request-target as received, the body's bytes (a `Uint8Array`; in Python `bytes`), and, where the request has header fields, `headers`, each field's name with its value or its lines in the order received (lcp's `HeaderFields`). Over MCP it is lcp's `ToolCall`, `{name, arguments?}`: the `tools/call` request's `params.name` and `params.arguments`. TypeScript names the union `ResourceRequest`, `HttpRequest | ToolCall`, lcp's own types from `@integraledger/lcp/x402`. Python names two `TypedDict`s, `HttpRequest` and `ToolCall`, with the same member names, a member the request lacks being absent from the mapping, and the union `ResourceRequest`. The gate reads its members only where rule 7 compares them.
 
@@ -42,7 +42,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
 
 ## Decline codes
 
-4. **The codes this profile adds** to those the gate returned before it. Each is a value of `DeclineCode` in both languages.
+4. **The codes this profile defines**, beside the gate's other codes (the declines reference lists all of them). Each is a value of `DeclineCode` in both languages.
 
    | Code | Returned when | Signer called? |
    | --- | --- | --- |
@@ -113,7 +113,7 @@ The buyer gate of `@integraledger/terms` (TypeScript) and `integraledger-terms` 
     | the pairing | `pairing` | `pairing` | the id of the pairing whose build made the request |
     | the signing request | `request` | `request` | the request the signer will be handed, as the signer is handed it: `SigningRequest`, in Python a `dict` |
     | the summary | `summary` | `summary` | `Summary`, rule 13 |
-    | the step | `step` | `step` | `SigningStep`: `index`, counted from 0, and `count`, the number of signings the payment takes, at most two today |
+    | the step | `step` | `step` | `SigningStep`: `index`, counted from 0, and `count`, the number of signings the payment takes, at most two |
 
     The approver answers `true` (in Python `True`) to approve, or a promise of it (in Python an awaitable). Any other answer, `false`, `"yes"` and `1` among them, a thrown error (in Python a raised exception) or a rejected promise approves nothing, and the gate declines `not-approved` without calling the signer for that signing. What the approver does to the values it is handed changes nothing the signer is handed. TypeScript names the function's type `Approver`, `(toSign: ToSign) => boolean | Promise<boolean>`; Python names it `Approver`, `Callable[[ToSign], bool | Awaitable[bool]]`.
 
