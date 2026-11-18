@@ -1,5 +1,6 @@
 // The gate's own vectors, terms' profile buyer-gate.md (vectors/buyer-gate.json). Each row runs through `transact` with
-// the row's pairing, document, ATR bytes, request, inputs and ceilings, the clock at the file's `now`, an approver that
+// the row's pairing, document, link, account, ATR bytes, request, inputs and ceilings (a row's own document, link and
+// account where it names them, else the file's), the clock at the file's `now`, an approver that
 // answers the row's `approves`, and a signer that is the file's payer key where the row is signed; the decline, the
 // signer's and the approver's call counts and what the approver was asked are the row's. A row whose pairing has no
 // buyer piece yet answers pairing-not-supported, the gate's first check, with no call, asserted and never skipped. The parse's rows are the
@@ -45,17 +46,24 @@ afterEach(() => {
   Date.now = realNow;
 });
 
+/** The row's document: its own, as written, or the file's for its pairing advertising the row's ATR. */
+function documentOf(row: Loose): Loose {
+  if (row.document !== undefined) return structuredClone(row.document);
+  const doc = structuredClone(V.fixed.documents[row.pairing]);
+  doc.extensions.legalContext.info.value = row.atr.sha256;
+  return doc;
+}
+
 describe("buyer-gate.json rows, through transact", () => {
   for (const row of V.rows as Loose[]) {
     const pending = !PIECES.has(row.pairing);
     const label = pending ? "pending, pairing-not-supported" : `${row.expect.decline ?? "signed"}, signer ${row.expect.signerCalls}, approver ${row.expect.approverCalls}`;
     it(`${row.name} (${row.pairing}): ${label}`, async () => {
       Date.now = () => V.fixed.now * 1000;
-      const doc = structuredClone(V.fixed.documents[row.pairing]);
-      doc.extensions.legalContext.info.value = row.atr.sha256;
+      const doc = documentOf(row);
       const bytes = fromHex(row.atr.hex);
       const payer = privateKeyToAccount(V.fixed.payerKey);
-      const signer = counting(V.fixed.account, async (r: SigningRequest) => {
+      const signer = counting(row.account ?? V.fixed.account, async (r: SigningRequest) => {
         if (row.expect.signerCalls === 0) throw new Error("the signer is not called on this row");
         return payer.signTypedData((r as { typedData: unknown }).typedData as TypedDataDefinition);
       });
@@ -75,7 +83,7 @@ describe("buyer-gate.json rows, through transact", () => {
         inputs: row.inputs as Inputs,
         ...(row.ceilings === undefined ? {} : { ceilings: row.ceilings as Ceilings }),
       };
-      const fetch = serving(V.fixed.link, bytes);
+      const fetch = serving(row.link ?? V.fixed.link, bytes);
       const out = await transact(doc, bindingOf(row.pairing), signer, fetch, options);
       if (pending) {
         expect("decline" in out ? out.decline.code : null).toBe("pairing-not-supported");

@@ -297,8 +297,9 @@ function confirmOptionsOk(options: unknown, pairing: string): options is Confirm
 
 /**
  * Reads the offer, chooses the option, fetches the ATR and compares its SHA-256 with the advertised hash; parses the
- * bytes, holds the option chosen to the ATR's `x402` or `mpp` binding slot and the buyer's request to the `x402` slot's
- * request commitment (no other slot is compared); and only then builds, with the hash it computed, and holds the request to its summary and its ceiling (terms' profile
+ * bytes, holds the option chosen to the options the ATR's binding slot lists (`accepts` in `x402`, `challenges` in
+ * `mpp`, `options` in `acp`, `ap2`, `card` and `ucp`, `paymentOptions` in `ack`) and the buyer's request to the `x402`
+ * slot's request commitment; and only then builds, with the hash it computed, and holds the request to its summary and its ceiling (terms' profile
  * `buyer-gate.md`, checks 1 to 11). `request` is what the signer is handed, with `summary`, or `null` when nothing is
  * handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment, which
  * `finish` completes with no signature. For a pairing whose payment is not itself a public proof, `chosen.agreement` is

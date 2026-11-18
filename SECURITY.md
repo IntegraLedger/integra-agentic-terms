@@ -1,7 +1,7 @@
 # Security policy
 
 The packages in this repository check, before a buyer signs, that a payment carries the hash of the record the seller
-serves and, on x402 and MPP, is held to what that record's binding slot commits to; and, in `transact`, that each
+serves and is held to what that record's binding slot commits to; and, in `transact`, that each
 signing is shown to the buyer's approver and bounded in time. A flaw that defeats any of these is a vulnerability. We
 want to hear about it privately. The [security model](./docs/security-model.md) states what the packages guarantee,
 what they trust and what they leave to the caller.

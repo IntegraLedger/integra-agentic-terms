@@ -269,15 +269,70 @@ async function issuedOf(challenge: unknown): Promise<string | undefined> {
   }
 }
 
+/** The `scheme` of each card pairing's option, `{scheme, checkout}`, as the protocol package's card entry point names it. */
+const CARD_SCHEMES: { readonly [pairing: string]: string } = {
+  "card/visa-tap": "visa-tap",
+  "card/mastercard-agent-pay": "mastercard-agent-pay",
+  "card/visa-vic": "visa-vic",
+  "card/mastercard-vi/immediate": "mastercard-vi",
+  "card/mastercard-vi/autonomous": "mastercard-vi",
+  "card/seller-reference": "seller-reference",
+};
+
+/** A string the choice holds, or undefined. */
+const stringOf = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+
+/**
+ * The option chosen, as the binding slot of `acp`, `ap2`, `ucp` and `ack` lists it, from the choice the pairing's piece
+ * made: ACP's handler option, `{requires_delegate_payment}`, true on `acp/checkout/delegated`; AP2's `{checkout}`, the
+ * `id` of the `checkout_jwt`'s payload; UCP's `{checkout}`, or `{booking}` on a booking pairing, the checkout's `id`;
+ * ACK's payment option chosen from the signed Payment Request. Undefined where the choice holds no such value.
+ */
+function chosenOption(pairing: string, protocol: string, choice: unknown): unknown {
+  if (!isObject(choice)) return undefined;
+  switch (protocol) {
+    case "acp":
+      return { requires_delegate_payment: pairing === "acp/checkout/delegated" };
+    case "ap2": {
+      const checkout = stringOf(choice["checkout"]);
+      return checkout === undefined ? undefined : { checkout };
+    }
+    case "ucp": {
+      const shown = choice["checkout"];
+      const id = isObject(shown) ? stringOf(shown["id"]) : undefined;
+      if (id === undefined) return undefined;
+      return pairing.startsWith("ucp/booking/") ? { booking: id } : { checkout: id };
+    }
+    case "ack":
+      return choice["option"];
+    default:
+      return undefined;
+  }
+}
+
+/** An option as the pairing's `unplaced` gives it, where the pairing has one; undefined where it refuses or throws. */
+function unplacedOf(binding: Binding, option: unknown): unknown {
+  const unplace = (binding as unknown as { unplaced?: (o: unknown) => unknown }).unplaced;
+  try {
+    const out = typeof unplace === "function" ? unplace(option) : option;
+    return isRefusal(out) ? undefined : out;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Where the ATR's binding slot lists the options offered, `option-not-in-atr` for an option chosen that equals none of
- * them: an x402 option as the pairing's `unplaced` gives it against each member as the slot holds it, by RFC 8785 form;
- * an MPP challenge and each member by their bound members (`issuedDigest`, without `id` and the protocol package's
- * `opaque` members). The option chosen is the choice's `accepted` (x402) or `challenge` (MPP); a pairing whose choice
- * holds neither is not compared.
+ * them. An x402 option, and the option chosen on `acp`, `ap2`, `ucp` and `ack` (`chosenOption`), as the pairing's
+ * `unplaced` gives it, against each member as the slot holds it, by RFC 8785 form; an MPP challenge and each member by
+ * their bound members (`issuedDigest`, without `id` and the protocol package's `opaque` members). On `card`, whose option
+ * `{scheme, checkout}` names the seller's own checkout id, which no card document shows the buyer, a member that is an
+ * object whose `scheme` is the pairing's holds it. The x402 option chosen is the choice's `accepted`, and the MPP one
+ * its `challenge`: an x402 or MPP choice that holds neither is not compared.
  */
 export async function slotHolds(binding: Binding, chosen: Chosen, atr: unknown): Promise<Declined | undefined> {
-  const protocol = String(binding.id).split("/")[0]!;
+  const pairing = String(binding.id);
+  const protocol = pairing.split("/")[0]!;
   const listing = LISTING[protocol];
   if (listing === undefined || !isObject(atr)) return undefined;
   const slot = atr[protocol];
@@ -295,17 +350,20 @@ export async function slotHolds(binding: Binding, chosen: Chosen, atr: unknown):
     for (const m of members) if ((await issuedOf(m)) === want) return undefined;
     return notHeld;
   }
-  if (protocol !== "x402") return undefined;
-  const accepted = isObject(choice) ? choice["accepted"] : undefined;
-  if (accepted === undefined) return undefined;
-  const unplace = (binding as unknown as { unplaced?: (o: unknown) => unknown }).unplaced;
-  let option: unknown = accepted;
-  try {
-    if (typeof unplace === "function") option = unplace(accepted);
-  } catch {
-    return notHeld;
+  if (protocol === "card") {
+    const scheme = CARD_SCHEMES[pairing];
+    return scheme !== undefined && members.some((m) => isObject(m) && m["scheme"] === scheme) ? undefined : notHeld;
   }
-  const want = isRefusal(option) ? undefined : canonical(option);
+  let option: unknown;
+  if (protocol === "x402") {
+    option = isObject(choice) ? choice["accepted"] : undefined;
+    if (option === undefined) return undefined;
+  } else {
+    option = chosenOption(pairing, protocol, choice);
+    if (option === undefined) return notHeld;
+  }
+  const unplaced = unplacedOf(binding, option);
+  const want = unplaced === undefined ? undefined : canonical(unplaced);
   if (want === undefined) return notHeld;
   return members.some((m) => canonical(m) === want) ? undefined : notHeld;
 }

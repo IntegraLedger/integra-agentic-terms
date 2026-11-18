@@ -16,8 +16,8 @@ carries that hash, that approval is the buyer's acceptance of that exact record;
 
 That only holds if the hash in the payment is the hash of the record you can read. This package is the check that makes
 sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, parses the bytes,
-on x402 and MPP holds the option you pay (and on x402 the request you make) to what the record's binding slot commits
-to, and only then builds a request with that hash. Before your signer is called, `transact` shows your approver what the
+holds the option you pay (and on x402 the request you make) to what the record's binding slot commits to, and only then
+builds a request with that hash. Before your signer is called, `transact` shows your approver what the
 signature grants (the amount, the payees, the asset, the network and how long the payment stays payable) and declines a
 payment that would stay payable past its ceiling. After your signer answers, the pairing reads the hash back from the completed payment, and the payment
 is returned only if it is the hash of the bytes you received, or, where the proof is the agreement payment, without
@@ -606,7 +606,7 @@ calling again without `approved`, as [Pay the agreement first](#pay-the-agreemen
 | `agreement-failed` | The agreement URL could not be reached, answered `200` or `402` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. | Where `moved` is present, the agreement payment has left your wallet: keep it, and call again without `approved` to learn whether it is recorded. |
 | `not-approved` | Your approver answered anything but `true`, threw or rejected, for the signing it was asked about. The signer was not called for it. | Your approver's own answer. |
 | `atr-malformed` | The ATR's bytes are not one JSON text the gate reads alike in both languages: not UTF-8, a byte-order mark, a repeated member name, a number past a double or an integer past 2^53 − 1, or nesting past 64 levels. | Do not pay. |
-| `option-not-in-atr` | The ATR's `x402` slot lists `accepts`, or its `mpp` slot `challenges`, and none is the option chosen. | Do not pay. |
+| `option-not-in-atr` | The ATR's binding slot lists the options offered (`accepts` in `x402`, `challenges` in `mpp`, `options` in `acp`, `ap2`, `card` and `ucp`, `paymentOptions` in `ack`), and none is the option chosen. | Do not pay. |
 | `request-mismatch` | The ATR's `x402` slot holds a request commitment that is not your request's. | Check that `resourceRequest` is the request as sent, its `target` origin-form; otherwise do not pay. |
 | `summary-missing` | The request for the signer is of a kind the gate cannot summarize, so it is not signed unshown: today every `x402/batch-settlement/solana` opening and every Masumi lock of `x402/exact/cardano/lock`. | None: this release cannot show that request, and signs nothing unshown. |
 | `past-ceiling` | The signed payment would stay payable longer than its pairing's ceiling. | Raise that pairing's ceiling in `ceilings` only if you accept the longer window. |
@@ -792,9 +792,9 @@ What the gate guarantees, in the code:
   among them, is asked of your approver with its summary, computed from the request the signer is handed, and the
   signer is called only on `true`. This holds of `transact` alone: a payment you sign yourself from `confirm` and
   `finish`, and the payments `agree` and `within` sign, which take no approver, are shown only where you show them.
-- **On x402 and MPP, the option is one the ATR commits to.** Where the ATR's `x402` or `mpp` slot lists the options
-  offered, the option paid is one of them; where the `x402` slot holds a commitment to the buyer's request, the request
-  is the buyer's own. Card, ACP, AP2, UCP and ACK options are not compared.
+- **The option is one the ATR commits to.** Where the ATR's binding slot lists the options offered, the option paid is
+  one of them (on card, whose documents do not show the seller's checkout id, one of the pairing's `scheme`); where the
+  `x402` slot holds a commitment to the buyer's request, the request is the buyer's own.
 - **A bounded window, in `transact`, `confirm` and `finish`.** A payment that would stay payable past its pairing's
   ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's ceiling.
   `agree` on its own and `within` apply no ceiling.
@@ -811,8 +811,8 @@ What it trusts: your process, your `fetch`, your signer and your approver; and, 
 
 What it does not do:
 
-- It judges none of the ATR's terms: it parses the bytes, and reads only the binding slot's options and request
-  commitment, on x402 and MPP.
+- It judges none of the ATR's terms: it parses the bytes, and reads only the binding slot's options and, on x402, its
+  request commitment.
 - It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit. It shows
   them; a discrepancy is between the parties, and what to approve is your approver's decision.
 - It does not authenticate the agreement's receipt. The receipt is the agreement URL's statement: the gate checks its

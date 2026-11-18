@@ -195,6 +195,11 @@ export interface Pairing {
   inputs?: Inputs;
   /** The ceilings the payment through the gate is given, where the profile asks the caller to raise one. */
   ceilings?: Ceilings;
+  /**
+   * Where the ATR the document advertises lists in its binding slot no option the document offers, why: through the
+   * gate the payment is declined `option-not-in-atr` before anything is signed (profile `buyer-gate.md`, rule 6).
+   */
+  notInAtr?: string;
   /** The test signer's answer to the request the pairing builds: a key generated or published for tests only. */
   answer: (r: SigningRequest) => Promise<Signature>;
 }

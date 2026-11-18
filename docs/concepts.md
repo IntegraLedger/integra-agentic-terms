@@ -51,10 +51,9 @@ in these steps:
    the gate declines with `hash-mismatch`, and your signer is never called.
 3. **Parse and hold.** The gate parses the bytes it hashed by one grammar both languages read alike
    (`atr-malformed` otherwise). The ATR's **binding slot** is its member named by the pairing's protocol (`x402`,
-   `mpp`, `card`, ...). Where the slot is `x402` or `mpp` and lists the options offered, the option chosen must be one
-   of them (`option-not-in-atr`); where the `x402` slot holds a **request commitment**, a digest of the request the
-   seller's offer answered, your own request, `resourceRequest`, must be that request (`request-mismatch`). Other slots
-   are not compared.
+   `mpp`, `card`, ...). Where the slot lists the options offered, the option chosen must be one of them
+   (`option-not-in-atr`); where the `x402` slot holds a **request commitment**, a digest of the request the seller's
+   offer answered, your own request, `resourceRequest`, must be that request (`request-mismatch`).
 4. **Build.** The gate builds the payment with the hash it computed, not the string the seller advertised. The result
    is a signing request: exactly what your signer signs.
 5. **Show.** The gate computes the **summary** of that request, every authority the signature grants, read from the
@@ -176,7 +175,7 @@ The gate makes sure the payment you sign carries the hash of the bytes you recei
 does not:
 
 - interpret or judge the ATR's terms, which are for you and your principal to judge: it reads only the binding slot's
-  options and request commitment, on x402 and MPP;
+  options and, on x402, its request commitment;
 - check the amount, the payee, the asset, the timing or the payer against the ATR (it shows them to your approver; a
   discrepancy is between the parties);
 - carry any business or legal logic;

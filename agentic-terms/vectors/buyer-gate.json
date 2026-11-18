@@ -1,5 +1,5 @@
 {
-  "about": "Vectors for the terms profile buyer-gate.md, every input a published row or a specification's own example. rows: each decline code the profile adds that such an input shows, the declining case and the accepted case it differs from in one member (of names it), each run through transact with the row's pairing. A row's document is fixed.documents[pairing] with extensions.legalContext.info.value set to the row's atr.sha256; the link fixed.link serves atr.hex's bytes with status 200 and no content coding; the account is fixed.account and the clock reads fixed.now. approves is what the approver answers. An accepted case whose approver answers false ends at the approver having called no signer, which shows every earlier check passed; floor-given ends earlier, at agreement-not-offered, x402/exact/eip155/gateway-batched being paid only after its agreement and its document naming no agreement URL. In approved the payer key fixed.payerKey signs, and the approver is handed act, pairing and step as asked lists them, its request equal to what the signer is handed and its summary's atr the ATR's bytes. expect counts the calls of the signer and of the approver. Sources: fixed.now, account, payerKey, link and the eip3009 document are lcp's buyer.json fixed (D), and A, the ATR every row but atr-malformed serves, is its fixed.A; atr-malformed serves lcp's core-vectors.json refusals row V5b's bytes, two JSON values; resourceRequest is lcp's x402-request-commitment.json http[0].request, bodyUtf8 being the body's bytes as UTF-8; the erc7710-salt document is lcp's x402-exact-eip155-erc7710-salt.json buyer row B2's, a delegation, which signs no bound (lcp profile x402-exact-eip155-erc7710-salt.md, rule 9); the gateway-batched document is lcp's x402-exact-eip155-gateway-batched.json fixed resource, extensions and O2, and minValiditySeconds its fixed 604800, whose oracle is Circle's own client. Every atr.sha256 is GNU coreutils sha256sum, which Python's hashlib matches. Nothing here is terms' output.",
+  "about": "Vectors for the terms profile buyer-gate.md, every input a published row or a specification's own example, or built from published rows by lcp's own seller functions. rows: each decline code the profile adds that such an input shows, the declining case and the accepted case it differs from in one member (of names it), each run through transact with the row's pairing. A row's document is its own document, as written, where it has one, already advertising its atr.sha256 where its protocol places H, and otherwise fixed.documents[pairing] with extensions.legalContext.info.value set to the row's atr.sha256; the row's link, or else fixed.link, serves atr.hex's bytes with status 200 and no content coding; the account is the row's account, or else fixed.account; and the clock reads fixed.now. approves is what the approver answers. An accepted case whose approver answers false ends at the approver having called no signer, which shows every earlier check passed; floor-given and the option-held rows end earlier, at agreement-not-offered, after the option comparison: their pairings are paid only after their agreement, and their documents name no agreement URL. Each option-not-in-atr row declines a payment whose option the ATR's binding slot does not list, the slot holding its option-held row's (profile rule 6): on acp the other handler kind, on ap2 another checkout, on card another scheme, on ucp a booking where the slot lists a checkout of that id, and on ack an option of another amount. In approved the payer key fixed.payerKey signs, and the approver is handed act, pairing and step as asked lists them, its request equal to what the signer is handed and its summary's atr the ATR's bytes. expect counts the calls of the signer and of the approver. Sources: fixed.now, account, payerKey, link and the eip3009 document are lcp's buyer.json fixed (D), and A, the ATR every x402 row but atr-malformed serves, is its fixed.A; atr-malformed serves lcp's core-vectors.json refusals row V5b's bytes, two JSON values; resourceRequest is lcp's x402-request-commitment.json http[0].request, bodyUtf8 being the body's bytes as UTF-8; the erc7710-salt document is lcp's x402-exact-eip155-erc7710-salt.json buyer row B2's, a delegation, which signs no bound (lcp profile x402-exact-eip155-erc7710-salt.md, rule 9); the gateway-batched document is lcp's x402-exact-eip155-gateway-batched.json fixed resource, extensions and O2, and minValiditySeconds its fixed 604800, whose oracle is Circle's own client. The option rows' ATRs and documents are lcp's published ones where the row's from and documentFrom name them so, and otherwise are built from the published rows they name with lcp's own seller functions: assemble, tie and the pairing's advertise; their tokens and JWTs are written by their vector file's own recipe. The acp rows' inputs are the allowance values of acp-checkout.json's buyer row B2, and the ack rows' account is ack-payment-request.json's buyer row B2's. Every atr.sha256 is GNU coreutils sha256sum, which Python's hashlib matches. Nothing here is terms' output.",
   "fixed": {
     "now": 1790000000,
     "account": "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
@@ -329,6 +329,359 @@
         "signerCalls": 0,
         "approverCalls": 0,
         "detail": "minValiditySeconds"
+      }
+    },
+    {
+      "name": "option-held-acp",
+      "pairing": "acp/checkout/delegated",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653830222c22616370223a7b226f7074696f6e73223a5b7b2272657175697265735f64656c65676174655f7061796d656e74223a747275657d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xc7e68f4d9f93ee384aa6a290e58511bbe9d3dfa0ccb1a18cc6927f70268f8979",
+        "from": "lcp acp-checkout.json V1 assemble's id and content, the binding slot lcp's acp tie([{\"requires_delegate_payment\": true}])"
+      },
+      "document": {
+        "id": "0xc7e68f4d9f93ee384aa6a290e58511bbe9d3dfa0ccb1a18cc6927f70268f8979",
+        "currency": "usd",
+        "metadata": {
+          "order_ref": "A-100",
+          "legal_context": {
+            "type": "sha256",
+            "value": "0xc7e68f4d9f93ee384aa6a290e58511bbe9d3dfa0ccb1a18cc6927f70268f8979",
+            "legal_context_url": "https://atr.seller.example/7ff24b70-83ec-430a-ad3e-3ae487a62050"
+          }
+        }
+      },
+      "documentFrom": "lcp acp-checkout.json fixed.S0, as lcp's acp advertise writes it for atr.sha256 at fixed.L",
+      "link": "https://atr.seller.example/7ff24b70-83ec-430a-ad3e-3ae487a62050",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {
+        "max_amount": 19900,
+        "currency": "usd",
+        "merchant_id": "acct_123",
+        "expires_at": "2026-09-21T14:23:20Z"
+      },
+      "expect": {
+        "decline": "agreement-not-offered",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-not-in-atr-acp",
+      "of": "option-held-acp",
+      "pairing": "acp/checkout/undelegated",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653830222c22616370223a7b226f7074696f6e73223a5b7b2272657175697265735f64656c65676174655f7061796d656e74223a747275657d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xc7e68f4d9f93ee384aa6a290e58511bbe9d3dfa0ccb1a18cc6927f70268f8979",
+        "from": "lcp acp-checkout.json V1 assemble's id and content, the binding slot lcp's acp tie([{\"requires_delegate_payment\": true}])"
+      },
+      "document": {
+        "id": "0xc7e68f4d9f93ee384aa6a290e58511bbe9d3dfa0ccb1a18cc6927f70268f8979",
+        "currency": "usd",
+        "metadata": {
+          "order_ref": "A-100",
+          "legal_context": {
+            "type": "sha256",
+            "value": "0xc7e68f4d9f93ee384aa6a290e58511bbe9d3dfa0ccb1a18cc6927f70268f8979",
+            "legal_context_url": "https://atr.seller.example/7ff24b70-83ec-430a-ad3e-3ae487a62050"
+          }
+        }
+      },
+      "documentFrom": "lcp acp-checkout.json fixed.S0, as lcp's acp advertise writes it for atr.sha256 at fixed.L",
+      "link": "https://atr.seller.example/7ff24b70-83ec-430a-ad3e-3ae487a62050",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {
+        "max_amount": 19900,
+        "currency": "usd",
+        "merchant_id": "acct_123",
+        "expires_at": "2026-09-21T14:23:20Z"
+      },
+      "expect": {
+        "decline": "option-not-in-atr",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-held-ap2",
+      "pairing": "ap2/checkout-mandate",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653730222c22617032223a7b226f7074696f6e73223a5b7b22636865636b6f7574223a2263686b5f32227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xa1675ca24ac6d8b4be5e46a0a3eda2d21c662667b20923c3a9e820828e9a82af",
+        "from": "lcp ap2-checkout-mandate.json fixed.A"
+      },
+      "document": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im1lcmNoYW50LWtleS0xIn0.eyJpZCI6ImNoa18yIiwiY3VycmVuY3kiOiJVU0QiLCJ0b3RhbHMiOlt7InR5cGUiOiJ0b3RhbCIsImFtb3VudCI6MTk5MDB9XSwibGVnYWxDb250ZXh0Ijp7InR5cGUiOiJzaGEyNTYiLCJ2YWx1ZSI6IjB4YTE2NzVjYTI0YWM2ZDhiNGJlNWU0NmEwYTNlZGEyZDIxYzY2MjY2N2IyMDkyM2MzYTllODIwODI4ZTlhODJhZiIsImxlZ2FsQ29udGV4dFVybCI6Imh0dHBzOi8vYXRyLnNlbGxlci5leGFtcGxlL2NmZTkyMmQ1LTdiZjEtNDNiYS05NGQ2LTRkY2U3NmE5YmJiMyJ9fQ.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "documentFrom": "lcp ap2-checkout-mandate.json built.J, checkout chk_2, which buyer row B2 serves",
+      "link": "https://atr.seller.example/cfe922d5-7bf1-43ba-94d6-4dce76a9bbb3",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "agreement-not-offered",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-not-in-atr-ap2",
+      "of": "option-held-ap2",
+      "pairing": "ap2/checkout-mandate",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653730222c22617032223a7b226f7074696f6e73223a5b7b22636865636b6f7574223a2263686b5f32227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xa1675ca24ac6d8b4be5e46a0a3eda2d21c662667b20923c3a9e820828e9a82af",
+        "from": "lcp ap2-checkout-mandate.json fixed.A"
+      },
+      "document": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Im1lcmNoYW50LWtleS0xIn0.eyJpZCI6IjA5NDE0MTQ1LWI3MGItNDgzYS1iODVjLWFhMGZhMGM0NTgwMCIsIm1lcmNoYW50Ijp7ImlkIjoibWVyY2hhbnRfMSIsIm5hbWUiOiJEZW1vIE1lcmNoYW50Iiwid2Vic2l0ZSI6Imh0dHBzOi8vZGVtby1tZXJjaGFudC5leGFtcGxlIn0sImxpbmVfaXRlbXMiOlt7ImlkIjoibGlfMCIsIml0ZW0iOnsiaWQiOiJzdXBlcnNob2VfbGltaXRlZF9lZGl0aW9uX2dvbGRfc25lYWtlcl93b21lbnNfOV8wIiwidGl0bGUiOiJTdXBlcnNob2UgTGltaXRlZCBFZGl0aW9uIEdvbGQgU25lYWtlciBXb21lbnMgOSIsInByaWNlIjoxOTkwMH0sInF1YW50aXR5IjoxLCJ0b3RhbHMiOlt7InR5cGUiOiJzdWJ0b3RhbCIsImFtb3VudCI6MTk5MDB9LHsidHlwZSI6InRvdGFsIiwiYW1vdW50IjoxOTkwMH1dfV0sInN0YXR1cyI6ImluY29tcGxldGUiLCJjdXJyZW5jeSI6IlVTRCIsInRvdGFscyI6W3sidHlwZSI6InN1YnRvdGFsIiwiYW1vdW50IjoxOTkwMH0seyJ0eXBlIjoidG90YWwiLCJhbW91bnQiOjE5OTAwfV0sImxpbmtzIjpbeyJ0eXBlIjoicHJpdmFjeV9wb2xpY3kiLCJ1cmwiOiJodHRwczovL2h0dHBzLy9kZW1vLW1lcmNoYW50LmV4YW1wbGUvcHJpdmFjeSJ9LHsidHlwZSI6InRlcm1zX29mX3NlcnZpY2UiLCJ1cmwiOiJodHRwczovL2h0dHBzLy9kZW1vLW1lcmNoYW50LmV4YW1wbGUvdG9zIn1dLCJsZWdhbENvbnRleHQiOnsidHlwZSI6InNoYTI1NiIsInZhbHVlIjoiMHhhMTY3NWNhMjRhYzZkOGI0YmU1ZTQ2YTBhM2VkYTJkMjFjNjYyNjY3YjIwOTIzYzNhOWU4MjA4MjhlOWE4MmFmIiwibGVnYWxDb250ZXh0VXJsIjoiaHR0cHM6Ly9hdHIuc2VsbGVyLmV4YW1wbGUvY2ZlOTIyZDUtN2JmMS00M2JhLTk0ZDYtNGRjZTc2YTliYmIzIn19.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "documentFrom": "lcp ap2-checkout-mandate.json V6's checkout_jwt payload, AP2's published checkout 09414145-b70b-483a-b85c-aa0fa0c45800, as lcp's ap2 advertise writes it for atr.sha256 at fixed.L, signed as built.J is: fixed.jwtHeader and fixed.signature",
+      "link": "https://atr.seller.example/cfe922d5-7bf1-43ba-94d6-4dce76a9bbb3",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "option-not-in-atr",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-held-card",
+      "pairing": "card/seller-reference",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653830222c2263617264223a7b226f7074696f6e73223a5b7b22736368656d65223a2273656c6c65722d7265666572656e6365222c22636865636b6f7574223a2263686b5f31303031227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xd4a37b129282702553ac696ecc72f9c392bdf5e9839a8435920df12c444ab240",
+        "from": "lcp acp-checkout.json V1 assemble's id and content, the binding slot lcp's card tie of card.json C1's offer"
+      },
+      "document": {
+        "legalContext": {
+          "type": "sha256",
+          "value": "0xd4a37b129282702553ac696ecc72f9c392bdf5e9839a8435920df12c444ab240",
+          "legalContextUrl": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f"
+        }
+      },
+      "documentFrom": "lcp card.json C1's legalContext, as lcp's card advertise writes it for atr.sha256 at fixed.link",
+      "link": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "agreement-not-offered",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-not-in-atr-card",
+      "of": "option-held-card",
+      "pairing": "card/visa-tap",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653830222c2263617264223a7b226f7074696f6e73223a5b7b22736368656d65223a2273656c6c65722d7265666572656e6365222c22636865636b6f7574223a2263686b5f31303031227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xd4a37b129282702553ac696ecc72f9c392bdf5e9839a8435920df12c444ab240",
+        "from": "lcp acp-checkout.json V1 assemble's id and content, the binding slot lcp's card tie of card.json C1's offer"
+      },
+      "document": {
+        "legalContext": {
+          "type": "sha256",
+          "value": "0xd4a37b129282702553ac696ecc72f9c392bdf5e9839a8435920df12c444ab240",
+          "legalContextUrl": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f"
+        }
+      },
+      "documentFrom": "lcp card.json C1's legalContext, as lcp's card advertise writes it for atr.sha256 at fixed.link",
+      "link": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "option-not-in-atr",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-held-ucp",
+      "pairing": "ucp/checkout/unsigned",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653630222c22756370223a7b226f7074696f6e73223a5b7b22636865636b6f7574223a2263686b5f31227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0x60d53ee2a4b53146066d0995029c1fb33d9a69d6930c12ec59a33cc11784b17e",
+        "from": "lcp ucp.json fixed.A"
+      },
+      "document": {
+        "ucp": {
+          "version": "2026-08-25"
+        },
+        "id": "chk_1",
+        "status": "ready_for_complete",
+        "currency": "USD",
+        "totals": [
+          {
+            "type": "total",
+            "amount": 19900
+          }
+        ],
+        "links": [
+          {
+            "type": "terms_of_service",
+            "url": "https://seller.example/tos"
+          },
+          {
+            "type": "legal_context",
+            "url": "https://atr.seller.example/3db21a20-8679-4bb0-942e-a2158fa08683",
+            "title": "lcp:sha256:0x60d53ee2a4b53146066d0995029c1fb33d9a69d6930c12ec59a33cc11784b17e"
+          }
+        ]
+      },
+      "documentFrom": "lcp ucp.json V2 expectCheckout, checkout chk_1",
+      "link": "https://atr.seller.example/3db21a20-8679-4bb0-942e-a2158fa08683",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "agreement-not-offered",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-not-in-atr-ucp",
+      "of": "option-held-ucp",
+      "pairing": "ucp/booking/unsigned",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653630222c22756370223a7b226f7074696f6e73223a5b7b22636865636b6f7574223a2263686b5f31227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0x60d53ee2a4b53146066d0995029c1fb33d9a69d6930c12ec59a33cc11784b17e",
+        "from": "lcp ucp.json fixed.A"
+      },
+      "document": {
+        "ucp": {
+          "version": "2026-08-25"
+        },
+        "id": "chk_1",
+        "status": "ready_for_complete",
+        "currency": "USD",
+        "totals": [
+          {
+            "type": "total",
+            "amount": 19900
+          }
+        ],
+        "links": [
+          {
+            "type": "terms_of_service",
+            "url": "https://seller.example/tos"
+          },
+          {
+            "type": "legal_context",
+            "url": "https://atr.seller.example/3db21a20-8679-4bb0-942e-a2158fa08683",
+            "title": "lcp:sha256:0x60d53ee2a4b53146066d0995029c1fb33d9a69d6930c12ec59a33cc11784b17e"
+          }
+        ]
+      },
+      "documentFrom": "lcp ucp.json V2 expectCheckout, checkout chk_1",
+      "link": "https://atr.seller.example/3db21a20-8679-4bb0-942e-a2158fa08683",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "option-not-in-atr",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-held-ack",
+      "pairing": "ack/payment-request",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653830222c2261636b223a7b227061796d656e744f7074696f6e73223a5b7b226964223a226f70742d757364632d62617365222c2263757272656e6379223a2255534443222c226e6574776f726b223a226569703135353a38343533222c22616d6f756e74223a223130303030222c22646563696d616c73223a362c22726563697069656e74223a22307832303936393342633661666330433533323862413336466146303343353134454633313232383743227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xfcf7bb5aff93416c434121d5916502921b62d8ff30bf31d862472feaa547bcb0",
+        "from": "lcp acp-checkout.json V1 assemble's id and content, the binding slot lcp's ack tie([ack-payment-request.json fixed.O])"
+      },
+      "document": {
+        "paymentRequestToken": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImxjcDpzaGEyNTY6MHhmY2Y3YmI1YWZmOTM0MTZjNDM0MTIxZDU5MTY1MDI5MjFiNjJkOGZmMzBiZjMxZDg2MjQ3MmZlYWE1NDdiY2IwIiwicGF5bWVudE9wdGlvbnMiOlt7ImlkIjoib3B0LXVzZGMtYmFzZSIsImN1cnJlbmN5IjoiVVNEQyIsIm5ldHdvcmsiOiJlaXAxNTU6ODQ1MyIsImFtb3VudCI6IjEwMDAwIiwiZGVjaW1hbHMiOjYsInJlY2lwaWVudCI6IjB4MjA5NjkzQmM2YWZjMEM1MzI4YkEzNkZhRjAzQzUxNEVGMzEyMjg3QyJ9XSwic3ViIjoibGNwOnNoYTI1NjoweGZjZjdiYjVhZmY5MzQxNmM0MzQxMjFkNTkxNjUwMjkyMWI2MmQ4ZmYzMGJmMzFkODYyNDcyZmVhYTU0N2JjYjAiLCJpc3MiOiJkaWQ6d2ViOnNlbGxlci5leGFtcGxlIiwiaWF0IjoxNzkwMDAwMDAwfQ.BAxLeShhHOBYhymrBZtfEKkbFLTljlGC9RTViqyUR5nnizL8AoNTgR9B_MgnWTk2-P9S791Ceumb_zOawJmtXg",
+        "legalContext": {
+          "type": "sha256",
+          "value": "0xfcf7bb5aff93416c434121d5916502921b62d8ff30bf31d862472feaa547bcb0",
+          "legalContextUrl": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f"
+        }
+      },
+      "documentFrom": "lcp ack-payment-request.json fixed.T by the file's recipe, its header and signature segment kept, its payload's id and sub the Payment Request id lcp's ack advertise gives for atr.sha256, beside that advertise's legalContext at fixed.L",
+      "link": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+      "account": "eip155:8453:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "agreement-not-offered",
+        "signerCalls": 0,
+        "approverCalls": 0
+      }
+    },
+    {
+      "name": "option-not-in-atr-ack",
+      "of": "option-held-ack",
+      "pairing": "ack/payment-request",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2236663163326230652d386434612d346333622d396532662d316137643563396233653830222c2261636b223a7b227061796d656e744f7074696f6e73223a5b7b226964223a226f70742d757364632d62617365222c2263757272656e6379223a2255534443222c226e6574776f726b223a226569703135353a38343533222c22616d6f756e74223a223130303030222c22646563696d616c73223a362c22726563697069656e74223a22307832303936393342633661666330433533323862413336466146303343353134454633313232383743227d5d7d2c226c696e655f6974656d73223a5b7b226964223a226c695f31222c226974656d223a7b226964223a22736b755f31222c227469746c65223a22517561727465726c79207265706f7274227d2c227175616e74697479223a317d5d2c22746f74616c73223a5b7b2274797065223a22746f74616c222c22616d6f756e74223a31393930307d5d7d",
+        "sha256": "0xfcf7bb5aff93416c434121d5916502921b62d8ff30bf31d862472feaa547bcb0",
+        "from": "lcp acp-checkout.json V1 assemble's id and content, the binding slot lcp's ack tie([ack-payment-request.json fixed.O])"
+      },
+      "document": {
+        "paymentRequestToken": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImxjcDpzaGEyNTY6MHhmY2Y3YmI1YWZmOTM0MTZjNDM0MTIxZDU5MTY1MDI5MjFiNjJkOGZmMzBiZjMxZDg2MjQ3MmZlYWE1NDdiY2IwIiwicGF5bWVudE9wdGlvbnMiOlt7ImlkIjoib3B0LXVzZGMtYmFzZSIsImN1cnJlbmN5IjoiVVNEQyIsIm5ldHdvcmsiOiJlaXAxNTU6ODQ1MyIsImFtb3VudCI6IjIwMDAwIiwiZGVjaW1hbHMiOjYsInJlY2lwaWVudCI6IjB4MjA5NjkzQmM2YWZjMEM1MzI4YkEzNkZhRjAzQzUxNEVGMzEyMjg3QyJ9XSwic3ViIjoibGNwOnNoYTI1NjoweGZjZjdiYjVhZmY5MzQxNmM0MzQxMjFkNTkxNjUwMjkyMWI2MmQ4ZmYzMGJmMzFkODYyNDcyZmVhYTU0N2JjYjAiLCJpc3MiOiJkaWQ6d2ViOnNlbGxlci5leGFtcGxlIiwiaWF0IjoxNzkwMDAwMDAwfQ.BAxLeShhHOBYhymrBZtfEKkbFLTljlGC9RTViqyUR5nnizL8AoNTgR9B_MgnWTk2-P9S791Ceumb_zOawJmtXg",
+        "legalContext": {
+          "type": "sha256",
+          "value": "0xfcf7bb5aff93416c434121d5916502921b62d8ff30bf31d862472feaa547bcb0",
+          "legalContextUrl": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f"
+        }
+      },
+      "documentFrom": "as option-held-ack's, its token's paymentOptions fixed.O with amount \"20000\", twice what the ATR's slot records",
+      "link": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+      "account": "eip155:8453:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "option-not-in-atr",
+        "signerCalls": 0,
+        "approverCalls": 0
       }
     }
   ],

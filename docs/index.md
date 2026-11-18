@@ -13,8 +13,8 @@ wallet signs anything:
 
 1. fetches the ATR from the seller's `https` link, once and within bounds;
 2. computes SHA-256 over the exact bytes it received and compares it with H;
-3. parses those bytes and, on x402 and MPP, holds the option you pay (and on x402 the request you make) to what the
-   ATR's binding slot commits to;
+3. parses those bytes and holds the option you pay (and on x402 the request you make) to what the ATR's binding slot
+   commits to;
 4. builds the payment with that hash, shows your approver what the signature grants, and declines a payment that would
    stay payable past its ceiling;
 5. only on your approver's `true`, hands the request to your signer;

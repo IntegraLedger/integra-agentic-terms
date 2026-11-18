@@ -84,11 +84,11 @@ ATR's SHA-256 is GNU coreutils `sha256sum`, checked with Python's `hashlib`. Not
 
 | Section | What it fixes |
 | --- | --- |
-| `rows` | For each decline code the profile adds that a published input shows, the declining case and the accepted case it differs from in one member, each run through `transact`, with the decline expected and how many times the approver and the signer are called: an approver that answers `false` (`not-approved`), an ATR the parse refuses (`atr-malformed`), a form that signs no end with and without `ceilings` mapping it to `"no-end"` (`no-end`), and a served floor given and missing (`floor-missing`). |
+| `rows` | For each decline code the profile adds that a published input shows, the declining case and the accepted case it differs from in one member, each run through `transact`, with the decline expected and how many times the approver and the signer are called: an approver that answers `false` (`not-approved`), an ATR the parse refuses (`atr-malformed`), a form that signs no end with and without `ceilings` mapping it to `"no-end"` (`no-end`), a served floor given and missing (`floor-missing`), and, on `acp`, `ap2`, `card`, `ucp` and `ack`, an option the ATR's binding slot lists and one it does not (`option-not-in-atr`). A row may carry its own `document`, `link` and `account`; its ATR and document are the protocol package's published ones, or built from them with the package's own `assemble`, `tie` and `advertise`, as its `from` and `documentFrom` name. |
 | `parse` | The parse's rows that the protocol package's `core-vectors.json` lacks, each RFC 8259's or RFC 7493's own example; `core-vectors.json`'s check-8 rows are the parse's rows too. |
 
-`option-not-in-atr`, `request-mismatch`, `past-ceiling` and `summary-missing` have no row: no published input shows them,
-and the profile's rules alone hold them.
+`request-mismatch`, `past-ceiling` and `summary-missing` have no row: no published input shows them, and the
+profile's rules alone hold them.
 
 `vectors/vi-signer.json`, also in `@integraledger/terms`, fixes `viJson`. Each row's expected text is what Python's
 `json.dumps(…, separators=(",", ":"), ensure_ascii=True)` writes for the row's value: the re-encoding over which

@@ -1,6 +1,7 @@
 // terms' own gate vectors (vectors/buyer-gate.json, terms' profile buyer-gate.md) through the tools. Each row's
-// document is the file's fixed document for its pairing advertising the row's ATR, the link serves the row's bytes, the
-// account and the clock are the file's, and the request is the row's, its body's bytes as base64. The host gives the
+// document is its own, as written, or the file's fixed document for its pairing advertising the row's ATR; the row's
+// link, or the file's, serves the row's bytes; the account is the row's, or the file's; the clock is the file's; and the
+// request is the row's, its body's bytes as base64. The host gives the
 // row's ceilings as `ceilings` and its floor input through `floors`; the agent approves where the row's approver does.
 // The payer's signature is lcp's buyer.json B6 signature, the file's payer key over the same request. Over MCP the
 // approval is the agent's: `atr_transact` returns each signing as `approve` and signs nothing, and signs it only when
@@ -25,9 +26,9 @@ const M = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelco
 const rowOf = (name: string): Loose => V.rows.find((r: { name: string }) => r.name === name);
 
 type Counted = Signer & { requests: SigningRequest[] };
-function signer(): Counted {
+function signer(account: string = V.fixed.account): Counted {
   const s: Counted = {
-    account: V.fixed.account,
+    account,
     requests: [],
     async sign(r: SigningRequest) {
       s.requests.push(JSON.parse(JSON.stringify(r, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v))));
@@ -38,11 +39,12 @@ function signer(): Counted {
 }
 
 type Served = Fetch & { calls: number };
-/** The file's link serving the row's bytes, counting every fetch; any other URL answers 404. */
+/** The row's link, or the file's, serving the row's bytes, counting every fetch; any other URL answers 404. */
 function serving(row: Loose): Served {
+  const link: string = row.link ?? V.fixed.link;
   const f = (async (url: string) => {
     f.calls++;
-    return url === V.fixed.link ? new Response(Buffer.from(row.atr.hex, "hex"), { status: 200 }) : new Response(null, { status: 404 });
+    return url === link ? new Response(Buffer.from(row.atr.hex, "hex"), { status: 200 }) : new Response(null, { status: 404 });
   }) as unknown as Served;
   f.calls = 0;
   return f;
@@ -50,8 +52,8 @@ function serving(row: Loose): Served {
 
 /** The row's tool arguments: its pairing, its document advertising its ATR, and its request. */
 function argsOf(row: Loose): { pairing: string; document: object; resourceRequest: object } {
-  const document = structuredClone(V.fixed.documents[row.pairing]);
-  document.extensions.legalContext.info.value = row.atr.sha256;
+  const document = structuredClone(row.document ?? V.fixed.documents[row.pairing]);
+  if (row.document === undefined) document.extensions.legalContext.info.value = row.atr.sha256;
   const { method, target, bodyUtf8 } = row.resourceRequest;
   return { pairing: row.pairing, document, resourceRequest: { method, target, body: Buffer.from(bodyUtf8, "utf8").toString("base64") } };
 }
@@ -83,7 +85,7 @@ describe("buyer-gate.json rows through the tools", () => {
     it(`atr_confirm, ${row.name}: ${declined ?? "the request and its summary"}`, async () => {
       const fetch = serving(row);
       const c = connect({ fetch, ...hostOf(row) });
-      const m = await call(c, "atr_confirm", { ...argsOf(row), account: V.fixed.account });
+      const m = await call(c, "atr_confirm", { ...argsOf(row), account: row.account ?? V.fixed.account });
       await c.close();
       expect(code(m)).toBe(declined ?? undefined);
       if (declined === row.expect.decline && row.expect.detail !== undefined) {
@@ -104,7 +106,7 @@ describe("buyer-gate.json rows through the tools", () => {
   for (const row of V.rows as Loose[]) {
     const declined = endOf(row);
     it(`atr_transact, ${row.name}: ${declined ?? (row.approves ? "approved, then signed" : "shown, nothing signed")}`, async () => {
-      const s = signer();
+      const s = signer(row.account);
       const c = connect({ fetch: serving(row), signer: s, ...hostOf(row) });
       const args = argsOf(row);
       const m = await call(c, "atr_transact", args);

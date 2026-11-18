@@ -11,8 +11,8 @@ the payment the buyer approves carries H, that approval is the buyer's acceptanc
 not, the pairing's statement of what it proves says so.
 
 The packages here are the buyer's half of that pattern. Their centre is the **buyer gate**: it fetches the ATR, compares
-the SHA-256 of the served bytes with H, parses those bytes, on x402 and MPP holds the option paid (and on x402 the
-buyer's own request) to what the record's binding slot commits to, and only then builds the payment with that hash.
+the SHA-256 of the served bytes with H, parses those bytes, holds the option paid (and on x402 the buyer's own
+request) to what the record's binding slot commits to, and only then builds the payment with that hash.
 Before the buyer's own signer is called, `transact` shows the buyer's approver what the signature grants and declines a
 payment that would stay payable past its ceiling. After the signer answers, the pairing reads H back from the completed payment, and the gate returns the payment
 only if it is the hash of the bytes received, or, where the proof is the agreement payment, without that reading. The

@@ -1,7 +1,8 @@
 // B2, B6, B10 and B16 for the protocol-group pairings: card, AP2, UCP, ACP and ACK. Every expected request, answer
 // and bound hash is the vector files' (card.json, ap2-checkout-mandate.json, ucp.json, acp-checkout.json,
 // ack-payment-request.json). The card documents are the vectors' own and advertise H = SHA-256("abc"); the AP2, UCP and
-// ACP documents advertise the vectors' own H, over the vectors' own ATR bytes.
+// ACP documents advertise the vectors' own H, over the vectors' own ATR bytes. The UCP bookings advertise A's H, whose
+// ucp slot lists a checkout and no booking: through the gate they are declined option-not-in-atr (buyer-gate.md, rule 6).
 import { createECDH, createHash, createPrivateKey, createPublicKey, sign as signWith, verify } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { AtrHash, Refusal } from "@integraledger/lcp";
@@ -67,7 +68,9 @@ async function signsOver(
     const signer = counting(p.account, p.answer);
     const ceilings = p.ceilings === undefined ? {} : { ceilings: p.ceilings };
     const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {}, ...ceilings });
-    if (summaryPending(p.binding.id)) {
+    if (p.notInAtr !== undefined) {
+      expect([code(whole), signer.requests.length]).toEqual(["option-not-in-atr", 0]);
+    } else if (summaryPending(p.binding.id)) {
       expect([code(whole), signer.requests.length]).toEqual(["summary-missing", 0]);
     } else {
       if (isDeclined(whole)) throw new Error(`${whole.decline.code}: ${whole.decline.detail}`);
@@ -97,6 +100,12 @@ async function confirmsOnly(p: Pairing, atr: Uint8Array, h: string): Promise<Cho
   if (doc === undefined) expect(PIECE_ONLY.has(p.binding.id), `${p.binding.id} is not in PIECE_ONLY`).toBe(true);
   if (doc !== undefined) {
     const gated = await confirm(doc, offered(p.binding), p.account, serving(bytes), { ...CONFIRMING, inputs: p.inputs });
+    if (p.notInAtr !== undefined) {
+      const signer = counting(p.account, never);
+      const whole = await transact(doc, offered(p.binding), signer, serving(bytes), { ...GATE, inputs: p.inputs ?? {} });
+      expect([code(gated), code(whole), signer.requests.length]).toEqual(["option-not-in-atr", "option-not-in-atr", 0]);
+      return confirmed.chosen;
+    }
     if (isDeclined(gated)) throw new Error(`${gated.decline.code}: ${gated.decline.detail}`);
     expect([gated.request, gated.h, gated.bytes]).toEqual([null, gh, bytes]);
     const signer = counting(p.account, never);
@@ -682,12 +691,16 @@ describe("ucp", () => {
     ["ucp/checkout/ap2-mandate", ap2Mandate, checkout, UCP.V2.expectCheckout],
     ["ucp/booking/ap2-mandate", bookingAp2Mandate, booking, UCP.V2b.expectBooking],
   ];
+  // ucp.json's V2b advertises the booking bkg_1 for A's H, and A's ucp slot lists the checkout chk_1 alone.
+  const notInAtr = (id: string) =>
+    id.startsWith("ucp/booking/") ? { notInAtr: "A's ucp slot lists the checkout chk_1, and no booking" } : {};
   describe.each(mandates)("%s", (_id, binding, doc, payload) => {
     const { J, M } = mandateOver(payload);
     const p: Pairing = {
       binding,
       doc,
       account: BUYER,
+      ...notInAtr(binding.id),
       // The checkout names no expiry, so the payment signs no end (profile buyer-gate.md, rule 8): the caller raises
       // the pairing's ceiling to pay it.
       ceilings: { [binding.id]: "no-end" },
@@ -711,7 +724,7 @@ describe("ucp", () => {
     ["ucp/booking/unsigned", bookingUnsigned, UCP.V2b.expectBooking],
   ];
   describe.each(confirmOnly)("%s", (_id, binding, doc) => {
-    const p: Pairing = { binding, doc, account: BUYER, answer: never };
+    const p: Pairing = { binding, doc, account: BUYER, answer: never, ...notInAtr(binding.id) };
     it("B6: confirm-only; build refuses V4's code, so no request, no payment, the signer never called", async () => {
       expect(await (binding as typeof unsigned).build({ checkout: doc }, F.H)).toEqual(UCP.V4.expectUnsignedBuild);
       await confirmsOnly(p, atr, F.H);
