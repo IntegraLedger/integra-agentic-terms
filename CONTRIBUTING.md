@@ -22,6 +22,46 @@ no-downgrade` and `strictDepBuilds: true`, and `permissions` denies the builds o
 `@integraledger/lcp` is a peer of both TypeScript packages, with an exact devDependency for their own tests, so an
 application and the gate share one copy of lcp. A change that adds a dependency pins an exact version.
 
+## The layout
+
+| Folder | What it holds |
+| --- | --- |
+| `agentic-terms/` | `@integraledger/terms`, the TypeScript buyer gate. `src/pairings/` holds one module per pairing. |
+| `agentic-terms-mcp/` | `@integraledger/terms-mcp`, the MCP server, and `skills/`, the agent skill. |
+| `agentic-terms-py/` | `integraledger-terms`, the Python buyer gate, with its own bindings. |
+| `docs/` | The documentation, in Markdown. It is the only source of the documentation site. |
+| `scripts/docs.mjs` | Generates the pairing tables and checks every documentation sample. |
+| `website/` | The documentation site's app. It reads `docs/` and has its own lockfile. |
+
+The TypeScript packages import only `@integraledger/lcp` (and the MCP server also `@integraledger/terms`). CI checks
+that boundary.
+
+## Testing
+
+These are the commands CI runs. CI runs on pushes to `main`, not on pull requests: run them yourself before you open a
+pull request, and say in it that they pass.
+
+```sh
+pnpm -r --if-present run build
+pnpm -r --if-present run typecheck
+pnpm -r --if-present run test
+
+cd agentic-terms-py
+uv run --locked --python 3.11 pytest -q
+uv run --locked --python 3.14 pytest -q
+uv run --locked --python 3.14 mypy --strict src tests
+cd ..
+
+node scripts/docs.mjs check
+```
+
+The Python tests read the shared vectors from `agentic-terms/node_modules/@integraledger/lcp/vectors`, so install the
+TypeScript side first.
+
+### What CI's install-policy and Node.js steps check
+
+You need this only when you change a workflow or a workspace setting.
+
 CI's install-policy step holds the policy: every `pnpm-workspace.yaml` git lists, the root's and the site's, sets
 `minimumReleaseAge: 1440`, `trustPolicy: no-downgrade` and `strictDepBuilds: true`, and before the install `pnpm config
 get` reads those three values in each folder that holds one, every override as an exact version or a removal below one,
@@ -68,41 +108,6 @@ words, and no anchor, alias, tag or quoted value that does not close on its own 
 only its indicators and a comment. Each workflow has one `jobs:` line, and every line under it is blank, a comment, a
 job's own line (`<name>:`, indented two spaces) or a line inside a job. The step reads the jobs' steps only outside a
 block scalar, so the text a block scalar holds is never read as a step.
-
-## The layout
-
-| Folder | What it holds |
-| --- | --- |
-| `agentic-terms/` | `@integraledger/terms`, the TypeScript buyer gate. `src/pairings/` holds one module per pairing. |
-| `agentic-terms-mcp/` | `@integraledger/terms-mcp`, the MCP server, and `skills/`, the agent skill. |
-| `agentic-terms-py/` | `integraledger-terms`, the Python buyer gate, with its own bindings. |
-| `docs/` | The documentation, in Markdown. It is the only source of the documentation site. |
-| `scripts/docs.mjs` | Generates the pairing tables and checks every documentation sample. |
-| `website/` | The documentation site's app. It reads `docs/` and has its own lockfile. |
-
-The TypeScript packages import only `@integraledger/lcp` (and the MCP server also `@integraledger/terms`). CI checks
-that boundary.
-
-## Testing
-
-These are the commands CI runs. Run them before you open a pull request:
-
-```sh
-pnpm -r --if-present run build
-pnpm -r --if-present run typecheck
-pnpm -r --if-present run test
-
-cd agentic-terms-py
-uv run --locked --python 3.11 pytest -q
-uv run --locked --python 3.14 pytest -q
-uv run --locked --python 3.14 mypy --strict src tests
-cd ..
-
-node scripts/docs.mjs check
-```
-
-The Python tests read the shared vectors from `agentic-terms/node_modules/@integraledger/lcp/vectors`, so install the
-TypeScript side first.
 
 ## Rules for a change
 
