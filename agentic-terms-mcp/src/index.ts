@@ -76,8 +76,10 @@ const DESCRIPTIONS = {
     "Where the pairing needs an agreement payment first, `approve.agreement` holds it before any signing: its `option` " +
     "holds the amount, asset, payee (`payTo`) and network it pays; approve it the same way. A signing built again " +
     "differently is returned again to approve, never signed. Returns the payment to send and the ATR's exact bytes to " +
-    "keep. Where the seller's first response offers only the agreement, it pays the agreement and returns its " +
-    "`agreement` receipt, `legalContext` and the `charge` chosen, signing no charge: repeat your request with " +
+    "keep. Where the agreement URL offers only MPP agreement challenges, it returns them as `agreementChallenges` and " +
+    "signs nothing: your own MPP client pays one there. Where the seller's first response offers only the agreement, " +
+    "it pays the agreement and returns its `agreement` receipt (or, as above, `agreementChallenges`), `legalContext` " +
+    "and the `charge` chosen, signing no charge: repeat your request with " +
     "`legalContext` as its Legal-Context header, or over MCP under `params._meta` \"" +
     LEGAL_CONTEXT_META +
     "\", then call atr_transact with the second response. Pass as `legalContext` the first response's Legal-Context " +
@@ -90,7 +92,8 @@ const DESCRIPTIONS = {
     "confirmed payment's pairing can follow is paid. Without `approved`, returns the payment as `approve` and signs nothing: its `option` holds the amount, asset, " +
     "payee (`payTo`) and network it pays, and it carries the ATR hash. To approve it, call atr_agree again with " +
     "`approved` set to `approve`, unchanged: this host's signer then pays it. Returns the agreement's receipt once it " +
-    "is recorded; pass it to atr_confirm.",
+    "is recorded; pass it to atr_confirm. Where the agreement URL offers only MPP agreement challenges, returns them " +
+    "as `agreementChallenges` and signs nothing: your own MPP client pays one there.",
   atr_channel_open:
     "Keeps a channel you opened: takes the signed opening payment, the `landed` receipt where one was returned beside " +
     "it, and the `mac` returned beside it, all exactly as returned, and the ATR bytes it was confirmed against; " +
@@ -273,8 +276,9 @@ function same(a: Json, b: Json): boolean {
 }
 
 /**
- * The floor inputs of the rails whose payment service serves a floor, by pairing (terms' profile `buyer-gate.md`, rule
- * 9): the host gives them through `floors`, and no tool input names them.
+ * The floor inputs this server drops from a tool's `inputs`, by pairing (terms' profile `buyer-gate.md`, rule 9): the
+ * host gives them through `floors`. It names `x402/exact/eip155/gateway-batched` alone; the gate's `FLOOR_INPUTS` also
+ * names `mpp/charge/usdc/gateway`, whose floor inputs a tool's `inputs` pass through to the gate.
  */
 const FLOOR_INPUTS: ReadonlyMap<string, readonly string[]> = new Map([["x402/exact/eip155/gateway-batched", ["minValiditySeconds"]]]);
 
@@ -288,10 +292,13 @@ export type Floors = (pairing: string, network: string) => Inputs | undefined | 
 const networkOf = (account: string): string => account.split(":").slice(0, 2).join(":");
 
 /**
- * The buyer's tools. `ceilings`, the host's, raises a pairing's ceiling on how long a signed payment stays payable, and
- * `floors`, the host's, answers the floor a rail's payment service serves; neither is a tool input, so no text the
- * agent reads raises a ceiling or names a floor. `atr_transact` signs only what the agent approved: each signing is
- * returned to approve, and signed when the call is made again with it approved, unchanged.
+ * The buyer's tools. `ceilings`, the host's, raises a pairing's ceiling on how long a signed payment stays payable; it
+ * is not a tool input, so no text the agent reads raises a ceiling. `floors`, the host's, answers the floor a rail's
+ * payment service serves, and what it answers is set over a tool's own `inputs`. The server drops a floor input from a
+ * tool's `inputs` for `x402/exact/eip155/gateway-batched` alone: for `mpp/charge/usdc/gateway` a tool's
+ * `sourceNetwork`, `burnIntentExpirationHeight` and `withdrawalDelay` reach the gate where `floors` does not answer
+ * them. `atr_transact` signs only a signing equal to one the agent passes back approved: each signing is returned to
+ * approve, and signed when the call is made again with it approved, unchanged.
  */
 export function createBuyerServer(options: {
   fetch: Fetch;
@@ -341,9 +348,9 @@ export function createBuyerServer(options: {
   const payer = agreementSigner ?? signer;
 
   /**
-   * The inputs the gate is given for a pairing paid from `account`: the tool's own, without the pairing's floor inputs,
-   * and over them the floor inputs `floors` answers for the pairing on the account's network. A `floors` that throws or
-   * rejects, or answers anything but an object, gives none.
+   * The inputs the gate is given for a pairing paid from `account`: the tool's own, without the floor inputs this
+   * server's `FLOOR_INPUTS` names for the pairing, and over them the floor inputs `floors` answers for the pairing on
+   * the account's network. A `floors` that throws or rejects, or answers anything but an object, gives none.
    */
   async function gateInputs(id: string, account: string, given: Inputs | undefined): Promise<Inputs> {
     const names = FLOOR_INPUTS.get(id) ?? [];
