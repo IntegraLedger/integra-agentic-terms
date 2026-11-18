@@ -30,7 +30,7 @@ from support import confirm, finish, transact
 from integraledger_terms._keccak import keccak256
 from integraledger_terms.bindings._batch_evm import CHANNEL_CONFIG_TYPEHASH, batch_channel_id, erc3009_deposit_nonce
 
-from breadth import ABC, ABD, H, LINK, Pairing, Recording, build_and_sign, code, never, offered, plant, receipt, run, x402_doc
+from breadth import ABC, ABD, H, LINK, Pairing, Recording, build_and_sign, code, never, offered, plant, run, unpaid_receipt, x402_doc
 from support import HASH_A, A, load, piece_confirm, serving
 
 BV = load("x402-batch-settlement.json")
@@ -186,7 +186,7 @@ def test_x402_batch_settlement_cloudflare_b6_the_build_is_the_payment() -> None:
     # the build, which is the payment, with no signer call.
     whole = run(lambda c: transact(x402_doc(CF_OPTION, RESOURCE, HASH_A), offered(binding), signer, c), serving(A))
     assert isinstance(whole, Transacted), whole
-    assert whole.agreement == receipt(HASH_A)
+    assert whole.agreement == unpaid_receipt(HASH_A)
     assert signer.requests == []
     assert check(ABC, done.signed, binding) == Checked(h=H)
     assert code(check(ABD, done.signed, binding)) == "signed-not-bound"

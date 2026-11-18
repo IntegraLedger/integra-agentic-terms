@@ -54,7 +54,7 @@ sequenceDiagram
    request and every paid one ask for `Accept-Encoding: identity`; a `200` or a `402` with any other `Content-Encoding` is
    `agreement-failed`, its body unread.
    - `200`: the agreement URL's word that an agreement is recorded. The body must be the receipt for this H. The gate
-     makes no agreement payment and reads none, marks the receipt `unpaid: true` and goes on to step 7.
+     makes no agreement payment and reads none, marks the receipt `unpaid: true` (in Python `unpaid=True`) and goes on to step 7.
    - `202`: another agreement payment for this ATR is settling. The gate declines `agreement-pending` and signs nothing.
    - `402`: the `PAYMENT-REQUIRED` header, padded standard base64 (RFC 4648 section 4) of an x402 document, is the
      agreement's payment request.
@@ -119,7 +119,7 @@ sequenceDiagram
    `atrHash` must be this H, `agreed` must be `true`, and `network` and `transaction` must be strings. Anything else is
    `agreement-failed`, and the payment for the resource is never signed. The receipt is the agreement URL's statement:
    the gate checks its form and that its `atrHash` is H, and does not look up the transaction it names. A receipt
-   answered to the first, unpaid request is marked `unpaid: true`: no agreement payment was made or read. The public
+   answered to the first, unpaid request is marked `unpaid: true` (in Python `unpaid=True`): no agreement payment was made or read. The public
    proof is that transaction on `network`, which anyone can read.
 
 7. **Pay the resource.** Only then does the gate ask your approver about the payment the offer asked for, which it built,

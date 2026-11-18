@@ -505,11 +505,16 @@ def test_ba7_transact_returns_the_agreements_receipt_beside_the_payment() -> Non
     assert isinstance(plain, Transacted) and plain.agreement is None
 
 
-def test_a_recorded_agreement_answers_200_at_once_with_no_signature() -> None:
+# Profile rule 18: a 200 to the unpaid request is the agreement URL's statement alone, and the gate says so.
+def test_a_200_to_the_unpaid_request_its_receipt_marked_unpaid_no_agreement_payment_made_or_read_nothing_signed() -> None:
     signer = RecordingSigner()
-    out = run(Seller([{"status": 200, "body": "receipt"}]).link(), lambda c: approve_and_agree(signer, c))
-    assert isinstance(out, Agreed) and out.receipt.transaction == AG["receipt"]["transaction"]
-    assert signer.requests == []
+    seller = Seller([{"status": 200, "body": "receipt"}])
+    out = run(seller.link(), lambda c: approve_and_agree(signer, c))
+    assert isinstance(out, Agreed), out
+    r = AG["receipt"]
+    fields = {"atr_hash": r["atrHash"], "agreed": True, "network": r["network"], "transaction": r["transaction"]}
+    assert dataclasses.asdict(out.receipt) == {**fields, "unpaid": True}
+    assert [len(signer.requests), len(seller.paid())] == [0, 0]
 
 
 @pytest.mark.parametrize(

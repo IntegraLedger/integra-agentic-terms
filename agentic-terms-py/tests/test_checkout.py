@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from breadth import Recording, offered, receipt, run
+from breadth import Recording, offered, run, unpaid_receipt
 from support import load, serving, transact
 
 from integraledger_terms import (
@@ -110,7 +110,7 @@ def test_ap2_checkout_mandate_x402_by_its_own_steps() -> None:
         lambda c: transact(presented["checkout_jwt"], binding, signer, c, approver=approver, ceilings=ceilings),
         serving(atr),
     )
-    assert whole == Transacted(signed=presented, atr_bytes=atr, h=h, agreement=receipt(h))
+    assert whole == Transacted(signed=presented, atr_bytes=atr, h=h, agreement=unpaid_receipt(h))
     assert signer.requests == [request]
     expected = Summary(
         amount="19900", payees=(), asset="USD", network=None, validity=Validity(None, None, "seconds"), atr=atr

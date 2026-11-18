@@ -112,9 +112,13 @@ def offered(binding: Binding) -> Binding:
     return wrapped
 
 
-def receipt(h: str = H) -> AgreementReceipt:
+def unpaid_receipt(h: str = H) -> AgreementReceipt:
+    """The receipt serving's agreement URL answers the unpaid request with, as the gate returns it: marked unpaid=True,
+    no agreement payment having been made or read (profile buyer-gate.md, rule 18)."""
     r = receipt_for(h)
-    return AgreementReceipt(atr_hash=r["atrHash"], agreed=True, network=r["network"], transaction=r["transaction"])
+    return AgreementReceipt(
+        atr_hash=r["atrHash"], agreed=True, network=r["network"], transaction=r["transaction"], unpaid=True
+    )
 
 
 def x402_doc(
@@ -181,7 +185,7 @@ def through_gate(p: Pairing, count: int) -> None:
     assert isinstance(out, Transacted), out
     assert len(signer.requests) == count
     assert out.atr_bytes == A and out.h == HASH_A
-    assert out.agreement == (None if coverage_of(p.binding) == "full" else receipt(HASH_A))
+    assert out.agreement == (None if coverage_of(p.binding) == "full" else unpaid_receipt(HASH_A))
     if out.signed is not None:
         assert check(A, out.signed, p.binding, out.landed) == Checked(h=HASH_A)
 

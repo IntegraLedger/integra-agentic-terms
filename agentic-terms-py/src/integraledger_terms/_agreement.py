@@ -204,8 +204,10 @@ async def _get(
         return _Unanswered()
 
 
-def _receipt(body: bytes | None, h: AtrHash) -> Agreed | Declined:
-    """The receipt a 200 carries, when it is the agreement receipt for h."""
+def _receipt(body: bytes | None, h: AtrHash, unpaid: bool = False) -> Agreed | Declined:
+    """The receipt a 200 carries, when it is the agreement receipt for h: its form (agreed True, a string network and
+    transaction) and its atrHash are checked, and the transaction it names is not read. unpaid, where the 200 answered
+    the unpaid request, marks the receipt unpaid=True: this call made no agreement payment and read none."""
     try:
         parsed: object = parse_json((body or b"").decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
@@ -219,7 +221,7 @@ def _receipt(body: bytes | None, h: AtrHash) -> Agreed | Declined:
     transaction = parsed.get("transaction")
     if parsed.get("agreed") is not True or not isinstance(network, str) or not isinstance(transaction, str):
         return _failed("The agreement receipt is not a recorded agreement.")
-    return Agreed(AgreementReceipt(atr_hash=atr_hash, agreed=True, network=network, transaction=transaction))
+    return Agreed(AgreementReceipt(atr_hash=atr_hash, agreed=True, network=network, transaction=transaction, unpaid=unpaid))
 
 
 def _x402_bindings() -> tuple[Binding, ...]:
@@ -476,7 +478,9 @@ async def agree(
     chosen: Chosen | None = None,
 ) -> ToApprove | AgreementChallenges | Agreed | Declined:
     """Without approved: ask the agreement URL for its challenge and return the agreement payment to approve, signing
-    nothing, or the receipt where the agreement is already recorded. With approved: sign exactly that payment with
+    nothing, or, where the agreement URL answers that unpaid request with a receipt, that receipt, marked unpaid=True: no
+    agreement payment was made or read, and the receipt is the agreement URL's statement alone (terms' profile
+    buyer-gate.md, rule 18). With approved: sign exactly that payment with
     signer, send it to url, and return the receipt once recorded; a payment whose challenge the protocol package's read
     refuses for a fault of its own (its version, legal context or agreement URL, or an accepts that is not a list of at
     most 32 entries holding a mapping) is declined as the unpaid request declines that challenge, and one whose option
@@ -634,8 +638,8 @@ async def _offer(
     signal: asyncio.Event | None,
     admits: _Admits = _any,
 ) -> ToApprove | AgreementChallenges | Agreed | Declined:
-    """The unpaid request: the agreement payment to approve, the receipt of an agreement already recorded, or a
-    decline."""
+    """The unpaid request: the agreement payment to approve; the receipt the agreement URL answered it with,
+    unpaid=True, no agreement payment having been made or read; or a decline."""
     unpaid = await _until(signal, _get(fetch, url, None, UNPAID_DEADLINE_S))
     if isinstance(unpaid, _Ended) or _is_ended(signal):
         return _ended()
@@ -643,8 +647,9 @@ async def _offer(
         return unpaid
     if isinstance(unpaid, _Unanswered):
         return _failed("The agreement URL could not be reached.")
+    # A 200 to the unpaid request is the agreement URL's statement alone: no agreement payment was made or read.
     if unpaid.status == 200:
-        return _receipt(unpaid.body, h)
+        return _receipt(unpaid.body, h, unpaid=True)
     if unpaid.status == 202:
         return Declined("agreement-pending", "An agreement payment for this ATR is already settling.")
     if unpaid.status != 402:

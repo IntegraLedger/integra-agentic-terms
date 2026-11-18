@@ -11,6 +11,10 @@ and after.
 ### Added
 
 - `ceilings=` in `agree`, which raises the agreement payment's pairing's ceiling as `transact`'s does.
+- `unpaid` in `AgreementReceipt`: `True` where the agreement URL answered the first, unpaid request with the receipt,
+  so that the gate made no agreement payment and read none (the profile's new rule 18), and `False`, the default, where
+  it answered the paid request. `agree` returns such a receipt in `Agreed`, and `transact` as `agreement`; it no longer
+  reads as an agreement the gate saw recorded.
 
 ### Fixed
 

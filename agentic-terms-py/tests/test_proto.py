@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from breadth import (
     ABC,
     offered,
-    receipt,
+    unpaid_receipt,
     ABD,
     H,
     LINK,
@@ -104,7 +104,7 @@ def signs_over(p: Pairing, atr: bytes, h: str) -> dict[str, Any]:
     assert isinstance(whole, Transacted), whole
     assert len(signer.requests) == 1
     assert whole.signed == done.signed and whole.atr_bytes == atr
-    assert whole.agreement == (None if coverage_of(p.binding) == "full" else receipt(h))
+    assert whole.agreement == (None if coverage_of(p.binding) == "full" else unpaid_receipt(h))
     assert check(atr, done.signed, p.binding) == Checked(h=h)
     assert code(check(ABD, done.signed, p.binding)) == "signed-not-bound"
     return done.signed
@@ -118,7 +118,7 @@ def confirms_only_over(p: Pairing, atr: bytes, h: str) -> Chosen:
     assert json.loads(json.dumps(confirmed.chosen.choice)) == confirmed.chosen.choice
     signer = Recording(p.account, never)
     whole = run(lambda c: transact(p.doc, offered(p.binding), signer, c, inputs=p.inputs), serving(atr))
-    agreement = None if coverage_of(p.binding) == "full" else receipt(h)
+    agreement = None if coverage_of(p.binding) == "full" else unpaid_receipt(h)
     assert whole == Transacted(signed=None, atr_bytes=atr, h=h, agreement=agreement)
     assert signer.requests == []
     return confirmed.chosen

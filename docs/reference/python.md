@@ -56,7 +56,7 @@ after, it declines `agreement-pending` with the payment as `moved`. Cancelling t
 | `ToApprove` | `approve: AgreementPayment`, `atr_bytes: bytes`, `h: AtrHash` |
 | `AgreementPayment` | `url: str`, `option: dict`, `required: dict`: the agreement payment to approve. `option` is the x402 option paid, with its `amount`, `asset`, `payTo` and `network`; `required` is the agreement URL's payment request as served. |
 | `Agreed` | `receipt: AgreementReceipt` |
-| `AgreementReceipt` | `atr_hash: AtrHash`, `agreed: Literal[True]`, `network: str`, `transaction: str` |
+| `AgreementReceipt` | `atr_hash: AtrHash`, `agreed: Literal[True]`, `network: str`, `transaction: str`, `unpaid: bool`: `True` where the agreement URL answered the first, unpaid request with it, the gate having made no agreement payment and read none (terms' profile `buyer-gate.md`, rule 18); `False`, the default, where it answered the paid request |
 | `Within` | `signed: dict`, `hold: ChannelHold` |
 | `Chosen` | `pairing: str`, `choice: dict`, `ref: str`, `agreement: str \| None`, `act`, `deadline: str \| None`: the agreement URL, where the pairing needs one, and the latest deadline handed to a wallet that picks its expiry |
 | `ToSign` | `act: Literal["payment", "agreement"]`, `pairing: str`, `request: dict`, `summary: Summary`, `step: SigningStep` |

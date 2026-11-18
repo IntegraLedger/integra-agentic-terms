@@ -423,8 +423,9 @@ before anything is signed:
   task raises `asyncio.CancelledError`, and a payment already sent is not returned: set the signal to get it back as
   `moved`.
 - The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not look
-  up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded, and the
-  first call goes straight on to the main payment.
+  up the transaction it names. A `200` to the first, unpaid request is the agreement URL's word alone: the gate made no
+  agreement payment and read none, returns that receipt with `unpaid=True`, and the first call goes straight on to the
+  main payment.
 - A pairing that needs an agreement and whose offer names none is declined with `agreement-not-offered`.
 - Where the agreement URL answers with no x402 payment request and with MPP agreement challenges
   (`WWW-Authenticate: Payment`), the gate signs nothing and returns
@@ -673,7 +674,7 @@ Everything below is exported from `integraledger_terms`.
 | `confirm` | `async (doc, binding, account, fetch, *, resource_request, inputs=None, ceilings=None) -> Confirmed \| Declined` | Read, fetch, compare and check, and build the signing request with H, with its summary. `request` is `None` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
 | `finish` | `(atr_bytes, chosen, signature, binding, *, ceilings=None) -> Finished \| Next \| Declined` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. A later step is returned with its summary, held to the ceiling. |
 | `check` | `(atr_bytes, presented, binding, landed=None, act="payment") -> Checked \| Declined` | Confirm a held payment carries the hash of the kept bytes, as the act it was paid as. |
-| `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, ceilings=None, signal=None, chosen=None) -> ToApprove \| AgreementChallenges \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing, or the receipt where the agreement is already recorded; with it, pay that payment and return the receipt. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
+| `agree` | `async (atr_bytes, url, signer, fetch, *, approved=None, inputs=None, ceilings=None, signal=None, chosen=None) -> ToApprove \| AgreementChallenges \| Agreed \| Declined` | Without `approved`, return the agreement payment to approve, signing nothing, or, where the agreement URL answers that unpaid request with a receipt, that receipt with `unpaid=True`, nothing paid or read; with it, pay that payment and return the receipt. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
 | `open_channel` | `(atr_bytes, opened, binding, landed=None) -> ChannelHold \| Declined` | Hold a channel opened for the compared ATR. Pass `landed` where `transact` returned one. |
 | `within` | `async (doc, hold, binding, signer, refund=None, inputs=None) -> Within \| Declined` | Sign a later voucher, or a refund with `refund`, in a held channel. |
 | `record_charge` | `(hold, charged_cumulative_amount) -> ChannelHold \| Declined` | Record the seller's cumulative charge, between the last recorded and the most signed. |
@@ -705,7 +706,7 @@ passes such a link to its `fetch`.
 | `ToApprove` | `approve` (an `AgreementPayment`), `atr_bytes`, `h`: the agreement payment to approve. |
 | `AgreementPayment` | `url`, `option` (the x402 option paid: `amount`, `asset`, `payTo`, `network`), `required` (the agreement URL's payment request as served). |
 | `Agreed` | `receipt`. |
-| `AgreementReceipt` | `atr_hash`, `agreed`, `network`, `transaction`. |
+| `AgreementReceipt` | `atr_hash`, `agreed`, `network`, `transaction`, `unpaid`: `True` where the agreement URL answered the first, unpaid request with it, the gate having made no agreement payment and read none; `False` where it answered the paid request. |
 | `Within` | `signed` and the updated `hold`. |
 | `ChannelHold` | A `dict`: `pairing`, `network`, `channel`, `h`, `atr` (base64), `opening`, `landed` (where there is a read made for the opening), `charged`, `signedMax`. |
 | `Declined` | `code`, `detail`, `moved`. |
@@ -876,8 +877,8 @@ What it does not do:
   receipt in hand.
 - It does not authenticate the agreement's receipt. The receipt is the agreement URL's statement: the gate checks its
   form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the first, unpaid
-  request is taken as an agreement already recorded. The public proof is the transaction the receipt names, on its
-  network.
+  request is the agreement URL's word alone, and the receipt it carries is returned with `unpaid=True`. The public
+  proof is the transaction the receipt names, on its network.
 - It does not bound the amount a channel voucher adds: that is the amount the seller's new challenge asks.
 - It carries no business or legal logic.
 - It does not store the ATR, talk to a facilitator, or settle a payment.
