@@ -266,7 +266,7 @@ exact version, as the configuration above does. 0.5.x takes `@integraledger/term
 
 From 0.4.x, `atr_confirm` and `atr_transact` require `resourceRequest`; `atr_transact` returns `approve`,
 `{ agreement?, signings }`, before each signing and takes it back as `approved` (in 0.4.x both were the agreement
-payment alone); a payment `atr_confirm`, `atr_finish` or `atr_transact` builds is held to its pairing's ceiling, 600
-seconds unless the host raises it; and the tools return the gate's new decline codes. The package's
+payment alone); a payment `atr_confirm`, `atr_finish`, `atr_transact` or `atr_agree` builds is held to its pairing's
+ceiling, 600 seconds unless the host raises it; and the tools return the gate's new decline codes. The package's
 [CHANGELOG](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms-mcp/CHANGELOG.md) lists every
 change.

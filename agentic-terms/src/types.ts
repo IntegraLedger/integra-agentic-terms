@@ -313,12 +313,14 @@ export interface ToReturn {
 
 /**
  * `agree`'s optional members: the agreement payment the agent approved, exactly as it was returned in `approve`; the
- * buyer's own chain values; a signal that ends the exchange; and the charge the agreement is for, as `confirm` returned
- * it in `chosen`, so that only an agreement option its pairing's `agreementOn` admits is paid.
+ * buyer's own chain values; the raised ceilings, which the agreement payment's pairing is held to as `transact` holds it;
+ * a signal that ends the exchange; and the charge the agreement is for, as `confirm` returned it in `chosen`, so that
+ * only an agreement option its pairing's `agreementOn` admits is paid.
  */
 export interface AgreeOptions {
   readonly approved?: AgreementPayment | undefined;
   readonly inputs?: Inputs | undefined;
+  readonly ceilings?: Ceilings | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly chosen?: Chosen | undefined;
 }

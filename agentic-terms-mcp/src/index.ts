@@ -529,6 +529,7 @@ export function createBuyerServer(options: {
         const out = await agree(a.atr, url, payer, fetch, {
           approved: a.approved as AgreementPayment | undefined,
           inputs: (a.inputs ?? {}) as Inputs,
+          ...raised,
           signal: ctx.mcpReq.signal,
           chosen: chosen as unknown as Chosen,
         });

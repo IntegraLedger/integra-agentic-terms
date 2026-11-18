@@ -147,8 +147,8 @@ the channel the opening opens for your account; a voucher of another channel has
 ## Ceilings and floors
 
 The gate declines a payment that would stay payable longer than its pairing's **ceiling**, `past-ceiling`, before it
-is signed. `transact`, `confirm` and `finish` hold every request they hand the signer to it; `agree` called on its own
-and `within` hold none (see [the security model](../security-model.md)). How long it stays payable is read from the summary's `validity`: a deadline in seconds less the gate's
+is signed. `transact`, `confirm`, `finish` and `agree` hold every request they hand the signer to it; `within` holds
+none (see [the security model](../security-model.md)). How long it stays payable is read from the summary's `validity`: a deadline in seconds less the gate's
 clock; a deadline signed as a height, a slot, a round, a ledger or an epoch less the start the request signs, or the
 height the caller gave the build, times the chain's pace (the profile's rule 8 states each chain's pace with its
 source); and, where the payer signs no deadline and the rail itself bounds the payment, that bound.

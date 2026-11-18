@@ -715,9 +715,12 @@ export function withinCeiling(
 
 // ── The approval (rule 11).
 
-/** What the approver and the ceiling read beside each signing: the callback, the raised ceilings and the inputs. */
+/**
+ * What the approver and the ceiling read beside each signing: the callback, the raised ceilings and the inputs. Without
+ * `approver`, as `agree` gives it, each signing is still held to its summary and its ceiling, and no approver is asked.
+ */
 export interface Approval {
-  readonly approver: Approver;
+  readonly approver?: Approver | undefined;
   readonly ceilings: Ceilings | undefined;
   readonly inputs: Inputs;
 }
@@ -778,9 +781,10 @@ export async function shown(
 }
 
 /**
- * Checks 10 to 12 on one signing: the summary, the ceiling, then the approver, asked once with `ToSign`; any answer but
- * `true`, a throw or a rejection is `not-approved`. `network` is the signing account's CAIP-2 network, and `opened`, for
- * a later step, the step that opened its channel. The summary the approver approved, or the decline.
+ * Checks 10 to 12 on one signing: the summary, the ceiling, then the approver, where `approval` has one, asked once with
+ * `ToSign`; any answer but `true`, a throw or a rejection is `not-approved`. `network` is the signing account's CAIP-2
+ * network, and `opened`, for a later step, the step that opened its channel. The summary the approver approved, or,
+ * with no approver, the summary within the ceiling; or the decline.
  */
 export async function approves(
   binding: Binding,
@@ -795,6 +799,7 @@ export async function approves(
 ): Promise<Summary | Declined> {
   const summary = await shown(binding, request, bytes, approval.inputs, approval.ceilings, network, opened, account);
   if ("decline" in summary) return summary;
+  if (approval.approver === undefined) return summary;
   const toSign: ToSign = { act, pairing: String(binding.id), request: copyOf(request), summary, step: { ...step } };
   let answer: unknown;
   try {

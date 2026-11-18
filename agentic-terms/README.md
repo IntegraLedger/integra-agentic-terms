@@ -428,10 +428,10 @@ before anything is signed:
   (`WWW-Authenticate: Payment`), the gate signs nothing and returns `AgreementChallenges`, `{ agreementChallenges,
   bytes, h }`, the challenges in the seller's order: terms does not send an MPP credential to the agreement URL, so
   your own MPP client pays one there, and a later call finds the agreement recorded and pays the charge.
-- `agree(bytes, url, signer, fetch, { approved, inputs, signal, chosen })` runs the exchange on its own, in the same
-  two calls, for an agent that drives each step. It takes no approver, computes no summary and holds the agreement
-  payment to no ceiling: showing the agreement payment before it is signed, and judging how long it stays payable, is
-  then your step.
+- `agree(bytes, url, signer, fetch, { approved, inputs, ceilings, signal, chosen })` runs the exchange on its own, in
+  the same two calls, for an agent that drives each step. It takes no approver: showing the agreement payment before it
+  is approved is then your step. It holds the agreement payment to its summary and its own pairing's ceiling before it
+  is signed, as `transact` does, `ceilings` raising it.
 
 Once the agreement payment is sent, every decline carries it as `moved`: `agreement-pending` when it may settle yet,
 and `agreement-failed` when the agreement URL answered otherwise. Either way, it has left your wallet. To collect the
@@ -795,9 +795,9 @@ What the gate guarantees, in the code:
 - **The option is one the ATR commits to.** Where the ATR's binding slot lists the options offered, the option paid is
   one of them (on card, whose documents do not show the seller's checkout id, one of the pairing's `scheme`); where the
   `x402` slot holds a commitment to the buyer's request, the request is the buyer's own.
-- **A bounded window, in `transact`, `confirm` and `finish`.** A payment that would stay payable past its pairing's
-  ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's ceiling.
-  `agree` on its own and `within` apply no ceiling.
+- **A bounded window, in `transact`, `confirm`, `finish` and `agree`.** A payment that would stay payable past its
+  pairing's ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's
+  ceiling. `within` applies no ceiling: a voucher stays payable as long as its channel.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB read. A declared or streamed length over the bound cancels the body.
 - **Exact bytes.** The ATR is hashed as received and returned as received, and the bytes parsed are the bytes hashed,

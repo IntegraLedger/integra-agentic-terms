@@ -575,8 +575,8 @@ From 0.4.x, an agent or a host changes this:
 - `atr_transact` returns `approve`, `{ agreement?, signings }`, before each signing, and signs it only when called
   again with `approved` set to that `approve`, unchanged. In 0.4.x, `approve` and `approved` were the agreement payment
   alone; such an `approved` now fails the input schema.
-- A payment `atr_confirm`, `atr_finish` or `atr_transact` builds is held to its pairing's ceiling, 600 seconds unless
-  the host raises it with `ceilings`: one payable longer is declined `past-ceiling`, and a form that signs no end
+- A payment `atr_confirm`, `atr_finish`, `atr_transact` or `atr_agree` builds is held to its pairing's ceiling, 600
+  seconds unless the host raises it with `ceilings`: one payable longer is declined `past-ceiling`, and a form that signs no end
   `no-end`. `x402/exact/eip155/gateway-batched` is paid only with the host's `floors` (`floor-missing`).
 - `request` and `next` come with `summary`, and the tools return the gate's new decline codes: `not-approved`,
   `atr-malformed`, `option-not-in-atr`, `request-mismatch`, `summary-missing`, `past-ceiling`, `no-end` and

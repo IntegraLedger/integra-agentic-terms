@@ -313,11 +313,11 @@ and asked about and requested the ERC-7710 delegation only after the receipt.
 
 ## Driving the steps yourself
 
-`agree(bytes, url, signer, fetch, { approved, inputs, signal, chosen })` runs steps 2 to 6 without step 5's ceiling and
-approval, for an agent that confirms with `confirm` and finishes with `finish`. It computes no summary, holds the
-agreement payment to no ceiling, hands a wallet that picks its expiry no latest deadline, and calls no approver.
-Showing the agreement payment, and judging how long it stays payable, is then your step. Use `transact` where you want
-the gate to do both. `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do.
+`agree(bytes, url, signer, fetch, { approved, inputs, ceilings, signal, chosen })` runs steps 2 to 6 without step 5's
+approval, for an agent that confirms with `confirm` and finishes with `finish`. It holds the agreement payment to its
+own pairing's ceiling, `ceilings` raising it, and hands a wallet that picks its expiry the latest deadline it may sign,
+as step 5 does, and calls no approver: showing the agreement payment before it is approved is then your step. Use
+`transact` where you want the gate to ask your approver too. `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do.
 When `chosen.agreement` is set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
 `agree(bytes, chosen.agreement, signer, fetch, { chosen })`, have your agent approve the `approve` it returns, call
 `agree` again with `{ approved, chosen }`, and sign `request` only with its `receipt` in hand. Given `chosen`, the

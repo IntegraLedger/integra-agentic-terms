@@ -6,6 +6,13 @@ release may change the tools, their arguments and their results, so pin the exac
 is marked **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md)
 shows each call before and after.
 
+## [Unreleased]
+
+### Fixed
+
+- `atr_agree` holds the agreement payment to its summary and its pairing's ceiling, as `atr_transact` does, the host's
+  `ceilings` raising it.
+
 ## 0.5.0 - 2026-11-18
 
 Takes `@integraledger/terms` 0.5.0 and `@integraledger/lcp` 0.6.0. Every 0.4.x agent and host changes something: the

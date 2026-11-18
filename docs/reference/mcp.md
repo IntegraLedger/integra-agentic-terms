@@ -236,8 +236,9 @@ Offered with a host `signer` or `agreementSigner`. The agreement payment for the
 
 Without `approved`, returns `atrHash` and `approve`, the agreement payment, and signs nothing; where the agreement is
 already recorded, returns `atrHash` and `receipt`; where the agreement URL offers only MPP agreement challenges, returns
-`atrHash` and `agreementChallenges`, signing nothing. With `approved`, pays that payment with the host's agreement signer,
-or its signer, and returns `atrHash` and `receipt`. An `approved` whose `required` the protocol package's read refuses
+`atrHash` and `agreementChallenges`, signing nothing. With `approved`, holds that payment to its summary and its
+pairing's ceiling, the host's `ceilings` raising it (`summary-missing`, `past-ceiling` or `no-end` otherwise, nothing
+signed), pays it with the host's agreement signer, or its signer, and returns `atrHash` and `receipt`. An `approved` whose `required` the protocol package's read refuses
 for its version, its legal context or agreement URL, or an `accepts` that is not a list of at most 32 entries holding
 an option is declined `offer-unreadable` with the read's code, and one whose `option` is not one of `required.accepts`,
 compared by RFC 8785 form, is declined `offer-unreadable` with `x402/option-not-in-document`, before anything is fetched

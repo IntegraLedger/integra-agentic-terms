@@ -4,8 +4,9 @@
  * option, in document order, that the signer can pay with a pairing whose payment can itself be an agreement (its data
  * holds `agreement`) and that the charge's `agreementOn` admits, where the charge is given; where the agreement URL's 402
  * offers no x402 option and MPP agreement challenges, it returns those, which terms builds no credential for, for the
- * caller's own MPP client. Called with the payment the agent approved, it builds and signs exactly that payment as the act
- * `agreement`, sends it, and returns the resource's receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is
+ * caller's own MPP client. Called with the payment the agent approved, it builds exactly that payment as the act
+ * `agreement`, holds it to its summary and its own pairing's ceiling, signs it, sends it, and returns the resource's
+ * receipt once the payment is recorded. Nothing is signed when the challenge advertises another hash, and nothing is
  * sent unless the pairing reads the hash from the completed payment. Once sent, the same signed payment is sent again
  * after each 202, 5xx or timeout, each paid request bounded by min(`maxTimeoutSeconds`, 120) + 60 + 10 seconds and the
  * whole exchange by the paid option's `maxTimeoutSeconds` + 180 seconds; no second agreement payment is signed, and
@@ -520,16 +521,20 @@ function isAgreementPayment(v: unknown): v is AgreementPayment {
  * read refuses for a fault of its own (its version, legal context or agreement URL, or an `accepts` that is not a list
  * of at most 32 entries holding an object) is declined as the unpaid request declines that challenge, and one whose
  * option is not one of that challenge's `accepts`, by RFC 8785 form, is declined `offer-unreadable` with
- * `x402/option-not-in-document`, each before any fetch or signer call. `agree` calls no approver, computes no summary
- * and holds the agreement payment to no ceiling: a wallet that picks its expiry is handed no latest deadline. `transact`
- * does all three.
+ * `x402/option-not-in-document`, each before any fetch or signer call. Before the signer is called, the agreement
+ * payment is held to its summary and its own pairing's ceiling, as `transact` holds it (terms' profile `buyer-gate.md`,
+ * checks 9 to 11, rule 12): a request the gate has no summary for is declined `summary-missing`, one payable past the
+ * ceiling `past-ceiling` or `no-end`, and a wallet that picks its expiry is handed the latest deadline it may sign and
+ * held to it. `ceilings` raises that ceiling as it does in `transact`. `agree` calls no approver: showing the agreement
+ * payment before it is approved is the caller's step.
  * `bytes` are the ATR the gate compared, whose hash the agreement payment carries; `inputs` are the buyer's own chain
  * values; `signal` ends the exchange; `chosen` is the charge the agreement is for, exactly as `confirm` returned it,
  * and only an option its pairing's `agreementOn` admits is paid (any option where `chosen` is not given). Options
- * holding anything but `approved`, `inputs`, `signal` and `chosen`, a `signal` that is not an `AbortSignal`, an
- * `approved` that is not of the agreement payment's form, `inputs` that is not an object, a `chosen` that does not name
- * a pairing of the protocol package, or a signer whose `account` is not a string, is declined `no-payable-option` with
- * `x402/input-malformed` before any fetch or signer call. A `url` that is not an https URL is declined `link-not-https` with `x402/link-not-https` for an
+ * holding anything but `approved`, `inputs`, `ceilings`, `signal` and `chosen`, a `signal` that is not an
+ * `AbortSignal`, an `approved` that is not of the agreement payment's form, `inputs` or `ceilings` that is not an
+ * object, a `chosen` that does not name a pairing of the protocol package, or a signer whose `account` is not a string,
+ * is declined `no-payable-option` with `x402/input-malformed` before any fetch or signer call; a `ceilings` value not of
+ * the profile's rule 8 form for the pairing paid is declined so before the signer is called. A `url` that is not an https URL is declined `link-not-https` with `x402/link-not-https` for an
  * absolute URL of another scheme and `x402/legal-context-malformed` for any other value, before any fetch.
  */
 export function agree(
@@ -542,16 +547,16 @@ export function agree(
   return exchange(bytes, url, signer, fetch, options === undefined ? {} : options, undefined);
 }
 
-const OPTION_KEYS: readonly string[] = ["approved", "inputs", "signal", "chosen"];
+const OPTION_KEYS: readonly string[] = ["approved", "inputs", "ceilings", "signal", "chosen"];
 
 /**
- * Whether `agree`'s options are an object holding only `approved`, `inputs`, `signal` and `chosen`, the signal an
- * `AbortSignal`.
+ * Whether `agree`'s options are an object holding only `approved`, `inputs`, `ceilings`, `signal` and `chosen`, the
+ * signal an `AbortSignal` and `ceilings` an object, whose value for the pairing paid is read when it is paid.
  */
 function optionsOk(options: unknown): options is AgreeOptions {
   if (!isObject(options) || !Object.keys(options).every((k) => OPTION_KEYS.includes(k))) return false;
-  const signal = options["signal"];
-  return signal === undefined || signal instanceof AbortSignal;
+  const { signal, ceilings } = options;
+  return (signal === undefined || signal instanceof AbortSignal) && (ceilings === undefined || isObject(ceilings));
 }
 
 /** The protocol package's pairing `chosen` names, or undefined. */
@@ -564,9 +569,10 @@ function chargeBinding(chosen: unknown): Binding | undefined {
  * `agree`, where `ns` is the namespace of the pairing whose offer named the URL, x402 when none did: a refused URL
  * declines `link-not-https`, its detail the protocol package's code in that namespace, `link-not-https` for an absolute
  * URL of another scheme and `legal-context-malformed` for any other value. `charge` is the binding the charge in
- * `options.chosen` is paid through, where the caller holds it; else the protocol package's pairing `chosen` names. With
- * `approval`, `transact`'s, the agreement payment is held to its summary and its own pairing's ceiling and asked of the
- * approver, as the act `agreement`, before it is signed.
+ * `options.chosen` is paid through, where the caller holds it; else the protocol package's pairing `chosen` names. The
+ * agreement payment is held to its summary and its own pairing's ceiling before it is signed, `ceilings` raising it:
+ * `approval`'s, `transact`'s, which also asks its approver, as the act `agreement`; else `options.ceilings`, `agree`'s,
+ * with no approver.
  */
 export async function exchange(
   bytes: Uint8Array,
@@ -583,7 +589,7 @@ export async function exchange(
     return declined("link-not-https", `${ns ?? "x402"}/${fault}`);
   }
   if (!optionsOk(options)) return declined("no-payable-option", `${ns ?? "x402"}/input-malformed`);
-  const { approved, signal, inputs = {}, chosen } = options;
+  const { approved, signal, inputs = {}, ceilings, chosen } = options;
   const through = chosen === undefined ? undefined : (charge ?? chargeBinding(chosen));
   if (
     (approved !== undefined && !isAgreementPayment(approved)) ||
@@ -602,7 +608,8 @@ export async function exchange(
   const found = await paying(approved.required, h, signer.account, inputs, admits, approved.option);
   if ("decline" in found) return found;
   const { selected, limits } = found;
-  const paid = await pay(selected.binding, selected.chosen, signer, bytes, "agreement", approval && { ...approval, inputs });
+  const held: Approval = { ...(approval ?? { ceilings }), inputs };
+  const paid = await pay(selected.binding, selected.chosen, signer, bytes, "agreement", held);
   if ("decline" in paid) return paid;
   if (paid.signed === null) return declined("offer-unreadable", "The agreement payment gave nothing to sign.");
   if (isEnded(signal)) return ended();

@@ -798,6 +798,20 @@ describe("the agreement payment the agent approves", () => {
     ]);
     const sent = fromBase64Json(fetch.paid()[0]!) as Eip3009Payment;
     expect(sent.accepted).toEqual(first.approve.option);
+  });
+
+  // Profile rules 12 and 8: the agreement payment is held to its own pairing's ceiling, 600 seconds unless `ceilings`
+  // raises it, before it is signed. `agree` asks no approver and holds it all the same. The option is AG's, payable
+  // for 3,600 seconds.
+  it("agree holds the approved payment to its pairing's ceiling: past 600 s it is past-ceiling, unsigned and unsent; raised, it is paid", async () => {
+    const long = { ...OPTION, maxTimeoutSeconds: 3600 };
+    const signer = counting();
+    const fetch = challenging(withAccepts([long]), RECORDED);
+    const out = await approveAndAgree(signer, fetch);
+    expect([code(out), signer.requests.length, fetch.paid().length]).toEqual(["past-ceiling", 0, 0]);
+    const raised = challenging(withAccepts([long]), RECORDED);
+    const { value } = await drive(approveAndAgree(signer, raised, { ceilings: { "x402/exact/eip155/eip3009": 3600 } }));
+    expect([value, signer.requests.length, raised.paid().length]).toEqual([{ receipt: AG.receipt }, 1, 1]);
     for (const c of fetch.agreementCalls().slice(1)) expect(c.init.headers?.["PAYMENT-SIGNATURE"]).toBeDefined();
   });
 

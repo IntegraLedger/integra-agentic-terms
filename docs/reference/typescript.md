@@ -194,8 +194,9 @@ declare function agree(
 The agreement for the hash of `bytes` at `url`, in two calls. Without `options.approved`, asks the agreement URL for its
 payment request and returns `{ approve, bytes, h }`, signing nothing; where the agreement is already recorded, returns
 its receipt; where its `402` carries no `PAYMENT-REQUIRED` and carries MPP agreement challenges, returns them as
-`{ agreementChallenges, bytes, h }`, signing nothing, for the caller's own MPP client to pay at `url`. With `options.approved`, the value of `approve` carried back unchanged, signs exactly that payment with
-`signer`, sends it, and returns the receipt once recorded. Before anything is fetched or signed, an approved payment
+`{ agreementChallenges, bytes, h }`, signing nothing, for the caller's own MPP client to pay at `url`. With `options.approved`, the value of `approve` carried back unchanged, holds exactly that payment to its summary and its
+own pairing's ceiling, `options.ceilings` raising it, as `transact` does, then signs it with `signer`, sends it, and
+returns the receipt once recorded. Before anything is fetched or signed, an approved payment
 whose `required` the protocol package's read refuses for its version, its legal context or agreement URL, or an
 `accepts` that is not a list of at most 32 entries holding an option is declined `offer-unreadable` with the read's
 code, as the unpaid request is, and one whose `option` is not one of `required.accepts`, compared by RFC 8785 form, is
@@ -203,10 +204,11 @@ declined `offer-unreadable` with `x402/option-not-in-document`. The option paid 
 `signer` can pay with an x402 pairing whose registry data lets its payment be an agreement (`agreement`; the
 [pairings reference](./pairings.md) marks these `yes` or `only`) and, given `options.chosen`, the charge the agreement is
 for, exactly as `confirm` returned it, that the charge's pairing admits by its `agreementOn`. `options.inputs` are the
-buyer's own chain values; `options.signal` ends the exchange. `agree` takes no approver, computes no summary, and holds
-the agreement payment to no ceiling; `transact` does all three.
-Options holding anything but `approved`, `inputs`, `signal` and `chosen`, or a member of the wrong kind, and a `signer`
-whose `account` is not a string, are declined before any fetch.
+buyer's own chain values; `options.signal` ends the exchange. `agree` takes no approver: a request it has no summary
+for is declined `summary-missing`, and one payable past the ceiling `past-ceiling` or `no-end`, before it is signed,
+and a wallet that picks its expiry is handed the latest deadline it may sign.
+Options holding anything but `approved`, `inputs`, `ceilings`, `signal` and `chosen`, or a member of the wrong kind,
+and a `signer` whose `account` is not a string, are declined before any fetch.
 See [agreement payments](../guides/agreement-payments.md).
 
 The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not look
