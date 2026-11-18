@@ -52,14 +52,17 @@ const DESCRIPTIONS = {
     "(\"\" for none) and `headers` the header fields as sent; over MCP `{name, arguments?}`, the tool call's name and " +
     "arguments. Where the ATR commits to a request, any other request is declined. `chosen` is opaque: pass it back " +
     "exactly as returned, `mac` included. Where `chosen.agreement` names an agreement URL, the signing request is " +
-    "returned only when you pass that agreement's `receipt` for this ATR hash.",
+    "returned only when you pass that agreement's `receipt` for this ATR hash. To pay that agreement by hand, call it " +
+    "on the agreement URL's 402 payment request with `act` \"agreement\": the request is then built as the agreement " +
+    "payment, and you pass the same `act` to atr_finish.",
   atr_finish:
     "Rebuilds the payment from `chosen` and the ATR bytes and joins your wallet's signature. Returns `signed` only " +
     "when the pairing reads the ATR hash from the completed payment, or, where the proof is the agreement payment, " +
     "without that reading. For a pairing with a channel, pass `chosen` exactly as atr_confirm returned it, `mac` " +
     "included: a changed `chosen` is declined. Send only the `signed` payment it returns. For a payment signed in " +
     "steps, the first answer returns `next`, the next request to sign, with `summary`, which names every authority " +
-    "signing it grants: read both before your wallet signs it, then call atr_finish with the answers in order.",
+    "signing it grants: read both before your wallet signs it, then call atr_finish with the answers in order. Pass " +
+    "the `act` you passed to atr_confirm: \"agreement\" for an agreement payment, \"payment\" otherwise.",
   atr_check:
     "Confirms that the ATR hash the pairing reads from a payment is the SHA-256 of the given ATR bytes, with the " +
     "`landed` receipt returned beside the payment, exactly as returned, where there is one. The caller passes as " +
@@ -340,6 +343,8 @@ export function createBuyerServer(options: {
   ]);
   const inputs = z.record(z.string(), JSON_VALUE).optional();
   const approved = z.record(z.string(), JSON_VALUE).optional();
+  /** The act a payment is built as: `"payment"`, the default, or `"agreement"`, an agreement payment paid by hand. */
+  const act = z.enum(["payment", "agreement"]).optional();
   /** What `atr_transact` returned as `approve`: the agreement payment, where there is one, and each signing approved. */
   const approval = z.strictObject({ agreement: z.record(z.string(), JSON_VALUE).optional(), signings: z.array(JSON_VALUE) }).optional();
   const bindingOf = (id: string): Binding => byId.get(id)!;
@@ -378,6 +383,7 @@ export function createBuyerServer(options: {
         resourceRequest,
         inputs,
         receipt: JSON_VALUE.optional(),
+        act,
       }),
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -386,6 +392,7 @@ export function createBuyerServer(options: {
         resourceRequest: a.resourceRequest as ResourceRequest,
         inputs: await gateInputs(a.pairing, a.account, a.inputs as Inputs | undefined),
         ...raised,
+        ...(a.act === undefined ? {} : { act: a.act }),
       });
       if ("decline" in out) return declinedResult(out);
       const confirmed = { atrHash: out.h, atr: atrOf(out.bytes), chosen: await sealChosen(out.chosen) };
@@ -406,7 +413,7 @@ export function createBuyerServer(options: {
     "atr_finish",
     {
       description: DESCRIPTIONS.atr_finish,
-      inputSchema: z.object({ pairing, atr, chosen: z.record(z.string(), JSON_VALUE), signature: JSON_VALUE }),
+      inputSchema: z.object({ pairing, atr, chosen: z.record(z.string(), JSON_VALUE), signature: JSON_VALUE, act }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (a) => {
@@ -414,7 +421,8 @@ export function createBuyerServer(options: {
       const { mac: _mac, ...members } = a.chosen;
       const chosen = hasChannel(binding) ? await unsealChosen(a.chosen) : members;
       if (chosen === undefined) return chosenUnverified();
-      const out = await finish(a.atr, chosen as unknown as Chosen, a.signature as Signature, binding, raised);
+      const given = { ...raised, ...(a.act === undefined ? {} : { act: a.act }) };
+      const out = await finish(a.atr, chosen as unknown as Chosen, a.signature as Signature, binding, given);
       if ("decline" in out) return declinedResult(out);
       if ("next" in out) return result({ atrHash: out.h, next: jsonOf(out.next), summary: summaryJson(out.summary) });
       return result({ atrHash: out.h, ...(await signedOf(out, binding)) });
@@ -430,7 +438,7 @@ export function createBuyerServer(options: {
         atr,
         presented: JSON_VALUE,
         landed: JSON_VALUE.optional(),
-        act: z.enum(["payment", "agreement"]).optional(),
+        act,
       }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

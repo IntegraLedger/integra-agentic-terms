@@ -144,6 +144,37 @@ describe("the agreement over MCP: x402/exact/eip155/erc7710, whose payment is no
     expect(at(checked, "result.structuredContent.atrHash")).toBe(H);
   });
 
+  // An agreement paid by hand, with no host signer: atr_confirm, given the agreement URL's 402 payment request and the
+  // act "agreement", builds the agreement payment, its message buyer.json's BA1 agreement message, its nonce the
+  // agreement's own value for H; atr_finish, given BA1's agreement signature and the same act, completes it; and
+  // atr_check confirms it against A as an agreement. The clock reads buyer.json's fixed.now.
+  it("an agreement paid by hand: atr_confirm and atr_finish with act agreement build and complete BA1's agreement payment", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(B.fixed.now * 1000);
+    try {
+      const BA1 = B.rows.find((r: { name: string }) => r.name === "BA1");
+      const atr = Buffer.from(A).toString("base64");
+      const agreement = { pairing: "x402/exact/eip155/eip3009", act: "agreement" };
+      const c = connect({ fetch: seller() });
+      const confirmed = await call(c, "atr_confirm", {
+        ...agreement,
+        document: AG.required,
+        account: B.fixed.account,
+        resourceRequest: { method: "GET", target: new URL(AG.url).pathname, body: "" },
+      });
+      expect(at(confirmed, "result.structuredContent.request.typedData.message")).toEqual(BA1.expect.agreementMessage);
+      const chosen = at(confirmed, "result.structuredContent.chosen");
+      const finished = await call(c, "atr_finish", { ...agreement, atr, chosen, signature: BA1.expect.agreementSignature });
+      const signed = at(finished, "result.structuredContent.signed") as { payload: { authorization: { nonce: string } } };
+      expect(signed.payload.authorization.nonce).toBe(BA1.expect.agreementMessage.nonce);
+      const checked = await call(c, "atr_check", { ...agreement, atr, presented: signed });
+      await c.close();
+      expect(at(checked, "result.structuredContent.atrHash")).toBe(H);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // `chosen` carries a `mac`, the server process's HMAC-SHA-256 over its other members, so `atr_agree` takes only the
   // agreement URL `atr_confirm` returned. A `chosen` with a member changed, added or removed is declined
   // `chosen-unverified` before anything is fetched or signed.

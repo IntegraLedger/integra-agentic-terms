@@ -111,9 +111,13 @@ the `x402` slot's request commitment; and only then builds, with the hash it com
 (checks 1 to 11). It calls no approver. `request` is what the signer is handed, with its `summary`, or `null` when
 nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment,
 which `finish` completes with no signature. `chosen.agreement` is the agreement URL, for a pairing whose payment is not
-a public proof; `chosen.deadline` the latest deadline handed to a wallet that picks its expiry. Options that are not an
-object holding `resourceRequest` and only `inputs` and `ceilings`, of their forms, are declined before the offer is
-read.
+a public proof; `chosen.deadline` the latest deadline handed to a wallet that picks its expiry. `options.act` is the act
+the payment is built as: `"payment"`, the default, or `"agreement"`, for an agreement payment paid by hand, `doc` then
+being the agreement URL's `402` payment request. With `"agreement"`, the payment is built as `agree` builds the
+agreement payment, a pairing whose payment cannot be an agreement (its data holds no `agreement`) is declined
+`no-payable-option`, and the option and `resourceRequest` are not held to the ATR's binding slot, which lists the
+charge's options and commits to the charge's request. Options that are not an object holding `resourceRequest` and only
+`inputs`, `ceilings` and `act`, of their forms, are declined before the offer is read.
 
 `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do. When `chosen.agreement` is
 set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
@@ -142,7 +146,9 @@ pairing's `bound` reads the hash of these bytes from the completed payment. For 
 asset, network and validity, the channel recomputed for the account `chosen` holds; call `finish` again with every answer so far, in order, as a list. For a pairing whose payment is not a public
 proof and whose `bound` finds no signed place for H, the proof is the agreement payment, and the completed payment is
 returned as it is. Where the signer moved the payment itself, a decline keeps it as `moved`. `landed` is a landed
-receipt the completion carried and the payment leaves out, as JSON, each integer a decimal string.
+receipt the completion carried and the payment leaves out, as JSON, each integer a decimal string. `options.act` is the
+act `confirm` built the payment as: `"agreement"` rebuilds the agreement payment, and `bound` reads H from it as an
+agreement, where it carries the agreement's own single-use value; `"payment"` is the default.
 
 ### `check`
 

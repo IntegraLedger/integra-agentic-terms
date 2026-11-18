@@ -12,6 +12,11 @@ call before and after.
 
 - `ceilings` in `agree`'s options (`AgreeOptions`), which raises the agreement payment's pairing's ceiling as
   `transact`'s does.
+- `act` in `confirm`'s and `finish`'s options (`ConfirmOptions`, `FinishOptions`): `"payment"`, the default, or
+  `"agreement"`, which builds and completes the agreement payment as `agree` does, for a caller that pays the agreement
+  by hand. On `x402/exact/eip155/eip3009`, `x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet`
+  the agreement payment carries the agreement's own value of H, which a payment built as `"payment"` does not. A pairing
+  whose payment cannot be an agreement is declined `no-payable-option`.
 - `unpaid` in `AgreementReceipt`: `true` where the agreement URL answered the first, unpaid request with the receipt,
   so that the gate made no agreement payment and read none (the profile's new rule 18). `agree` returns such a receipt
   as `receipt`, and `transact` as `agreement`; it no longer reads as an agreement the gate saw recorded.

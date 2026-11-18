@@ -59,16 +59,13 @@ your principal that this host cannot confirm the record.
    `atr_agree` again with the same arguments and `approved` set to `approve`, exactly as returned; it returns the
    agreement's `receipt`.
 
-   Otherwise you pay the agreement by hand, and these tools can build that payment only on some pairings. Request
-   `chosen.agreement` yourself: it answers 402 with an x402 payment request. Choose an option whose pairing is one of
-   `x402/exact/solana`, `x402/exact/stellar/precondition`, `x402/exact/xrpl`, `x402/exact/hedera`,
-   `x402/exact/algorand`, `x402/exact/sui`, `x402/exact/near`, `x402/exact/polkadot/lcp-assets-remark`,
-   `x402/exact/tron/lcp-trc20-memo`, `x402/exact/tvm` or `x402/exact/cardano`, and pay it through these tools (steps 2,
-   4 and 5) with that pairing. Never pay an agreement by hand with `x402/exact/eip155/eip3009`,
-   `x402/exact/eip155/permit2`, `x402/exact/casper` or `x402/exact/starknet`: there an agreement payment carries the
-   agreement's own value in place of the hash, these tools build the payment that carries the hash itself, and the
-   agreement URL refuses it. If no option is on a pairing you may pay by hand, or `atr_confirm` declines the one you
-   chose, stop: sign nothing, and tell your principal that this host cannot pay this agreement. Before you sign,
+   Otherwise you pay the agreement by hand. Request `chosen.agreement` yourself: it answers 402 with an x402 payment
+   request. Choose an option whose pairing's payment can be an agreement, and pay it through these tools (steps 2, 4
+   and 5) with that pairing, the 402's payment request as `document`, your request to the agreement URL as
+   `resourceRequest`, and `act` set to `"agreement"` in both `atr_confirm` and `atr_finish`: the tools then build the
+   agreement payment, which on some pairings carries the agreement's own value in place of the hash. A pairing whose
+   payment cannot be an agreement is declined `no-payable-option`. If no option can be paid, or `atr_confirm` declines
+   the one you chose, stop: sign nothing, and tell your principal that this host cannot pay this agreement. Before you sign,
    compare the `atrHash` that `atr_confirm` returns for the agreement URL's payment request with the `atrHash` it
    returned in step 2 for the seller's document. If they differ, stop: do not pay. Then send that same payment to the
    URL until it answers 200 with a receipt whose `atrHash` is that hash; if it answers anything but 200, 202 or a 5xx,

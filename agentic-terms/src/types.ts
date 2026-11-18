@@ -278,16 +278,24 @@ export interface TransactOptions {
   readonly chosen?: Chosen | undefined;
 }
 
-/** `confirm`'s options: the buyer's own request, required; its chain values and floor inputs; the raised ceilings. */
+/**
+ * `confirm`'s options: the buyer's own request, required; its chain values and floor inputs; the raised ceilings; and
+ * the act the payment is built as: `"payment"`, the default, or `"agreement"`, for an agreement payment paid by hand.
+ */
 export interface ConfirmOptions {
   readonly resourceRequest: ResourceRequest;
   readonly inputs?: Inputs | undefined;
   readonly ceilings?: Ceilings | undefined;
+  readonly act?: Act | undefined;
 }
 
-/** `finish`'s options: the raised ceilings, which a later step's request is held to. */
+/**
+ * `finish`'s options: the raised ceilings, which a later step's request is held to; and the act `confirm` built the
+ * payment as, `"payment"` by default.
+ */
 export interface FinishOptions {
   readonly ceilings?: Ceilings | undefined;
+  readonly act?: Act | undefined;
 }
 
 /**

@@ -120,6 +120,18 @@ export function isAgreementOnly(binding: Binding): boolean {
   return isObject(agreement) && agreement["only"] === true;
 }
 
+/**
+ * Whether the pairing's payment can itself be an agreement: its data holds `agreement`, which the protocol package
+ * states only at coverage `full`, for a single-use payment that pays the payee directly and lands whole on one network.
+ */
+export function isAgreementPairing(binding: Binding): boolean {
+  const data: unknown = isObject(binding) ? (binding as { data?: unknown }).data : undefined;
+  return isObject(data) && data["coverage"] === "full" && isObject(data["agreement"]);
+}
+
+/** Whether `v` is an act the gate builds: `"payment"` or `"agreement"`. */
+const isAct = (v: unknown): v is Act => v === "payment" || v === "agreement";
+
 export function pieceOf(binding: Binding): BuyerPiece | undefined {
   const id: unknown = isObject(binding) ? binding.id : undefined;
   return typeof id === "string" ? PIECES.get(id) : undefined;
@@ -249,14 +261,16 @@ function cancel(s: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint
 }
 
 /**
- * What the gate's checks 3 to 11 read beside the offer: the buyer's request, its inputs and the raised ceilings; and,
- * where the caller gives it, the payment `confirm` chose, built again exactly rather than chosen anew.
+ * What the gate's checks 3 to 11 read beside the offer: the buyer's request, its inputs and the raised ceilings; where
+ * the caller gives it, the payment `confirm` chose, built again exactly rather than chosen anew; and the act the payment
+ * is built as, `payment` unless given.
  */
 export interface GateArgs {
   readonly resourceRequest: ResourceRequest;
   readonly inputs: Inputs;
   readonly ceilings: Ceilings | undefined;
   readonly chosen?: Chosen | undefined;
+  readonly act?: Act | undefined;
 }
 
 /**
@@ -283,16 +297,21 @@ export interface Gated {
   h: AtrHash;
 }
 
-const CONFIRM_KEYS: readonly string[] = ["resourceRequest", "inputs", "ceilings"];
+const CONFIRM_KEYS: readonly string[] = ["resourceRequest", "inputs", "ceilings", "act"];
 
 /**
- * Whether `confirm`'s options are an object holding `resourceRequest` (an object) and only `inputs` and `ceilings`, the
- * latter of rule 8's form for `pairing`.
+ * Whether `confirm`'s options are an object holding `resourceRequest` (an object) and only `inputs`, `ceilings`, of rule
+ * 8's form for `pairing`, and `act`, `"payment"` or `"agreement"`.
  */
 function confirmOptionsOk(options: unknown, pairing: string): options is ConfirmOptions {
   if (!isObject(options) || !Object.keys(options).every((k) => CONFIRM_KEYS.includes(k))) return false;
-  const { resourceRequest, inputs, ceilings } = options;
-  return isObject(resourceRequest) && (inputs === undefined || isObject(inputs)) && isCeilings(ceilings, pairing);
+  const { resourceRequest, inputs, ceilings, act } = options;
+  return (
+    isObject(resourceRequest) &&
+    (inputs === undefined || isObject(inputs)) &&
+    isCeilings(ceilings, pairing) &&
+    (act === undefined || isAct(act))
+  );
 }
 
 /**
@@ -303,9 +322,13 @@ function confirmOptionsOk(options: unknown, pairing: string): options is Confirm
  * `buyer-gate.md`, checks 1 to 11). `request` is what the signer is handed, with `summary`, or `null` when nothing is
  * handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment, which
  * `finish` completes with no signature. For a pairing whose payment is not itself a public proof, `chosen.agreement` is
- * the agreement URL the offer names. Options that are not an object holding `resourceRequest` and only `inputs` and
- * `ceilings` of their forms are declined `no-payable-option` with `<namespace>/input-malformed` before the offer is
- * read.
+ * the agreement URL the offer names. With `act` `"agreement"`, the offer is an agreement URL's payment request and the
+ * payment is built as the agreement payment, as `agree` builds it, for a caller that pays the agreement by hand: the
+ * pairing's payment must be able to be an agreement (its data holds `agreement`), else it is declined
+ * `no-payable-option` with `<namespace>/no-payable-option`, and the option and the request are not held to the ATR's
+ * binding slot, which lists the charge's options and commits to the charge's request. Options that are not an object
+ * holding `resourceRequest` and only `inputs`, `ceilings` and `act` of their forms are declined `no-payable-option`
+ * with `<namespace>/input-malformed` before the offer is read.
  */
 export async function confirm(
   doc: unknown,
@@ -316,8 +339,8 @@ export async function confirm(
 ): Promise<{ chosen: Chosen; request: SigningRequest | null; summary?: Summary; bytes: Uint8Array; h: AtrHash } | Declined> {
   if (pieceOf(binding) === undefined) return unsupported(binding);
   if (!confirmOptionsOk(options, String(binding.id))) return declined("no-payable-option", `${namespaceOf(binding)}/input-malformed`);
-  const { resourceRequest, inputs = {}, ceilings } = options;
-  const out = await gate(doc, binding, account, fetch, { resourceRequest, inputs, ceilings });
+  const { resourceRequest, inputs = {}, ceilings, act } = options;
+  const out = await gate(doc, binding, account, fetch, { resourceRequest, inputs, ceilings, act });
   if ("decline" in out) return out;
   const { count: _count, ...confirmed } = out;
   return confirmed;
@@ -327,8 +350,9 @@ export async function confirm(
 export async function gate(doc: unknown, binding: Binding, account: string, fetch: Fetch, args: GateArgs): Promise<Gated | Declined> {
   const piece = pieceOf(binding);
   if (piece === undefined) return unsupported(binding);
-  const { inputs, ceilings, resourceRequest } = args;
+  const { inputs, ceilings, resourceRequest, act = "payment" } = args;
   const b = steps(binding);
+  if (act === "agreement" && !isAgreementPairing(binding)) return declined("no-payable-option", `${namespaceOf(binding)}/no-payable-option`);
   const floor = floorMissing(b.id, inputs);
   if (floor !== undefined) return floor;
 
@@ -356,21 +380,24 @@ export async function gate(doc: unknown, binding: Binding, account: string, fetc
   }
   const parsed = parseAtr(bytes);
   if ("decline" in parsed) return parsed;
-  const notHeld = await slotHolds(binding, chosen, parsed.value);
-  if (notHeld !== undefined) return notHeld;
-  const otherRequest = await requestHeld(binding, parsed.value, resourceRequest);
-  if (otherRequest !== undefined) return otherRequest;
+  // The binding slot lists the charge's options and commits to the charge's request: no agreement payment is held to it.
+  if (act === "payment") {
+    const notHeld = await slotHolds(binding, chosen, parsed.value);
+    if (notHeld !== undefined) return notHeld;
+    const otherRequest = await requestHeld(binding, parsed.value, resourceRequest);
+    if (otherRequest !== undefined) return otherRequest;
+  }
   if (!isFullCoverage(binding) && agreement === undefined) {
     return declined("agreement-not-offered", "The pairing's payment carries no public proof and the offer names no agreement URL.");
   }
 
-  return charged(binding, chosen, account, bytes, computed, inputs, ceilings);
+  return charged(binding, chosen, account, bytes, computed, inputs, ceilings, act);
 }
 
 /**
  * Checks 9 to 11 on the payment chosen, for the gate and for the return after an agreement: the pairing's build with
- * H, the request handed to the signer, and that request's summary and ceiling. `request` is `null` where nothing is
- * handed to the signer.
+ * H, as the act (`payment` unless given), the request handed to the signer, and that request's summary and ceiling.
+ * `request` is `null` where nothing is handed to the signer.
  */
 export async function charged(
   binding: Binding,
@@ -380,10 +407,11 @@ export async function charged(
   h: AtrHash,
   inputs: Inputs,
   ceilings: Ceilings | undefined,
+  act: Act = "payment",
 ): Promise<Gated | Declined> {
   const piece = pieceOf(binding);
   if (piece === undefined) return unsupported(binding);
-  const unsigned = await buildWith(piece, steps(binding), chosen, h, bytes);
+  const unsigned = await buildWith(piece, steps(binding), chosen, h, bytes, act);
   if (isRefusal(unsigned)) {
     if (NOTHING_TO_SIGN.test(unsigned.code)) return { chosen, request: null, count: 0, bytes, h };
     return declined("offer-unreadable", unsigned.code);
@@ -437,7 +465,10 @@ async function buildWith(
  * completed payment is returned as it is. Where the signer moved the payment itself, a decline keeps it as `moved`.
  * Where the completion carried the landed receipt `bound` reads and the payment sent leaves it out, `landed` is
  * returned beside the payment as JSON, each integer a decimal string, so `check` and `openChannel` can later read the
- * payment with it.
+ * payment with it. `act` is the act `confirm` built the payment as: `agreement` for an agreement payment paid by hand,
+ * which is rebuilt as the agreement payment and whose hash `bound` reads where it carries the agreement's own
+ * single-use value; `payment`, the default, for any other. Options holding anything but `ceilings` and `act` of their
+ * forms are declined `no-payable-option` with `<namespace>/input-malformed`.
  */
 export async function finish(
   bytes: Uint8Array,
@@ -448,11 +479,15 @@ export async function finish(
 ): Promise<{ signed: Presented; landed?: unknown; h: AtrHash } | { next: SigningRequest; summary: Summary; h: AtrHash } | Declined> {
   const given: unknown = options;
   const ceilings: unknown = isObject(given) ? given["ceilings"] : undefined;
+  const act: unknown = isObject(given) ? given["act"] : undefined;
   const ok =
     given === undefined ||
-    (isObject(given) && Object.keys(given).every((k) => k === "ceilings") && isCeilings(ceilings, String(binding.id)));
+    (isObject(given) &&
+      Object.keys(given).every((k) => k === "ceilings" || k === "act") &&
+      isCeilings(ceilings, String(binding.id)) &&
+      (act === undefined || isAct(act)));
   if (!ok) return declined("no-payable-option", `${namespaceOf(binding)}/input-malformed`);
-  const out = await finishAs(bytes, chosen, signature, binding, "payment");
+  const out = await finishAs(bytes, chosen, signature, binding, isAct(act) ? act : "payment");
   if (!("next" in out)) return out;
   const first = out.first === null ? undefined : await summaryOf(String(binding.id), out.first, bytes);
   const opened = first === undefined || out.first === null ? undefined : openedBy(out.first, first, signature);

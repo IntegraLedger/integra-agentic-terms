@@ -140,20 +140,19 @@ agent approves it as it approves any payment:
   To approve the payment, call `atr_agree` again with `approved` set to `approve`, exactly as returned; it returns the
   `receipt`;
 - otherwise, as with `terms-mcp`, pay it by hand. Request `chosen.agreement`; it answers `402` with an x402 payment
-  request. Pay it through `atr_confirm` and `atr_finish`. Before the wallet signs, check that the `atrHash`
-  `atr_confirm` returns for it is the H of the payment being made, and pay nothing if it is not. Then request the URL
-  again with that same payment until it answers `200` with a receipt for that H.
+  request. Pay it through `atr_confirm` and `atr_finish`, each given `act` `"agreement"`, with the `402`'s payment
+  request as `document` and the request to the agreement URL as `resourceRequest`. Before the wallet signs, check that
+  the `atrHash` `atr_confirm` returns for it is the H of the payment being made, and pay nothing if it is not. Then
+  request the URL again with that same payment until it answers `200` with a receipt for that H.
 
-Those two tools build the payment for the resource, never the agreement payment, so paying by hand works only with an
-option on a pairing whose agreement payment carries H itself: `x402/exact/solana`, `x402/exact/stellar/precondition`,
-`x402/exact/xrpl`, `x402/exact/hedera`, `x402/exact/algorand`, `x402/exact/sui`, `x402/exact/near`,
-`x402/exact/polkadot/lcp-assets-remark`, `x402/exact/tron/lcp-trc20-memo`, `x402/exact/tvm` or `x402/exact/cardano`.
-On `x402/exact/eip155/eip3009`, `x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet`, an
-agreement payment carries the agreement's own value of H in its place, and the agreement URL refuses the payment these
-tools build: an agent never pays an agreement by hand on them. `atr_confirm` also holds the agreement URL's option and
-`resourceRequest` to the ATR as it holds any payment's. Where no option is on a listed pairing, or `atr_confirm`
-declines, the tools cannot pay the agreement: the agent signs nothing and tells its principal, and a host that wires a
-signer pays it through `atr_agree` or `atr_transact`.
+With `act` `"agreement"`, the two tools build the agreement payment, as `atr_agree` does: on `x402/exact/eip155/eip3009`,
+`x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet` it carries the agreement's own value of H in
+place of H, and on the other pairings H itself. Any option on a pairing whose payment can be an agreement (the
+[pairings reference](../reference/pairings.md) marks `yes` or `only` under "Pays an agreement") can be paid so; another is declined
+`no-payable-option`. `atr_confirm` does not hold the agreement URL's option or `resourceRequest` to the ATR's binding
+slot, which lists the charge's options and commits to the charge's request. Where `atr_confirm` declines, the tools
+cannot pay the agreement: the agent signs nothing and tells its principal, and a host that wires a signer pays it
+through `atr_agree` or `atr_transact`.
 
 Then call `atr_confirm` again with the same arguments and the `receipt`. Only then does it return `request`. The
 receipt is the agreement URL's statement: the tool checks its form (`agreed: true`, string `network` and

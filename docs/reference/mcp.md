@@ -120,6 +120,7 @@ Before approving a payment: reads the ATR hash the seller advertised, fetches th
 | `resourceRequest` | object | The request the seller's 402 answered: over HTTP `{ method, target, body, headers? }`, the method as sent, the request-target as sent in origin form (the path and query, starting with `/`, such as `/v1/quote?tier=1`, never the full URL), `body` the body's bytes as `atr` is written (`""` for none), `headers` each field's value or lines in order; over MCP `{ name, arguments? }`, the `tools/call` request's `params.name` and `params.arguments`. Where the ATR commits to a request, any other is declined `request-mismatch`, as is a target that is not in origin form. |
 | `inputs` | object, optional | The buyer's own values the build needs. See [rails](../guides/rails.md). |
 | `receipt` | JSON, optional | The agreement's receipt, for a pairing that pays an agreement first. |
+| `act` | `"payment"` or `"agreement"`, optional | The act the payment is built as: `"payment"`, the default, or `"agreement"`, to pay an agreement by hand, `document` then being the agreement URL's `402` payment request. With `"agreement"`, the payment is built as the agreement payment, a pairing whose payment cannot be an agreement is declined `no-payable-option`, and the option and `resourceRequest` are not held to the ATR's binding slot. |
 
 Returns `atrHash`, `atr`, `chosen`, `request` and `summary`: every authority signing `request` grants (terms' profile
 `buyer-gate.md`, rule 13), each integer a decimal string and its `atr` written as the result's `atr` is. `chosen` carries `mac`, the server process's HMAC-SHA-256 of its
@@ -141,6 +142,7 @@ pairing reads H from the completed payment, or, where the proof is the agreement
 | `atr` | base64 | The ATR's bytes, `atr.base64` from `atr_confirm`. |
 | `chosen` | object | `chosen` from `atr_confirm`, exactly as returned, `mac` included. For a pairing with a channel, a `chosen` whose `mac` does not verify is declined `chosen-unverified`. For any other pairing its `mac` is not read: `finish` rebuilds the payment from `chosen` and trusts nothing it did not rebuild. |
 | `signature` | JSON | The wallet's answer; a list, in order, for a payment signed in steps. The form of each kind's answer is in the [signers guide](../guides/signers.md). |
+| `act` | `"payment"` or `"agreement"`, optional | The act `atr_confirm` built the payment as: `"agreement"` rebuilds the agreement payment and reads H from it as an agreement; `"payment"` is the default. |
 
 Returns `atrHash` and `signed` (and `landed`, where there is one), or `atrHash`, `next`, a later step's request, and
 its `summary`, once it has one and is within the pairing's ceiling. For a pairing with a channel,
@@ -297,7 +299,7 @@ Its instructions name the server whose tools they use, and tell the agent not to
 They then cover, in order: `atr_transact` where offered, with the seller's document and the request the 402 answered,
 approving each signing it returns with its summary; `atr_confirm` with the payer account, that request and any inputs,
 never a floor input; the agreement first where `atr_confirm` names one, approved like any other payment, through
-`atr_agree` where offered, or by hand only on the pairings whose agreement payment carries H itself, with the
+`atr_agree` where offered, or by hand through `atr_confirm` and `atr_finish` with `act` `"agreement"`, with the
 agreement's `atrHash` checked against the payment's, never signing without its receipt; reading `summary` and signing
 `request` exactly; `next` for payments signed in steps; `request: null`; declines, `moved` and arguments the input
 schema refuses; re-sending a settling payment rather than signing a new one, and collecting an agreement's receipt

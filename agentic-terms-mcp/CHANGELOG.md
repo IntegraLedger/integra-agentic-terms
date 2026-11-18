@@ -8,6 +8,12 @@ shows each call before and after.
 
 ## [Unreleased]
 
+### Added
+
+- `act` on `atr_confirm` and `atr_finish`: `"agreement"` builds and completes the agreement payment, so an agent with
+  no host signer pays an agreement by hand on every pairing whose payment can be one, `x402/exact/eip155/eip3009`,
+  `x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet` among them; `"payment"` is the default.
+
 ### Changed
 
 - A receipt the agreement URL answers to the first, unpaid request carries `unpaid: true` wherever a tool returns it

@@ -29,7 +29,7 @@ import {
 import { network as mppNetwork, parseChallenges, read as mppRead, type MppChallenge } from "@integraledger/lcp/mpp";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Approval } from "./checks.js";
-import { hasAccount, IDENTITY, isIdentity, newRef, pay, pieceOf, redirected, trimHttpWhitespace } from "./gate.js";
+import { hasAccount, IDENTITY, isAgreementPairing, isIdentity, newRef, pay, pieceOf, redirected, trimHttpWhitespace } from "./gate.js";
 import { isRefusal } from "./pairings/common.js";
 import type {
   AgreeOptions,
@@ -267,15 +267,6 @@ function receiptOf(body: Uint8Array | null, h: AtrHash, unpaid = false): { recei
   }
   const receipt: AgreementReceipt = { atrHash: atrHash as AtrHash, agreed, network, transaction };
   return { receipt: unpaid ? { ...receipt, unpaid: true } : receipt };
-}
-
-/**
- * Whether the pairing's payment can itself be an agreement: its data holds `agreement`, which the protocol package
- * states only at coverage `full`, for a single-use payment that pays the payee directly and lands whole on one network.
- */
-function isAgreementPairing(binding: Binding): boolean {
-  const data: unknown = (binding as { data?: unknown }).data;
-  return isObject(data) && data["coverage"] === "full" && isObject(data["agreement"]);
 }
 
 /** Whether an agreement option, paid with the pairing `agreement`, is one the charge can follow. */

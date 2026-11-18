@@ -237,8 +237,8 @@ fetches and signs nothing.
 
 | Tool | Arguments | Returns | Annotations |
 | --- | --- | --- | --- |
-| `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON: for x402, the object the `PAYMENT-REQUIRED` header's base64 decodes to; for MPP, a list with one object per `WWW-Authenticate: Payment` challenge, its auth-params as members), `account` (CAIP-10), `resourceRequest`, `inputs?`, `receipt?` | `atrHash`, `atr`, `chosen`, `request` and `summary`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
-| `atr_finish` | `pairing`, `atr` (base64), `chosen` (exactly as returned), `signature` (the wallet's answer, in the form the [signers guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/signers.md) names for its kind; a list, in order, for a payment signed in steps) | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash`, `next` and its `summary` for a pairing signed in steps | read-only |
+| `atr_confirm` | `pairing`, `document` (the seller's payment request as JSON: for x402, the object the `PAYMENT-REQUIRED` header's base64 decodes to; for MPP, a list with one object per `WWW-Authenticate: Payment` challenge, its auth-params as members), `account` (CAIP-10), `resourceRequest`, `inputs?`, `receipt?`, `act?` (`"payment"`, the default, or `"agreement"` to pay an agreement by hand) | `atrHash`, `atr`, `chosen`, `request` and `summary`; `chosen.agreement` is the agreement URL where the pairing pays an agreement first | read-only, open-world |
+| `atr_finish` | `pairing`, `atr` (base64), `chosen` (exactly as returned), `signature` (the wallet's answer, in the form the [signers guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/signers.md) names for its kind; a list, in order, for a payment signed in steps), `act?` (as passed to `atr_confirm`) | `atrHash` and `signed` (with `landed` where there is one, and `mac` for a channel opening), or `atrHash`, `next` and its `summary` for a pairing signed in steps | read-only |
 | `atr_check` | `pairing`, `atr` (base64), `presented`, `landed?` (exactly as returned beside the payment), `act?` (`"payment"`, the default, or `"agreement"` for an agreement payment) | `atrHash` when the payment carries the hash of those bytes, as the act it was paid as | read-only |
 | `atr_channel_open` | `pairing`, `atr` (base64), `signed` (the opening), `landed?` and `mac`, exactly as returned | `atrHash` and `hold`, with its `mac` | read-only |
 | `atr_channel_record_charge` | `hold` (exactly as returned), `charged` (decimal) | `atrHash` and the updated `hold` | read-only |
@@ -304,22 +304,19 @@ schema.
 
 Where `atr_confirm` returns `chosen.agreement` and the host offers neither `atr_agree` nor `atr_transact`, as with
 `terms-mcp`, the agent requests the agreement URL itself. It answers `402` with an x402 payment request, which the
-agent pays through `atr_confirm` and `atr_finish`, only when the `atrHash` `atr_confirm` returns for it is the H of the
-payment being made, and then sends to the URL until it answers `200` with a receipt for that H.
+agent pays through `atr_confirm` and `atr_finish`, each given `act` `"agreement"`, only when the `atrHash`
+`atr_confirm` returns for it is the H of the payment being made, and then sends to the URL until it answers `200` with
+a receipt for that H.
 
-Those two tools build the payment for the resource, never the agreement payment, so this works only on a pairing whose
-agreement payment is that same payment, carrying H itself: `x402/exact/solana`, `x402/exact/stellar/precondition`,
-`x402/exact/xrpl`, `x402/exact/hedera`, `x402/exact/algorand`, `x402/exact/sui`, `x402/exact/near`,
-`x402/exact/polkadot/lcp-assets-remark`, `x402/exact/tron/lcp-trc20-memo`, `x402/exact/tvm` and `x402/exact/cardano`. On
-`x402/exact/eip155/eip3009`, `x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet`, an agreement
-payment carries the agreement's own value of H in its place (the protocol package's `agreementValue`), and the agreement
-URL refuses the payment these tools build: never pay an agreement by hand on them. `atr_confirm` also holds the
-agreement URL's option and `resourceRequest` to the ATR as it holds any payment's: where the ATR's `x402` slot lists
-`accepts` without that option, it declines `option-not-in-atr`.
+With `act` `"agreement"`, `atr_confirm` builds the agreement payment, as `atr_agree` does, and `atr_finish` rebuilds it
+and reads H from it as an agreement: on `x402/exact/eip155/eip3009`, `x402/exact/eip155/permit2`, `x402/exact/casper`
+and `x402/exact/starknet` it carries the agreement's own value of H in place of H (the protocol package's
+`agreementValue`), and on the other pairings H itself. An option on a pairing whose payment cannot be an agreement is
+declined `no-payable-option`. The agreement URL's option and `resourceRequest` are not held to the ATR's binding slot,
+which lists the charge's options and commits to the charge's request.
 
-Where no option of the agreement URL is on a listed pairing, or `atr_confirm` declines, these tools cannot pay the
-agreement: the agent signs nothing and tells its principal. A host that wires `signer` or `agreementSigner` pays it
-through `atr_agree` or `atr_transact` instead.
+Where `atr_confirm` declines, these tools cannot pay the agreement: the agent signs nothing and tells its principal. A
+host that wires `signer` or `agreementSigner` pays it through `atr_agree` or `atr_transact` instead.
 
 ### Channel holds
 
