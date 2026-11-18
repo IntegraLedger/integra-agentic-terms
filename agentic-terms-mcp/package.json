@@ -54,10 +54,10 @@
     "zod": "4.6.7"
   },
   "peerDependencies": {
-    "@integraledger/lcp": "~0.5.1"
+    "@integraledger/lcp": "~0.6.0"
   },
   "devDependencies": {
-    "@integraledger/lcp": "0.5.1",
+    "@integraledger/lcp": "0.6.0",
     "esbuild": "0.28.2"
   }
 }

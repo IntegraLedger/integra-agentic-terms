@@ -179,8 +179,8 @@ importers:
   agentic-terms:
     devDependencies:
       '@integraledger/lcp':
-        specifier: 0.5.1
-        version: 0.5.1(@mysten/sui@2.35.0(typescript@7.0.2))(@solana/kit@8.4.0(typescript@7.0.2))(@stellar/stellar-sdk@17.2.1(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@2.0.0)(ripple-binary-codec@2.11.0)
+        specifier: 0.6.0
+        version: 0.6.0(@mysten/sui@2.35.0(typescript@7.0.2))(@solana/kit@8.4.0(typescript@7.0.2))(@stellar/stellar-sdk@17.2.1(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@2.0.0)(ripple-binary-codec@2.11.0)
       '@mysten/sui':
         specifier: 2.35.0
         version: 2.35.0(typescript@7.0.2)
@@ -222,8 +222,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@integraledger/lcp':
-        specifier: 0.5.1
-        version: 0.5.1(@mysten/sui@2.35.0(typescript@7.0.2))(@solana/kit@8.4.0(typescript@7.0.2))(@stellar/stellar-sdk@17.2.1(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@2.0.0)(ripple-binary-codec@2.11.0)
+        specifier: 0.6.0
+        version: 0.6.0(@mysten/sui@2.35.0(typescript@7.0.2))(@solana/kit@8.4.0(typescript@7.0.2))(@stellar/stellar-sdk@17.2.1(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@2.0.0)(ripple-binary-codec@2.11.0)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -437,9 +437,9 @@ packages:
     peerDependencies:
       graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
 
-  '@integraledger/lcp@0.5.1':
-    resolution: {integrity: sha512-xdKgeAliZatJFpY1k1/uxqOAaTD/TPTp2iI2dLKF+qakwdCS7o3wgnd4xcbjB8H94cVVLoSEHvdtS3y9RtDQfQ==}
-    engines: {node: '>=24'}
+  '@integraledger/lcp@0.6.0':
+    resolution: {integrity: sha512-Sc/SzX8yLinKnz9x6ZD3fUosakZ5qVe5ev1K82Wod7F9X7j7yjALVqnMEEb8EMaOitUN/CjDQ5kQynyGRzRW1A==}
+    engines: {node: '>=24.22.1'}
     peerDependencies:
       '@mysten/sui': ^2.31.3
       '@solana/kit': ^8.3.0
@@ -1867,7 +1867,7 @@ snapshots:
     dependencies:
       graphql: 17.0.2
 
-  '@integraledger/lcp@0.5.1(@mysten/sui@2.35.0(typescript@7.0.2))(@solana/kit@8.4.0(typescript@7.0.2))(@stellar/stellar-sdk@17.2.1(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@2.0.0)(ripple-binary-codec@2.11.0)':
+  '@integraledger/lcp@0.6.0(@mysten/sui@2.35.0(typescript@7.0.2))(@solana/kit@8.4.0(typescript@7.0.2))(@stellar/stellar-sdk@17.2.1(debug@4.4.3))(@ton/core@0.63.1(@ton/crypto@3.3.0))(algosdk@3.8.0)(borsh@2.0.0)(ripple-binary-codec@2.11.0)':
     dependencies:
       '@noble/curves': 2.4.0
       '@noble/hashes': 2.4.0
