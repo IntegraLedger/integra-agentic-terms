@@ -11,10 +11,10 @@ the payment the buyer approves carries H, that approval is the buyer's acceptanc
 not, the pairing's statement of what it proves says so.
 
 The packages here are the buyer's half of that pattern. Their centre is the **buyer gate**: it fetches the ATR, compares
-the SHA-256 of the served bytes with H, parses those bytes and holds the option paid and the buyer's own request to what
-the record's binding slot commits to, and only then builds the payment with that hash. Before the buyer's own signer is
-called, it shows the buyer's approver what the signature grants and declines a payment that would stay payable past its
-ceiling. After the signer answers, the pairing reads H back from the completed payment, and the gate returns the payment
+the SHA-256 of the served bytes with H, parses those bytes, on x402 and MPP holds the option paid (and on x402 the
+buyer's own request) to what the record's binding slot commits to, and only then builds the payment with that hash.
+Before the buyer's own signer is called, `transact` shows the buyer's approver what the signature grants and declines a
+payment that would stay payable past its ceiling. After the signer answers, the pairing reads H back from the completed payment, and the gate returns the payment
 only if it is the hash of the bytes received, or, where the proof is the agreement payment, without that reading. The
 gate holds no keys, judges none of the record's terms, and carries no business or legal logic: what the record says is
 for the buyer and its principal to judge. Its checks, their order and the decline each answers are fixed, for both
@@ -24,9 +24,11 @@ It works across payment protocols and rails. Each **pairing** of protocol, schem
 `x402/exact/eip155/eip3009`: x402's `exact` scheme on an EVM chain, paid with an EIP-3009 authorization) has a
 **binding**: the field of the pairing's payment, as the protocol's own specification defines that payment, that carries
 H. The gate serves every pairing of [`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol): x402,
-MPP, card, AP2, UCP, ACP and ACK, on EVM chains, Tempo, Solana, Stellar, the XRP Ledger, Hedera, Algorand, Aptos, Sui,
-NEAR, Starknet, Polkadot, TRON, TON, Cardano, Casper, Concordium, Stacks and Lightning, and over Cloudflare's
-batch settlement.
+MPP, Spend Permissions, card, AP2, UCP, ACP and ACK, on EVM chains, Tempo, Solana, Stellar, the XRP Ledger, Hedera,
+Algorand, Aptos, Sui, NEAR, Starknet, Polkadot, TRON, TON, Cardano, Casper, Concordium, Stacks and Lightning, and over
+Cloudflare's batch settlement. Each pairing's registry data also states `confirmed`: whether anything outside the
+protocol package has shown the form as its profile defines it. 19 of the 77 are confirmed; the gate builds the others
+exactly as their profiles define them, and no seller may advertise them yet.
 
 ## How the packages fit together
 
@@ -57,7 +59,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | [`@integraledger/terms`](./agentic-terms) | `agentic-terms/` | The buyer gate for TypeScript agents. | `npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0` |
 | [`@integraledger/terms-mcp`](./agentic-terms-mcp) | `agentic-terms-mcp/` | The gate as MCP tools (`terms-mcp`), and the skill `confirming-the-atr-hash-before-paying`. | `npx -y @integraledger/terms-mcp@0.5.0` |
-| [`integraledger-terms`](./agentic-terms-py) | `agentic-terms-py/` | The buyer gate for Python agents (module `integraledger_terms`). | `pip install integraledger-terms` |
+| [`integraledger-terms`](./agentic-terms-py) | `agentic-terms-py/` | The buyer gate for Python agents (module `integraledger_terms`). | `pip install integraledger-terms==0.5.0` |
 
 Each package's README is complete on its own: concepts, a quickstart that runs as printed, every flow, the API and the
 pairings it serves.
@@ -66,8 +68,9 @@ pairings it serves.
 
 - **Your agent is TypeScript:** start with [`@integraledger/terms`](./agentic-terms#quickstart).
   `transact(offer, binding, signer, fetch, { approver, resourceRequest })` compares, checks, shows your approver each
-  signing and pays in one call; for a pairing that needs an agreement payment, the first call returns it for your
-  agent's approval, and a second call, with `approved`, pays.
+  signing and signs the payment in one call, returning it for you to send; for a pairing that needs an agreement
+  payment, the first call returns it for your agent's approval, and a second call, with `approved`, pays it and signs
+  the payment.
 - **Your agent is Python:** start with [`integraledger-terms`](./agentic-terms-py#quickstart).
   `await transact(offer, binding, signer, client, approver=…, resource_request=…)` does the same, with `approved=…` on
   the second call.
@@ -75,8 +78,9 @@ pairings it serves.
   give it the skill.
 
 The [documentation](./docs) goes further: [concepts](./docs/concepts.md), a
-[getting-started walk-through](./docs/getting-started.md), a guide for each flow, and the full reference, including
-[every pairing](./docs/reference/pairings.md) and [every decline code](./docs/reference/declines.md). It is also
+[getting-started walk-through](./docs/getting-started.md), a guide for each flow, the
+[security model](./docs/security-model.md), [upgrading from 0.4.x](./docs/upgrading.md) and the full reference,
+including [every pairing](./docs/reference/pairings.md) and [every decline code](./docs/reference/declines.md). It is also
 published at [agenticterms.integraledger.com](https://agenticterms.integraledger.com).
 
 ## Building and testing

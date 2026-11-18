@@ -16,10 +16,10 @@ carries that hash, that approval is the buyer's acceptance of that exact record;
 
 That only holds if the hash in the payment is the hash of the record you can read. This package is the check that makes
 sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, parses the bytes,
-holds the option you pay and the request you make to what the record's binding slot commits to, and only then builds a
-request with that hash. Before your signer is called, it shows your approver what the signature grants (the amount, the
-payees, the asset, the network and how long the payment stays payable) and declines a payment that would stay payable
-past its ceiling. After your signer answers, the pairing reads the hash back from the completed payment, and the payment
+on x402 and MPP holds the option you pay (and on x402 the request you make) to what the record's binding slot commits
+to, and only then builds a request with that hash. Before your signer is called, `transact` shows your approver what the
+signature grants (the amount, the payees, the asset, the network and how long the payment stays payable) and declines a
+payment that would stay payable past its ceiling. After your signer answers, the pairing reads the hash back from the completed payment, and the payment
 is returned only if it is the hash of the bytes you received, or, where the proof is the agreement payment, without
 that reading.
 
@@ -65,8 +65,8 @@ npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
 ```
 
 - Node.js `>=24.22.1`. ESM only.
-- `@integraledger/lcp` is a peer dependency of this package (`~0.5.0`): install it beside it, so your application and
-  the gate share one copy, and import from it the bindings you pass in.
+- `@integraledger/lcp` is a peer dependency of this package (`~0.6.0`, any 0.6.x release): install it beside it, so
+  your application and the gate share one copy, and import from it the bindings you pass in.
 - Chain libraries are optional peers of `@integraledger/lcp`: `@mysten/sui`, `@solana/kit`, `@stellar/stellar-sdk`,
   `@ton/core`, `algosdk`, `borsh` and `ripple-binary-codec`, at the versions `@integraledger/lcp` names. Install the
   ones the pairings you pay use.
@@ -74,7 +74,7 @@ npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
 ## Quickstart
 
 The seller answered with an x402 `402 Payment Required` whose `PAYMENT-REQUIRED` document advertises H and the link.
-This example pays it with [viem](https://viem.sh) as the wallet. It uses the ATR, the document and the payer key of
+This example pays it with [viem](https://viem.sh) as the wallet (`npm install viem`). It uses the ATR, the document and the payer key of
 the shared vectors, and a local stand-in for the network, so it runs offline and prints the same values every time.
 
 ```ts
@@ -163,6 +163,10 @@ If the link had served one byte more, less or different, `transact` would have r
 `{ decline: { code: "hash-mismatch", … } }` and never called the approver or the signer. Had the approver answered
 anything but `true`, it would have returned `{ decline: { code: "not-approved", … } }` and never called the signer.
 
+Against a live seller you decode its `402` yourself, pick the binding of the option you pay, and send what `transact`
+returns: [Against a live seller](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/getting-started.md#against-a-live-seller)
+walks through it.
+
 ## How it works
 
 ```mermaid
@@ -187,8 +191,9 @@ sequenceDiagram
 2. **Compare.** The gate fetches the link once and hashes the bytes it received. No match: a decline, and no signer
    call.
 3. **Parse and hold.** The gate parses the bytes it hashed, by one grammar both languages read alike. Where the ATR's
-   binding slot lists the options offered, the option chosen must be one of them; where it holds a commitment to the
-   buyer's request, `resourceRequest` must be that request.
+   `x402` slot lists `accepts`, or its `mpp` slot `challenges`, the option chosen must be one of them; where the `x402`
+   slot holds a commitment to the buyer's request, `resourceRequest` must be that request. Other slots are not
+   compared.
 4. **Build.** The gate builds the payment with the hash it computed, not the string the seller advertised.
 5. **Show.** The gate computes the summary of the request your signer would be handed, declines a payment that would
    stay payable past its ceiling, and asks your approver.
@@ -231,7 +236,7 @@ result is `AgreementChallenges`, `{ agreementChallenges, bytes, h }`, and nothin
 | Member | What it is |
 | --- | --- |
 | `approver` | Required. Your approval callback: `(toSign: ToSign) => boolean \| Promise<boolean>`. It is called once for each signing, after every check and before the signer, and approves only by answering `true`. Anything else, a throw or a rejection declines `not-approved`. |
-| `resourceRequest` | Required. The request the seller's offer answered: over HTTP `{ method, target, body, headers? }` (`body` a `Uint8Array`), over MCP the tool call `{ name, arguments? }`. Where the ATR's binding slot holds a request commitment, the gate holds this request to it. |
+| `resourceRequest` | Required. The request the seller's offer answered, exactly as your agent sent it. Over HTTP `{ method, target, body, headers? }`: the method token; the origin-form request-target, the path and query starting with `/` (such as `/v1/quote?city=Paris`), never the full URL; the body's bytes (a `Uint8Array`, empty for none); and `headers`, each field's name with its value or its lines in the order sent. Over MCP the tool call `{ name, arguments? }`. Where the ATR's `x402` slot holds a request commitment, the gate holds this request to it, and a target that is not origin-form is declined `request-mismatch` with `x402/request-target-invalid`. |
 | `inputs` | The buyer's own values a build needs, such as a recent blockhash, and the floor a rail's payment service serves. |
 | `ceilings` | The raised ceilings: a pairing id mapped to seconds, or to `"no-end"`. See [Ceilings and floors](#ceilings-and-floors). |
 | `legalContext` | The first response's `Legal-Context` value, as received, where it carried one. |
@@ -405,10 +410,10 @@ before anything is signed:
 }
 ```
 
-- The option paid is the first, in document order, that your signer can pay with a pairing whose payment is itself a
-  public proof (coverage `full` in the protocol package's registry, with an agreement form) and that the main
-  payment's pairing admits: its `agreementOn` says whether an agreement on any network will do, or only one on the
-  payment's own network.
+- The option paid is the first, in document order, that your signer can pay with an x402 pairing whose payment can
+  itself be an agreement (coverage `full` in the protocol package's registry, with an agreement form, `agreement`) and
+  that the main payment's pairing admits: its `agreementOn` says whether an agreement on any network will do, or only
+  one on the payment's own network.
 - The agreement payment is built with the act `agreement`: on a pairing whose agreement has its own single-use value,
   the payment carries that value, computed from H, where a payment for the resource would carry H itself.
 - The agreement URL's `402` must advertise the same H, or nothing is signed (`hash-mismatch`).
@@ -424,8 +429,9 @@ before anything is signed:
   bytes, h }`, the challenges in the seller's order: terms does not send an MPP credential to the agreement URL, so
   your own MPP client pays one there, and a later call finds the agreement recorded and pays the charge.
 - `agree(bytes, url, signer, fetch, { approved, inputs, signal, chosen })` runs the exchange on its own, in the same
-  two calls, for an agent that drives each step. It takes no approver: showing the agreement payment before it is
-  signed is then your step.
+  two calls, for an agent that drives each step. It takes no approver, computes no summary and holds the agreement
+  payment to no ceiling: showing the agreement payment before it is signed, and judging how long it stays payable, is
+  then your step.
 
 Once the agreement payment is sent, every decline carries it as `moved`: `agreement-pending` when it may settle yet,
 and `agreement-failed` when the agreement URL answered otherwise. Either way, it has left your wallet. To collect the
@@ -439,8 +445,8 @@ A seller may answer first with the agreement alone (the protocol package's profi
 first response offers the agreement option and no charge, each agreement option naming, by its `serves`
 (`extra.legalContextServes` on x402, the `opaque` member `legalContextServes` of an MPP agreement challenge), the
 charges it is for. `transact` then chooses the charge from the options the ATR's binding slot holds, pays the agreement
-option that serves it, asked of your approver with `act` `"agreement"`, ends at the agreement's receipt, signs no
-charge, and returns `ToReturn`.
+option that serves it as soon as your approver approves it with `act` `"agreement"`, without returning it to your agent
+first, ends at the agreement's receipt, signs no charge, and returns `ToReturn`.
 
 Where the slot holds the charge in the form the first response would offer it, the charge is built with H and held to
 its summary and its ceiling before its agreement is paid. Where the seller writes part of it only when it serves the charge, the charge
@@ -560,9 +566,9 @@ voucher up to 2000
 The hold is plain JSON: store it, and pass the latest one to each call. `within` takes the bytes, H and the channel
 from the hold, and the amount from the new challenge. On x402's batch channels it signs only when that challenge
 advertises the held H and the payment it builds names the held channel. On an MPP session it declines a challenge that
-names another channel or another H, and signs one with no legal context under the held H. `within` takes no approver:
-the opening was shown to yours and approved, and a caller that wants each later voucher shown shows it before it calls
-`within`. `mpp/session/solana/memo` opens through the gate, but terms builds none of its vouchers, the protocol package giving
+names another channel or another H, and signs one with no legal context under the held H. `within` takes no approver
+and holds a voucher to no summary or ceiling: the opening was shown to yours and approved, and a caller that wants each
+later voucher shown shows it before it calls `within`. `mpp/session/solana/memo` opens through the gate, but terms builds none of its vouchers, the protocol package giving
 that pairing no in-channel build: `within` declines it `pairing-not-supported`, and its buyer writes the 50 bytes a
 voucher signs with the protocol package's `solanaVoucher` (`@integraledger/lcp/svm`) and signs them itself.
 
@@ -584,28 +590,28 @@ invoice, a signer broadcast a transaction), the decline also carries `moved: { s
 that same payment again rather than signing a new one. Where `moved` is an agreement payment, collect its receipt by
 calling again without `approved`, as [Pay the agreement first](#pay-the-agreement-first) says.
 
-| Code | Meaning |
-| --- | --- |
-| `pairing-not-supported` | The binding names no pairing the gate serves; `chosen` or a hold belongs to another pairing; or the pairing has no channel. |
-| `offer-unreadable` | The seller's document, the chosen option or a build could not be read, or a recorded charge is out of range. `detail` carries the reason. |
-| `no-payable-option` | No option is payable by this account (for the agreement, with a public-proof pairing), an input the build needs is missing or malformed, the options of `transact` or `agree` are malformed, or a later channel challenge asks for a payment in a channel the hold did not open. |
-| `link-not-https` | The ATR link or the agreement URL is not an `https` URL. Nothing was fetched. |
-| `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure), or answered `200` with a `Content-Encoding` other than `identity`. |
-| `atr-too-large` | The ATR is larger than 1 MiB (1,048,576 bytes). |
-| `hash-mismatch` | The served bytes do not hash to the advertised H; the agreement URL or a later channel challenge advertises another H; or a hold's bytes do not hash to its H. Nothing was signed. |
-| `signer-failed` | Your signer threw. |
-| `signed-not-bound` | The pairing does not read the hash of the compared bytes from the payment. The payment is not returned. |
-| `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. |
-| `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. |
-| `agreement-failed` | The agreement URL could not be reached, answered `200` or `402` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. |
-| `not-approved` | Your approver answered anything but `true`, threw or rejected, for the signing it was asked about. The signer was not called for it. |
-| `atr-malformed` | The ATR's bytes are not one JSON text the gate reads alike in both languages: not UTF-8, a byte-order mark, a repeated member name, a number past a double or an integer past 2^53 − 1, or nesting past 64 levels. |
-| `option-not-in-atr` | The ATR's binding slot lists the options offered, and none is the option chosen. |
-| `request-mismatch` | The ATR's binding slot holds a request commitment that is not your request's. |
-| `summary-missing` | The request for the signer is of a kind the gate cannot summarize, so it is not signed unshown. |
-| `past-ceiling` | The signed payment would stay payable longer than its pairing's ceiling. |
-| `no-end` | The form signs no end, and `ceilings` does not map its pairing to `"no-end"`. |
-| `floor-missing` | The rail has a served floor and `inputs` lacks its input; `detail` is the input's name. |
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| `pairing-not-supported` | The binding names no pairing the gate serves; `chosen` or a hold belongs to another pairing; or the pairing has no channel. | Pass the binding of the pairing the option is (`pairingOf` in `@integraledger/lcp` names an x402 option's), or the hold's own. |
+| `offer-unreadable` | The seller's document, the chosen option or a build could not be read, or a recorded charge is out of range. `detail` carries the reason. | Do not pay. `detail` is the protocol package's code: an x402 version-1 document, for example, is `x402/not-v2`. |
+| `no-payable-option` | No option is payable by this account (for the agreement, with an x402 pairing that can pay one), an input the build needs is missing or malformed, the options of `transact` or `agree` are malformed, or a later channel challenge asks for a payment in a channel the hold did not open. | Use a signer on a network the offer names; for `<namespace>/input-malformed` fix the call's options; for `<namespace>/input-missing` give the input the build reads, or at the ceiling `ledgerIndex`, `currentSlot` or `currentEpoch`. |
+| `link-not-https` | The ATR link or the agreement URL is not an `https` URL. Nothing was fetched. | Do not pay. |
+| `atr-unfetchable` | The link did not answer `200` with the bytes within 10 seconds (a redirect counts as a failure), or answered `200` with a `Content-Encoding` other than `identity`. | Nothing was signed. A later call may fetch it. |
+| `atr-too-large` | The ATR is larger than 1 MiB (1,048,576 bytes). | Do not pay. |
+| `hash-mismatch` | The served bytes do not hash to the advertised H; the agreement URL or a later channel challenge advertises another H; or a hold's bytes do not hash to its H. Nothing was signed. | Do not pay: the seller served other bytes than it advertised. |
+| `signer-failed` | Your signer threw. | Your signer's own error. Keep `moved` where it is present. |
+| `signed-not-bound` | The pairing does not read the hash of the compared bytes from the payment. The payment is not returned. | Never send what was signed. Keep `moved` where it is present. |
+| `agreement-not-offered` | The pairing's payment is not a public proof, and the offer names no agreement URL. | None: the seller's offer must name an agreement URL. |
+| `agreement-pending` | The agreement payment was sent and is not yet recorded, or another is already settling. | Keep `moved`, and call again without `approved` to collect the receipt; never again with `approved`. |
+| `agreement-failed` | The agreement URL could not be reached, answered `200` or `402` with a `Content-Encoding` other than `identity`, or answered with something other than a receipt for this H; the approved payment names another agreement URL; or `signal` ended the exchange before the payment was sent. | Where `moved` is present, the agreement payment has left your wallet: keep it, and call again without `approved` to learn whether it is recorded. |
+| `not-approved` | Your approver answered anything but `true`, threw or rejected, for the signing it was asked about. The signer was not called for it. | Your approver's own answer. |
+| `atr-malformed` | The ATR's bytes are not one JSON text the gate reads alike in both languages: not UTF-8, a byte-order mark, a repeated member name, a number past a double or an integer past 2^53 − 1, or nesting past 64 levels. | Do not pay. |
+| `option-not-in-atr` | The ATR's `x402` slot lists `accepts`, or its `mpp` slot `challenges`, and none is the option chosen. | Do not pay. |
+| `request-mismatch` | The ATR's `x402` slot holds a request commitment that is not your request's. | Check that `resourceRequest` is the request as sent, its `target` origin-form; otherwise do not pay. |
+| `summary-missing` | The request for the signer is of a kind the gate cannot summarize, so it is not signed unshown: today every `x402/batch-settlement/solana` opening and every Masumi lock of `x402/exact/cardano/lock`. | None: this release cannot show that request, and signs nothing unshown. |
+| `past-ceiling` | The signed payment would stay payable longer than its pairing's ceiling. | Raise that pairing's ceiling in `ceilings` only if you accept the longer window. |
+| `no-end` | The form signs no end, and `ceilings` does not map its pairing to `"no-end"`. | Map the pairing to `"no-end"` in `ceilings` only if you accept a payment with no end. |
+| `floor-missing` | The rail has a served floor and `inputs` lacks its input; `detail` is the input's name. | Read the floor the rail's service serves and give it in `inputs` under the name in `detail`. |
 
 The profile [`profiles/buyer-gate.md`](./profiles/buyer-gate.md) states when each of the last eight is returned and
 whether the signer was called.
@@ -622,9 +628,9 @@ Everything below is exported from `@integraledger/terms`.
 | `confirm` | `(doc, binding, account, fetch, options) => Promise<{ chosen, request, summary?, bytes, h } \| Declined>` | Read, fetch, compare and check, and build the signing request with H, with its summary. `options` holds `resourceRequest`, and `inputs` and `ceilings` where given. `request` is `null` when there is nothing to sign; `chosen.agreement` is the agreement URL, where the pairing needs one. |
 | `finish` | `(bytes, chosen, signature, binding, options?) => Promise<{ signed, h, landed? } \| { next, summary, h } \| Declined>` | Rebuild from `chosen` and the bytes, join the signature, and return the payment only when the pairing reads H from the completed payment, or, where the proof is the agreement payment, without that reading. A later step is returned with its summary, held to the ceiling (`options.ceilings`). |
 | `check` | `(bytes, presented, binding, landed?, act?) => Promise<{ h } \| Declined>` | Confirm a held payment carries the hash of the kept bytes, as the act it was paid as. |
-| `agree` | `(bytes, url, signer, fetch, options?) => Promise<ToApprove \| AgreementChallenges \| { receipt } \| Declined>` | Without `options.approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
+| `agree` | `(bytes, url, signer, fetch, options?) => Promise<ToApprove \| AgreementChallenges \| { receipt } \| Declined>` | Without `options.approved`, return the agreement payment to approve, signing nothing; with it, pay that payment and return the receipt, with no approver, summary or ceiling. Where the agreement URL offers only MPP agreement challenges, return them, signing nothing. |
 | `openChannel` | `(bytes, opened, binding, landed?) => Promise<ChannelHold \| Declined>` | Hold a channel opened for the compared ATR. |
-| `within` | `(doc, hold, binding, signer, refund?, inputs?) => Promise<{ signed, hold } \| Declined>` | Sign a later voucher, or a refund with `refund`, in a held channel. |
+| `within` | `(doc, hold, binding, signer, refund?, inputs?) => Promise<{ signed, hold } \| Declined>` | Sign a later voucher, or a refund with `refund`, in a held channel, with no approver, summary or ceiling. |
 | `recordCharge` | `(hold, chargedCumulativeAmount) => ChannelHold \| Declined` | Record the seller's cumulative charge, between the last recorded and the most signed. |
 | `viJson` | `(value) => string \| undefined` | The JSON text a Mastercard Verifiable Intent signer signs for a value (the protocol package's profile `card-mastercard-vi.md`, rule 7): compact, every character outside space to `~` escaped, members in the order the object holds them. Undefined for a value that is not JSON. |
 
@@ -675,8 +681,13 @@ The full reference, with every request kind and the answer it takes, is in the
 
 Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. "Coverage" is `full` where the payment is itself a public proof of H and `none` otherwise; "Agreement payment first"
 marks the pairings paid after an agreement payment, and on which network that agreement may be; "Pays an agreement"
-marks the pairings whose own payment can be that agreement payment (`only` where it is never a charge). Each is read
-from the pairing's registry data in `@integraledger/lcp`. The
+marks the pairings whose own payment the registry lets be that agreement payment (`only` where it is never a charge).
+The gate itself pays an agreement only through an x402 pairing marked `yes` or `only`: an MPP agreement challenge is
+returned to you as `agreementChallenges`, for your own MPP client to pay. Each is read from the pairing's registry data
+in `@integraledger/lcp`, which also states, as `confirmed`, whether anything outside the protocol package has shown the
+form as its profile defines it: 19 of the 77 are confirmed. The gate builds the others exactly as their profiles define
+them, and no seller may advertise them yet: `x402/exact/casper` and `x402/exact/ccd`, for example, cannot be paid by the
+stock Casper and Concordium clients, which draw a random nonce and write no memo. The
 [pairings reference](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/reference/pairings.md) adds
 what each payment proves, and the [rails guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/rails.md)
 the inputs each build reads.
@@ -779,34 +790,44 @@ What the gate guarantees, in the code:
   among them, is asked of your approver with its summary, computed from the request the signer is handed, and the
   signer is called only on `true`. This holds of `transact` alone: a payment you sign yourself from `confirm` and
   `finish`, and the payments `agree` and `within` sign, which take no approver, are shown only where you show them.
-- **The option and the request are the ones the ATR commits to.** Where the ATR's binding slot lists the options
-  offered, the option paid is one of them; where it holds a commitment to the buyer's request, the request is the
-  buyer's own.
-- **A bounded window.** A payment that would stay payable past its pairing's ceiling is declined before it is signed,
-  as is a form that signs no end, unless you raise that pairing's ceiling.
+- **On x402 and MPP, the option is one the ATR commits to.** Where the ATR's `x402` or `mpp` slot lists the options
+  offered, the option paid is one of them; where the `x402` slot holds a commitment to the buyer's request, the request
+  is the buyer's own. Card, ACP, AP2, UCP and ACK options are not compared.
+- **A bounded window, in `transact`, `confirm` and `finish`.** A payment that would stay payable past its pairing's
+  ceiling is declined before it is signed, as is a form that signs no end, unless you raise that pairing's ceiling.
+  `agree` on its own and `within` apply no ceiling.
 - **One bounded fetch.** One `GET` of an `https` link, no redirect, one 10-second deadline over headers and body, at most
   1 MiB read. A declared or streamed length over the bound cancels the body.
 - **Exact bytes.** The ATR is hashed as received and returned as received, and the bytes parsed are the bytes hashed,
-  never a re-serialised copy. Every request asks for `Accept-Encoding: identity`, and a `200` whose `Content-Encoding` names any coding is declined unread, so nothing is
-  decompressed: the bytes hashed are the bytes sent.
+  never a re-serialised copy. Every request asks for `Accept-Encoding: identity`, and a `200` whose `Content-Encoding`
+  names any coding is declined unread, so nothing is decompressed: the bytes hashed are the bytes sent.
 - **No keys.** The gate hands requests to your signer and holds nothing that could sign.
 - **Your network policy.** Every request goes through the `fetch` you pass.
+
+What it trusts: your process, your `fetch`, your signer and your approver; and, in `finish` and `check`, the bytes,
+`chosen` and `landed` you hand back, which it rebuilds and hashes as given, fetching nothing again.
 
 What it does not do:
 
 - It judges none of the ATR's terms: it parses the bytes, and reads only the binding slot's options and request
-  commitment.
+  commitment, on x402 and MPP.
 - It does not check amount, payee, asset, timing or payer against the ATR, and applies no spending limit. It shows
   them; a discrepancy is between the parties, and what to approve is your approver's decision.
 - It does not authenticate the agreement's receipt. The receipt is the agreement URL's statement: the gate checks its
   form and that its `atrHash` is H, and does not look up the transaction it names. A `200` to the first, unpaid
   request is taken as an agreement already recorded. The public proof is the transaction the receipt names, on its
   network.
+- It applies no address policy. The seller chooses the ATR's link and the agreement URL; the gate requires `https`
+  and nothing else of the address, and fetches through the `fetch` you pass. Where your process can reach hosts a
+  seller should not, pass a `fetch` that refuses loopback, private-use, link-local and unique-local addresses, as the
+  `terms-mcp` binary's does.
 - It carries no business or legal logic.
 - It does not store the ATR, talk to a facilitator, or settle a payment.
 
 What each pairing's payment proves is stated by its binding's registry data, `data.proves`, in `@integraledger/lcp`, and
 printed in the [pairings reference](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/reference/pairings.md).
+The [security model](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/security-model.md) states
+the threat it answers and how each guarantee is enforced.
 
 ## Test vectors and conformance
 
@@ -816,6 +837,17 @@ file (the request it builds and the payment it completes). The gate's own checks
 `vectors/buyer-gate.json`, whose every input is a published row or a specification's own example, under the profile
 `profiles/buyer-gate.md`. This package's tests run every one, and the Python gate runs the same files, so both
 languages compute the same hashes, build the same requests and give the same declines.
+
+## Versioning and upgrading
+
+The packages are at 0.x: a minor release may change the public API, so pin the exact version, as the install line does.
+0.5.x takes `@integraledger/lcp` `~0.6.0` as its peer (0.4.x took `~0.5.1`) and Node.js `>=24.22.1` (0.4.x `>=24`).
+Security fixes are released for the latest version only. 0.5.0 changed every call from 0.4.x: `transact` requires
+`approver` and `resourceRequest`, `confirm` takes `{ resourceRequest, inputs?, ceilings? }` in place of `inputs`, and
+every signed payment is held to a 600-second ceiling unless you raise it. The
+[changelog](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms/CHANGELOG.md) lists every
+change, and [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) each call to
+change, before and after.
 
 ## Requirements
 

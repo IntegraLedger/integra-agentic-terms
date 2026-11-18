@@ -27,14 +27,14 @@ serves bytes whose SHA-256 is H. On most pairings, the payment the buyer approve
 
 **Pairing.** A payment protocol, scheme and rail combination, named by an id such as `x402/exact/eip155/eip3009`: the
 x402 protocol, its `exact` scheme, on an EVM chain (`eip155`), paid with an EIP-3009 transfer authorization. The first
-segment of the id is the protocol: `x402`, `mpp`, `card`, `ap2`, `ucp`, `acp` or `ack`.
+segment of the id is the protocol: `x402`, `mpp`, `spend-permissions`, `card`, `ap2`, `ucp`, `acp` or `ack`.
 
 **Binding.** How H rides in a pairing's payment: the field of that payment, as the protocol's own specification
 defines the payment, that carries H. For
 `x402/exact/eip155/eip3009` it is the EIP-3009 `nonce`: the buyer signs a transfer authorization whose nonce is H. For
 `mpp/charge/solana` it is a Memo instruction in the signed transaction. Each pairing has exactly one binding.
 
-In code, a binding is an object exported by [`@integraledger/lcp`](https://github.com/IntegraLedger/integra-protocol).
+In code, a binding is an object exported by [`@integraledger/lcp`](https://lcp.integraledger.com/reference/entry-points).
 It has an `id`, a `read` that finds H and the link in the seller's document, a `build` that writes H into the payment,
 and a `bound` that reads H back out of a completed payment. The Python package carries the same bindings as constants,
 such as `X402_EXACT_EIP155_EIP3009`. The [pairings reference](./reference/pairings.md) lists every one.
@@ -51,9 +51,10 @@ in these steps:
    the gate declines with `hash-mismatch`, and your signer is never called.
 3. **Parse and hold.** The gate parses the bytes it hashed by one grammar both languages read alike
    (`atr-malformed` otherwise). The ATR's **binding slot** is its member named by the pairing's protocol (`x402`,
-   `mpp`, `card`, ...). Where it lists the options offered, the option chosen must be one of them
-   (`option-not-in-atr`); where it holds a **request commitment**, a digest of the request the seller's offer answered,
-   your own request, `resourceRequest`, must be that request (`request-mismatch`).
+   `mpp`, `card`, ...). Where the slot is `x402` or `mpp` and lists the options offered, the option chosen must be one
+   of them (`option-not-in-atr`); where the `x402` slot holds a **request commitment**, a digest of the request the
+   seller's offer answered, your own request, `resourceRequest`, must be that request (`request-mismatch`). Other slots
+   are not compared.
 4. **Build.** The gate builds the payment with the hash it computed, not the string the seller advertised. The result
    is a signing request: exactly what your signer signs.
 5. **Show.** The gate computes the **summary** of that request, every authority the signature grants, read from the
@@ -119,9 +120,11 @@ which agreement it can follow: one on any network, or one on its own network.
 
 Some payments are not a public proof of H: a card payment, a Stripe charge, a Lightning invoice, a checkout in which the
 buyer signs nothing. For these pairings, at coverage `none`, the seller's offer also names an **agreement URL**: an x402
-resource for the same H, paid with a pairing at coverage `full`, usually for a nominal amount. The agreement payment is a
-payment like any other: `transact` returns it for the buyer's agent to approve, asks the approver about it as the act
-`agreement`, pays it once approved, waits for its receipt, and only then signs the main payment. On a pairing whose
+resource for the same H, paid with an x402 pairing at coverage `full`, usually for a nominal amount. The agreement
+payment is a payment like any other: `transact` returns it for the buyer's agent to approve, asks the approver about it
+as the act `agreement`, pays it once approved, waits for its receipt, and only then signs the main payment. Where the
+seller's first response offers the agreement alone (below), `transact` pays it as soon as the approver approves it,
+without returning it first. On a pairing whose
 agreement has its own single-use value, the agreement payment carries that value, computed from H, where a payment for
 the resource would carry H. Where the agreement URL answers that the agreement is already recorded,
 `transact` takes that receipt without a payment. Where it offers only MPP agreement challenges, terms sends no MPP
@@ -155,7 +158,8 @@ and an MPP session challenge that names another hash or another channel is decli
 its payment request.
 
 **Facilitator.** The x402 role that verifies and settles a payment for the seller. The gate never talks to a
-facilitator: it hands the payment back to you, and you send it to the seller.
+facilitator: it hands the payment back to you, and you send it to the seller. The one payment it sends itself is the
+agreement payment your approver approved, to the agreement URL.
 
 **Signer.** Your wallet, or whatever holds your keys. The gate hands it one signing request at a time and never sees a
 key.
@@ -172,10 +176,10 @@ The gate makes sure the payment you sign carries the hash of the bytes you recei
 does not:
 
 - interpret or judge the ATR's terms, which are for you and your principal to judge: it reads only the binding slot's
-  options and request commitment;
+  options and request commitment, on x402 and MPP;
 - check the amount, the payee, the asset, the timing or the payer against the ATR (it shows them to your approver; a
   discrepancy is between the parties);
 - carry any business or legal logic;
-- hold keys, sign anything itself, or move funds;
+- hold keys or sign anything itself, or send any payment but the agreement payment your approver approved;
 - store the ATR: it returns the bytes, and keeping them is yours;
 - talk to a facilitator or settle a payment.

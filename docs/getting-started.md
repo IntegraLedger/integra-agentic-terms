@@ -3,9 +3,10 @@ title: Getting started
 description: Install the buyer gate, pay a seller's x402 request only when the served ATR matches its hash, and watch the gate refuse a tampered record.
 ---
 
-This page takes you from nothing to a signed payment in TypeScript and in Python. Both examples use the seller document,
-the ATR and the payer key from the shared [vectors](./reference/vectors.md), and a local stand-in for the network, so
-they run offline and print the same values every time.
+This page is for a developer new to the buyer gate. It takes you from nothing to a signed payment in TypeScript and in
+Python, and then to a live seller. The first examples use the seller document, the ATR and the payer key from the
+shared [vectors](./reference/vectors.md), and a local stand-in for the network, so they run offline and print the same
+values every time.
 
 ## Requirements
 
@@ -21,7 +22,7 @@ npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
 `@integraledger/terms` is the gate. `@integraledger/lcp` exports the bindings you pass to it, one per pairing.
 
 ```sh
-pip install integraledger-terms
+pip install integraledger-terms==0.5.0
 ```
 
 The Python package is self-contained: its bindings are part of it.
@@ -81,7 +82,7 @@ const signer: Signer = {
 };
 
 const result = await transact(offer, exactEip3009, signer, fetch, {
-  // The request the seller's 402 answered, as your agent made it.
+  // The request the seller's 402 answered, exactly as your agent sent it: the target is origin-form, never the full URL.
   resourceRequest: { method: "GET", target: "/v1/quote", body: new Uint8Array() },
   // Asked once for each signing, before the signer is called, with what the signature grants.
   approver: (toSign) => {
@@ -128,6 +129,69 @@ What happened:
 
 Keep `result.bytes` with the payment. They are your copy of the record, and the hash in the payment shows which record
 it was.
+
+## Against a live seller
+
+Against a real seller you make the request yourself, decode its `402`, choose the binding of the option you pay, and
+send the payment `transact` returns. Everything this needs is exported by `@integraledger/lcp`. Its x402 headers are
+version 2: a version-1 document is refused `x402/not-v2`.
+
+```ts no-run
+import { transact, type Signer, type ToSign } from "@integraledger/terms";
+import { BINDINGS, isRefusal, pairingOf } from "@integraledger/lcp";
+import {
+  decodePaymentRequired,
+  encodeHeader,
+  PAYMENT_REQUIRED,
+  PAYMENT_SIGNATURE,
+  type PaymentPayload,
+} from "@integraledger/lcp/x402";
+
+declare const signer: Signer; // your wallet, as above
+declare function yourPolicy(toSign: ToSign): Promise<boolean>; // your agent's decision, or its principal's
+
+const url = "https://api.seller.example/v1/quote?city=Paris";
+
+// 1. Make the request. A seller that asks for payment answers 402, with its payment request in PAYMENT-REQUIRED.
+const first = await fetch(url);
+if (first.status !== 402) throw new Error(`no payment asked: ${first.status}`);
+const offer = decodePaymentRequired(first.headers.get(PAYMENT_REQUIRED));
+if (isRefusal(offer)) throw new Error(offer.code);
+
+// 2. The option on your signer's network, and the binding of its pairing.
+const network = signer.account.split(":").slice(0, 2).join(":");
+const option = offer.accepts.find((o) => o.network === network);
+const pairing = option === undefined ? undefined : pairingOf(option);
+const binding = BINDINGS.find((b) => b.id === pairing);
+if (binding === undefined) throw new Error("no option this signer can pay");
+
+// 3. Compare, check, show and sign. resourceRequest is the request exactly as sent, its target origin-form.
+const { pathname, search } = new URL(url);
+const result = await transact(offer, binding, signer, globalThis.fetch, {
+  approver: yourPolicy,
+  resourceRequest: { method: "GET", target: pathname + search, body: new Uint8Array() },
+});
+if ("decline" in result) throw new Error(`${result.decline.code}: ${result.decline.detail}`);
+if ("approve" in result || "charge" in result || "agreementChallenges" in result) {
+  throw new Error("this offer is paid after an agreement: see the agreement payments guide");
+}
+if (result.signed === null) throw new Error("nothing to sign: complete the payment through the protocol's own flow");
+
+// 4. Send the payment on a repeat of the same request.
+const header = encodeHeader(result.signed as PaymentPayload);
+if (isRefusal(header)) throw new Error(header.code);
+const paid = await fetch(url, { headers: { [PAYMENT_SIGNATURE]: header } });
+console.log("paid:", paid.status);
+
+// 5. Keep result.bytes (your copy of the record), result.h and result.signed.
+```
+
+- A decline means nothing was signed, unless it carries `moved`; the
+  [declines reference](./reference/declines.md) says what to do for each code.
+- Where the result is `approve`, `ToReturn` or `AgreementChallenges`, the pairing is paid after an agreement: the
+  [agreement payments guide](./guides/agreement-payments.md) continues from there.
+- `globalThis.fetch` reaches any address your process can, and the seller chooses the link the gate fetches: read
+  [The network](./security-model.md#the-network) before you deploy.
 
 ## Watch the gate refuse
 
@@ -286,7 +350,8 @@ signed nonce 0x8b1e122580ae3f6a8c3d36a24294e1260a87bde70f597279b973e39310072938
 kept bytes   138
 ```
 
-In production, pass an `httpx.AsyncClient()` of your own. The gate asks it for one `GET` of the link, with no redirect.
+In production, pass an `httpx.AsyncClient()` of your own. The gate asks it for one `GET` of the link, with no redirect,
+and applies no address policy of its own: see [The network](./security-model.md#the-network).
 
 ## Next
 
@@ -296,3 +361,4 @@ In production, pass an `httpx.AsyncClient()` of your own. The gate asks it for o
 - [Signers](./guides/signers.md): every kind of signing request, and what your signer returns for each.
 - [Rails](./guides/rails.md): what each rail needs from you.
 - [MCP server](./guides/mcp.md): give an agent the gate as tools.
+- [Security model](./security-model.md): what the gate guarantees, and what it leaves to you.

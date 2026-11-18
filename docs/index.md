@@ -13,14 +13,15 @@ wallet signs anything:
 
 1. fetches the ATR from the seller's `https` link, once and within bounds;
 2. computes SHA-256 over the exact bytes it received and compares it with H;
-3. parses those bytes, and holds the option you pay and the request you make to what the ATR's binding slot commits to;
+3. parses those bytes and, on x402 and MPP, holds the option you pay (and on x402 the request you make) to what the
+   ATR's binding slot commits to;
 4. builds the payment with that hash, shows your approver what the signature grants, and declines a payment that would
    stay payable past its ceiling;
 5. only on your approver's `true`, hands the request to your signer;
 6. reads H back from the completed payment, and returns the payment only if it is the hash of those bytes, or, where the
    proof is the agreement payment, without that reading.
 
-It works across x402, MPP, card, AP2, UCP, ACP and ACK payments, on EVM chains, Tempo, Solana, Stellar, the XRP Ledger,
+It works across x402, MPP, Spend Permissions, card, AP2, UCP, ACP and ACK payments, on EVM chains, Tempo, Solana, Stellar, the XRP Ledger,
 Hedera, Algorand, Aptos, Sui, NEAR, Starknet, Polkadot, TRON, TON, Cardano, Casper, Concordium, Stacks and Lightning.
 It holds no keys, judges none of the record's terms, and carries no business or legal logic. The checks and their
 declines are fixed, for both languages, by the profile
@@ -32,7 +33,7 @@ declines are fixed, for both languages, by the profile
 | --- | --- | --- |
 | `@integraledger/terms` | TypeScript agents | `npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0` |
 | `@integraledger/terms-mcp` | Any agent with an MCP client: the gate as tools, and a skill | `npx -y @integraledger/terms-mcp@0.5.0` |
-| `integraledger-terms` | Python agents | `pip install integraledger-terms` |
+| `integraledger-terms` | Python agents | `pip install integraledger-terms==0.5.0` |
 
 The TypeScript and Python gates are two implementations of the same rules. They run the same shared vectors and build
 the same payments.
@@ -46,3 +47,14 @@ the same payments.
   elsewhere.
 - [MCP server](./guides/mcp.md): give an agent the gate as tools.
 - [Pairings](./reference/pairings.md): every protocol and rail the gate pays, and what each payment proves.
+- [Security model](./security-model.md): what the gate defends against, what it trusts, and what it leaves to you.
+- [Upgrading](./upgrading.md): what 0.x means, and each call to change from 0.4.x.
+
+## For AI agents
+
+The site publishes [`llms.txt`](https://agenticterms.integraledger.com/llms.txt), an index of every page, and
+[`llms-full.txt`](https://agenticterms.integraledger.com/llms-full.txt), every page in one file. Each page is also
+Markdown at its address with `.md` added, such as
+[`/getting-started.md`](https://agenticterms.integraledger.com/getting-started.md), or at its own address for a request
+whose `Accept` header prefers `text/markdown`. The protocol package the gate builds on is documented the same way at
+[lcp.integraledger.com/llms.txt](https://lcp.integraledger.com/llms.txt).
