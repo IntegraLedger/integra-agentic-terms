@@ -32,10 +32,10 @@ as sent up to 64 KiB.
 Each function does what its TypeScript namesake does; the [TypeScript reference](./typescript.md) describes each in
 full. `approved` is the `AgreementPayment` a previous call returned in `ToApprove.approve`, carried back unchanged.
 `approver` is `Callable[[ToSign], bool | Awaitable[bool]]`, and approves only by answering `True`; `resource_request`
-is an `HttpRequest` (`{"method", "target", "body", "headers"?}`, `body` as `bytes`) or a `ToolCall`
-(`{"name", "arguments"?}`); `ceilings` maps a pairing id to an `int` of seconds, never a `bool`, or to `"no-end"`;
-`chosen` is `Confirmed.chosen`, unchanged; `check`'s `act` is `"agreement"` for an agreement payment and `"payment"`,
-the default, for any other.
+is an `HttpRequest` (`{"method", "target", "body", "headers"?}`, `target` in origin form, the path and query starting
+with `/`, and `body` as `bytes`) or a `ToolCall` (`{"name", "arguments"?}`); `ceilings` maps a pairing id to an `int`
+of seconds, never a `bool`, or to `"no-end"`; `chosen` is `Confirmed.chosen`, unchanged; `check`'s `act` is
+`"agreement"` for an agreement payment and `"payment"`, the default, for any other.
 
 `signal` is an `asyncio.Event`: setting it ends the agreement exchange as aborting the `AbortSignal` does in
 TypeScript. Before the agreement payment is sent, the call declines `agreement-failed` and nothing was signed or sent;
@@ -61,7 +61,7 @@ after, it declines `agreement-pending` with the payment as `moved`. Cancelling t
 | `Chosen` | `pairing: str`, `choice: dict`, `ref: str`, `agreement: str \| None`, `act`, `deadline: str \| None`: the agreement URL, where the pairing needs one, and the latest deadline handed to a wallet that picks its expiry |
 | `ToSign` | `act: Literal["payment", "agreement"]`, `pairing: str`, `request: dict`, `summary: Summary`, `step: SigningStep` |
 | `SigningStep` | `index: int`, `count: int` |
-| `Summary` | `amount`, `maximum`, `payees: tuple[Payee, ...]`, `period`, `limit_per_period`, `end`, `operator`, `authorization_expiry`, `refund_expiry`, `deposit`, `closable_by`, `grant`, `asset: str`, `network: str \| None`, `validity: Validity`, `atr: bytes`; each other field a decimal `str` or `None` |
+| `Summary` | `amount`, `maximum`, `payees: tuple[Payee, ...]`, `period`, `limit_per_period`, `end`, `operator`, `authorization_expiry`, `refund_expiry`, `deposit`, `closable_by`, `grant`, `asset: str`, `network: str \| None`, `validity: Validity`, `atr: bytes`; `operator` an account `str` or `None`, `closable_by` a `tuple[str, ...]` or `None`, `grant` JSON or `None`, each other field a decimal `str` or `None` |
 | `Payee` | `account: str`, `amount: str` |
 | `Validity` | `not_before: str \| None`, `not_after: str \| None`, `unit: str` |
 | `Declined` | `code: DeclineCode`, `detail: str`, `moved: Moved \| None` |

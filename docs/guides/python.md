@@ -7,11 +7,15 @@ description: The Python buyer gate, integraledger-terms — the same rules and t
 carries its own bindings, one module-level constant per pairing, and runs the same shared vectors as the TypeScript
 gate, so for the same inputs the two build the same payments.
 
+This guide is for a developer who pays from Python. By its end you know where the Python gate differs from the
+TypeScript one, how to write a signer, and which call runs each flow.
+
 ```sh
-pip install integraledger-terms
+pip install integraledger-terms==0.5.0
 ```
 
-Python `>=3.11`. It depends on `httpx` and `cryptography`, and is fully typed.
+Python `>=3.11`. It depends on `httpx` (`>=0.28.1,<0.29`) and `cryptography` (`==50.0.2`, an exact pin: install it in an
+environment that can take that version), and is fully typed.
 
 ## Differences from the TypeScript gate
 
@@ -82,7 +86,8 @@ A signer that raises is a `Declined("signer-failed", …)`.
   the exact request `confirm` returned.
 - **Two calls:** `await confirm(doc, binding, account, client, resource_request=…, inputs=…)`, which returns the request
   with its `summary` and calls no approver, then your signer, then `finish(atr_bytes, chosen, signature, binding)`,
-  which returns `Next(next, summary, h)` for a later step to show and sign.
+  which returns `Finished` with the payment to send, or, for a payment signed in steps, `Next(next, summary, h)` for
+  the later step to show and sign.
 - **Later:** `check(atr_bytes, presented, binding, landed=…, act=…)`, `act` being `"agreement"` for an agreement
   payment. The caller passes as `landed` only the receipt its own
   reader read for the payment, as `finish` or `transact` returned it, never a value another party sent.
@@ -106,3 +111,15 @@ uv run --locked --python 3.11 pytest -q
 uv run --locked --python 3.14 pytest -q
 uv run --locked --python 3.14 mypy --strict src tests
 ```
+
+## Versions and upgrading
+
+`integraledger-terms` is at 0.x: a minor release may change the public API. Pin the exact version, as the install line
+above does. 0.5.x builds and reads the forms of `@integraledger/lcp` 0.6.0 and needs Python `>=3.11`.
+
+From 0.4.x, `confirm` takes `resource_request=` (required) and `inputs=` as keywords, and `transact` requires
+`approver=` and `resource_request=`: a 0.4.x call raises `TypeError`. `transact` may also return `ToReturn` and
+`AgreementChallenges`, `Next` carries `summary`, every payment `transact`, `confirm` or `finish` builds is held to its
+pairing's ceiling, 600 seconds unless `ceilings` raises it, and `DeclineCode` has eight new codes. The package's
+[CHANGELOG](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms-py/CHANGELOG.md) lists every
+change.
