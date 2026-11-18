@@ -73,6 +73,22 @@ describe("the MCP server over stdio", () => {
     await c.close();
   });
 
+  // MCP's tool annotations: destructiveHint marks a tool that may make a destructive update, which a host asks about
+  // before it runs it. A payment signed and sent cannot be undone, so each tool that signs and sends one says so, and
+  // reaches outside the server (openWorldHint).
+  it("the three tools that sign and send payments are destructive and open-world", async () => {
+    const c = connect({ fetch: serving(A), signer: counting() });
+    const m = await c.request("tools/list", { _meta: M });
+    await c.close();
+    const tools = at(m, "result.tools") as { name: string; annotations: { destructiveHint?: boolean; openWorldHint?: boolean } }[];
+    const signing = tools.filter((t) => ["atr_transact", "atr_agree", "atr_channel_within"].includes(t.name));
+    expect(signing.map((t) => [t.name, t.annotations.destructiveHint, t.annotations.openWorldHint]).sort()).toEqual([
+      ["atr_agree", true, true],
+      ["atr_channel_within", true, true],
+      ["atr_transact", true, true],
+    ]);
+  });
+
   it("with an agreement signer only, atr_agree as well, and nothing that signs the payment itself", async () => {
     const c = connect({ fetch: serving(A), agreementSigner: counting() });
     expect(names(await c.request("tools/list", { _meta: M }))).toEqual([...UNSIGNED, "atr_agree"].sort());

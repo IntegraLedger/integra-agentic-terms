@@ -456,7 +456,7 @@ export function createBuyerServer(options: {
           approved: approval,
           legalContext: z.string().optional(),
         }),
-        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       },
       async (a, ctx) => {
         const signings = a.approved?.signings ?? [];
@@ -517,7 +517,7 @@ export function createBuyerServer(options: {
       {
         description: DESCRIPTIONS.atr_agree,
         inputSchema: z.object({ atr, chosen: z.record(z.string(), JSON_VALUE), approved, inputs }),
-        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       },
       async (a, ctx) => {
         const chosen = await unsealChosen(a.chosen);
@@ -588,7 +588,7 @@ export function createBuyerServer(options: {
           refund: z.object({ amount: z.string().optional(), paymentResponse: JSON_VALUE.optional() }).optional(),
           inputs,
         }),
-        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       },
       async (a) => {
         const held = await unseal(a.hold);

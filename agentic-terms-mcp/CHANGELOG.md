@@ -16,6 +16,8 @@ shows each call before and after.
 
 ### Changed
 
+- `atr_transact`, `atr_agree` and `atr_channel_within`, which sign and send payments, are annotated
+  `destructiveHint: true`, so a host that asks before a destructive tool runs asks before these. They stay open-world.
 - A receipt the agreement URL answers to the first, unpaid request carries `unpaid: true` wherever a tool returns it
   (`atr_agree`'s `receipt`, `atr_transact`'s `agreement`): no agreement payment was made or read for it.
 

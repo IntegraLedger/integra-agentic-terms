@@ -221,7 +221,7 @@ agreement URL the agreement challenges carry; where that resource offers only MP
 as `agreementChallenges` in place of `agreement`, signing nothing. Where the agreement URL a charge names offers only MPP
 agreement challenges, it returns `atrHash`, `atr` and `agreementChallenges`, signing nothing: the agent's own MPP client
 pays one at the agreement URL. Annotations: not
-read-only, not destructive, not idempotent, open-world.
+read-only, destructive, not idempotent, open-world.
 
 ### `atr_agree`
 
@@ -248,7 +248,7 @@ compared by RFC 8785 form, is declined `offer-unreadable` with `x402/option-not-
 or signed. A `chosen` whose `mac` does not verify (one with a member changed, added or removed, or one another server
 process returned) is declined `chosen-unverified` before anything is fetched or signed; a verified `chosen` with no
 `agreement` is declined `offer-unreadable`.
-Annotations: not read-only, not destructive, not idempotent, open-world.
+Annotations: not read-only, destructive, not idempotent, open-world.
 
 `approved` carries no `mac`: the host's signer pays the agreement payment passed in `approved`, as passed, once its
 agreement URL is the one in `chosen`, its `option` is one of `required.accepts` and `required` advertises this H. A host
@@ -284,7 +284,7 @@ another H is declined, and one with no legal context is signed under the held H.
 | `inputs` | object, optional | The buyer's own values a refund's build needs. |
 
 Returns `atrHash`, `signed` and the updated `hold`. A hold whose `mac` does not verify is declined `hold-unverified`,
-and the signer is not called. Annotations: not read-only, not destructive, not idempotent, open-world.
+and the signer is not called. Annotations: not read-only, destructive, not idempotent, open-world.
 
 ## The skill
 
