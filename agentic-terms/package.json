@@ -51,7 +51,7 @@
     "@integraledger/lcp": "~0.6.0"
   },
   "devDependencies": {
-    "@integraledger/lcp": "0.6.0",
+    "@integraledger/lcp": "0.6.1",
     "@mysten/sui": "2.35.0",
     "@solana/kit": "8.4.0",
     "@stellar/stellar-sdk": "17.2.1",

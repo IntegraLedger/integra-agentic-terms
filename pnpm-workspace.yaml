@@ -7,7 +7,7 @@ trustPolicy: no-downgrade
 strictDepBuilds: true
 
 minimumReleaseAgeExclude:
-  - '@integraledger/lcp@0.6.0'
+  - '@integraledger/lcp@0.6.1'
 
 permissions:
   esbuild: {build: false}

@@ -58,7 +58,7 @@
     "@integraledger/lcp": "~0.6.0"
   },
   "devDependencies": {
-    "@integraledger/lcp": "0.6.0",
+    "@integraledger/lcp": "0.6.1",
     "esbuild": "0.28.2"
   }
 }
