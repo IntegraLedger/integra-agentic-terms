@@ -3,6 +3,10 @@ title: Agreement payments
 description: For a payment that is not itself a public proof of H, the buyer's agent approves a small agreement payment that carries H, and transact signs the payment for the resource only after its receipt.
 ---
 
+This guide is for a developer whose agent pays through a pairing whose payment is not itself a public proof of H. At
+the end you know how the agreement payment is chosen, approved, paid and confirmed, what each answer of the agreement
+URL does, and how to drive the exchange yourself.
+
 A card charge, a Stripe payment, a Lightning invoice, a checkout in which the buyer signs nothing: these payments do not
 put H anywhere public. For such a pairing, the proof of agreement is a second, small payment that does: the
 **agreement payment**. The seller names an **agreement URL** in its offer. The agreement payment is a payment like any
@@ -61,8 +65,10 @@ sequenceDiagram
      of them there, and a later call finds the agreement recorded (the `200` above) and pays the charge.
    - anything else: `agreement-failed`.
 3. **Choose the option.** The gate reads the request's options in document order and takes the first one your signer
-   can pay with a pairing at coverage `full` whose registry data holds an agreement form (`agreement`), and that the
-   payment's pairing admits by its `agreementOn`: any network, or only the payment's own. An
+   can pay with an x402 pairing at coverage `full` whose registry data holds an agreement form (`agreement`), and that
+   the payment's pairing admits by its `agreementOn`: any network, or only the payment's own. The gate pays an
+   agreement only through an x402 pairing: an MPP pairing marked "Pays an agreement" in the
+   [pairings reference](../reference/pairings.md) is paid as an agreement only by your own MPP client (below). An
    option is payable only if its `maxTimeoutSeconds` is a JSON number with an integral value from 1 to
    2<sup>53</sup> − 1 (`60` and `60.0` are the same value): the gate passes any other over, and declines
    `no-payable-option` when it finds no option it can pay. The request's legal context must advertise the same H:
@@ -136,9 +142,11 @@ usual.
 
 ## Once the agreement payment is sent
 
-Once the agreement payment is sent, a decline carries it as `moved`. A decline `agreement-pending` means the agreement
-URL has not recorded the payment in time, or your `signal` ended the wait, and it may settle yet. To collect the
-receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it answers `200` with
+Once the agreement payment is sent, every decline carries it as `moved`. A decline `agreement-pending` means the
+agreement URL has not recorded the payment in time (a `202`, a `5xx` or a timeout until the exchange's bound), or your
+`signal` ended the wait, and it may settle yet. A decline `agreement-failed` means the agreement URL answered the paid
+request with a redirect, another status, or a `200` that is not a receipt for H; the payment has left your wallet all
+the same. Either way, to collect the receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it answers `200` with
 the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. A `402` returns the
 agreement payment for approval again, and whether to pay a second time is your agent's decision. Never call again with
 `approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
@@ -159,7 +167,8 @@ charges it is for, `<slot>/<i>`, such as `x402/0` or `mpp/1`, the option at that
    `x402/exact/lnbtc/payment-hash` option, whose invoice the seller writes after the agreement (the protocol package's
    profile `x402-exact-lnbtc.md`), and every MPP challenge, which the slot holds as issued, without the id and the
    members the seller places when it serves it;
-3. pays that agreement option, asked of your approver with `act` `"agreement"`, and waits for its receipt as above. On
+3. pays that agreement option as soon as your approver approves it with `act` `"agreement"`, without returning it to
+   your agent first, and waits for its receipt as above. On
    MPP, it follows the agreement URL the agreement challenges carry and reads that resource's one `402`, its
    `PAYMENT-REQUIRED` and every `WWW-Authenticate: Payment` challenge, in the seller's order, and pays an x402
    agreement option there exactly as on x402; where it offers only MPP agreement challenges, it signs nothing and
@@ -302,9 +311,11 @@ and asked about and requested the ERC-7710 delegation only after the receipt.
 
 ## Driving the steps yourself
 
-`agree(bytes, url, signer, fetch, { approved, inputs, signal, chosen })` runs steps 2 to 6 on their own, for an agent
-that confirms with `confirm` and finishes with `finish`. It takes no approver: showing the agreement payment before it
-is signed is then your step. `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do.
+`agree(bytes, url, signer, fetch, { approved, inputs, signal, chosen })` runs steps 2 to 6 without step 5's ceiling and
+approval, for an agent that confirms with `confirm` and finishes with `finish`. It computes no summary, holds the
+agreement payment to no ceiling, hands a wallet that picks its expiry no latest deadline, and calls no approver.
+Showing the agreement payment, and judging how long it stays payable, is then your step. Use `transact` where you want
+the gate to do both. `confirm` and `finish` neither pay nor check the agreement; only `transact` and `agree` do.
 When `chosen.agreement` is set, the pairing's payment is not itself a public proof of H: do not sign yet. Call
 `agree(bytes, chosen.agreement, signer, fetch, { chosen })`, have your agent approve the `approve` it returns, call
 `agree` again with `{ approved, chosen }`, and sign `request` only with its `receipt` in hand. Given `chosen`, the

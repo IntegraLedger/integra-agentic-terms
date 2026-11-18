@@ -3,12 +3,20 @@ title: Pay with the gate
 description: Compare and check, then build, show and sign, then finish. One call with transact, or two with confirm and finish when your signer lives elsewhere.
 ---
 
-Every payment through the gate follows the same order: compare the served bytes with H, parse them and hold the option
-and your request to what the ATR commits to, build the payment with the hash the gate computed, show your approver what
-the signature grants and hold it to its ceiling, have your signer sign exactly that request, and finish only when the
-pairing reads H from the completed payment, or the proof is the agreement payment. You can run the whole order with one
-call, `transact`, or split it with `confirm` and `finish`. The checks, their order and the decline each answers are the
-profile [`buyer-gate.md`](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms/profiles/buyer-gate.md)'s.
+This guide is for a developer wiring the gate into an agent that pays. At the end you can pay through `transact` in one
+call, or through `confirm` and `finish` with a signer that lives elsewhere, and you know what each option, ceiling and
+floor does.
+
+Every payment through the gate follows the same order: compare the served bytes with H, parse them and, on x402 and
+MPP, hold the option and your request to what the ATR commits to, build the payment with the hash the gate computed,
+show your approver what the signature grants and hold it to its ceiling, have your signer sign exactly that request, and
+finish only when the pairing reads H from the completed payment, or the proof is the agreement payment. You can run the
+whole order with one call, `transact`, or split it with `confirm` and `finish`. The checks, their order and the decline
+each answers are the profile
+[`buyer-gate.md`](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms/profiles/buyer-gate.md)'s.
+
+The runnable samples on this page and in the other guides sign with [viem](https://viem.sh) (`npm install viem`) and
+the published Anvil development key.
 
 ## What you pass
 
@@ -20,7 +28,7 @@ Every gate function takes the same few values:
 | `binding` | The pairing's binding, from `@integraledger/lcp` (TypeScript) or a constant of `integraledger_terms` (Python). The [pairings reference](../reference/pairings.md) names each one. |
 | `signer` | Your wallet: an `account` in CAIP-10 form (`eip155:84532:0xf39F…2266`) and a `sign(request)` method. See [signers](./signers.md). |
 | `fetch` | Your HTTP client. TypeScript: WHATWG `fetch`, or anything with its call shape. Python: an `httpx.AsyncClient`. Your network policy (proxy, egress rules, timeouts of your own) lives here. |
-| `resourceRequest` | The request the seller's offer answered, the one you are about to pay: over HTTP `{ method, target, body, headers? }`, the method token and request-target as sent, the body's bytes (a `Uint8Array`; in Python `bytes`) and, where it has header fields, each field's value or lines in order; over MCP the tool call `{ name, arguments? }`. Required by `transact` and `confirm`. Where the ATR's binding slot holds a request commitment (an x402 `request` member), the gate computes that commitment of this request and declines `request-mismatch` for another. |
+| `resourceRequest` | The request the seller's offer answered, the one you are about to pay: over HTTP `{ method, target, body, headers? }`, the method token and the origin-form request-target as sent (the path and query, starting with `/`, never the full URL), the body's bytes (a `Uint8Array`; in Python `bytes`) and, where it has header fields, each field's value or lines in order; over MCP the tool call `{ name, arguments? }`. Required by `transact` and `confirm`. Where the ATR's binding slot holds a request commitment (an x402 `request` member), the gate computes that commitment of this request and declines `request-mismatch` for another. |
 | `approver` | Your approval callback, required by `transact`. See [The approver](#the-approver). |
 | `inputs` | The buyer's own values a pairing's build needs beside the offer, such as a recent blockhash or an account sequence, and the floor a rail's payment service serves. Most pairings need none. See [rails](./rails.md). |
 | `ceilings` | The raised ceilings, optional: a pairing id mapped to a positive whole number of seconds, or to `"no-end"`. See [Ceilings and floors](#ceilings-and-floors). |
@@ -139,7 +147,8 @@ the channel the opening opens for your account; a voucher of another channel has
 ## Ceilings and floors
 
 The gate declines a payment that would stay payable longer than its pairing's **ceiling**, `past-ceiling`, before it
-is signed. How long it stays payable is read from the summary's `validity`: a deadline in seconds less the gate's
+is signed. `transact`, `confirm` and `finish` hold every request they hand the signer to it; `agree` called on its own
+and `within` hold none (see [the security model](../security-model.md)). How long it stays payable is read from the summary's `validity`: a deadline in seconds less the gate's
 clock; a deadline signed as a height, a slot, a round, a ledger or an epoch less the start the request signs, or the
 height the caller gave the build, times the chain's pace (the profile's rule 8 states each chain's pace with its
 source); and, where the payer signs no deadline and the rail itself bounds the payment, that bound.
@@ -334,11 +343,13 @@ never a value another party sent.
 - **A decline carries `moved`.** Your signer moved the payment itself (a Lightning invoice paid, a transaction
   broadcast) before the gate declined. `moved.signed` is that payment, with the bytes and their hash. Keep it and
   present it again rather than signing a new one. See [keeping the record](./keeping-the-record.md).
-- **The agreement payment may settle yet.** Once the agreement payment is sent, a decline is `agreement-pending`
-  with the payment as `moved`. To collect the receipt, call again without `approved`: the gate asks the agreement URL
-  unpaid and goes on once it answers `200` with the receipt, or declines `agreement-pending` again while it answers
-  `202`, signing nothing. Never call again with `approved` for the same agreement: every call with `approved` signs and
-  sends a new agreement payment.
+- **The agreement payment may settle yet.** Once the agreement payment is sent, every decline carries it as `moved`.
+  The code is `agreement-pending` where it may settle yet: a `202`, a `5xx` or a timeout until the exchange's bound, or
+  your `signal`. It is `agreement-failed` where the agreement URL answered with a redirect, another status, or a `200`
+  that is not a receipt for H. Either way, keep `moved`, and call again without `approved` to learn whether it is
+  recorded: the gate asks the agreement URL unpaid and goes on once it answers `200` with the receipt, or declines
+  `agreement-pending` again while it answers `202`, signing nothing. Never call again with `approved` for the same
+  agreement: every call with `approved` signs and sends a new agreement payment.
 - **Any other decline.** Nothing was sent, and nothing should be. The [declines reference](../reference/declines.md)
   says what each code means. Whether to deal with the seller another way is your principal's decision.
 

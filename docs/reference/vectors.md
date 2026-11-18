@@ -90,6 +90,10 @@ ATR's SHA-256 is GNU coreutils `sha256sum`, checked with Python's `hashlib`. Not
 `option-not-in-atr`, `request-mismatch`, `past-ceiling` and `summary-missing` have no row: no published input shows them,
 and the profile's rules alone hold them.
 
+`vectors/vi-signer.json`, also in `@integraledger/terms`, fixes `viJson`. Each row's expected text is what Python's
+`json.dumps(…, separators=(",", ":"), ensure_ascii=True)` writes for the row's value: the re-encoding over which
+Verifiable Intent's reference verifier checks signatures, so a signer signs JSON that re-encoding leaves unchanged.
+
 ## Running them
 
 From a checkout, after `pnpm install`:

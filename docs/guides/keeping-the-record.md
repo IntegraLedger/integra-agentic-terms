@@ -89,8 +89,9 @@ never a value another party sent. A `landed` member written into the payment is 
 For a pairing whose payment is not a public proof of H, `check` reads the payment as it reads any other: it confirms
 that the hash the pairing reads from it is the SHA-256 of the kept bytes, and declines `signed-not-bound` where the
 pairing reads none. That payment does not prove H in public. The proof of H is the agreement payment, which is itself a
-payment at coverage `full`: check it with the binding of the pairing it was paid with, and `act` `"agreement"`, as
-`check(bytes, agreementPayment, binding, null, "agreement")`.
+payment at coverage `full`. On success the gate returns its receipt, not the payment (see below). Where you do hold the
+signed agreement payment, as a decline's `moved`, check it with the binding of the pairing your approver was shown in
+`ToSign.pairing`, and `act` `"agreement"`: `check(bytes, moved.signed, binding, null, "agreement")`.
 
 The agreement payment does not always carry H itself. On a pairing whose agreement has its own single-use value, such
 as an EIP-3009 or Permit2 nonce, the agreement payment carries the agreement's value of H, `agreementValue(H)` from
@@ -99,8 +100,8 @@ as an EIP-3009 or Permit2 nonce, the agreement payment carries the agreement's v
 declined `signed-not-bound`.
 
 The gate returns the agreement's receipt as `agreement`, not the signed agreement payment. The receipt is the agreement
-URL's statement: the gate checks that it names H and is a recorded agreement, and does not look up the transaction it
-names. Keep it, and confirm H from that transaction on `network`: for an EIP-3009 agreement payment, the `nonce` of the
+URL's statement: the gate checks its form (`agreed: true`, string `network` and `transaction`) and that its `atrHash`
+is H, and does not look up the transaction it names. Keep it, and confirm H from that transaction on `network`: for an EIP-3009 agreement payment, the `nonce` of the
 token's `AuthorizationUsed` event is `agreementValue(H)`, which you compute from your own H and compare.
 
 ## A moved payment

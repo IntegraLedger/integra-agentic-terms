@@ -11,6 +11,20 @@ No function throws for a protocol outcome. Each returns its result or a `Decline
 nothing the approver answers makes it throw. The checks, their order and their declines are the profile
 [`buyer-gate.md`](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms/profiles/buyer-gate.md)'s.
 
+## Versions and compatibility
+
+This page documents `@integraledger/terms` 0.5.0:
+
+```sh
+npm install @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0
+```
+
+- `@integraledger/lcp` is a peer dependency, `~0.6.0`: any 0.6.x release. Import the bindings you pass in from that one
+  installed copy, the one the gate itself imports.
+- Node.js `>=24.22.1`.
+- At 0.x a minor release may change a public call, so pin the exact version. [Upgrading](../upgrading.md) lists each
+  call that changed from 0.4.x, before and after, and the decline a 0.4 call now gets.
+
 ## Functions
 
 ### `transact`
@@ -63,7 +77,8 @@ Every signing is shown before it is signed: the approver is called once for each
 later step's among them, with `ToSign`, and the signer only when it answers `true`. The agreement payment is also
 returned first with its amount, asset, payee and network, and signed only when a second call carries it back. The gate
 applies no spending limit. Where the pairing is paid after its agreement and the first response offers the agreement
-alone, `transact` pays it and returns `ToReturn`, signing no charge; `options.legalContext` is that response's
+alone, `transact` pays it as soon as the approver approves it, without returning it first, and returns `ToReturn`,
+signing no charge; `options.legalContext` is that response's
 `Legal-Context` value as received. On MPP it follows the agreement URL the agreement challenges carry and pays an x402
 agreement option there; where that resource offers only MPP agreement challenges, `ToReturn` holds them as
 `agreementChallenges`, in place of `agreement`, and nothing is signed. Where the agreement URL a charge names offers
@@ -71,8 +86,9 @@ only MPP agreement challenges, `transact` returns `AgreementChallenges`, `{ agre
 nothing: your own MPP client pays one at the agreement URL. Each signing is asked of the approver with `act`
 `"agreement"` where it is the agreement payment, or a payment through a pairing whose agreement is never a charge (its
 registry data holds `agreement.only`), and `"payment"` otherwise; `step.count` is the number of signings the pairing's
-payment takes. Once the agreement payment is sent, a decline is `agreement-pending` with the payment
-as `moved`: see [`agree`](#agree) for collecting its receipt.
+payment takes. Once the agreement payment is sent, every decline carries it as `moved`: `agreement-pending` where it
+may settle yet, `agreement-failed` where the agreement URL answered otherwise. See [`agree`](#agree) for collecting its
+receipt.
 
 ### `confirm`
 
@@ -90,8 +106,8 @@ declare function confirm(
 ```
 
 Reads the offer, chooses the option for `account`, fetches the ATR and compares its SHA-256 with the advertised hash;
-parses the bytes, holds the option chosen to the ATR's binding slot and `options.resourceRequest` to its request
-commitment; and only then builds, with the hash it computed, and holds the request to its summary and its ceiling
+parses the bytes, holds the option chosen to the ATR's `x402` or `mpp` binding slot and `options.resourceRequest` to
+the `x402` slot's request commitment; and only then builds, with the hash it computed, and holds the request to its summary and its ceiling
 (checks 1 to 11). It calls no approver. `request` is what the signer is handed, with its `summary`, or `null` when
 nothing is handed to the signer: the pairing has nothing for the buyer to sign, or the build is itself the payment,
 which `finish` completes with no signature. `chosen.agreement` is the agreement URL, for a pairing whose payment is not
@@ -184,9 +200,11 @@ whose `required` the protocol package's read refuses for its version, its legal 
 `accepts` that is not a list of at most 32 entries holding an option is declined `offer-unreadable` with the read's
 code, as the unpaid request is, and one whose `option` is not one of `required.accepts`, compared by RFC 8785 form, is
 declined `offer-unreadable` with `x402/option-not-in-document`. The option paid is the first, in document order, that
-`signer` can pay with a pairing whose payment is itself a public proof and, given `options.chosen`, the charge the
-agreement is for, exactly as `confirm` returned it, that the charge's pairing admits by its `agreementOn`.
-`options.inputs` are the buyer's own chain values; `options.signal` ends the exchange. `agree` takes no approver.
+`signer` can pay with an x402 pairing whose registry data lets its payment be an agreement (`agreement`; the
+[pairings reference](./pairings.md) marks these `yes` or `only`) and, given `options.chosen`, the charge the agreement is
+for, exactly as `confirm` returned it, that the charge's pairing admits by its `agreementOn`. `options.inputs` are the
+buyer's own chain values; `options.signal` ends the exchange. `agree` takes no approver, computes no summary, and holds
+the agreement payment to no ceiling; `transact` does all three.
 Options holding anything but `approved`, `inputs`, `signal` and `chosen`, or a member of the wrong kind, and a `signer`
 whose `account` is not a string, are declined before any fetch.
 See [agreement payments](../guides/agreement-payments.md).
@@ -194,10 +212,13 @@ See [agreement payments](../guides/agreement-payments.md).
 The receipt is the agreement URL's statement: the gate checks its form and that its `atrHash` is H, and does not look
 up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already recorded.
 
-Once the agreement payment is sent, a decline is `agreement-pending` with the payment as `moved`; it may settle yet.
-To collect the receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it
-answers `200` with the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. Never
-call again with `approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
+Once the agreement payment is sent, every decline carries it as `moved`. The code is `agreement-pending` where it may
+settle yet: a `202`, a `5xx` or a timeout until the exchange's bound, or your `signal`. It is `agreement-failed` where
+the agreement URL answered with a redirect, another status, or a `200` that is not a receipt for H. Either way, keep
+`moved`, and call again without `approved` to learn whether it is recorded: the gate asks the agreement URL unpaid and
+goes on once it answers `200` with the receipt, or declines `agreement-pending` again while it answers `202`, signing
+nothing. Never call again with `approved` for the same agreement: every call with `approved` signs and sends a new
+agreement payment.
 
 ### `openChannel`
 
@@ -238,7 +259,7 @@ Signs one later voucher, or a refund, in a held channel. The ATR's bytes, its ha
 and the amount from the new challenge. On x402's batch channels the challenge must advertise the held hash, and the
 payment the build returns must name the held channel before the signer is called. On an MPP session, a challenge that
 names another channel or another hash is declined before the signer is called, and one with no legal context is signed
-under the held hash. `within` takes no approver. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
+under the held hash. `within` takes no approver, and holds the voucher to no summary or ceiling. A voucher's cumulative amount is the recorded charge plus the option's amount; a refund's is the
 recorded charge. A Solana refund also carries the payer-signed `request_close` when it is taken again: when the
 `errorReason` of `refund.paymentResponse`, the settle failure's decoded `PAYMENT-RESPONSE`, read first, or else the
 document's `error`, is `invalid_batch_settlement_svm_receiver_binding_unavailable`. See
@@ -287,7 +308,7 @@ amount signed in the channel.
 | `Summary` | `{ amount?; maximum?; payees: Payee[]; period?; limitPerPeriod?; end?; operator?; authorizationExpiry?; refundExpiry?; deposit?; closableBy?: string[]; grant?: Json; asset: string; network: string \| null; validity: Validity; atr: Uint8Array }`, every integer a decimal string. See [the approver](../guides/pay-with-the-gate.md#the-approver). |
 | `Payee` | `{ account: string; amount: string }`. |
 | `Validity` | `{ notBefore: string \| null; notAfter: string \| null; unit: string }`, `unit` `"seconds"` or the chain's unit. |
-| `ResourceRequest` | `HttpRequest \| ToolCall`, the protocol package's types: `{ method; target; body: Uint8Array; headers? }` or `{ name; arguments? }`. |
+| `ResourceRequest` | `HttpRequest \| ToolCall`, the protocol package's types: `{ method; target; body: Uint8Array; headers? }`, `target` the origin-form request-target as sent (the path and query, starting with `/`), or `{ name; arguments? }`. |
 | `Ceilings` | `{ readonly [pairing: string]: number \| "no-end" }`. |
 | `ToReturn` | `{ agreement?: AgreementReceipt; agreementChallenges?: readonly MppChallenge[]; legalContext: string; charge: string; bytes: Uint8Array; h: AtrHash }`: exactly one of `agreement` and `agreementChallenges` is present. |
 | `AgreementChallenges` | `{ agreementChallenges: readonly MppChallenge[]; bytes: Uint8Array; h: AtrHash }`: the agreement resource's MPP agreement challenges, in the seller's order, for the caller's own MPP client; nothing is signed. `MppChallenge` is the protocol package's type (`@integraledger/lcp/mpp`). |

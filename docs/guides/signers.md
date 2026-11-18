@@ -31,7 +31,9 @@ after your approver answered `true` for it; at most twice for one payment (a fun
 the payment of a pairing whose build gives the buyer nothing to sign (it may sign that pairing's agreement payment).
 Where the wallet builds the transaction and picks its expiry itself, the request carries the latest deadline it may
 sign (`maxExpirationTimestampSecs`, `maxTtl`, `maxEpoch` or `maxEraPeriod`); a payment signed past it is discarded and
-declined `past-ceiling`.
+declined `past-ceiling`. A request the gate cannot summarize is never handed over: today the opening of
+`x402/batch-settlement/solana` and a Masumi lock of `x402/exact/cardano/lock` are declined `summary-missing` before the
+signer is called.
 
 ## Requests and answers
 
@@ -81,6 +83,9 @@ an answer's byte strings are `0x` hex, except where the row names another form: 
 | `stacks-contract-call` | A SIP-010 `transfer` whose memo is H, on the chain the request's `chainId` names. | The signed transaction's bytes, `0x` hex: 1 to 16,384 bytes, signed for `chainId` at that network's version, `0x00` on chain 1 (mainnet) and `0x80` on any other, as a Stacks node requires. Chain 1 is read as mainnet by the CAIP-2 convention, under which `stacks:1` is Stacks mainnet. Another chain id or version is declined `signed-not-bound` (`stacks/chain-mismatch`). |
 | `bolt11-pay` | A BOLT11 invoice. Your Lightning node pays exactly this invoice. | The payment preimage: 64 lower-case hex digits, no `0x`. |
 
+`casper-eip712` and `ccd-transfer` are built exactly as the protocol package's profiles define them, but no stock Casper
+or Concordium client produces them yet (see [rails](./rails.md#other-chains)).
+
 ### Protocols without a chain signature
 
 | Kind | What the signer signs | Answer |
@@ -105,7 +110,8 @@ payment.
 
 ## A signer for several kinds
 
-A real signer dispatches on `kind` and refuses what it does not handle:
+A real signer dispatches on `kind` and refuses what it does not handle. This sample signs with
+[viem](https://viem.sh) (`npm install viem`):
 
 ```ts
 import type { Signature, Signer, SigningRequest } from "@integraledger/terms";

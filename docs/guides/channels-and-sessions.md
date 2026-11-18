@@ -3,6 +3,9 @@ title: Channels and sessions
 description: One ATR for a whole channel or session. Compare once at the opening, keep a hold, and sign every later voucher from it.
 ---
 
+This guide is for a developer whose agent pays through a payment channel or a session. At the end you can open one
+through the gate, keep its hold, sign each later voucher and refund from it, and know what `within` refuses.
+
 In a payment channel, the buyer funds a channel once and then pays each request with a signed voucher. x402's
 `batch-settlement` scheme and MPP's sessions work this way. One ATR, and so one H, covers the whole channel: the
 agreement is made at the opening, and every voucher pays under it.
@@ -28,8 +31,8 @@ The gate follows that shape:
    takes the bytes, the hash and the channel from the hold, and the amount from the seller's new challenge. On x402's
    batch channels it signs only when that challenge advertises the held H and the payment it builds names the held
    channel. On an MPP session it declines a challenge that names another channel or another H, and signs one with no
-   legal context under the held H. `within` takes no approver: the opening was shown and approved, and a caller that
-   wants each later voucher shown shows it before it calls `within`.
+   legal context under the held H. `within` takes no approver and holds a voucher to no summary or ceiling: the opening
+   was shown and approved, and a caller that wants each later voucher shown shows it before it calls `within`.
 4. **Record the charge.** When the seller reports its cumulative charge, `recordCharge(hold, charged)` records it. The
    charge may not fall below the last one recorded, nor rise above the largest amount you signed.
 
@@ -38,13 +41,15 @@ The gate follows that shape:
 | Pairing | Opening | Within (handed to the signer as a `batch` of) |
 | --- | --- | --- |
 | `x402/batch-settlement/eip155` | A deposit authorization and the first voucher, signed as a `batch` | A voucher (`eip712`) |
-| `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch` | A voucher (`ed25519-raw`) |
+| `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch`. Not yet payable through the gate: `transact` and `confirm` decline its opening `summary-missing`, since the gate has no summary of a Solana `batch` | A voucher (`ed25519-raw`), for a channel opened outside the gate |
 | `mpp/session/evm` | The funding, then the first voucher | A voucher |
 | `mpp/session/tempo` | The signed open transaction, then the first voucher | A voucher |
 | `mpp/session/xrpl` | A `PaymentChannelCreate` and the first claim | A claim |
 
-`within` signs in-channel payments for these five pairings. For any other pairing it declines
-`pairing-not-supported`. It hands your signer every in-channel payment as a `batch`: answer a `batch` with a list, one
+`within` signs in-channel payments for these five pairings. The gate opens four of them. It declines an
+`x402/batch-settlement/solana` opening `summary-missing`, because it shows nothing it cannot summarize, so open a Solana
+batch channel with the protocol package's build directly; `openChannel` and `within` then take it. For any other
+pairing `within` declines `pairing-not-supported`. It hands your signer every in-channel payment as a `batch`: answer a `batch` with a list, one
 answer per request, in order.
 
 `mpp/session/solana/memo` opens through the gate: `transact` shows its opening (`solana-session-open`) and signs it.
