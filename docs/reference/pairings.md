@@ -1,21 +1,32 @@
 ---
 title: Pairings
-description: Every pairing the gate pays, with its coverage, its agreement, its imports in each language, and what its payment proves.
+description: Every pairing the gate pays, with its coverage, whether it is confirmed, its agreement, its imports in each language, and what its payment proves.
 ---
 
 The gate serves 77 pairings, in TypeScript and in Python alike. This page is generated from the code:
 `node scripts/docs.mjs generate` writes it from `BINDINGS` in `@integraledger/lcp` and the pairings the gate serves,
 and `node scripts/docs.mjs check` fails when it differs from them or from the Python package's bindings.
 
-Columns, each read from the pairing's registry data (`data`) in `@integraledger/lcp`:
+Columns, each read from the pairing's registry data (`data`) in `@integraledger/lcp`, and the last also from the
+gate's own rule:
 
 - **Coverage**: `full` where the payment is itself a public proof of H, the payer's own signed act on a public
   ledger binding all of H; `none` otherwise (see [Concepts](../concepts.md#coverage)).
+- **Confirmed**: `yes` where something outside the protocol package has shown the form as its profile defines it
+  (`confirmed`); `no` otherwise. The gate builds and reads a pairing at `no` exactly as its profile defines it,
+  though nothing outside the protocol package has yet shown that form.
 - **Agreement payment first**: whether the gate pays the seller's agreement payment before this payment, and on
   which network that agreement may be (`agreementOn`): any network, or only the payment's own (see
   [Agreement payments](../guides/agreement-payments.md)).
-- **Pays an agreement**: whether this pairing's own payment can be the agreement payment another pairing follows
-  (`agreement`), and `only` where it is never a charge, only an agreement.
+- **Pays an agreement**: what the gate does with this pairing's payment as an agreement. `yes`: the gate pays,
+  through this pairing, the agreement payment another pairing follows (`transact` and `agree`), and the payment can
+  also be a charge; these are x402 pairings whose registry data holds an agreement form (`agreement`). `only`: the
+  payment is never a charge, only an agreement (`agreement.only`): `transact` declines it as a charge, the approver
+  is asked about each of its signings as the act `agreement`, and on an x402 pairing the gate pays it as the
+  agreement another pairing follows.
+  `no`: the gate pays no agreement through it. The gate pays an agreement only through x402 pairings: an MPP pairing
+  whose registry data holds `agreement` reads `no`, and the gate returns the seller's MPP agreement challenges as
+  `agreementChallenges`, for your own MPP client to pay.
 
 Below each table, every pairing's statement of what its payment proves, as its registry data states it
 (`data.proves`). Where a statement names `<network>` and `<transaction>`, they stand for the agreement payment's
@@ -23,25 +34,25 @@ network and transaction.
 
 ## EVM
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/evm/authorization` | full | no | yes | `evmAuthorization` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_AUTHORIZATION` |
-| `mpp/charge/evm/hash` | none | yes, any network | no | `evmHash` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_HASH` |
-| `mpp/charge/evm/permit2` | full | no | yes | `evmPermit2` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_PERMIT2` |
-| `mpp/charge/evm/transaction` | none | yes, any network | no | `evmTransaction` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_TRANSACTION` |
-| `mpp/charge/usdc/evm` | full | no | yes | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_EVM` |
-| `mpp/charge/usdc/gateway` | none | yes, any network | no | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_GATEWAY` |
-| `mpp/session/evm` | full | no | no | `sessionEvm` from `@integraledger/lcp/mpp` | `MPP_SESSION_EVM` |
-| `spend-permissions/eip155` | full | no | only | `spendPermissionsEip155` from `@integraledger/lcp/spend-permissions` | `SPEND_PERMISSIONS_EIP155` |
-| `x402/auth-capture/eip155/eip3009` | full | no | no | `authCaptureEip3009` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_EIP3009` |
-| `x402/auth-capture/eip155/permit2` | full | no | no | `authCapturePermit2` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` |
-| `x402/batch-settlement/eip155` | full | no | no | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_EIP155` |
-| `x402/exact/eip155/eip3009` | full | no | yes | `exactEip3009` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_EIP3009` |
-| `x402/exact/eip155/erc7710` | none | yes, any network | no | `exactErc7710` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710` |
-| `x402/exact/eip155/erc7710-salt` | full | no | no | `exactErc7710Salt` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710_SALT` |
-| `x402/exact/eip155/gateway-batched` | none | yes, its network | no | `exactGatewayBatched` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_GATEWAY_BATCHED` |
-| `x402/exact/eip155/permit2` | full | no | yes | `exactPermit2` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_PERMIT2` |
-| `x402/upto/eip155/permit2` | full | no | no | `uptoPermit2` from `@integraledger/lcp/x402` | `X402_UPTO_EIP155_PERMIT2` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/evm/authorization` | full | yes | no | no | `evmAuthorization` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_AUTHORIZATION` |
+| `mpp/charge/evm/hash` | none | no | yes, any network | no | `evmHash` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_HASH` |
+| `mpp/charge/evm/permit2` | full | no | no | no | `evmPermit2` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_PERMIT2` |
+| `mpp/charge/evm/transaction` | none | no | yes, any network | no | `evmTransaction` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_TRANSACTION` |
+| `mpp/charge/usdc/evm` | full | no | no | no | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_EVM` |
+| `mpp/charge/usdc/gateway` | none | no | yes, any network | no | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_GATEWAY` |
+| `mpp/session/evm` | full | no | no | no | `sessionEvm` from `@integraledger/lcp/mpp` | `MPP_SESSION_EVM` |
+| `spend-permissions/eip155` | full | yes | no | only | `spendPermissionsEip155` from `@integraledger/lcp/spend-permissions` | `SPEND_PERMISSIONS_EIP155` |
+| `x402/auth-capture/eip155/eip3009` | full | no | no | no | `authCaptureEip3009` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_EIP3009` |
+| `x402/auth-capture/eip155/permit2` | full | no | no | no | `authCapturePermit2` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` |
+| `x402/batch-settlement/eip155` | full | no | no | no | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_EIP155` |
+| `x402/exact/eip155/eip3009` | full | yes | no | yes | `exactEip3009` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_EIP3009` |
+| `x402/exact/eip155/erc7710` | none | no | yes, any network | no | `exactErc7710` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710` |
+| `x402/exact/eip155/erc7710-salt` | full | no | no | no | `exactErc7710Salt` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710_SALT` |
+| `x402/exact/eip155/gateway-batched` | none | yes | yes, its network | no | `exactGatewayBatched` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_GATEWAY_BATCHED` |
+| `x402/exact/eip155/permit2` | full | no | no | yes | `exactPermit2` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_PERMIT2` |
+| `x402/upto/eip155/permit2` | full | no | no | no | `uptoPermit2` from `@integraledger/lcp/x402` | `X402_UPTO_EIP155_PERMIT2` |
 
 **`mpp/charge/evm/authorization`**: The payer signed an EIP-3009 transfer authorization whose nonce is keccak256 of this challenge's id and realm, and the id is this ATR's hash in base64url with the challenge's position. The token contract verified the signature when it executed the transfer, and the nonce is on chain as the nonce topic of its AuthorizationUsed event. A holder of the ATR and the realm can confirm the hash from that nonce; the chain alone does not reveal it. This does not show that amount, payee, asset or timing match the ATR's content.
 
@@ -79,12 +90,12 @@ network and transaction.
 
 ## Tempo
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/tempo/split-memo` | full | no | yes | `tempoSplitMemo` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_SPLIT_MEMO` |
-| `mpp/charge/tempo/split-memo/push` | full | no | no | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` |
-| `mpp/session/tempo` | full | no | no | `sessionTempo` from `@integraledger/lcp/mpp` | `MPP_SESSION_TEMPO` |
-| `mpp/subscription/tempo` | full | no | no | `subscriptionTempo` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_TEMPO` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/tempo/split-memo` | full | yes | no | no | `tempoSplitMemo` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_SPLIT_MEMO` |
+| `mpp/charge/tempo/split-memo/push` | full | no | no | no | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` |
+| `mpp/session/tempo` | full | no | no | no | `sessionTempo` from `@integraledger/lcp/mpp` | `MPP_SESSION_TEMPO` |
+| `mpp/subscription/tempo` | full | no | no | no | `subscriptionTempo` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_TEMPO` |
 
 **`mpp/charge/tempo/split-memo`**: The ATR's hash is in the MPP Tempo charge challenge the payer answered: its id is the hash in base64url with the challenge's position, and one of its splits carries the hash as its memo. The payer's own signed Tempo transaction carries all of the hash as the memo of a `transferWithMemo` call, and the chain verified the payer's signature when it executed the call. The record states "paid" where value moved, with the account it reached, and "signed" where nothing moved. This does not show that amount, payee, asset or timing match the ATR's content.
 
@@ -96,17 +107,17 @@ network and transaction.
 
 ## Solana
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/solana` | full | no | yes | `chargeSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA` |
-| `mpp/charge/solana/unsponsored` | full | no | no | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA_UNSPONSORED` |
-| `mpp/charge/usdc/solana` | full | no | yes | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_SOLANA` |
-| `mpp/session/solana/memo` | full | no | no | `sessionSolanaMemo` from `@integraledger/lcp/mpp` | `MPP_SESSION_SOLANA_MEMO` |
-| `mpp/session/solana/stock` | none | yes, its network | no | `sessionSolanaStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_SOLANA_STOCK` |
-| `mpp/subscription/solana` | full | no | no | `subscriptionSolana` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_SOLANA` |
-| `x402/batch-settlement/solana` | full | no | no | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_SOLANA` |
-| `x402/exact/solana` | full | no | yes | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | `X402_EXACT_SOLANA` |
-| `x402/upto/solana` | full | no | no | `uptoSvm` from `@integraledger/lcp/x402-upto-solana` | `X402_UPTO_SOLANA` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/solana` | full | no | no | no | `chargeSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA` |
+| `mpp/charge/solana/unsponsored` | full | no | no | no | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA_UNSPONSORED` |
+| `mpp/charge/usdc/solana` | full | no | no | no | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_SOLANA` |
+| `mpp/session/solana/memo` | full | no | no | no | `sessionSolanaMemo` from `@integraledger/lcp/mpp` | `MPP_SESSION_SOLANA_MEMO` |
+| `mpp/session/solana/stock` | none | no | yes, its network | no | `sessionSolanaStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_SOLANA_STOCK` |
+| `mpp/subscription/solana` | full | no | no | no | `subscriptionSolana` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_SOLANA` |
+| `x402/batch-settlement/solana` | full | no | no | no | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_SOLANA` |
+| `x402/exact/solana` | full | yes | no | yes | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | `X402_EXACT_SOLANA` |
+| `x402/upto/solana` | full | no | no | no | `uptoSvm` from `@integraledger/lcp/x402-upto-solana` | `X402_UPTO_SOLANA` |
 
 **`mpp/charge/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose one LCP-form Memo instruction is the hash's LCP string, final at `finalized` with no error. It paid each transfer it made from the buyer's account, recorded with its mint or lamports, amount and recipient, one of zero included, the recipient being the owner the transaction's token balances name; as a payment, one of them reached an account the option's payee owns. The memo is in the transaction's instruction data on chain. It compares no amount, mint or time with the ATR's terms.
 
@@ -128,21 +139,21 @@ network and transaction.
 
 ## Stellar
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/stellar/precondition` | full | no | only | `exactStellarPrecondition` from `@integraledger/lcp/x402-exact-stellar` | `X402_EXACT_STELLAR_PRECONDITION` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/stellar/precondition` | full | yes | no | only | `exactStellarPrecondition` from `@integraledger/lcp/x402-exact-stellar` | `X402_EXACT_STELLAR_PRECONDITION` |
 
 **`x402/exact/stellar/precondition`**: Signed: the buyer's account signed a Soroban authorization of a transfer and the 40-byte payload of this ATR's hash and that authorization's nonce, carried as a signed-payload precondition of the transaction that consumed it, so the buyer's own signed act carries the hash. The transaction succeeded on the asset contract its event names; where the transfer moved a nonzero amount, it paid the account the event's to names. This states nothing of the amount, nor that the asset, the account reached or the time meet a term of the ATR.
 
 ## XRP Ledger
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/xrpl` | full | no | no | `chargeXrpl` from `@integraledger/lcp/mpp` | `MPP_CHARGE_XRPL` |
-| `mpp/session/xrpl` | full | no | no | `sessionXrpl` from `@integraledger/lcp/mpp` | `MPP_SESSION_XRPL` |
-| `mpp/session/xrpl/stock` | none | yes, its network | no | `sessionXrplStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_XRPL_STOCK` |
-| `x402/exact/xrpl` | full | no | yes | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | `X402_EXACT_XRPL` |
-| `x402/upto/xrpl` | none | yes, its network | no | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | `X402_UPTO_XRPL` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/xrpl` | full | no | no | no | `chargeXrpl` from `@integraledger/lcp/mpp` | `MPP_CHARGE_XRPL` |
+| `mpp/session/xrpl` | full | no | no | no | `sessionXrpl` from `@integraledger/lcp/mpp` | `MPP_SESSION_XRPL` |
+| `mpp/session/xrpl/stock` | none | no | yes, its network | no | `sessionXrplStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_XRPL_STOCK` |
+| `x402/exact/xrpl` | full | yes | no | yes | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | `X402_EXACT_XRPL` |
+| `x402/upto/xrpl` | none | no | yes, its network | no | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | `X402_UPTO_XRPL` |
 
 **`mpp/charge/xrpl`**: The payer signed an XRPL Payment whose InvoiceID is this ATR's hash, and it is in a validated ledger with tesSUCCESS: it paid the amount meta.delivered_amount states to the account its Destination names. This does not show that amount, destination, asset or timing match the ATR's content.
 
@@ -156,12 +167,12 @@ network and transaction.
 
 ## Hedera
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/lcp/hedera` | full | no | yes | `chargeLcpHedera` from `@integraledger/lcp/mpp` | `MPP_CHARGE_LCP_HEDERA` |
-| `mpp/session/hedera/stock` | none | yes, its network | no | `sessionHederaStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_HEDERA_STOCK` |
-| `x402/exact/hedera` | full | no | yes | `exactHedera` from `@integraledger/lcp/hedera` | `X402_EXACT_HEDERA` |
-| `x402/exact/hedera/transfer-executor` | none | yes, any network | no | `exactHederaExecutor` from `@integraledger/lcp/hedera` | `X402_EXACT_HEDERA_TRANSFER_EXECUTOR` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/lcp/hedera` | full | no | no | no | `chargeLcpHedera` from `@integraledger/lcp/mpp` | `MPP_CHARGE_LCP_HEDERA` |
+| `mpp/session/hedera/stock` | none | no | yes, its network | no | `sessionHederaStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_HEDERA_STOCK` |
+| `x402/exact/hedera` | full | yes | no | yes | `exactHedera` from `@integraledger/lcp/hedera` | `X402_EXACT_HEDERA` |
+| `x402/exact/hedera/transfer-executor` | none | no | yes, any network | no | `exactHederaExecutor` from `@integraledger/lcp/hedera` | `X402_EXACT_HEDERA_TRANSFER_EXECUTOR` |
 
 **`mpp/charge/lcp/hedera`**: The payer's own signed act carries this ATR's hash: a Hedera crypto transfer whose memo is the hash's LCP string reached consensus with SUCCESS, debiting the payer, the one account its rows debit, and paid the account it credits, recorded with the asset and amount it moved. The memo is in the public transaction record, readable by transaction id. It compares no amount, asset or time with the ATR's terms.
 
@@ -173,34 +184,34 @@ network and transaction.
 
 ## Algorand
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/algorand` | full | no | yes | `exactAvm` from `@integraledger/lcp/avm` | `X402_EXACT_ALGORAND` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/algorand` | full | yes | no | yes | `exactAvm` from `@integraledger/lcp/avm` | `X402_EXACT_ALGORAND` |
 
 **`x402/exact/algorand`**: The payer's account authorized an Algorand asset transfer whose note is this ATR's hash in LCP string form, with a key's signature, a multisignature or a Falcon signature, by the account's own key or the key it is rekeyed to; a logic signature, or a transfer that names an asset sender, is no such act. The ledger verified that authorization when it confirmed the transaction, which is final on confirmation, and the note is on chain in it. Where the transfer moved an amount, zero included, the payer paid it to the account the transfer names (`arcv`). As an agreement, it shows that this account signed the transfer carrying the hash. It does not show that amount, asset or timing match the ATR's content.
 
 ## Aptos
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/aptos` | none | yes, any network | no | `exactAptos` from `@integraledger/lcp/aptos` | `X402_EXACT_APTOS` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/aptos` | none | yes | yes, any network | no | `exactAptos` from `@integraledger/lcp/aptos` | `X402_EXACT_APTOS` |
 
 **`x402/exact/aptos`**: Before this payment was taken, an account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>; this shows neither that the account is the payer nor what the agreement moved. The ATR was assembled before the challenge went out, and the challenge advertised its hash and link. The payer's signed Aptos transaction does not carry the hash. The resource server tied the hash to this payment when it recorded the hash for this request, and the read identified the payment as the sender's committed transaction at its signed sequence number, signed by an account other than the option's payee and depositing to a store the payee owns. What it moved is recorded as observed: this does not show that amount, asset or timing match the ATR's content.
 
 ## Sui
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/sui` | full | no | yes | `exactSui` from `@integraledger/lcp/sui` | `X402_EXACT_SUI` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/sui` | full | yes | no | yes | `exactSui` from `@integraledger/lcp/sui` | `X402_EXACT_SUI` |
 
 **`x402/exact/sui`**: The payer, the sender, signed a Sui transaction whose one unused Pure input is this ATR's hash, and the network executed it successfully in a checkpoint after the position the read was given; the hash is on chain in its input list, readable by its digest while a node retains it. The sender is not the option's payee. Where the transaction moved value it paid each account a positive balance change names; where it moved nothing it was signed, naming the recipient its signed transfer names. What it moved is recorded as observed: this does not show that amount, coin type or timing match the ATR's content.
 
 ## NEAR
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/nearintents` | none | yes, any network | no | `chargeNearIntents` from `@integraledger/lcp/mpp` | `MPP_CHARGE_NEARINTENTS` |
-| `x402/exact/near` | full | no | yes | `exactNear` from `@integraledger/lcp/near` | `X402_EXACT_NEAR` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/nearintents` | none | no | yes, any network | no | `chargeNearIntents` from `@integraledger/lcp/mpp` | `MPP_CHARGE_NEARINTENTS` |
+| `x402/exact/near` | full | yes | no | yes | `exactNear` from `@integraledger/lcp/near` | `X402_EXACT_NEAR` |
 
 **`mpp/charge/nearintents`**: Before this payment was reported, an agreement transaction carrying this ATR's hash was signed on \<network>, recorded in \<transaction>; this shows neither that its signer is the payer nor when the deposit was made. The seller's MPP challenge carried the hash in its externalId. The deposit carries no hash, and its payer signed nothing that does. The seller reported it paid.
 
@@ -208,42 +219,42 @@ network and transaction.
 
 ## Starknet
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/starknet` | full | no | yes | `exactStarknet` from `@integraledger/lcp/starknet` | `X402_EXACT_STARKNET` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/starknet` | full | yes | no | yes | `exactStarknet` from `@integraledger/lcp/starknet` | `X402_EXACT_STARKNET` |
 
 **`x402/exact/starknet`**: The payer's own signed SNIP-9 outside execution carries the low 250 bits of this ATR's hash as its nonce (on an agreement, of the agreement's value of it), which the payer's account verified when it executed it. It paid the account each `Transfer` from the payer, or a transfer call of zero, names the amount it states, zero included: on a payment, the option's `payTo` among them; where the read observed no transfer, the payer signed it. A holder of the ATR confirms the hash's low 250 bits from the nonce; the chain holds no more of it. This does not show that the amount, the asset or the timing match the ATR's content.
 
 ## Polkadot
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/polkadot/lcp-assets-remark` | full | no | yes | `exactPolkadotRemark` from `@integraledger/lcp/polkadot` | `X402_EXACT_POLKADOT_LCP_ASSETS_REMARK` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/polkadot/lcp-assets-remark` | full | yes | no | yes | `exactPolkadotRemark` from `@integraledger/lcp/polkadot` | `X402_EXACT_POLKADOT_LCP_ASSETS_REMARK` |
 
 **`x402/exact/polkadot/lcp-assets-remark`**: The payer signed one Polkadot Asset Hub extrinsic whose bytes hold this ATR's hash in LCP string form as a remark, at the account nonce its reference holds, or an account acting for the payer through a `proxy.proxy` or `multisig.as_multi_threshold_1` wrapper signed one. The chain verified the signature and dispatched the extrinsic with a Remarked event for that remark, at the finality recorded. Where the record shows a transfer event from the payer, or the call is a transfer of zero that runs as the payer, it states that the extrinsic paid, with each recipient and what moved; where it shows neither, it states that the payer signed. The signer is named, with the wrapper as its authority where it acted for the payer. This does not show that amount, asset or timing match the ATR's content.
 
 ## TRON
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/tron/lcp-trc20-memo` | full | no | yes | `exactTronMemo` from `@integraledger/lcp/tron` | `X402_EXACT_TRON_LCP_TRC20_MEMO` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/tron/lcp-trc20-memo` | full | yes | no | yes | `exactTronMemo` from `@integraledger/lcp/tron` | `X402_EXACT_TRON_LCP_TRC20_MEMO` |
 
 **`x402/exact/tron/lcp-trc20-memo`**: The payer, the transaction's owner, signed a Tron transaction whose memo is this ATR's hash in LCP string form, and whose one contract calls transfer on the token. The network verified the signature, which covers the memo through the transaction id, and the receipt's result is SUCCESS, at the finality recorded. Where the receipt holds Transfer logs from the owner, the transaction paid, with each recipient and what moved; where it holds no Transfer log and the signed call is a transfer of zero, it paid zero to that call's recipient; where it holds neither, the payer signed, and no account is named. The owner is named as the signer, and its Permission_id as the authority. This does not show that amount, token or timing match the ATR's content.
 
 ## TON
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/tvm` | full | no | yes | `exactTvm` from `@integraledger/lcp/tvm` | `X402_EXACT_TVM` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/tvm` | full | yes | no | yes | `exactTvm` from `@integraledger/lcp/tvm` | `X402_EXACT_TVM` |
 
 **`x402/exact/tvm`**: The payer's W5 wallet signed a request whose one Jetton transfer carries this ATR's hash in its forward payload, as a TEP-74 text comment in LCP string form, and ran it: the payer's own signed act carries the hash. The W5 wallet paid, through its Jetton wallet, the amount the `internal_transfer` names, zero included, to the Jetton wallet that took it, the recipient; where the read observed no transfer, the W5 wallet signed. The signer is the W5 wallet, named apart from the recipient. This does not show that the amount, the Jetton, the payee or the time match the ATR's content.
 
 ## Cardano
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/cardano` | full | no | yes | `exactCardano` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO` |
-| `x402/exact/cardano/lock` | full | no | no | `exactCardanoLock` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO_LOCK` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/cardano` | full | yes | no | yes | `exactCardano` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO` |
+| `x402/exact/cardano/lock` | full | no | no | no | `exactCardanoLock` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO_LOCK` |
 
 **`x402/exact/cardano`**: The payer, the payment credential that holds the input the payment names, signed a Cardano transaction whose body commits through its auxiliary_data_hash to a CIP-20 message (label 674) carrying this ATR's hash, and the ledger included it as valid at the mark read. It paid: the read names each output it created, to which payment credential and in what asset and amount, as observed, and on a payment one output reached the payee's payment credential. A transaction with fewer confirmations than the ledger's security parameter (2160 on mainnet) can be rolled back. The read compares no amount, asset or time with the ATR's terms.
 
@@ -251,35 +262,35 @@ network and transaction.
 
 ## Casper
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/casper` | full | no | yes | `exactCasper` from `@integraledger/lcp/casper` | `X402_EXACT_CASPER` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/casper` | full | no | no | yes | `exactCasper` from `@integraledger/lcp/casper` | `X402_EXACT_CASPER` |
 
 **`x402/exact/casper`**: The payer's own signed CEP-3009 authorization carries this ATR's hash as its nonce (on an agreement, the agreement's value of it), which the token contract verified with the payer's key when it executed the call. It paid the account its `to` names the amount its `value` states, zero included: on a payment, the option's `payTo`. This does not show that the amount, the asset or the timing match the ATR's content.
 
 ## Concordium
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/exact/ccd` | full | no | no | `exactCcd` from `@integraledger/lcp/ccd` | `X402_EXACT_CCD` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/exact/ccd` | full | no | no | no | `exactCcd` from `@integraledger/lcp/ccd` | `X402_EXACT_CCD` |
 
 **`x402/exact/ccd`**: The payer signed a Concordium transaction one of whose transfers carries this ATR's hash, in LCP string form, as its memo. The chain accepted the transaction only with the sender's valid signature, and the memo is on chain in the finalized transfer event. Where the transfer moved an amount, zero included, the payer paid it to the account the transfer names. As an agreement, it shows that this account signed the transfer carrying the hash. It does not show that amount, token or timing match the ATR's content.
 
 ## Stacks
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/usdc/stacks` | full | no | yes | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_STACKS` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/usdc/stacks` | full | no | no | no | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_STACKS` |
 
 **`mpp/charge/usdc/stacks`**: The payer signed a Stacks transaction whose origin is the payer and which carries this ATR's hash as the `(some H)` memo of a SIP-010 `transfer`, or as a token transfer's memo. The chain verified the origin's signature, the transaction executed with status success on the canonical chain, and the memo is in the mined transaction on chain. Where it made a transfer, one of zero included, it paid that transfer's recipient, named in the record; the origin, never a sponsor, is the signer. This does not show that the contract is a SIP-010 token, or that amount, asset or timing match the ATR's content.
 
 ## Lightning
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/lightning` | none | yes, any network | no | `chargeLightning` from `@integraledger/lcp/lightning` | `MPP_CHARGE_LIGHTNING` |
-| `mpp/session/lightning` | none | yes, any network | no | `sessionLightning` from `@integraledger/lcp/lightning` | `MPP_SESSION_LIGHTNING` |
-| `x402/exact/lnbtc/payment-hash` | none | yes, any network | no | `exactLnbtcPaymentHash` from `@integraledger/lcp/lightning` | `X402_EXACT_LNBTC_PAYMENT_HASH` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/lightning` | none | no | yes, any network | no | `chargeLightning` from `@integraledger/lcp/lightning` | `MPP_CHARGE_LIGHTNING` |
+| `mpp/session/lightning` | none | no | yes, any network | no | `sessionLightning` from `@integraledger/lcp/lightning` | `MPP_SESSION_LIGHTNING` |
+| `x402/exact/lnbtc/payment-hash` | none | yes | yes, any network | no | `exactLnbtcPaymentHash` from `@integraledger/lcp/lightning` | `X402_EXACT_LNBTC_PAYMENT_HASH` |
 
 **`mpp/charge/lightning`**: An account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>, before this payment was taken or reported. This shows neither that the account is this payment's payer nor when this payment was taken, which nothing here reads. The seller's node's BOLT11 invoice's description hash is this ATR's hash, and the ATR commits its payment hash. The invoice is decoded strictly and its signer is recovered; no payee key is compared with that signer, and the payer signed nothing that carries the hash. The preimage, which every node on the payment's route learns, shows that the secret behind the hash left the seller's custody, never who paid, and to anyone but the seller's node not that the invoice was paid; no public ledger shows the payment. Settlement is the seller's report. This does not show that amount, payee or timing match the ATR's content.
 
@@ -289,23 +300,23 @@ network and transaction.
 
 ## Cloudflare
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `x402/batch-settlement/cloudflare` | none | yes, any network | no | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_CLOUDFLARE` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `x402/batch-settlement/cloudflare` | none | no | yes, any network | no | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_CLOUDFLARE` |
 
 **`x402/batch-settlement/cloudflare`**: Before this payment was taken, an account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>; this shows neither that the account is the payer nor what the agreement moved. The request whose payment echoed this ATR's hash in the legalContext entry of x402's extensions was signed with an HTTP message signature key registered with Cloudflare, which Cloudflare verifies, billing that key's registered identity off chain; no public ledger records the payment. This does not show that amount, asset or timing match the ATR's content.
 
 ## Card
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `card/mastercard-agent-pay` | none | yes, any network | no | `agentPay` from `@integraledger/lcp/card` | `CARD_MASTERCARD_AGENT_PAY` |
-| `card/mastercard-vi/autonomous` | none | yes, any network | no | `viAutonomous` from `@integraledger/lcp/card` | `CARD_MASTERCARD_VI_AUTONOMOUS` |
-| `card/mastercard-vi/immediate` | none | yes, any network | no | `viImmediate` from `@integraledger/lcp/card` | `CARD_MASTERCARD_VI_IMMEDIATE` |
-| `card/seller-reference` | none | yes, any network | no | `sellerReference` from `@integraledger/lcp/card` | `CARD_SELLER_REFERENCE` |
-| `card/visa-tap` | none | yes, any network | no | `visaTap` from `@integraledger/lcp/card` | `CARD_VISA_TAP` |
-| `card/visa-vic` | none | yes, any network | no | `visaVic` from `@integraledger/lcp/card` | `CARD_VISA_VIC` |
-| `mpp/charge/card` | none | yes, any network | no | `chargeCard` from `@integraledger/lcp/mpp` | `MPP_CHARGE_CARD` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `card/mastercard-agent-pay` | none | no | yes, any network | no | `agentPay` from `@integraledger/lcp/card` | `CARD_MASTERCARD_AGENT_PAY` |
+| `card/mastercard-vi/autonomous` | none | no | yes, any network | no | `viAutonomous` from `@integraledger/lcp/card` | `CARD_MASTERCARD_VI_AUTONOMOUS` |
+| `card/mastercard-vi/immediate` | none | no | yes, any network | no | `viImmediate` from `@integraledger/lcp/card` | `CARD_MASTERCARD_VI_IMMEDIATE` |
+| `card/seller-reference` | none | no | yes, any network | no | `sellerReference` from `@integraledger/lcp/card` | `CARD_SELLER_REFERENCE` |
+| `card/visa-tap` | none | no | yes, any network | no | `visaTap` from `@integraledger/lcp/card` | `CARD_VISA_TAP` |
+| `card/visa-vic` | none | no | yes, any network | no | `visaVic` from `@integraledger/lcp/card` | `CARD_VISA_VIC` |
+| `mpp/charge/card` | none | no | yes, any network | no | `chargeCard` from `@integraledger/lcp/mpp` | `MPP_CHARGE_CARD` |
 
 **`card/mastercard-agent-pay`**: An account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>, before this payment was taken or reported. This shows neither that the account is this payment's payer nor when this payment was taken, which nothing here reads. Every Mastercard Agent Pay message signature in the agent's checkout request, tagged Agent-pay-auth or agent-pay-auth, covers this ATR's hash: its nonce, whose first 32 bytes are the hash, or the request's path, whose last segment is the hash. The seller checked where the hash rides and did not verify a signature here, and nothing compares the agent's key with the account that signed the agreement. The card authorization itself does not carry the hash. This does not show that amount, payee or timing match the ATR's content.
 
@@ -323,10 +334,10 @@ network and transaction.
 
 ## Stripe
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `mpp/charge/stripe` | none | yes, any network | no | `chargeStripe` from `@integraledger/lcp/mpp` | `MPP_CHARGE_STRIPE` |
-| `mpp/subscription/stripe` | none | yes, any network | no | `subscriptionStripe` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_STRIPE` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mpp/charge/stripe` | none | no | yes, any network | no | `chargeStripe` from `@integraledger/lcp/mpp` | `MPP_CHARGE_STRIPE` |
+| `mpp/subscription/stripe` | none | no | yes, any network | no | `subscriptionStripe` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_STRIPE` |
 
 **`mpp/charge/stripe`**: An account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>, before this payment was taken or reported. This shows neither that the account is this payment's payer nor when this payment was taken, which nothing here reads. The seller's MPP challenge carried this ATR's hash in its id and its opaque reference, bound to the challenge by the seller's own server, and the credential presented echoed that challenge. The seller also placed the hash in the PaymentIntent's metadata under legal_context. Nothing the payer or its Stripe token signed carries the hash, and the payment is known from the seller's report alone. This does not show that the payer's approval carried the hash.
 
@@ -334,12 +345,12 @@ network and transaction.
 
 ## Mandate
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `ap2/checkout-mandate` | none | yes, any network | no | `checkoutMandate` from `@integraledger/lcp/ap2` | `AP2_CHECKOUT_MANDATE` |
-| `ap2/checkout-mandate/x402` | none | yes, any network | no | `checkoutMandateX402` from `@integraledger/lcp/ap2` | `AP2_CHECKOUT_MANDATE_X402` |
-| `ucp/booking/ap2-mandate` | none | yes, any network | no | `bookingAp2Mandate` from `@integraledger/lcp/ucp` | `UCP_BOOKING_AP2_MANDATE` |
-| `ucp/checkout/ap2-mandate` | none | yes, any network | no | `ap2Mandate` from `@integraledger/lcp/ucp` | `UCP_CHECKOUT_AP2_MANDATE` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ap2/checkout-mandate` | none | no | yes, any network | no | `checkoutMandate` from `@integraledger/lcp/ap2` | `AP2_CHECKOUT_MANDATE` |
+| `ap2/checkout-mandate/x402` | none | no | yes, any network | no | `checkoutMandateX402` from `@integraledger/lcp/ap2` | `AP2_CHECKOUT_MANDATE_X402` |
+| `ucp/booking/ap2-mandate` | none | no | yes, any network | no | `bookingAp2Mandate` from `@integraledger/lcp/ucp` | `UCP_BOOKING_AP2_MANDATE` |
+| `ucp/checkout/ap2-mandate` | none | no | yes, any network | no | `ap2Mandate` from `@integraledger/lcp/ucp` | `UCP_CHECKOUT_AP2_MANDATE` |
 
 **`ap2/checkout-mandate`**: An account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>, before this payment was taken or reported. This shows neither that the account is this payment's payer nor when this payment was taken, which nothing here reads. The closed AP2 Checkout Mandate presented carries checkout_hash, the SHA-256 of the checkout JWT presented beside it, and that JWT's payload carries this ATR's hash as its legalContext member. AP2 has the mandate signed by the user's trusted surface, or by the agent under the user's open mandate presented before it in a chain. That signature, the open mandate's signature, its delegation to the agent's key (cnf) and the chain's link were not verified here, and nothing compares the mandate's signer with the account that signed the agreement: AP2 has the Credential Provider verify the Payment Mandate, whose transaction_id is the same hash, before a payment credential issues. The payment, whether the merchant initiated it or the payer's side sent it, is known from the seller's report alone. This does not show that amount, payee or timing match the ATR's content.
 
@@ -351,14 +362,14 @@ network and transaction.
 
 ## Checkout
 
-| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |
-| --- | --- | --- | --- | --- | --- |
-| `ack/payment-request` | none | yes, any network | no | `paymentRequest` from `@integraledger/lcp/ack` | `ACK_PAYMENT_REQUEST` |
-| `acp/checkout/delegated` | none | yes, any network | no | `delegated` from `@integraledger/lcp/acp` | `ACP_CHECKOUT_DELEGATED` |
-| `acp/checkout/undelegated` | none | yes, any network | no | `undelegated` from `@integraledger/lcp/acp` | `ACP_CHECKOUT_UNDELEGATED` |
-| `ucp/booking/unsigned` | none | yes, any network | no | `bookingUnsigned` from `@integraledger/lcp/ucp` | `UCP_BOOKING_UNSIGNED` |
-| `ucp/checkout/agent-signed` | none | yes, any network | no | `agentSigned` from `@integraledger/lcp/ucp` | `UCP_CHECKOUT_AGENT_SIGNED` |
-| `ucp/checkout/unsigned` | none | yes, any network | no | `unsigned` from `@integraledger/lcp/ucp` | `UCP_CHECKOUT_UNSIGNED` |
+| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ack/payment-request` | none | no | yes, any network | no | `paymentRequest` from `@integraledger/lcp/ack` | `ACK_PAYMENT_REQUEST` |
+| `acp/checkout/delegated` | none | no | yes, any network | no | `delegated` from `@integraledger/lcp/acp` | `ACP_CHECKOUT_DELEGATED` |
+| `acp/checkout/undelegated` | none | no | yes, any network | no | `undelegated` from `@integraledger/lcp/acp` | `ACP_CHECKOUT_UNDELEGATED` |
+| `ucp/booking/unsigned` | none | no | yes, any network | no | `bookingUnsigned` from `@integraledger/lcp/ucp` | `UCP_BOOKING_UNSIGNED` |
+| `ucp/checkout/agent-signed` | none | no | yes, any network | no | `agentSigned` from `@integraledger/lcp/ucp` | `UCP_CHECKOUT_AGENT_SIGNED` |
+| `ucp/checkout/unsigned` | none | no | yes, any network | no | `unsigned` from `@integraledger/lcp/ucp` | `UCP_CHECKOUT_UNSIGNED` |
 
 **`ack/payment-request`**: An account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>, before this payment was taken or reported. This shows neither that the account is this payment's payer nor when this payment was taken, which nothing here reads. This ATR's hash is the id of the seller's ACK Payment Request token, with the link beside it; a receipt for that request embeds the token. The token's signature is not verified here. ACK defines no payer signature, so nothing the payer signed carries the hash, and the payment, which the payer's side sends before it presents the receipt, is known from the seller's report alone. This does not show that the payer's approval carried the hash.
 

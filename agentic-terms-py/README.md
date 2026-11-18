@@ -738,99 +738,98 @@ lists every request kind and the answer it takes.
 ## Supported pairings
 
 Each pairing is a module-level binding constant. The list is generated from the TypeScript registry and checked against
-this package's exports, so both languages serve the same pairings. "Coverage" is `full` where the payment is itself a
-public proof of H and `none` otherwise; "Agreement payment first" marks the pairings paid after an agreement payment,
-and on which network that agreement may be; "Pays an agreement" marks the pairings whose registry data lets their own
-payment be that agreement payment (`only` where it is never a charge). Each is read from the pairing's registry data in
-`@integraledger/lcp`. The gate pays an agreement only through an x402 pairing marked `yes` or `only`: an MPP agreement
-challenge is returned in `AgreementChallenges` for your own MPP client to pay.
-
-The registry also states, for each pairing, whether anything outside the protocol package has shown the form as its
-profile defines it (`confirmed`, not shown here). Most pairings are not yet confirmed: the gate builds and reads them as
-their profiles define them, and nothing outside the protocol package has shown those forms yet. On `x402/exact/casper`
-and `x402/exact/ccd` the stock clients cannot pay the form: the stock Casper client draws a random nonce, and the stock
-Concordium client writes no memo.
+this package's exports, so both languages serve the same pairings; each column is read from the pairing's registry
+data in `@integraledger/lcp`. "Coverage" is `full` where the payment is itself a public proof of H and `none`
+otherwise. "Confirmed" is `yes` where something outside the protocol package has shown the form as its profile defines
+it (`confirmed`); the gate builds and reads the others exactly as their profiles define them, though nothing outside
+the protocol package has yet shown those forms. On `x402/exact/casper` and `x402/exact/ccd` the stock clients cannot
+pay the form: the stock Casper client draws a random nonce, and the stock Concordium client writes no memo. "Agreement
+payment first" marks the pairings paid after an agreement payment, and on which network that agreement may be. "Pays
+an agreement" marks the pairings through which the gate pays the agreement payment another pairing follows, the x402
+pairings whose registry data holds an agreement form, and `only` where a payment is never a charge, only an agreement.
+An MPP pairing whose registry data holds an agreement form reads `no`: the gate pays no agreement over MPP, and returns
+the seller's MPP agreement challenges in `AgreementChallenges` for your own MPP client to pay.
 
 <!-- pairings:python:start -->
-| Rail | Pairing | Python binding | Coverage | Agreement payment first | Pays an agreement |
-| --- | --- | --- | --- | --- | --- |
-| EVM | `mpp/charge/evm/authorization` | `MPP_CHARGE_EVM_AUTHORIZATION` | full | no | yes |
-| EVM | `mpp/charge/evm/hash` | `MPP_CHARGE_EVM_HASH` | none | yes, any network | no |
-| EVM | `mpp/charge/evm/permit2` | `MPP_CHARGE_EVM_PERMIT2` | full | no | yes |
-| EVM | `mpp/charge/evm/transaction` | `MPP_CHARGE_EVM_TRANSACTION` | none | yes, any network | no |
-| EVM | `mpp/charge/usdc/evm` | `MPP_CHARGE_USDC_EVM` | full | no | yes |
-| EVM | `mpp/charge/usdc/gateway` | `MPP_CHARGE_USDC_GATEWAY` | none | yes, any network | no |
-| EVM | `mpp/session/evm` | `MPP_SESSION_EVM` | full | no | no |
-| EVM | `spend-permissions/eip155` | `SPEND_PERMISSIONS_EIP155` | full | no | only |
-| EVM | `x402/auth-capture/eip155/eip3009` | `X402_AUTH_CAPTURE_EIP155_EIP3009` | full | no | no |
-| EVM | `x402/auth-capture/eip155/permit2` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` | full | no | no |
-| EVM | `x402/batch-settlement/eip155` | `X402_BATCH_SETTLEMENT_EIP155` | full | no | no |
-| EVM | `x402/exact/eip155/eip3009` | `X402_EXACT_EIP155_EIP3009` | full | no | yes |
-| EVM | `x402/exact/eip155/erc7710` | `X402_EXACT_EIP155_ERC7710` | none | yes, any network | no |
-| EVM | `x402/exact/eip155/erc7710-salt` | `X402_EXACT_EIP155_ERC7710_SALT` | full | no | no |
-| EVM | `x402/exact/eip155/gateway-batched` | `X402_EXACT_EIP155_GATEWAY_BATCHED` | none | yes, its network | no |
-| EVM | `x402/exact/eip155/permit2` | `X402_EXACT_EIP155_PERMIT2` | full | no | yes |
-| EVM | `x402/upto/eip155/permit2` | `X402_UPTO_EIP155_PERMIT2` | full | no | no |
-| Tempo | `mpp/charge/tempo/split-memo` | `MPP_CHARGE_TEMPO_SPLIT_MEMO` | full | no | yes |
-| Tempo | `mpp/charge/tempo/split-memo/push` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` | full | no | no |
-| Tempo | `mpp/session/tempo` | `MPP_SESSION_TEMPO` | full | no | no |
-| Tempo | `mpp/subscription/tempo` | `MPP_SUBSCRIPTION_TEMPO` | full | no | no |
-| Solana | `mpp/charge/solana` | `MPP_CHARGE_SOLANA` | full | no | yes |
-| Solana | `mpp/charge/solana/unsponsored` | `MPP_CHARGE_SOLANA_UNSPONSORED` | full | no | no |
-| Solana | `mpp/charge/usdc/solana` | `MPP_CHARGE_USDC_SOLANA` | full | no | yes |
-| Solana | `mpp/session/solana/memo` | `MPP_SESSION_SOLANA_MEMO` | full | no | no |
-| Solana | `mpp/session/solana/stock` | `MPP_SESSION_SOLANA_STOCK` | none | yes, its network | no |
-| Solana | `mpp/subscription/solana` | `MPP_SUBSCRIPTION_SOLANA` | full | no | no |
-| Solana | `x402/batch-settlement/solana` | `X402_BATCH_SETTLEMENT_SOLANA` | full | no | no |
-| Solana | `x402/exact/solana` | `X402_EXACT_SOLANA` | full | no | yes |
-| Solana | `x402/upto/solana` | `X402_UPTO_SOLANA` | full | no | no |
-| Stellar | `x402/exact/stellar/precondition` | `X402_EXACT_STELLAR_PRECONDITION` | full | no | only |
-| XRP Ledger | `mpp/charge/xrpl` | `MPP_CHARGE_XRPL` | full | no | no |
-| XRP Ledger | `mpp/session/xrpl` | `MPP_SESSION_XRPL` | full | no | no |
-| XRP Ledger | `mpp/session/xrpl/stock` | `MPP_SESSION_XRPL_STOCK` | none | yes, its network | no |
-| XRP Ledger | `x402/exact/xrpl` | `X402_EXACT_XRPL` | full | no | yes |
-| XRP Ledger | `x402/upto/xrpl` | `X402_UPTO_XRPL` | none | yes, its network | no |
-| Hedera | `mpp/charge/lcp/hedera` | `MPP_CHARGE_LCP_HEDERA` | full | no | yes |
-| Hedera | `mpp/session/hedera/stock` | `MPP_SESSION_HEDERA_STOCK` | none | yes, its network | no |
-| Hedera | `x402/exact/hedera` | `X402_EXACT_HEDERA` | full | no | yes |
-| Hedera | `x402/exact/hedera/transfer-executor` | `X402_EXACT_HEDERA_TRANSFER_EXECUTOR` | none | yes, any network | no |
-| Algorand | `x402/exact/algorand` | `X402_EXACT_ALGORAND` | full | no | yes |
-| Aptos | `x402/exact/aptos` | `X402_EXACT_APTOS` | none | yes, any network | no |
-| Sui | `x402/exact/sui` | `X402_EXACT_SUI` | full | no | yes |
-| NEAR | `mpp/charge/nearintents` | `MPP_CHARGE_NEARINTENTS` | none | yes, any network | no |
-| NEAR | `x402/exact/near` | `X402_EXACT_NEAR` | full | no | yes |
-| Starknet | `x402/exact/starknet` | `X402_EXACT_STARKNET` | full | no | yes |
-| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `X402_EXACT_POLKADOT_LCP_ASSETS_REMARK` | full | no | yes |
-| TRON | `x402/exact/tron/lcp-trc20-memo` | `X402_EXACT_TRON_LCP_TRC20_MEMO` | full | no | yes |
-| TON | `x402/exact/tvm` | `X402_EXACT_TVM` | full | no | yes |
-| Cardano | `x402/exact/cardano` | `X402_EXACT_CARDANO` | full | no | yes |
-| Cardano | `x402/exact/cardano/lock` | `X402_EXACT_CARDANO_LOCK` | full | no | no |
-| Casper | `x402/exact/casper` | `X402_EXACT_CASPER` | full | no | yes |
-| Concordium | `x402/exact/ccd` | `X402_EXACT_CCD` | full | no | no |
-| Stacks | `mpp/charge/usdc/stacks` | `MPP_CHARGE_USDC_STACKS` | full | no | yes |
-| Lightning | `mpp/charge/lightning` | `MPP_CHARGE_LIGHTNING` | none | yes, any network | no |
-| Lightning | `mpp/session/lightning` | `MPP_SESSION_LIGHTNING` | none | yes, any network | no |
-| Lightning | `x402/exact/lnbtc/payment-hash` | `X402_EXACT_LNBTC_PAYMENT_HASH` | none | yes, any network | no |
-| Cloudflare | `x402/batch-settlement/cloudflare` | `X402_BATCH_SETTLEMENT_CLOUDFLARE` | none | yes, any network | no |
-| Card | `card/mastercard-agent-pay` | `CARD_MASTERCARD_AGENT_PAY` | none | yes, any network | no |
-| Card | `card/mastercard-vi/autonomous` | `CARD_MASTERCARD_VI_AUTONOMOUS` | none | yes, any network | no |
-| Card | `card/mastercard-vi/immediate` | `CARD_MASTERCARD_VI_IMMEDIATE` | none | yes, any network | no |
-| Card | `card/seller-reference` | `CARD_SELLER_REFERENCE` | none | yes, any network | no |
-| Card | `card/visa-tap` | `CARD_VISA_TAP` | none | yes, any network | no |
-| Card | `card/visa-vic` | `CARD_VISA_VIC` | none | yes, any network | no |
-| Card | `mpp/charge/card` | `MPP_CHARGE_CARD` | none | yes, any network | no |
-| Stripe | `mpp/charge/stripe` | `MPP_CHARGE_STRIPE` | none | yes, any network | no |
-| Stripe | `mpp/subscription/stripe` | `MPP_SUBSCRIPTION_STRIPE` | none | yes, any network | no |
-| Mandate | `ap2/checkout-mandate` | `AP2_CHECKOUT_MANDATE` | none | yes, any network | no |
-| Mandate | `ap2/checkout-mandate/x402` | `AP2_CHECKOUT_MANDATE_X402` | none | yes, any network | no |
-| Mandate | `ucp/booking/ap2-mandate` | `UCP_BOOKING_AP2_MANDATE` | none | yes, any network | no |
-| Mandate | `ucp/checkout/ap2-mandate` | `UCP_CHECKOUT_AP2_MANDATE` | none | yes, any network | no |
-| Checkout | `ack/payment-request` | `ACK_PAYMENT_REQUEST` | none | yes, any network | no |
-| Checkout | `acp/checkout/delegated` | `ACP_CHECKOUT_DELEGATED` | none | yes, any network | no |
-| Checkout | `acp/checkout/undelegated` | `ACP_CHECKOUT_UNDELEGATED` | none | yes, any network | no |
-| Checkout | `ucp/booking/unsigned` | `UCP_BOOKING_UNSIGNED` | none | yes, any network | no |
-| Checkout | `ucp/checkout/agent-signed` | `UCP_CHECKOUT_AGENT_SIGNED` | none | yes, any network | no |
-| Checkout | `ucp/checkout/unsigned` | `UCP_CHECKOUT_UNSIGNED` | none | yes, any network | no |
+| Rail | Pairing | Python binding | Coverage | Confirmed | Agreement payment first | Pays an agreement |
+| --- | --- | --- | --- | --- | --- | --- |
+| EVM | `mpp/charge/evm/authorization` | `MPP_CHARGE_EVM_AUTHORIZATION` | full | yes | no | no |
+| EVM | `mpp/charge/evm/hash` | `MPP_CHARGE_EVM_HASH` | none | no | yes, any network | no |
+| EVM | `mpp/charge/evm/permit2` | `MPP_CHARGE_EVM_PERMIT2` | full | no | no | no |
+| EVM | `mpp/charge/evm/transaction` | `MPP_CHARGE_EVM_TRANSACTION` | none | no | yes, any network | no |
+| EVM | `mpp/charge/usdc/evm` | `MPP_CHARGE_USDC_EVM` | full | no | no | no |
+| EVM | `mpp/charge/usdc/gateway` | `MPP_CHARGE_USDC_GATEWAY` | none | no | yes, any network | no |
+| EVM | `mpp/session/evm` | `MPP_SESSION_EVM` | full | no | no | no |
+| EVM | `spend-permissions/eip155` | `SPEND_PERMISSIONS_EIP155` | full | yes | no | only |
+| EVM | `x402/auth-capture/eip155/eip3009` | `X402_AUTH_CAPTURE_EIP155_EIP3009` | full | no | no | no |
+| EVM | `x402/auth-capture/eip155/permit2` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` | full | no | no | no |
+| EVM | `x402/batch-settlement/eip155` | `X402_BATCH_SETTLEMENT_EIP155` | full | no | no | no |
+| EVM | `x402/exact/eip155/eip3009` | `X402_EXACT_EIP155_EIP3009` | full | yes | no | yes |
+| EVM | `x402/exact/eip155/erc7710` | `X402_EXACT_EIP155_ERC7710` | none | no | yes, any network | no |
+| EVM | `x402/exact/eip155/erc7710-salt` | `X402_EXACT_EIP155_ERC7710_SALT` | full | no | no | no |
+| EVM | `x402/exact/eip155/gateway-batched` | `X402_EXACT_EIP155_GATEWAY_BATCHED` | none | yes | yes, its network | no |
+| EVM | `x402/exact/eip155/permit2` | `X402_EXACT_EIP155_PERMIT2` | full | no | no | yes |
+| EVM | `x402/upto/eip155/permit2` | `X402_UPTO_EIP155_PERMIT2` | full | no | no | no |
+| Tempo | `mpp/charge/tempo/split-memo` | `MPP_CHARGE_TEMPO_SPLIT_MEMO` | full | yes | no | no |
+| Tempo | `mpp/charge/tempo/split-memo/push` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` | full | no | no | no |
+| Tempo | `mpp/session/tempo` | `MPP_SESSION_TEMPO` | full | no | no | no |
+| Tempo | `mpp/subscription/tempo` | `MPP_SUBSCRIPTION_TEMPO` | full | no | no | no |
+| Solana | `mpp/charge/solana` | `MPP_CHARGE_SOLANA` | full | no | no | no |
+| Solana | `mpp/charge/solana/unsponsored` | `MPP_CHARGE_SOLANA_UNSPONSORED` | full | no | no | no |
+| Solana | `mpp/charge/usdc/solana` | `MPP_CHARGE_USDC_SOLANA` | full | no | no | no |
+| Solana | `mpp/session/solana/memo` | `MPP_SESSION_SOLANA_MEMO` | full | no | no | no |
+| Solana | `mpp/session/solana/stock` | `MPP_SESSION_SOLANA_STOCK` | none | no | yes, its network | no |
+| Solana | `mpp/subscription/solana` | `MPP_SUBSCRIPTION_SOLANA` | full | no | no | no |
+| Solana | `x402/batch-settlement/solana` | `X402_BATCH_SETTLEMENT_SOLANA` | full | no | no | no |
+| Solana | `x402/exact/solana` | `X402_EXACT_SOLANA` | full | yes | no | yes |
+| Solana | `x402/upto/solana` | `X402_UPTO_SOLANA` | full | no | no | no |
+| Stellar | `x402/exact/stellar/precondition` | `X402_EXACT_STELLAR_PRECONDITION` | full | yes | no | only |
+| XRP Ledger | `mpp/charge/xrpl` | `MPP_CHARGE_XRPL` | full | no | no | no |
+| XRP Ledger | `mpp/session/xrpl` | `MPP_SESSION_XRPL` | full | no | no | no |
+| XRP Ledger | `mpp/session/xrpl/stock` | `MPP_SESSION_XRPL_STOCK` | none | no | yes, its network | no |
+| XRP Ledger | `x402/exact/xrpl` | `X402_EXACT_XRPL` | full | yes | no | yes |
+| XRP Ledger | `x402/upto/xrpl` | `X402_UPTO_XRPL` | none | no | yes, its network | no |
+| Hedera | `mpp/charge/lcp/hedera` | `MPP_CHARGE_LCP_HEDERA` | full | no | no | no |
+| Hedera | `mpp/session/hedera/stock` | `MPP_SESSION_HEDERA_STOCK` | none | no | yes, its network | no |
+| Hedera | `x402/exact/hedera` | `X402_EXACT_HEDERA` | full | yes | no | yes |
+| Hedera | `x402/exact/hedera/transfer-executor` | `X402_EXACT_HEDERA_TRANSFER_EXECUTOR` | none | no | yes, any network | no |
+| Algorand | `x402/exact/algorand` | `X402_EXACT_ALGORAND` | full | yes | no | yes |
+| Aptos | `x402/exact/aptos` | `X402_EXACT_APTOS` | none | yes | yes, any network | no |
+| Sui | `x402/exact/sui` | `X402_EXACT_SUI` | full | yes | no | yes |
+| NEAR | `mpp/charge/nearintents` | `MPP_CHARGE_NEARINTENTS` | none | no | yes, any network | no |
+| NEAR | `x402/exact/near` | `X402_EXACT_NEAR` | full | yes | no | yes |
+| Starknet | `x402/exact/starknet` | `X402_EXACT_STARKNET` | full | yes | no | yes |
+| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `X402_EXACT_POLKADOT_LCP_ASSETS_REMARK` | full | yes | no | yes |
+| TRON | `x402/exact/tron/lcp-trc20-memo` | `X402_EXACT_TRON_LCP_TRC20_MEMO` | full | yes | no | yes |
+| TON | `x402/exact/tvm` | `X402_EXACT_TVM` | full | yes | no | yes |
+| Cardano | `x402/exact/cardano` | `X402_EXACT_CARDANO` | full | yes | no | yes |
+| Cardano | `x402/exact/cardano/lock` | `X402_EXACT_CARDANO_LOCK` | full | no | no | no |
+| Casper | `x402/exact/casper` | `X402_EXACT_CASPER` | full | no | no | yes |
+| Concordium | `x402/exact/ccd` | `X402_EXACT_CCD` | full | no | no | no |
+| Stacks | `mpp/charge/usdc/stacks` | `MPP_CHARGE_USDC_STACKS` | full | no | no | no |
+| Lightning | `mpp/charge/lightning` | `MPP_CHARGE_LIGHTNING` | none | no | yes, any network | no |
+| Lightning | `mpp/session/lightning` | `MPP_SESSION_LIGHTNING` | none | no | yes, any network | no |
+| Lightning | `x402/exact/lnbtc/payment-hash` | `X402_EXACT_LNBTC_PAYMENT_HASH` | none | yes | yes, any network | no |
+| Cloudflare | `x402/batch-settlement/cloudflare` | `X402_BATCH_SETTLEMENT_CLOUDFLARE` | none | no | yes, any network | no |
+| Card | `card/mastercard-agent-pay` | `CARD_MASTERCARD_AGENT_PAY` | none | no | yes, any network | no |
+| Card | `card/mastercard-vi/autonomous` | `CARD_MASTERCARD_VI_AUTONOMOUS` | none | no | yes, any network | no |
+| Card | `card/mastercard-vi/immediate` | `CARD_MASTERCARD_VI_IMMEDIATE` | none | no | yes, any network | no |
+| Card | `card/seller-reference` | `CARD_SELLER_REFERENCE` | none | no | yes, any network | no |
+| Card | `card/visa-tap` | `CARD_VISA_TAP` | none | no | yes, any network | no |
+| Card | `card/visa-vic` | `CARD_VISA_VIC` | none | no | yes, any network | no |
+| Card | `mpp/charge/card` | `MPP_CHARGE_CARD` | none | no | yes, any network | no |
+| Stripe | `mpp/charge/stripe` | `MPP_CHARGE_STRIPE` | none | no | yes, any network | no |
+| Stripe | `mpp/subscription/stripe` | `MPP_SUBSCRIPTION_STRIPE` | none | no | yes, any network | no |
+| Mandate | `ap2/checkout-mandate` | `AP2_CHECKOUT_MANDATE` | none | no | yes, any network | no |
+| Mandate | `ap2/checkout-mandate/x402` | `AP2_CHECKOUT_MANDATE_X402` | none | no | yes, any network | no |
+| Mandate | `ucp/booking/ap2-mandate` | `UCP_BOOKING_AP2_MANDATE` | none | no | yes, any network | no |
+| Mandate | `ucp/checkout/ap2-mandate` | `UCP_CHECKOUT_AP2_MANDATE` | none | no | yes, any network | no |
+| Checkout | `ack/payment-request` | `ACK_PAYMENT_REQUEST` | none | no | yes, any network | no |
+| Checkout | `acp/checkout/delegated` | `ACP_CHECKOUT_DELEGATED` | none | no | yes, any network | no |
+| Checkout | `acp/checkout/undelegated` | `ACP_CHECKOUT_UNDELEGATED` | none | no | yes, any network | no |
+| Checkout | `ucp/booking/unsigned` | `UCP_BOOKING_UNSIGNED` | none | no | yes, any network | no |
+| Checkout | `ucp/checkout/agent-signed` | `UCP_CHECKOUT_AGENT_SIGNED` | none | no | yes, any network | no |
+| Checkout | `ucp/checkout/unsigned` | `UCP_CHECKOUT_UNSIGNED` | none | no | yes, any network | no |
 <!-- pairings:python:end -->
 
 ## Security model

@@ -67,8 +67,9 @@ sequenceDiagram
 3. **Choose the option.** The gate reads the request's options in document order and takes the first one your signer
    can pay with an x402 pairing at coverage `full` whose registry data holds an agreement form (`agreement`), and that
    the payment's pairing admits by its `agreementOn`: any network, or only the payment's own. The gate pays an
-   agreement only through an x402 pairing: an MPP pairing marked "Pays an agreement" in the
-   [pairings reference](../reference/pairings.md) is paid as an agreement only by your own MPP client (below). An
+   agreement only through an x402 pairing, those marked `yes` or `only` under "Pays an agreement" in the
+   [pairings reference](../reference/pairings.md); an MPP pairing whose registry data holds an agreement form reads
+   `no` there, and is paid as an agreement only by your own MPP client (below). An
    option is payable only if its `maxTimeoutSeconds` is a JSON number with an integral value from 1 to
    2<sup>53</sup> − 1 (`60` and `60.0` are the same value): the gate passes any other over, and declines
    `no-payable-option` when it finds no option it can pay. The request's legal context must advertise the same H:

@@ -195,24 +195,44 @@ function agreementFirst(data) {
   return `yes, \`${on}\``;
 }
 
-/** Whether the pairing's own payment can be the agreement payment of another (`agreement`), or is never a charge (`only`). */
-const paysAgreement = (data) => (data.agreement === undefined ? "no" : data.agreement.only === true ? "only" : "yes");
+/**
+ * What the gate does with the pairing's payment as an agreement: `only` where the registry data's agreement is never a
+ * charge (`agreement.only`); `yes` where the gate pays, through the pairing, the agreement payment another pairing
+ * follows, which it does only on an x402 pairing at coverage `full` whose data holds `agreement` (`X402` and
+ * `isAgreementPairing` in agentic-terms/src/agreement.ts, `_x402_bindings` in the Python package); `no` otherwise, an
+ * MPP pairing whose data holds `agreement` among them.
+ */
+function paysAgreement(r) {
+  const agreement = r.data.agreement;
+  if (agreement === undefined) return "no";
+  if (agreement.only === true) return "only";
+  return r.id.startsWith("x402/") && r.data.coverage === "full" ? "yes" : "no";
+}
+
+/** Whether something outside the protocol package has shown the pairing's form as its profile defines it. */
+function confirmed(data) {
+  if (data.confirmed !== "yes" && data.confirmed !== "no") fail(`a pairing states no confirmed value: ${data.confirmed}`);
+  return data.confirmed;
+}
 
 /** Prose as Markdown that MDX also reads: `<`, `{` and `}` escaped. */
 const mdx = (text) => text.replace(/[<{}]/g, (c) => `\\${c}`);
 
-/** The table a README carries: every pairing, with its coverage, whether an agreement comes first, and whether it pays one. */
+/**
+ * The table a README carries: every pairing, with its coverage, whether it is confirmed, whether an agreement comes
+ * first, and whether the gate pays one through it.
+ */
 function readmeTable(rows, language) {
   const name = language === "python" ? "Python binding" : language === "mcp" ? "`pairing` argument" : "Binding export";
   const lines = [
-    `| Rail | Pairing | ${name} | Coverage | Agreement payment first | Pays an agreement |`,
-    "| --- | --- | --- | --- | --- | --- |",
+    `| Rail | Pairing | ${name} | Coverage | Confirmed | Agreement payment first | Pays an agreement |`,
+    "| --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const r of rows) {
     const binding =
       language === "python" ? `\`${r.py}\`` : language === "mcp" ? `\`"${r.id}"\`` : `\`${r.ts.name}\` from \`${r.ts.from}\``;
     lines.push(
-      `| ${r.rail} | \`${r.id}\` | ${binding} | ${r.data.coverage} | ${agreementFirst(r.data)} | ${paysAgreement(r.data)} |`,
+      `| ${r.rail} | \`${r.id}\` | ${binding} | ${r.data.coverage} | ${confirmed(r.data)} | ${agreementFirst(r.data)} | ${paysAgreement(r)} |`,
     );
   }
   return `${lines.join("\n")}\n`;
@@ -223,22 +243,33 @@ function referencePage(rows) {
   const out = [
     "---",
     "title: Pairings",
-    "description: Every pairing the gate pays, with its coverage, its agreement, its imports in each language, and what its payment proves.",
+    "description: Every pairing the gate pays, with its coverage, whether it is confirmed, its agreement, its imports in each language, and what its payment proves.",
     "---",
     "",
     `The gate serves ${rows.length} pairings, in TypeScript and in Python alike. This page is generated from the code:`,
     "`node scripts/docs.mjs generate` writes it from `BINDINGS` in `@integraledger/lcp` and the pairings the gate serves,",
     "and `node scripts/docs.mjs check` fails when it differs from them or from the Python package's bindings.",
     "",
-    "Columns, each read from the pairing's registry data (`data`) in `@integraledger/lcp`:",
+    "Columns, each read from the pairing's registry data (`data`) in `@integraledger/lcp`, and the last also from the",
+    "gate's own rule:",
     "",
     "- **Coverage**: `full` where the payment is itself a public proof of H, the payer's own signed act on a public",
     "  ledger binding all of H; `none` otherwise (see [Concepts](../concepts.md#coverage)).",
+    "- **Confirmed**: `yes` where something outside the protocol package has shown the form as its profile defines it",
+    "  (`confirmed`); `no` otherwise. The gate builds and reads a pairing at `no` exactly as its profile defines it,",
+    "  though nothing outside the protocol package has yet shown that form.",
     "- **Agreement payment first**: whether the gate pays the seller's agreement payment before this payment, and on",
     "  which network that agreement may be (`agreementOn`): any network, or only the payment's own (see",
     "  [Agreement payments](../guides/agreement-payments.md)).",
-    "- **Pays an agreement**: whether this pairing's own payment can be the agreement payment another pairing follows",
-    "  (`agreement`), and `only` where it is never a charge, only an agreement.",
+    "- **Pays an agreement**: what the gate does with this pairing's payment as an agreement. `yes`: the gate pays,",
+    "  through this pairing, the agreement payment another pairing follows (`transact` and `agree`), and the payment can",
+    "  also be a charge; these are x402 pairings whose registry data holds an agreement form (`agreement`). `only`: the",
+    "  payment is never a charge, only an agreement (`agreement.only`): `transact` declines it as a charge, the approver",
+    "  is asked about each of its signings as the act `agreement`, and on an x402 pairing the gate pays it as the",
+    "  agreement another pairing follows.",
+    "  `no`: the gate pays no agreement through it. The gate pays an agreement only through x402 pairings: an MPP pairing",
+    "  whose registry data holds `agreement` reads `no`, and the gate returns the seller's MPP agreement challenges as",
+    "  `agreementChallenges`, for your own MPP client to pay.",
     "",
     "Below each table, every pairing's statement of what its payment proves, as its registry data states it",
     "(`data.proves`). Where a statement names `<network>` and `<transaction>`, they stand for the agreement payment's",
@@ -249,11 +280,11 @@ function referencePage(rows) {
     const group = rows.filter((r) => r.rail === rail);
     if (group.length === 0) continue;
     out.push(`## ${rail}`, "");
-    out.push("| Pairing | Coverage | Agreement payment first | Pays an agreement | TypeScript | Python |");
-    out.push("| --- | --- | --- | --- | --- | --- |");
+    out.push("| Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |");
+    out.push("| --- | --- | --- | --- | --- | --- | --- |");
     for (const r of group) {
       out.push(
-        `| \`${r.id}\` | ${r.data.coverage} | ${agreementFirst(r.data)} | ${paysAgreement(r.data)} | \`${r.ts.name}\` from \`${r.ts.from}\` | \`${r.py}\` |`,
+        `| \`${r.id}\` | ${r.data.coverage} | ${confirmed(r.data)} | ${agreementFirst(r.data)} | ${paysAgreement(r)} | \`${r.ts.name}\` from \`${r.ts.from}\` | \`${r.py}\` |`,
       );
     }
     out.push("");

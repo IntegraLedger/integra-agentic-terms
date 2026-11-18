@@ -679,99 +679,101 @@ The full reference, with every request kind and the answer it takes, is in the
 
 ## Supported pairings
 
-Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry. "Coverage" is `full` where the payment is itself a public proof of H and `none` otherwise; "Agreement payment first"
-marks the pairings paid after an agreement payment, and on which network that agreement may be; "Pays an agreement"
-marks the pairings whose own payment the registry lets be that agreement payment (`only` where it is never a charge).
-The gate itself pays an agreement only through an x402 pairing marked `yes` or `only`: an MPP agreement challenge is
-returned to you as `agreementChallenges`, for your own MPP client to pay. Each is read from the pairing's registry data
-in `@integraledger/lcp`, which also states, as `confirmed`, whether anything outside the protocol package has shown the
-form as its profile defines it: 19 of the 77 are confirmed. The gate builds the others exactly as their profiles define
-them, though no seller is yet known to offer them: `x402/exact/casper` and `x402/exact/ccd`, for example, are not
-built by the stock Casper and Concordium clients, which draw a random nonce and write no memo. The
+Generated from `@integraledger/lcp`'s `BINDINGS` and the gate's own registry, each column from the pairing's registry
+data in `@integraledger/lcp`. "Coverage" is `full` where the payment is itself a public proof of H and `none`
+otherwise. "Confirmed" is `yes` where something outside the protocol package has shown the form as its profile defines
+it (`confirmed`); the gate builds and reads the others exactly as their profiles define them, though nothing outside
+the protocol package has yet shown those forms: `x402/exact/casper` and `x402/exact/ccd`, for example, are not built by
+the stock Casper and Concordium clients, which draw a random nonce and write no memo. "Agreement payment first" marks
+the pairings paid after an agreement payment, and on which network that agreement may be. "Pays an agreement" marks
+the pairings through which the gate pays the agreement payment another pairing follows, the x402 pairings whose
+registry data holds an agreement form, and `only` where a payment is never a charge, only an agreement. An MPP pairing
+whose registry data holds an agreement form reads `no`: the gate pays no agreement over MPP, and returns the seller's
+MPP agreement challenges to you as `agreementChallenges`, for your own MPP client to pay. The
 [pairings reference](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/reference/pairings.md) adds
 what each payment proves, and the [rails guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/rails.md)
 the inputs each build reads.
 
 <!-- pairings:typescript:start -->
-| Rail | Pairing | Binding export | Coverage | Agreement payment first | Pays an agreement |
-| --- | --- | --- | --- | --- | --- |
-| EVM | `mpp/charge/evm/authorization` | `evmAuthorization` from `@integraledger/lcp/mpp` | full | no | yes |
-| EVM | `mpp/charge/evm/hash` | `evmHash` from `@integraledger/lcp/mpp` | none | yes, any network | no |
-| EVM | `mpp/charge/evm/permit2` | `evmPermit2` from `@integraledger/lcp/mpp` | full | no | yes |
-| EVM | `mpp/charge/evm/transaction` | `evmTransaction` from `@integraledger/lcp/mpp` | none | yes, any network | no |
-| EVM | `mpp/charge/usdc/evm` | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | full | no | yes |
-| EVM | `mpp/charge/usdc/gateway` | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | none | yes, any network | no |
-| EVM | `mpp/session/evm` | `sessionEvm` from `@integraledger/lcp/mpp` | full | no | no |
-| EVM | `spend-permissions/eip155` | `spendPermissionsEip155` from `@integraledger/lcp/spend-permissions` | full | no | only |
-| EVM | `x402/auth-capture/eip155/eip3009` | `authCaptureEip3009` from `@integraledger/lcp/x402` | full | no | no |
-| EVM | `x402/auth-capture/eip155/permit2` | `authCapturePermit2` from `@integraledger/lcp/x402` | full | no | no |
-| EVM | `x402/batch-settlement/eip155` | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no |
-| EVM | `x402/exact/eip155/eip3009` | `exactEip3009` from `@integraledger/lcp/x402` | full | no | yes |
-| EVM | `x402/exact/eip155/erc7710` | `exactErc7710` from `@integraledger/lcp/x402` | none | yes, any network | no |
-| EVM | `x402/exact/eip155/erc7710-salt` | `exactErc7710Salt` from `@integraledger/lcp/x402` | full | no | no |
-| EVM | `x402/exact/eip155/gateway-batched` | `exactGatewayBatched` from `@integraledger/lcp/x402` | none | yes, its network | no |
-| EVM | `x402/exact/eip155/permit2` | `exactPermit2` from `@integraledger/lcp/x402` | full | no | yes |
-| EVM | `x402/upto/eip155/permit2` | `uptoPermit2` from `@integraledger/lcp/x402` | full | no | no |
-| Tempo | `mpp/charge/tempo/split-memo` | `tempoSplitMemo` from `@integraledger/lcp/mpp` | full | no | yes |
-| Tempo | `mpp/charge/tempo/split-memo/push` | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | full | no | no |
-| Tempo | `mpp/session/tempo` | `sessionTempo` from `@integraledger/lcp/mpp` | full | no | no |
-| Tempo | `mpp/subscription/tempo` | `subscriptionTempo` from `@integraledger/lcp/mpp` | full | no | no |
-| Solana | `mpp/charge/solana` | `chargeSolana` from `@integraledger/lcp/mpp` | full | no | yes |
-| Solana | `mpp/charge/solana/unsponsored` | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | full | no | no |
-| Solana | `mpp/charge/usdc/solana` | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | full | no | yes |
-| Solana | `mpp/session/solana/memo` | `sessionSolanaMemo` from `@integraledger/lcp/mpp` | full | no | no |
-| Solana | `mpp/session/solana/stock` | `sessionSolanaStock` from `@integraledger/lcp/mpp` | none | yes, its network | no |
-| Solana | `mpp/subscription/solana` | `subscriptionSolana` from `@integraledger/lcp/mpp` | full | no | no |
-| Solana | `x402/batch-settlement/solana` | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no |
-| Solana | `x402/exact/solana` | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | full | no | yes |
-| Solana | `x402/upto/solana` | `uptoSvm` from `@integraledger/lcp/x402-upto-solana` | full | no | no |
-| Stellar | `x402/exact/stellar/precondition` | `exactStellarPrecondition` from `@integraledger/lcp/x402-exact-stellar` | full | no | only |
-| XRP Ledger | `mpp/charge/xrpl` | `chargeXrpl` from `@integraledger/lcp/mpp` | full | no | no |
-| XRP Ledger | `mpp/session/xrpl` | `sessionXrpl` from `@integraledger/lcp/mpp` | full | no | no |
-| XRP Ledger | `mpp/session/xrpl/stock` | `sessionXrplStock` from `@integraledger/lcp/mpp` | none | yes, its network | no |
-| XRP Ledger | `x402/exact/xrpl` | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | full | no | yes |
-| XRP Ledger | `x402/upto/xrpl` | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | none | yes, its network | no |
-| Hedera | `mpp/charge/lcp/hedera` | `chargeLcpHedera` from `@integraledger/lcp/mpp` | full | no | yes |
-| Hedera | `mpp/session/hedera/stock` | `sessionHederaStock` from `@integraledger/lcp/mpp` | none | yes, its network | no |
-| Hedera | `x402/exact/hedera` | `exactHedera` from `@integraledger/lcp/hedera` | full | no | yes |
-| Hedera | `x402/exact/hedera/transfer-executor` | `exactHederaExecutor` from `@integraledger/lcp/hedera` | none | yes, any network | no |
-| Algorand | `x402/exact/algorand` | `exactAvm` from `@integraledger/lcp/avm` | full | no | yes |
-| Aptos | `x402/exact/aptos` | `exactAptos` from `@integraledger/lcp/aptos` | none | yes, any network | no |
-| Sui | `x402/exact/sui` | `exactSui` from `@integraledger/lcp/sui` | full | no | yes |
-| NEAR | `mpp/charge/nearintents` | `chargeNearIntents` from `@integraledger/lcp/mpp` | none | yes, any network | no |
-| NEAR | `x402/exact/near` | `exactNear` from `@integraledger/lcp/near` | full | no | yes |
-| Starknet | `x402/exact/starknet` | `exactStarknet` from `@integraledger/lcp/starknet` | full | no | yes |
-| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `exactPolkadotRemark` from `@integraledger/lcp/polkadot` | full | no | yes |
-| TRON | `x402/exact/tron/lcp-trc20-memo` | `exactTronMemo` from `@integraledger/lcp/tron` | full | no | yes |
-| TON | `x402/exact/tvm` | `exactTvm` from `@integraledger/lcp/tvm` | full | no | yes |
-| Cardano | `x402/exact/cardano` | `exactCardano` from `@integraledger/lcp/cardano` | full | no | yes |
-| Cardano | `x402/exact/cardano/lock` | `exactCardanoLock` from `@integraledger/lcp/cardano` | full | no | no |
-| Casper | `x402/exact/casper` | `exactCasper` from `@integraledger/lcp/casper` | full | no | yes |
-| Concordium | `x402/exact/ccd` | `exactCcd` from `@integraledger/lcp/ccd` | full | no | no |
-| Stacks | `mpp/charge/usdc/stacks` | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | full | no | yes |
-| Lightning | `mpp/charge/lightning` | `chargeLightning` from `@integraledger/lcp/lightning` | none | yes, any network | no |
-| Lightning | `mpp/session/lightning` | `sessionLightning` from `@integraledger/lcp/lightning` | none | yes, any network | no |
-| Lightning | `x402/exact/lnbtc/payment-hash` | `exactLnbtcPaymentHash` from `@integraledger/lcp/lightning` | none | yes, any network | no |
-| Cloudflare | `x402/batch-settlement/cloudflare` | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | none | yes, any network | no |
-| Card | `card/mastercard-agent-pay` | `agentPay` from `@integraledger/lcp/card` | none | yes, any network | no |
-| Card | `card/mastercard-vi/autonomous` | `viAutonomous` from `@integraledger/lcp/card` | none | yes, any network | no |
-| Card | `card/mastercard-vi/immediate` | `viImmediate` from `@integraledger/lcp/card` | none | yes, any network | no |
-| Card | `card/seller-reference` | `sellerReference` from `@integraledger/lcp/card` | none | yes, any network | no |
-| Card | `card/visa-tap` | `visaTap` from `@integraledger/lcp/card` | none | yes, any network | no |
-| Card | `card/visa-vic` | `visaVic` from `@integraledger/lcp/card` | none | yes, any network | no |
-| Card | `mpp/charge/card` | `chargeCard` from `@integraledger/lcp/mpp` | none | yes, any network | no |
-| Stripe | `mpp/charge/stripe` | `chargeStripe` from `@integraledger/lcp/mpp` | none | yes, any network | no |
-| Stripe | `mpp/subscription/stripe` | `subscriptionStripe` from `@integraledger/lcp/mpp` | none | yes, any network | no |
-| Mandate | `ap2/checkout-mandate` | `checkoutMandate` from `@integraledger/lcp/ap2` | none | yes, any network | no |
-| Mandate | `ap2/checkout-mandate/x402` | `checkoutMandateX402` from `@integraledger/lcp/ap2` | none | yes, any network | no |
-| Mandate | `ucp/booking/ap2-mandate` | `bookingAp2Mandate` from `@integraledger/lcp/ucp` | none | yes, any network | no |
-| Mandate | `ucp/checkout/ap2-mandate` | `ap2Mandate` from `@integraledger/lcp/ucp` | none | yes, any network | no |
-| Checkout | `ack/payment-request` | `paymentRequest` from `@integraledger/lcp/ack` | none | yes, any network | no |
-| Checkout | `acp/checkout/delegated` | `delegated` from `@integraledger/lcp/acp` | none | yes, any network | no |
-| Checkout | `acp/checkout/undelegated` | `undelegated` from `@integraledger/lcp/acp` | none | yes, any network | no |
-| Checkout | `ucp/booking/unsigned` | `bookingUnsigned` from `@integraledger/lcp/ucp` | none | yes, any network | no |
-| Checkout | `ucp/checkout/agent-signed` | `agentSigned` from `@integraledger/lcp/ucp` | none | yes, any network | no |
-| Checkout | `ucp/checkout/unsigned` | `unsigned` from `@integraledger/lcp/ucp` | none | yes, any network | no |
+| Rail | Pairing | Binding export | Coverage | Confirmed | Agreement payment first | Pays an agreement |
+| --- | --- | --- | --- | --- | --- | --- |
+| EVM | `mpp/charge/evm/authorization` | `evmAuthorization` from `@integraledger/lcp/mpp` | full | yes | no | no |
+| EVM | `mpp/charge/evm/hash` | `evmHash` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| EVM | `mpp/charge/evm/permit2` | `evmPermit2` from `@integraledger/lcp/mpp` | full | no | no | no |
+| EVM | `mpp/charge/evm/transaction` | `evmTransaction` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| EVM | `mpp/charge/usdc/evm` | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | full | no | no | no |
+| EVM | `mpp/charge/usdc/gateway` | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| EVM | `mpp/session/evm` | `sessionEvm` from `@integraledger/lcp/mpp` | full | no | no | no |
+| EVM | `spend-permissions/eip155` | `spendPermissionsEip155` from `@integraledger/lcp/spend-permissions` | full | yes | no | only |
+| EVM | `x402/auth-capture/eip155/eip3009` | `authCaptureEip3009` from `@integraledger/lcp/x402` | full | no | no | no |
+| EVM | `x402/auth-capture/eip155/permit2` | `authCapturePermit2` from `@integraledger/lcp/x402` | full | no | no | no |
+| EVM | `x402/batch-settlement/eip155` | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no | no |
+| EVM | `x402/exact/eip155/eip3009` | `exactEip3009` from `@integraledger/lcp/x402` | full | yes | no | yes |
+| EVM | `x402/exact/eip155/erc7710` | `exactErc7710` from `@integraledger/lcp/x402` | none | no | yes, any network | no |
+| EVM | `x402/exact/eip155/erc7710-salt` | `exactErc7710Salt` from `@integraledger/lcp/x402` | full | no | no | no |
+| EVM | `x402/exact/eip155/gateway-batched` | `exactGatewayBatched` from `@integraledger/lcp/x402` | none | yes | yes, its network | no |
+| EVM | `x402/exact/eip155/permit2` | `exactPermit2` from `@integraledger/lcp/x402` | full | no | no | yes |
+| EVM | `x402/upto/eip155/permit2` | `uptoPermit2` from `@integraledger/lcp/x402` | full | no | no | no |
+| Tempo | `mpp/charge/tempo/split-memo` | `tempoSplitMemo` from `@integraledger/lcp/mpp` | full | yes | no | no |
+| Tempo | `mpp/charge/tempo/split-memo/push` | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Tempo | `mpp/session/tempo` | `sessionTempo` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Tempo | `mpp/subscription/tempo` | `subscriptionTempo` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Solana | `mpp/charge/solana` | `chargeSolana` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Solana | `mpp/charge/solana/unsponsored` | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Solana | `mpp/charge/usdc/solana` | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Solana | `mpp/session/solana/memo` | `sessionSolanaMemo` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Solana | `mpp/session/solana/stock` | `sessionSolanaStock` from `@integraledger/lcp/mpp` | none | no | yes, its network | no |
+| Solana | `mpp/subscription/solana` | `subscriptionSolana` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Solana | `x402/batch-settlement/solana` | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no | no |
+| Solana | `x402/exact/solana` | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | full | yes | no | yes |
+| Solana | `x402/upto/solana` | `uptoSvm` from `@integraledger/lcp/x402-upto-solana` | full | no | no | no |
+| Stellar | `x402/exact/stellar/precondition` | `exactStellarPrecondition` from `@integraledger/lcp/x402-exact-stellar` | full | yes | no | only |
+| XRP Ledger | `mpp/charge/xrpl` | `chargeXrpl` from `@integraledger/lcp/mpp` | full | no | no | no |
+| XRP Ledger | `mpp/session/xrpl` | `sessionXrpl` from `@integraledger/lcp/mpp` | full | no | no | no |
+| XRP Ledger | `mpp/session/xrpl/stock` | `sessionXrplStock` from `@integraledger/lcp/mpp` | none | no | yes, its network | no |
+| XRP Ledger | `x402/exact/xrpl` | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | full | yes | no | yes |
+| XRP Ledger | `x402/upto/xrpl` | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | none | no | yes, its network | no |
+| Hedera | `mpp/charge/lcp/hedera` | `chargeLcpHedera` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Hedera | `mpp/session/hedera/stock` | `sessionHederaStock` from `@integraledger/lcp/mpp` | none | no | yes, its network | no |
+| Hedera | `x402/exact/hedera` | `exactHedera` from `@integraledger/lcp/hedera` | full | yes | no | yes |
+| Hedera | `x402/exact/hedera/transfer-executor` | `exactHederaExecutor` from `@integraledger/lcp/hedera` | none | no | yes, any network | no |
+| Algorand | `x402/exact/algorand` | `exactAvm` from `@integraledger/lcp/avm` | full | yes | no | yes |
+| Aptos | `x402/exact/aptos` | `exactAptos` from `@integraledger/lcp/aptos` | none | yes | yes, any network | no |
+| Sui | `x402/exact/sui` | `exactSui` from `@integraledger/lcp/sui` | full | yes | no | yes |
+| NEAR | `mpp/charge/nearintents` | `chargeNearIntents` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| NEAR | `x402/exact/near` | `exactNear` from `@integraledger/lcp/near` | full | yes | no | yes |
+| Starknet | `x402/exact/starknet` | `exactStarknet` from `@integraledger/lcp/starknet` | full | yes | no | yes |
+| Polkadot | `x402/exact/polkadot/lcp-assets-remark` | `exactPolkadotRemark` from `@integraledger/lcp/polkadot` | full | yes | no | yes |
+| TRON | `x402/exact/tron/lcp-trc20-memo` | `exactTronMemo` from `@integraledger/lcp/tron` | full | yes | no | yes |
+| TON | `x402/exact/tvm` | `exactTvm` from `@integraledger/lcp/tvm` | full | yes | no | yes |
+| Cardano | `x402/exact/cardano` | `exactCardano` from `@integraledger/lcp/cardano` | full | yes | no | yes |
+| Cardano | `x402/exact/cardano/lock` | `exactCardanoLock` from `@integraledger/lcp/cardano` | full | no | no | no |
+| Casper | `x402/exact/casper` | `exactCasper` from `@integraledger/lcp/casper` | full | no | no | yes |
+| Concordium | `x402/exact/ccd` | `exactCcd` from `@integraledger/lcp/ccd` | full | no | no | no |
+| Stacks | `mpp/charge/usdc/stacks` | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Lightning | `mpp/charge/lightning` | `chargeLightning` from `@integraledger/lcp/lightning` | none | no | yes, any network | no |
+| Lightning | `mpp/session/lightning` | `sessionLightning` from `@integraledger/lcp/lightning` | none | no | yes, any network | no |
+| Lightning | `x402/exact/lnbtc/payment-hash` | `exactLnbtcPaymentHash` from `@integraledger/lcp/lightning` | none | yes | yes, any network | no |
+| Cloudflare | `x402/batch-settlement/cloudflare` | `batchCloudflare` from `@integraledger/lcp/x402-batch-settlement` | none | no | yes, any network | no |
+| Card | `card/mastercard-agent-pay` | `agentPay` from `@integraledger/lcp/card` | none | no | yes, any network | no |
+| Card | `card/mastercard-vi/autonomous` | `viAutonomous` from `@integraledger/lcp/card` | none | no | yes, any network | no |
+| Card | `card/mastercard-vi/immediate` | `viImmediate` from `@integraledger/lcp/card` | none | no | yes, any network | no |
+| Card | `card/seller-reference` | `sellerReference` from `@integraledger/lcp/card` | none | no | yes, any network | no |
+| Card | `card/visa-tap` | `visaTap` from `@integraledger/lcp/card` | none | no | yes, any network | no |
+| Card | `card/visa-vic` | `visaVic` from `@integraledger/lcp/card` | none | no | yes, any network | no |
+| Card | `mpp/charge/card` | `chargeCard` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| Stripe | `mpp/charge/stripe` | `chargeStripe` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| Stripe | `mpp/subscription/stripe` | `subscriptionStripe` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| Mandate | `ap2/checkout-mandate` | `checkoutMandate` from `@integraledger/lcp/ap2` | none | no | yes, any network | no |
+| Mandate | `ap2/checkout-mandate/x402` | `checkoutMandateX402` from `@integraledger/lcp/ap2` | none | no | yes, any network | no |
+| Mandate | `ucp/booking/ap2-mandate` | `bookingAp2Mandate` from `@integraledger/lcp/ucp` | none | no | yes, any network | no |
+| Mandate | `ucp/checkout/ap2-mandate` | `ap2Mandate` from `@integraledger/lcp/ucp` | none | no | yes, any network | no |
+| Checkout | `ack/payment-request` | `paymentRequest` from `@integraledger/lcp/ack` | none | no | yes, any network | no |
+| Checkout | `acp/checkout/delegated` | `delegated` from `@integraledger/lcp/acp` | none | no | yes, any network | no |
+| Checkout | `acp/checkout/undelegated` | `undelegated` from `@integraledger/lcp/acp` | none | no | yes, any network | no |
+| Checkout | `ucp/booking/unsigned` | `bookingUnsigned` from `@integraledger/lcp/ucp` | none | no | yes, any network | no |
+| Checkout | `ucp/checkout/agent-signed` | `agentSigned` from `@integraledger/lcp/ucp` | none | no | yes, any network | no |
+| Checkout | `ucp/checkout/unsigned` | `unsigned` from `@integraledger/lcp/ucp` | none | no | yes, any network | no |
 <!-- pairings:typescript:end -->
 
 ## Security model
