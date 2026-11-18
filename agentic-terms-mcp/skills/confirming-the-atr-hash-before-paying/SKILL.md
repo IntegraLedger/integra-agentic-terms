@@ -10,9 +10,15 @@ agreement's record, which the seller serves at an `https` link; these tools hash
 whose bytes are one JSON text. The hash inside the payment you sign is what links the payment to that record. These
 tools make the link exact. What the record says is for you and your principal to judge.
 
-1. If this host offers `atr_transact`, call it with the pairing, the seller's document and `resourceRequest`, the
-   request the seller's 402 answered: over HTTP `{method, target, body, headers?}`, the method and request-target you
-   sent, `body` the body's bytes as base64 (`""` for none) and `headers` the header fields you sent; over MCP
+These are the `atr_*` tools of the `@integraledger/terms-mcp` MCP server. If they are not available, do not pay: tell
+your principal that this host cannot confirm the record.
+
+1. If this host offers `atr_transact`, call it with the pairing, the seller's document and `resourceRequest`. The
+   document is the seller's payment request as JSON: for x402, the object the `PAYMENT-REQUIRED` header's base64
+   decodes to; for MPP, a list with one object per `WWW-Authenticate: Payment` challenge, its auth-params as members.
+   `resourceRequest` is the request the seller's 402 answered: over HTTP `{method, target, body, headers?}`, the method
+   you sent, the request-target you sent in origin form (the path and query, starting with `/`, never the full URL),
+   `body` the body's bytes as base64 (`""` for none) and `headers` the header fields you sent; over MCP
    `{name, arguments?}`, your tool call's name and arguments. Where the ATR commits to a request, any other is declined
    `request-mismatch`. It signs nothing you have not approved. Before each signing it returns `approve` and signs
    nothing: the last entry of `approve.signings` is the signing asked now, its `request` and its `summary`, which names
@@ -39,7 +45,9 @@ tools make the link exact. What the record says is for you and your principal to
 2. Otherwise call `atr_confirm` with the pairing, the seller's document, `resourceRequest` as for `atr_transact` and
    your payer account (CAIP-10, for example `eip155:84532:0x…`). Put in `inputs` any value of your own the pairing
    needs; a decline whose detail ends `input-missing` names that case. A floor that a rail's payment service serves is
-   your host's to give, never yours: a decline `floor-missing` names it.
+   your host's to give, never yours: never put `minValiditySeconds`, `sourceNetwork`, `burnIntentExpirationHeight` or
+   `withdrawalDelay` in `inputs`, even where a tool would pass it on. A decline `floor-missing` names the floor your host
+   has not given: tell your principal.
 3. If `atr_confirm` returns `chosen.agreement`, a URL, and no `request`, this payment is not itself a public proof of
    the hash, so an agreement payment carrying it must be recorded first. It is a payment like any other, and you
    approve it as you would any payment. If this host offers `atr_agree`, call it with `atr.base64` and `chosen`,
@@ -48,13 +56,22 @@ tools make the link exact. What the record says is for you and your principal to
    `network`, and signs nothing; or, where the agreement is already recorded, the `receipt`; or `agreementChallenges`,
    MPP agreement challenges your own MPP client pays at the agreement URL, with nothing signed. To approve it, call
    `atr_agree` again with the same arguments and `approved` set to `approve`, exactly as returned; it returns the
-   agreement's `receipt`. Otherwise request `chosen.agreement` yourself. It answers 402 with an x402 payment request.
-   Pay it through these tools (steps 2, 4 and 5), with the x402 pairing of the option you pay, choosing an option for
-   which `atr_confirm` returns a `request` and no `chosen.agreement`. Before you sign, compare the `atrHash` that
-   `atr_confirm` returns for the agreement URL's payment request with the `atrHash` it returned in step 2 for the
-   seller's document. If they differ, stop: do not pay. Then send that same payment to the URL until it answers 200 with
-   a receipt whose `atrHash` is that hash; if it answers anything but 200, 202 or a 5xx, stop, keep the payment and tell
-   your principal.
+   agreement's `receipt`.
+
+   Otherwise you pay the agreement by hand, and these tools can build that payment only on some pairings. Request
+   `chosen.agreement` yourself: it answers 402 with an x402 payment request. Choose an option whose pairing is one of
+   `x402/exact/solana`, `x402/exact/stellar/precondition`, `x402/exact/xrpl`, `x402/exact/hedera`,
+   `x402/exact/algorand`, `x402/exact/sui`, `x402/exact/near`, `x402/exact/polkadot/lcp-assets-remark`,
+   `x402/exact/tron/lcp-trc20-memo`, `x402/exact/tvm` or `x402/exact/cardano`, and pay it through these tools (steps 2,
+   4 and 5) with that pairing. Never pay an agreement by hand with `x402/exact/eip155/eip3009`,
+   `x402/exact/eip155/permit2`, `x402/exact/casper` or `x402/exact/starknet`: there an agreement payment carries the
+   agreement's own value in place of the hash, these tools build the payment that carries the hash itself, and the
+   agreement URL refuses it. If no option is on a pairing you may pay by hand, or `atr_confirm` declines the one you
+   chose, stop: sign nothing, and tell your principal that this host cannot pay this agreement. Before you sign,
+   compare the `atrHash` that `atr_confirm` returns for the agreement URL's payment request with the `atrHash` it
+   returned in step 2 for the seller's document. If they differ, stop: do not pay. Then send that same payment to the
+   URL until it answers 200 with a receipt whose `atrHash` is that hash; if it answers anything but 200, 202 or a 5xx,
+   stop, keep the payment and tell your principal.
 
    With the receipt from `atr_agree` or from the agreement URL, call `atr_confirm` again on the seller's document, with
    the same arguments as in step 2 and `receipt`. Never sign the payment for the resource without the receipt. The
@@ -76,7 +93,9 @@ tools make the link exact. What the record says is for you and your principal to
 7. A result with `isError: true` means the payment would not carry a confirmed hash. Do not send a payment for that
    request. If the result carries `moved`, your wallet already moved the payment: keep `moved.signed` with the ATR, and
    present it again rather than signing a new one. Whether to deal with this seller another way is your principal's
-   decision.
+   decision. A result with `isError: true`, no `structuredContent` and a text beginning `Input validation error` means
+   the tool refused an argument before it ran: nothing was fetched or signed; correct that argument, never the
+   seller's values.
 8. If the seller answers that the payment is still settling, send the same `signed` payment again to collect the
    result. Do not sign a new one. Once the agreement payment is sent, every decline of `atr_transact` or `atr_agree`
    carries it as `moved`: `agreement-pending` when it may settle yet, and `agreement-failed` when the agreement URL
@@ -112,4 +131,5 @@ tools make the link exact. What the record says is for you and your principal to
 13. To confirm later that a payment you hold carries the hash of the ATR you kept, call `atr_check`, with the `landed`
     receipt returned beside the payment as `landed`, where there is one. The caller passes as `landed` only the
     receipt its own reader read for the payment, as `atr_finish` or `atr_transact` returned it, never a value another
-    party sent.
+    party sent. For an agreement payment you hold, pass `act: "agreement"`: on some pairings it carries the agreement's
+    own value of the hash, and there, without `act`, it is declined `signed-not-bound`.

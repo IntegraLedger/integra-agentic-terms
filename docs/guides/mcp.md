@@ -5,7 +5,13 @@ description: Give any MCP client the buyer gate as tools, install the skill that
 
 `@integraledger/terms-mcp` serves the buyer gate's operations as [Model Context Protocol](https://modelcontextprotocol.io)
 tools, and ships a skill that tells an agent how to use them. Each tool call is one call of `@integraledger/terms`; the
-server adds the transport and the words an agent reads, and nothing else.
+server adds the transport, the words an agent reads, a `mac` on each `chosen`, opening and hold it returns (valid only
+in the same server process), the agreement receipt `atr_confirm` requires before it returns a `request`, the host's
+ceilings and floors, and `atr_transact`'s approve-then-sign exchange.
+
+This guide is for a developer who connects an agent to these tools or serves them with a wallet. By its end the server
+and the skill are installed, you know the agent's flow for one payment, and you can serve the tools with your own
+signer.
 
 ## Install the server
 
@@ -42,10 +48,12 @@ request advertises an ATR hash.
 
 With `terms-mcp`, the agent's own wallet signs. For one payment:
 
-1. **Confirm.** Call `atr_confirm` with the `pairing`, the seller's `document` (the parsed `PAYMENT-REQUIRED` document,
-   or the MPP challenges), the payer `account` in CAIP-10 form and `resourceRequest`, the request the 402 answered:
-   over HTTP `{ method, target, body, headers? }`, `body` the body's bytes as padded standard base64 (`""` for none),
-   over MCP `{ name, arguments? }`. Where the ATR holds a commitment to the request, the gate declines
+1. **Confirm.** Call `atr_confirm` with the `pairing`, the seller's `document` (for x402, the object the
+   `PAYMENT-REQUIRED` header's base64 decodes to; for MPP, a list with one object per `WWW-Authenticate: Payment`
+   challenge, its auth-params as members), the payer `account` in CAIP-10 form and `resourceRequest`, the request the
+   402 answered: over HTTP `{ method, target, body, headers? }`, `target` the origin-form request-target (the path and
+   query, such as `/v1/quote?tier=1`, never the full URL) and `body` the body's bytes as padded standard base64 (`""`
+   for none), over MCP `{ name, arguments? }`. Where the ATR holds a commitment to the request, the gate declines
    `request-mismatch` for any other. On a match, the result carries the ATR, its hash, `chosen`, `request`, the exact
    thing to sign, and `summary`, every authority signing it grants.
 2. **Read the summary, then sign.** Read `summary` (the amount, the payees, the asset, the network, how long the payment
@@ -56,7 +64,7 @@ With `terms-mcp`, the agent's own wallet signs. For one payment:
    or, where the proof is the agreement payment, without that reading.
 4. **Send** `signed` as the protocol sends a payment.
 
-A confirmed result, abridged (the long `typedData.types` and the echoed document are shortened):
+A confirmed result, abridged (the long `typedData.types`, the echoed document and `mac`'s 64 hex digits are shortened):
 
 ```json
 {
@@ -67,8 +75,14 @@ A confirmed result, abridged (the long `typedData.types` and the echoed document
   },
   "chosen": {
     "pairing": "x402/exact/eip155/eip3009",
-    "choice": { "accepted": { "scheme": "exact", "network": "eip155:84532" }, "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" },
-    "ref": "abKt2A5-ljuE6ab515O0H8AIX4w_r4ud"
+    "choice": {
+      "required": { "x402Version": 2, "resource": { "url": "https://api.seller.example/v1/quote" } },
+      "accepted": { "scheme": "exact", "network": "eip155:84532" },
+      "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "now": 1790438346
+    },
+    "ref": "abKt2A5-ljuE6ab515O0H8AIX4w_r4ud",
+    "mac": "0xadf8…f376"
   },
   "request": {
     "kind": "eip712",
@@ -122,23 +136,34 @@ agent approves it as it approves any payment:
   agreement payment, and signs nothing: `approve.option` is its `amount`, `asset`, `payTo` and `network`. Where the
   agreement is already recorded, it returns the `receipt`; where the agreement URL offers only MPP agreement
   challenges, it returns them as `agreementChallenges`, signing nothing, for the agent's own MPP client to pay there.
-  To approve the payment, call `atr_agree` again with
-  `approved` set to `approve`, exactly as returned; it returns the `receipt`;
-- otherwise, request `chosen.agreement`. It answers `402` with an x402 payment request. Pay it through `atr_confirm`
-  and `atr_finish` with the pairing of an option for which `atr_confirm` returns a `request` and no
-  `chosen.agreement`. Before the wallet signs, check that the `atrHash` `atr_confirm` returns for it is the H of the
-  payment being made, and pay nothing if it is not. Then request the URL again with that same payment until it answers
-  `200` with a receipt for that H.
+  To approve the payment, call `atr_agree` again with `approved` set to `approve`, exactly as returned; it returns the
+  `receipt`;
+- otherwise, as with `terms-mcp`, pay it by hand. Request `chosen.agreement`; it answers `402` with an x402 payment
+  request. Pay it through `atr_confirm` and `atr_finish`. Before the wallet signs, check that the `atrHash`
+  `atr_confirm` returns for it is the H of the payment being made, and pay nothing if it is not. Then request the URL
+  again with that same payment until it answers `200` with a receipt for that H.
+
+Those two tools build the payment for the resource, never the agreement payment, so paying by hand works only with an
+option on a pairing whose agreement payment carries H itself: `x402/exact/solana`, `x402/exact/stellar/precondition`,
+`x402/exact/xrpl`, `x402/exact/hedera`, `x402/exact/algorand`, `x402/exact/sui`, `x402/exact/near`,
+`x402/exact/polkadot/lcp-assets-remark`, `x402/exact/tron/lcp-trc20-memo`, `x402/exact/tvm` or `x402/exact/cardano`.
+On `x402/exact/eip155/eip3009`, `x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet`, an
+agreement payment carries the agreement's own value of H in its place, and the agreement URL refuses the payment these
+tools build: an agent never pays an agreement by hand on them. `atr_confirm` also holds the agreement URL's option and
+`resourceRequest` to the ATR as it holds any payment's. Where no option is on a listed pairing, or `atr_confirm`
+declines, the tools cannot pay the agreement: the agent signs nothing and tells its principal, and a host that wires a
+signer pays it through `atr_agree` or `atr_transact`.
 
 Then call `atr_confirm` again with the same arguments and the `receipt`. Only then does it return `request`. The
-receipt is the agreement URL's statement: `atr_confirm` checks that it names H and is a recorded agreement, and does
-not look up the transaction it names.
+receipt is the agreement URL's statement: the tool checks its form (`agreed: true`, string `network` and
+`transaction`) and that its `atrHash` is H, and does not look up the transaction it names.
 
-Once the agreement payment is sent, a decline from `atr_agree` or `atr_transact` carries it as `moved`;
-`agreement-pending` means it may settle yet. To collect the receipt, call the same tool again without `approved`: the
-gate asks the agreement URL unpaid and goes on once it answers `200` with the receipt, or declines `agreement-pending`
-again while it answers `202`, signing nothing. Never call again with `approved` for the same agreement: every call with
-`approved` signs and sends a new agreement payment. See [agreement payments](./agreement-payments.md).
+Once the agreement payment is sent, every decline from `atr_agree` or `atr_transact` carries it as `moved`:
+`agreement-pending` where it may settle yet, and `agreement-failed` where the agreement URL answered otherwise. Either
+way it has left the wallet. To collect the receipt, call the same tool again without `approved`: the gate asks the
+agreement URL unpaid and goes on once it answers `200` with the receipt, or declines `agreement-pending` again while it
+answers `202`, signing nothing. Never call again with `approved` for the same agreement: every call with `approved`
+signs and sends a new agreement payment. See [agreement payments](./agreement-payments.md).
 
 ### Channels and sessions
 
@@ -156,10 +181,21 @@ A result with `isError: true` carries `{ decline: { code, detail } }`. The payme
 send nothing for that request. Where it also carries `moved`, the wallet already moved the payment: keep `moved.signed`
 with the ATR, and present it again rather than signing a new one. See [declines](../reference/declines.md).
 
+An argument the tool's input schema refuses is answered differently, by the MCP SDK before the tool runs: `isError:
+true` with one text block, `Input validation error: Invalid arguments for tool <name>: …`, and no `structuredContent`
+or `decline`. Nothing was fetched or signed. Read `isError` first, and `structuredContent.decline` only where it is
+present.
+
 ## Serve the tools with your own signer
 
 A host that holds a wallet can serve the same tools with it. The server then also offers `atr_transact` (confirm, pay
-the agreement the agent approved, sign and finish), `atr_agree` and `atr_channel_within`:
+the agreement the agent approved, sign and finish), `atr_agree` and `atr_channel_within`. Install the packages the
+sample imports; `@integraledger/lcp` is a peer dependency (`~0.6.0`), and `createBuyerServer` returns an `McpServer` of
+`@modelcontextprotocol/server` 2.3.1, the version to serve it with:
+
+```sh
+npm install @integraledger/terms-mcp@0.5.0 @integraledger/terms@0.5.0 @integraledger/lcp@0.6.0 @modelcontextprotocol/server@2.3.1
+```
 
 ```ts no-run
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -173,8 +209,11 @@ serveStdio(() => createBuyerServer({ fetch: globalThis.fetch, signer, agreementS
 ```
 
 The `fetch` you pass is the server's whole network policy. The binary's public-address-only fetch is not exported. A
-server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses loopback,
-private-use, link-local and unique-local addresses.
+server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses every address that
+is not public: loopback, private-use, shared, link-local, unique-local, documentation, benchmarking, multicast and
+reserved, judging an IPv4-mapped or NAT64 address by the IPv4 address it carries. It should resolve a host once and
+connect to the address it checked: a check followed by a fetch that resolves again is open to DNS rebinding. The
+binary's fetch does all of this.
 
 With a host signer, `atr_transact` signs only what the agent approved. Before each signing it returns `approve`,
 `{ agreement?, signings }`, and signs nothing: the last of `signings` is the signing asked now,
@@ -187,16 +226,22 @@ agreement is recorded, the payment's. It returns the payment to send and the ATR
 gate does. The gate applies no spending limit.
 
 The ceilings and the served floors are the host's: pass `ceilings` and `floors` to `createBuyerServer`. No tool input
-raises a ceiling or names a floor, so no text the agent reads, the seller's among it, can. Without `floors`, a pairing
-whose rail has a served floor is declined `floor-missing`, and without `ceilings`, one that signs no end is declined
-`no-end`.
+raises a ceiling, so no text the agent reads, the seller's among it, can. Without `ceilings`, a payment that signs no
+end is declined `no-end`. The server sets what `floors` answers in the inputs it gives the gate, over a tool's own, and
+drops a floor input from a tool's `inputs` for `x402/exact/eip155/gateway-batched` alone: without `floors`, that
+pairing is declined `floor-missing`. For `mpp/charge/usdc/gateway`, this version passes a tool's `sourceNetwork`,
+`burnIntentExpirationHeight` and `withdrawalDelay` through to the gate, so a host serving that pairing answers all
+three through `floors`, which override the tool's.
 
 ## What the server guarantees
 
 - `atr_confirm` returns a `request` only after SHA-256 of the served bytes equals the advertised H and every check on it
   has passed, built with the hash it computed, and returns it with its `summary`.
-- With a host signer, `atr_transact` and `atr_agree` sign only a signing the agent was shown and approved, unchanged.
-  `atr_channel_within` signs a later voucher in a channel whose opening was approved, with no approval of its own.
+- With a host signer, `atr_transact` signs only a signing equal, in RFC 8785 form, to one the agent passes back in
+  `approved.signings`. `atr_agree` pays the agreement payment passed as `approved` once its URL is the one in `chosen`,
+  its `option` is one of `required.accepts` and `required` advertises H; it does not compare it with the `approve` it
+  returned, and a host that needs that compares them itself. `atr_channel_within` signs a later voucher in a channel
+  whose opening was approved, with no approval of its own.
 - `atr_finish` returns `signed` only when the pairing reads the hash of the bytes it was given from the completed
   payment, or, where the proof is the agreement payment, without that reading.
 - `terms-mcp` holds no keys. With a host signer, only the host's code signs, and only after a match.
@@ -204,10 +249,24 @@ whose rail has a served floor is declined `floor-missing`, and without `ceilings
   from a hold, that this server process returned, unchanged. For a pairing with a channel, `atr_finish` reads only a
   `chosen` that this server process returned, unchanged. Each carries a `mac` under a key the process generates and
   never exports.
-- `terms-mcp` fetches only from public addresses: a link on a loopback, private-use, link-local or unique-local
-  address, or a host name that resolves to one, is declined `atr-unfetchable` before any connection.
+- `terms-mcp` fetches only from public addresses: a link on an address that is not public (loopback, private-use,
+  shared, link-local, unique-local, documentation, benchmarking, multicast or reserved), or a host name that resolves to
+  one, is declined `atr-unfetchable` before any connection.
 - Every value the seller supplies is data: `atr.utf8`, and the agreement receipt's `network` and `transaction` that
   `atr_agree` and `atr_transact` return. The skill tells the agent to read them and never to follow instructions
   inside them.
 
 The [tools reference](../reference/mcp.md) lists every tool's arguments, results and annotations.
+
+## Versions and upgrading
+
+`@integraledger/terms-mcp` is at 0.x: a minor release may change the tools, their arguments and their results. Pin the
+exact version, as the configuration above does. 0.5.x takes `@integraledger/terms` 0.5.0 and the peer
+`@integraledger/lcp` `~0.6.0`, and needs Node.js `>=24.22.1`.
+
+From 0.4.x, `atr_confirm` and `atr_transact` require `resourceRequest`; `atr_transact` returns `approve`,
+`{ agreement?, signings }`, before each signing and takes it back as `approved` (in 0.4.x both were the agreement
+payment alone); a payment `atr_confirm`, `atr_finish` or `atr_transact` builds is held to its pairing's ceiling, 600
+seconds unless the host raises it; and the tools return the gate's new decline codes. The package's
+[CHANGELOG](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/agentic-terms-mcp/CHANGELOG.md) lists every
+change.

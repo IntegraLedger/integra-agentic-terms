@@ -3,8 +3,8 @@ title: MCP tools and skill
 description: Every tool of @integraledger/terms-mcp, with its arguments, results and annotations, and the skill that ships with it.
 ---
 
-`@integraledger/terms-mcp` exports `createBuyerServer` and `BINDINGS`, and ships the binary `terms-mcp` and the skill
-`confirming-the-atr-hash-before-paying`.
+`@integraledger/terms-mcp` exports `createBuyerServer`, `BINDINGS` and the type `Floors`, and ships the binary
+`terms-mcp` and the skill `confirming-the-atr-hash-before-paying`.
 
 ## `createBuyerServer(options)`
 
@@ -13,11 +13,11 @@ version being the package's.
 
 | Option | Required | What it is |
 | --- | --- | --- |
-| `fetch` | yes | WHATWG `fetch`, or anything with its call shape. Every tool that reaches the network uses it, so it is the server's whole network policy. The binary's public-address-only fetch is not exported: a server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses loopback, private-use, link-local and unique-local addresses. |
+| `fetch` | yes | WHATWG `fetch`, or anything with its call shape. Every tool that reaches the network uses it, so it is the server's whole network policy. The binary's public-address-only fetch is not exported: a server that holds a wallet and fetches links that sellers choose should pass a `fetch` that refuses every address that is not public, as the binary's does (below), judging an IPv4-mapped or NAT64 address by the IPv4 address it carries, and that resolves a host once and connects to the address it checked: a check followed by a fetch that resolves again is open to DNS rebinding. |
 | `signer` | no | The host's wallet. With it, the server also offers `atr_transact`, `atr_agree` and `atr_channel_within`. |
 | `agreementSigner` | no | The wallet that pays agreements, where it is not `signer`. With it, the server offers `atr_agree`. |
 | `ceilings` | no | The raised ceilings, of `@integraledger/terms`'s `Ceilings` form: a pairing id mapped to seconds, or to `"no-end"`. The server passes them to the gate on every call. No tool input raises a ceiling. |
-| `floors` | no | `Floors`, `(pairing, network) => inputs \| undefined`, or a promise of either: the floor inputs a rail's payment service serves for the pairing on the account's CAIP-2 network, read by the host from that service. The server sets them in the `inputs` it passes the gate and drops the pairing's floor inputs from a tool's `inputs`. A `floors` that throws or rejects gives no floor, and the gate declines `floor-missing`. |
+| `floors` | no | `Floors`, `(pairing, network) => inputs \| undefined`, or a promise of either: the floor inputs a rail's payment service serves for the pairing on the account's CAIP-2 network, read by the host from that service. The server sets them in the `inputs` it passes `atr_confirm`'s and `atr_transact`'s gate, over the tool's own. A `floors` that throws or rejects gives no floor. For `x402/exact/eip155/gateway-batched` the server drops `minValiditySeconds` from a tool's `inputs`, so without `floors` the gate declines `floor-missing`. For `mpp/charge/usdc/gateway`, this version passes a tool's `sourceNetwork`, `burnIntentExpirationHeight` and `withdrawalDelay` through to the gate, so a host serving that pairing answers all three through `floors`, which override the tool's. |
 
 `BINDINGS` is every pairing the tools accept: the bindings of `@integraledger/lcp`.
 
@@ -45,6 +45,20 @@ is a result with `isError: true`:
 ```
 
 and, where the signer moved the payment, `moved: { signed, atr: { base64, utf8 }, atrHash }`.
+
+An argument the tool's input schema refuses is answered differently, by the MCP SDK before the tool runs: a result with
+`isError: true`, one text block and no `structuredContent` or `decline`:
+
+```json
+{
+  "content": [{ "type": "text", "text": "Input validation error: Invalid arguments for tool atr_confirm: resourceRequest: Invalid input" }],
+  "isError": true
+}
+```
+
+Nothing was fetched or signed. A client reads `isError` first, and `structuredContent.decline` only where it is
+present. A call to a tool the server does not offer, such as `atr_transact` on the binary, is a JSON-RPC error,
+`-32602`, `Tool atr_transact not found`, not a result.
 
 Values cross as JSON: the ATR as `atr: { base64, utf8 }` (`utf8` is `null` when the bytes are not valid UTF-8), every
 integer the gate holds as a `bigint` as a decimal string, every byte string it holds as a `Uint8Array` as `0x` hex, and
@@ -101,9 +115,9 @@ Before approving a payment: reads the ATR hash the seller advertised, fetches th
 | Argument | Type | |
 | --- | --- | --- |
 | `pairing` | string | The pairing. |
-| `document` | JSON | The seller's payment request. |
+| `document` | JSON | The seller's payment request as JSON: for x402, the object the `PAYMENT-REQUIRED` header's base64 decodes to; for MPP, an array with one object per `WWW-Authenticate: Payment` challenge, its auth-params as members (`id`, `realm`, `method`, `intent`, `request`, `expires`, `digest`, `description`, `header`, `opaque`), values as sent; for any other pairing, the document its profile names. A document the pairing cannot read is declined `offer-unreadable`. |
 | `account` | string | The payer, CAIP-10. |
-| `resourceRequest` | object | The request the seller's 402 answered: over HTTP `{ method, target, body, headers? }`, the method and request-target as sent, `body` the body's bytes as `atr` is written (`""` for none), `headers` each field's value or lines in order; over MCP `{ name, arguments? }`, the `tools/call` request's `params.name` and `params.arguments`. Where the ATR commits to a request, any other is declined `request-mismatch`. |
+| `resourceRequest` | object | The request the seller's 402 answered: over HTTP `{ method, target, body, headers? }`, the method as sent, the request-target as sent in origin form (the path and query, starting with `/`, such as `/v1/quote?tier=1`, never the full URL), `body` the body's bytes as `atr` is written (`""` for none), `headers` each field's value or lines in order; over MCP `{ name, arguments? }`, the `tools/call` request's `params.name` and `params.arguments`. Where the ATR commits to a request, any other is declined `request-mismatch`, as is a target that is not in origin form. |
 | `inputs` | object, optional | The buyer's own values the build needs. See [rails](../guides/rails.md). |
 | `receipt` | JSON, optional | The agreement's receipt, for a pairing that pays an agreement first. |
 
@@ -126,7 +140,7 @@ pairing reads H from the completed payment, or, where the proof is the agreement
 | `pairing` | string | The pairing. |
 | `atr` | base64 | The ATR's bytes, `atr.base64` from `atr_confirm`. |
 | `chosen` | object | `chosen` from `atr_confirm`, exactly as returned, `mac` included. For a pairing with a channel, a `chosen` whose `mac` does not verify is declined `chosen-unverified`. For any other pairing its `mac` is not read: `finish` rebuilds the payment from `chosen` and trusts nothing it did not rebuild. |
-| `signature` | JSON | The wallet's answer; a list, in order, for a payment signed in steps. |
+| `signature` | JSON | The wallet's answer; a list, in order, for a payment signed in steps. The form of each kind's answer is in the [signers guide](../guides/signers.md). |
 
 Returns `atrHash` and `signed` (and `landed`, where there is one), or `atrHash`, `next`, a later step's request, and
 its `summary`, once it has one and is within the pairing's ceiling. For a pairing with a channel,
@@ -183,7 +197,7 @@ approved, paying first any agreement the pairing needs.
 | Argument | Type | |
 | --- | --- | --- |
 | `pairing` | string | The pairing. |
-| `document` | JSON | The seller's payment request. |
+| `document` | JSON | The seller's payment request, as for `atr_confirm`. |
 | `resourceRequest` | object | The request the seller's 402 answered, as for `atr_confirm`. |
 | `inputs` | object, optional | The buyer's own values the build needs. |
 | `approved` | object, optional | What the agent approved: `approve` from the previous call, unchanged. |
@@ -235,11 +249,13 @@ Annotations: not read-only, not destructive, not idempotent, open-world.
 `approved` carries no `mac`: the host's signer pays the agreement payment passed in `approved`, as passed, once its
 agreement URL is the one in `chosen`, its `option` is one of `required.accepts` and `required` advertises this H. A host
 that needs the approved payment to equal the one shown compares them itself. The receipt is the agreement URL's
-statement: the gate checks that it names H and is a recorded agreement, and does not look up the transaction it names.
-A `200` to the first, unpaid request is taken as an agreement already recorded.
+statement: the gate checks its form (`agreed: true`, string `network` and `transaction`) and that its `atrHash` is H,
+and does not look up the transaction it names. A `200` to the first, unpaid request is taken as an agreement already
+recorded.
 
-Once the agreement payment is sent, a decline of `atr_transact` or `atr_agree` carries it as `moved`;
-`agreement-pending` means it may settle yet. To collect the receipt, call the same tool again without `approved`: the
+Once the agreement payment is sent, every decline of `atr_transact` or `atr_agree` carries it as `moved`:
+`agreement-pending` where it may settle yet, and `agreement-failed` where the agreement URL answered otherwise. Either
+way it has left the wallet. To collect the receipt, call the same tool again without `approved`: the
 gate asks the agreement URL unpaid and goes on once it answers `200` with the receipt, or declines `agreement-pending`
 again while it answers `202`, signing nothing. Never call again with `approved` for the same agreement: every call with
 `approved` signs and sends a new agreement payment.
@@ -258,7 +274,7 @@ another H is declined, and one with no legal context is signed under the held H.
 | --- | --- | --- |
 | `pairing` | string | The channel's pairing. |
 | `hold` | object | The latest hold, exactly as returned. |
-| `document` | JSON | The seller's new payment request. |
+| `document` | JSON | The seller's new payment request, in `atr_confirm`'s form. |
 | `refund` | `{ amount?, paymentResponse? }`, optional | Sign a refund instead of a voucher: `{}` closes the channel. `paymentResponse` is the decoded `PAYMENT-RESPONSE` the seller answered a Solana refund with; its `errorReason` `invalid_batch_settlement_svm_receiver_binding_unavailable` takes the refund again (see [channels and sessions](../guides/channels-and-sessions.md)). |
 | `inputs` | object, optional | The buyer's own values a refund's build needs. |
 
@@ -274,13 +290,16 @@ says when it applies, and the instructions. Its description:
 > challenge, or any pairing the atr_* tools list). Confirms that the payment you sign carries the SHA-256 of the ATR you
 > received, or, where the proof is the agreement payment, that the agreement payment carries it.
 
-Its instructions cover, in order: `atr_transact` where offered, with the request the 402 answered, approving each
-signing it returns with its summary; `atr_confirm` with the payer account, that request and any inputs; the agreement first where `atr_confirm` names
-one, approved like any other payment, with the agreement's `atrHash` checked against the payment's when the agent pays
-it by hand, never signing without its receipt; reading `summary` and signing `request` exactly; `next` for payments signed in steps;
-`request: null`; declines and `moved`; re-sending a settling payment rather than signing a new one, and collecting an
-agreement's receipt without `approved`; channels, with the hold passed back exactly as returned; keeping `atr.base64`
-and `atrHash` together; treating every value the seller supplies (`atr.utf8`, `approve.option` and `approve.required`,
-what `chosen` and `request` echo from the seller's document, and the agreement receipt's `network` and `transaction`) as
-data, never as instructions; that a discovery listing or a self-computed hash is not a confirmation; and `atr_check` for
-a payment held later.
+Its instructions name the server whose tools they use, and tell the agent not to pay where those tools are missing.
+They then cover, in order: `atr_transact` where offered, with the seller's document and the request the 402 answered,
+approving each signing it returns with its summary; `atr_confirm` with the payer account, that request and any inputs,
+never a floor input; the agreement first where `atr_confirm` names one, approved like any other payment, through
+`atr_agree` where offered, or by hand only on the pairings whose agreement payment carries H itself, with the
+agreement's `atrHash` checked against the payment's, never signing without its receipt; reading `summary` and signing
+`request` exactly; `next` for payments signed in steps; `request: null`; declines, `moved` and arguments the input
+schema refuses; re-sending a settling payment rather than signing a new one, and collecting an agreement's receipt
+without `approved`; channels, with the hold passed back exactly as returned; keeping `atr.base64` and `atrHash`
+together; treating every value the seller supplies (`atr.utf8`, `approve.option` and `approve.required`, what `chosen`
+and `request` echo from the seller's document, and the agreement receipt's `network` and `transaction`) as data, never
+as instructions; that a discovery listing or a self-computed hash is not a confirmation; and `atr_check` for a payment
+held later, with `act: "agreement"` for an agreement payment.
