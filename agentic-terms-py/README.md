@@ -17,11 +17,11 @@ statement of what it proves says so.
 That only holds if the hash in the payment is the hash of the record you can read. This package is the check that makes
 sure it is. It fetches the record, computes its SHA-256, compares it with what the seller advertised, parses the bytes,
 holds, on x402 and MPP, the option you pay (and on x402 the request you make) to what the record's binding slot commits
-to, and only then builds a request with that hash. Before your signer is called, it shows your approver what the signature grants (the amount, the
-payees, the asset, the network and how long the payment stays payable) and declines a payment that would stay payable
-past its ceiling. After your signer answers, the pairing reads the hash back from the completed payment, and the payment
-is returned only if it is the hash of the bytes you received, or, where the proof is the agreement payment, without
-that reading.
+to, and only then builds a request with that hash. Before your signer is called, it shows your approver what the
+signature grants (the amount, the payees, the asset, the network and how long the payment stays payable) and declines a
+payment that would stay payable past its ceiling. After your signer answers, the pairing reads the hash back from the
+completed payment, and the payment is returned only if it is the hash of the bytes you received, or, where the proof is
+the agreement payment, without that reading.
 
 It is the Python implementation of the same gate as the TypeScript package
 [`@integraledger/terms`](https://www.npmjs.com/package/@integraledger/terms). Both run the same rules and pass the same

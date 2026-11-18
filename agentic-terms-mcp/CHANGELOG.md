@@ -1,10 +1,12 @@
 # Changelog
 
-All notable changes to `@integraledger/terms-mcp` are recorded in this file. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The package is at 0.x: a minor release may change the tools,
-their arguments and their results, so pin the exact version.
+Every notable change to `@integraledger/terms-mcp`, which is released with `@integraledger/terms` under the same
+version. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The package is at 0.x: a minor
+release may change the tools, their arguments and their results, so pin the exact version. A change a caller must make
+is marked **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md)
+shows each call before and after.
 
-## [0.5.0] - 2026-11-18
+## 0.5.0 - 2026-11-18
 
 Takes `@integraledger/terms` 0.5.0 and `@integraledger/lcp` 0.6.0. Every 0.4.x agent and host changes something: the
 entries marked **Breaking** say what.
@@ -68,4 +70,4 @@ entries marked **Breaking** say what.
   `mpp/charge/hedera`, `mpp/charge/stellar`, `mpp/charge/tempo/memo`, `mpp/charge/tempo/push`, `mpp/session/hedera`,
   `mpp/session/solana`, `x402/exact/lnbtc`, `x402/exact/lnbtc/invoice-named` and `x402/exact/stellar`.
 
-[0.5.0]: https://github.com/IntegraLedger/integra-agentic-terms/tree/81dc0a89b62dee9f64a4bfce00ac544f61b0bd6e/agentic-terms-mcp
+Earlier releases are recorded in the repository's history.

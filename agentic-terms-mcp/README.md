@@ -310,11 +310,11 @@ payment being made, and then sends to the URL until it answers `200` with a rece
 Those two tools build the payment for the resource, never the agreement payment, so this works only on a pairing whose
 agreement payment is that same payment, carrying H itself: `x402/exact/solana`, `x402/exact/stellar/precondition`,
 `x402/exact/xrpl`, `x402/exact/hedera`, `x402/exact/algorand`, `x402/exact/sui`, `x402/exact/near`,
-`x402/exact/polkadot/lcp-assets-remark`, `x402/exact/tron/lcp-trc20-memo`, `x402/exact/tvm` and `x402/exact/cardano`.
-On `x402/exact/eip155/eip3009`, `x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet`, an
-agreement payment carries the agreement's own value of H in its place (the protocol package's `agreementValue`), and
-the agreement URL refuses the payment these tools build: never pay an agreement by hand on them. `atr_confirm` also holds
-the agreement URL's option and `resourceRequest` to the ATR as it holds any payment's: where the ATR's `x402` slot lists
+`x402/exact/polkadot/lcp-assets-remark`, `x402/exact/tron/lcp-trc20-memo`, `x402/exact/tvm` and `x402/exact/cardano`. On
+`x402/exact/eip155/eip3009`, `x402/exact/eip155/permit2`, `x402/exact/casper` and `x402/exact/starknet`, an agreement
+payment carries the agreement's own value of H in its place (the protocol package's `agreementValue`), and the agreement
+URL refuses the payment these tools build: never pay an agreement by hand on them. `atr_confirm` also holds the
+agreement URL's option and `resourceRequest` to the ATR as it holds any payment's: where the ATR's `x402` slot lists
 `accepts` without that option, it declines `option-not-in-atr`.
 
 Where no option of the agreement URL is on a listed pairing, or `atr_confirm` declines, these tools cannot pay the
@@ -430,8 +430,8 @@ payment, `atr_confirm` names the agreement URL. The tools pay an agreement only 
 
 The registry also states, for each pairing, whether anything outside the protocol package has shown the form as its
 profile defines it (`confirmed`, not shown here). Most pairings are not yet confirmed: the tools build and read them as
-their profiles define them, and nothing outside the protocol package has shown those forms yet. On `x402/exact/casper` and
-`x402/exact/ccd` the stock clients cannot pay the form: the stock Casper client draws a random nonce, and the stock
+their profiles define them, and nothing outside the protocol package has shown those forms yet. On `x402/exact/casper`
+and `x402/exact/ccd` the stock clients cannot pay the form: the stock Casper client draws a random nonce, and the stock
 Concordium client writes no memo.
 
 <!-- pairings:mcp:start -->

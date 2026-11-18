@@ -1,10 +1,12 @@
 # Changelog
 
-All notable changes to `integraledger-terms` are recorded in this file. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The package is at 0.x: a minor release may change the public
-API, so pin the exact version.
+Every notable change to `integraledger-terms`, which is released with `@integraledger/terms` under the same version. The
+format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The package is at 0.x: a minor release may
+change the public API, so pin the exact version. A change a caller must make is marked **Breaking**;
+[Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each call before
+and after.
 
-## [0.5.0] - 2026-11-18
+## 0.5.0 - 2026-11-18
 
 Brings the Python gate to the calls of `@integraledger/terms` 0.5.0, and builds and reads every pairing as
 `@integraledger/lcp` 0.6.0 does. Every 0.4.x caller changes something: the entries marked **Breaking** say what.
@@ -15,8 +17,8 @@ Brings the Python gate to the calls of `@integraledger/terms` 0.5.0, and builds 
   `SigningStep`) before the signer is called for it, and signs only on `True`. It also takes `ceilings=`,
   `legal_context=` and `chosen=`.
 - `confirm` returns the request with its `summary` (`Confirmed.summary`), every authority signing it grants (terms'
-  profile `buyer-gate.md`, rule 13), and takes `ceilings=`. `finish` takes `ceilings=`, and returns a later step with its
-  summary (`Next.summary`).
+  profile `buyer-gate.md`, rule 13), and takes `ceilings=`. `finish` takes `ceilings=`, and returns a later step with
+  its summary (`Next.summary`).
 - `check` takes `act`: `"agreement"` for an agreement payment, `"payment"` by default.
 - `agree` takes `chosen=`, and then pays only an agreement option the charge's pairing can follow, by its `agreementOn`
   in the protocol package's registry.
@@ -66,4 +68,4 @@ Brings the Python gate to the calls of `@integraledger/terms` 0.5.0, and builds 
   `X402_EXACT_LNBTC`, `X402_EXACT_LNBTC_INVOICE_NAMED` and `X402_EXACT_STELLAR`.
 - `Binding.public_proof`.
 
-[0.5.0]: https://github.com/IntegraLedger/integra-agentic-terms/tree/81dc0a89b62dee9f64a4bfce00ac544f61b0bd6e/agentic-terms-py
+Earlier releases are recorded in the repository's history.
