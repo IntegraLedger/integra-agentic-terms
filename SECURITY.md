@@ -1,8 +1,10 @@
 # Security policy
 
 The packages in this repository check, before a buyer signs, that a payment carries the hash of the record the seller
-serves. A flaw that lets a payment be signed without that match, or returned with a hash other than the one compared,
-is a vulnerability. We want to hear about it privately.
+serves and, on x402 and MPP, is held to what that record's binding slot commits to; and, in `transact`, that each
+signing is shown to the buyer's approver and bounded in time. A flaw that defeats any of these is a vulnerability. We
+want to hear about it privately. The [security model](./docs/security-model.md) states what the packages guarantee,
+what they trust and what they leave to the caller.
 
 ## Reporting a vulnerability
 
@@ -39,11 +41,19 @@ Examples of what we treat as vulnerabilities:
 - `finish`, `transact` or a tool returns a payment from which the pairing reads a hash other than that of the compared
   bytes, or reads none where the proof is not the agreement payment;
 - the ATR fetch exceeds its bounds (one `https` request, no redirect, 10 seconds, 1 MiB);
-- the TypeScript and Python gates accept different payments for the same inputs.
+- the TypeScript and Python gates accept different payments for the same inputs;
+- `transact` calls the signer without the approver's `true`, or a summary omits or misstates an authority the signed
+  request grants;
+- `transact` signs, or `confirm` or `finish` returns to be signed, a payment that stays payable past its pairing's
+  ceiling;
+- an option outside the ATR's `x402` `accepts` or `mpp` `challenges`, or a request other than the `x402` slot's request
+  commitment, is paid;
+- bytes that are not one JSON text both gates read alike are accepted.
 
 ## What does not
 
-- Anything that depends on the content of the ATR. The gate compares hashes; it does not judge terms, amounts or payees.
+- What the ATR's terms say. The gate parses the ATR and reads only its binding slot's options and request commitment;
+  it does not judge terms, amounts or payees.
 - Vulnerabilities in a seller's server, a facilitator, a wallet, or a chain. Report those to their maintainers.
 - Vulnerabilities in a dependency with no effect on these packages. Report those upstream.
 
