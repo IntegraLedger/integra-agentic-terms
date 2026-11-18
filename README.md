@@ -28,7 +28,7 @@ MPP, Spend Permissions, card, AP2, UCP, ACP and ACK, on EVM chains, Tempo, Solan
 Algorand, Aptos, Sui, NEAR, Starknet, Polkadot, TRON, TON, Cardano, Casper, Concordium, Stacks and Lightning, and over
 Cloudflare's batch settlement. Each pairing's registry data also states `confirmed`: whether anything outside the
 protocol package has shown the form as its profile defines it. 19 of the 77 are confirmed; the gate builds the others
-exactly as their profiles define them, and no seller may advertise them yet.
+exactly as their profiles define them, though no seller is yet known to offer them.
 
 ## How the packages fit together
 

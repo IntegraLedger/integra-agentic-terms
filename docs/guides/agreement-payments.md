@@ -146,10 +146,11 @@ Once the agreement payment is sent, every decline carries it as `moved`. A decli
 agreement URL has not recorded the payment in time (a `202`, a `5xx` or a timeout until the exchange's bound), or your
 `signal` ended the wait, and it may settle yet. A decline `agreement-failed` means the agreement URL answered the paid
 request with a redirect, another status, or a `200` that is not a receipt for H; the payment has left your wallet all
-the same. Either way, to collect the receipt, call again without `approved`: the gate asks the agreement URL unpaid and goes on once it answers `200` with
-the receipt, or declines `agreement-pending` again while it answers `202`, signing nothing. A `402` returns the
-agreement payment for approval again, and whether to pay a second time is your agent's decision. Never call again with
-`approved` for the same agreement: every call with `approved` signs and sends a new agreement payment.
+the same. Either way, to collect the receipt, call again without `approved`: the gate asks the agreement URL unpaid and
+goes on once it answers `200` with the receipt, or declines `agreement-pending` again while it answers `202`, signing
+nothing. A `402` returns the agreement payment for approval again, and whether to pay a second time is your agent's
+decision. Never call again with `approved` for the same agreement: every call with `approved` signs and sends a new
+agreement payment.
 
 ## Paid after its agreement
 

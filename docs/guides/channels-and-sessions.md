@@ -48,9 +48,9 @@ The gate follows that shape:
 
 `within` signs in-channel payments for these five pairings. The gate opens four of them. It declines an
 `x402/batch-settlement/solana` opening `summary-missing`, because it shows nothing it cannot summarize, so open a Solana
-batch channel with the protocol package's build directly; `openChannel` and `within` then take it. For any other
-pairing `within` declines `pairing-not-supported`. It hands your signer every in-channel payment as a `batch`: answer a `batch` with a list, one
-answer per request, in order.
+batch channel with the protocol package's build directly; `openChannel` and `within` then take it. For any other pairing
+`within` declines `pairing-not-supported`. It hands your signer every in-channel payment as a `batch`: answer a `batch`
+with a list, one answer per request, in order.
 
 `mpp/session/solana/memo` opens through the gate: `transact` shows its opening (`solana-session-open`) and signs it.
 terms builds none of its vouchers, since the protocol package gives that pairing no in-channel build, so `within`

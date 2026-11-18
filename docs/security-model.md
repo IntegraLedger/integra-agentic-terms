@@ -64,7 +64,8 @@ link-local host, and the gate sends one `GET` there through the `fetch` you pass
 
 Where your process can reach hosts a seller should not (a cloud metadata endpoint, an internal service), pass a `fetch`
 that refuses loopback, private-use, link-local and unique-local addresses, and that resolves a host name once and
-connects only to the address it checked, as the `terms-mcp` binary's fetch does (see [the MCP tools](#the-mcp-tools-and-the-skill)).
+connects only to the address it checked, as the `terms-mcp` binary's fetch does (see
+[the MCP tools](#the-mcp-tools-and-the-skill)).
 
 ## What it does not do
 

@@ -138,9 +138,9 @@ sign, point or leading zero, does not offer the pairing (`mpp/request-malformed`
 | `mpp/charge/usdc/stacks` | `stacks-contract-call` | none |
 
 The gate builds `x402/exact/casper` and `x402/exact/ccd` exactly as their profiles define them, but neither is
-confirmed in the protocol package's registry, and no stock client pays them: the stock Casper client draws a random
-nonce, and the stock Concordium client writes no memo. A seller that advertises either needs a client that builds the
-form as the protocol package does.
+confirmed in the protocol package's registry: nothing outside the protocol package has yet shown either form, and the
+stock clients do not build it (the stock Casper client draws a random nonce, and the stock Concordium client writes no
+memo).
 
 ## Lightning
 

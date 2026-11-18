@@ -686,8 +686,8 @@ The gate itself pays an agreement only through an x402 pairing marked `yes` or `
 returned to you as `agreementChallenges`, for your own MPP client to pay. Each is read from the pairing's registry data
 in `@integraledger/lcp`, which also states, as `confirmed`, whether anything outside the protocol package has shown the
 form as its profile defines it: 19 of the 77 are confirmed. The gate builds the others exactly as their profiles define
-them, and no seller may advertise them yet: `x402/exact/casper` and `x402/exact/ccd`, for example, cannot be paid by the
-stock Casper and Concordium clients, which draw a random nonce and write no memo. The
+them, though no seller is yet known to offer them: `x402/exact/casper` and `x402/exact/ccd`, for example, are not
+built by the stock Casper and Concordium clients, which draw a random nonce and write no memo. The
 [pairings reference](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/reference/pairings.md) adds
 what each payment proves, and the [rails guide](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/guides/rails.md)
 the inputs each build reads.
