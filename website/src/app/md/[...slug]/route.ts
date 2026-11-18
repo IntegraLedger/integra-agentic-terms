@@ -1,5 +1,5 @@
-import { pageMarkdown } from "@/lib/llms";
-import { absoluteUrl } from "@/lib/site";
+import { pageDocument } from "@/lib/llms";
+import { pageFacts } from "@/lib/llms-files";
 import { source } from "@/lib/source";
 
 export const dynamic = "force-static";
@@ -20,13 +20,5 @@ export async function GET(_request: Request, context: { params: Promise<{ slug: 
   const name = last.slice(0, -3);
   const page = source.getPage(slug.length === 1 && name === "index" ? [] : [...slug.slice(0, -1), name]);
   if (!page) return new Response("not found", { status: 404 });
-  const text = [
-    `# ${page.data.title}`,
-    "",
-    ...(page.data.description ? [`> ${page.data.description}`, ""] : []),
-    `Source: ${absoluteUrl(page.url)}`,
-    "",
-    await pageMarkdown(page),
-  ].join("\n");
-  return new Response(text, { headers: { "content-type": "text/markdown; charset=utf-8" } });
+  return new Response(await pageDocument(page, pageFacts), { headers: { "content-type": "text/markdown; charset=utf-8" } });
 }

@@ -5,8 +5,10 @@
 // module wrangler.toml's rule makes of it:
 // - against an env.ASSETS whose responses carry no header, each kind of response the Worker returns (a page, the home
 //   page, a HEAD request, a page's Markdown address, a page asked for as Markdown, a 304 for a copy the reader holds,
-//   the 404 page for a page address and for a .md address, and a redirect) carries exactly the headers
-//   public/_headers gives the request's path, besides the Worker's own `Vary: Accept` and the redirect's Location;
+//   the 404 page for a page address, the Markdown 404 for a .md address, and a redirect) carries exactly the headers
+//   public/_headers gives the request's path, with the Worker's own Link after the rules' (on a page's HTML, its
+//   Markdown address; on its Markdown at its .md address, the page as canonical), besides the Worker's own
+//   `Vary: Accept`, the redirect's Location and the Markdown 404's Content-Type, and the Markdown 404 names /llms.txt;
 // - against an env.ASSETS whose responses already carry the headers public/_headers gives their own path, as the
 //   static assets may give them, each of those headers carries public/_headers' value once;
 // - scripts/check-live-headers.mjs passes against a server of out/ that answers as Cloudflare does (the static assets,
@@ -20,7 +22,7 @@ import { createServer } from "node:http";
 import { registerHooks } from "node:module";
 import { extname, join, resolve, sep } from "node:path";
 import { headersFor, parseHeaders } from "../headers.mjs";
-import { ADDRESSES, checkLiveHeaders } from "./check-live-headers.mjs";
+import { ADDRESSES, alternateLink, canonicalLink, checkLiveHeaders, expectedHeaders, ORIGIN } from "./check-live-headers.mjs";
 
 // wrangler.toml's Text rule: an import of a file named _headers gives the file's text.
 registerHooks({
@@ -33,6 +35,9 @@ registerHooks({
 const worker = (await import("../worker.js")).default;
 const RULES = parseHeaders(readFileSync("public/_headers", "utf8"));
 const failures = [];
+if (!readFileSync("worker.js", "utf8").includes(`const ORIGIN = "${ORIGIN}";`)) {
+  failures.push(`worker.js does not name ${ORIGIN}, src/lib/site.ts's url, as its ORIGIN`);
+}
 
 // A site of three pages, each with a Markdown copy. Bodies are bytes, so a Response adds no Content-Type of its own.
 const PAGES = new Set(["/", "/getting-started", "/concepts"]);
@@ -62,17 +67,17 @@ function mockAssets(applied) {
   };
 }
 
-/** Each kind of response the Worker returns: the request, its status, and whether it varies on Accept. */
+/** Each kind of response the Worker returns: the request, its status, whether it varies on Accept, and its own Link. */
 const CASES = [
-  ["/getting-started", { headers: { accept: "text/html" } }, 200, true],
-  ["/", { headers: { accept: "text/html" } }, 200, true],
-  ["/getting-started", { method: "HEAD" }, 200, true],
-  ["/getting-started.md", {}, 200, false],
-  ["/index.md", {}, 200, false],
+  ["/getting-started", { headers: { accept: "text/html" } }, 200, true, alternateLink("/getting-started")],
+  ["/", { headers: { accept: "text/html" } }, 200, true, alternateLink("/")],
+  ["/getting-started", { method: "HEAD" }, 200, true, alternateLink("/getting-started")],
+  ["/getting-started.md", {}, 200, false, canonicalLink("/getting-started")],
+  ["/index.md", {}, 200, false, canonicalLink("/")],
   ["/concepts", { headers: { accept: "text/markdown" } }, 200, true],
-  ["/getting-started.md", { headers: { "if-none-match": ETAG } }, 304, false],
+  ["/getting-started.md", { headers: { "if-none-match": ETAG } }, 304, false, canonicalLink("/getting-started")],
   ["/no-such-page", {}, 404, true],
-  ["/no-such-page.md", {}, 404, true],
+  ["/no-such-page.md", {}, 404, false],
   ["/getting-started/", {}, 307, true],
 ];
 
@@ -80,12 +85,22 @@ let compared = 0;
 for (const applied of [false, true]) {
   const env = { ASSETS: mockAssets(applied) };
   const kind = applied ? "already carrying its headers" : "with no header";
-  for (const [path, init, status, varies] of CASES) {
+  for (const [path, init, status, varies, link] of CASES) {
     const request = new Request(`https://site.test${path}`, init);
     const response = await worker.fetch(request, env);
     const label = `${request.method} ${path}${init.headers ? ` (${Object.entries(init.headers).map(([k, v]) => `${k}: ${v}`).join(", ")})` : ""}, from assets ${kind},`;
     if (response.status !== status) failures.push(`${label} answers ${response.status}, not ${status}`);
-    const expected = headersFor(RULES, path);
+    const markdown404 = status === 404 && path.endsWith(".md");
+    if (markdown404) {
+      const body = await response.clone().text();
+      if (!body.startsWith("# Page not found\n") || !body.includes(`${ORIGIN}/llms.txt`)) {
+        failures.push(`${label} is not the Markdown 404 naming ${ORIGIN}/llms.txt`);
+      }
+      if (response.headers.get("content-type") !== "text/markdown; charset=utf-8") {
+        failures.push(`${label} carries Content-Type ${response.headers.get("content-type")}, not text/markdown; charset=utf-8`);
+      }
+    }
+    const expected = expectedHeaders(RULES, path, link);
     if (expected.length === 0) failures.push(`public/_headers gives ${path} no header`);
     for (const [name, value] of expected) {
       compared++;
@@ -96,7 +111,7 @@ for (const applied of [false, true]) {
       failures.push(`${label} carries Vary: ${response.headers.get("vary")}, not ${varies ? "Accept" : "nothing"}`);
     }
     if (!applied) {
-      const own = new Set(["vary", ...(status === 307 ? ["location"] : [])]);
+      const own = new Set(["vary", ...(status === 307 ? ["location"] : []), ...(markdown404 ? ["content-type"] : [])]);
       const given = new Set(expected.map(([name]) => name.toLowerCase()));
       for (const [name] of response.headers) {
         if (!given.has(name) && !own.has(name)) failures.push(`${label} carries ${name}, which public/_headers does not give it`);

@@ -10,6 +10,11 @@ export const siteConfig = {
   titleTemplate: "%s | Integra Agentic Terms",
   description:
     "Before an agent's wallet signs, the buyer gate confirms that the record a seller serves hashes to the value the payment will carry. TypeScript, Python and MCP.",
+  /** The summary `/llms.txt` opens with: what the gate does, with its terms defined, and its three packages. */
+  llmsSummary:
+    "The buyer gate for agents that pay: before an agent's wallet signs, it fetches the Agentic Transaction Record (ATR) a seller serves, confirms that its SHA-256 equals the ATR hash (H) the payment will carry, and builds the payment with that hash. TypeScript (@integraledger/terms), Python (integraledger-terms) and MCP (@integraledger/terms-mcp).",
+  /** The protocol package's documentation site (integra-protocol), whose @integraledger/lcp the gate builds on. */
+  lcpUrl: "https://lcp.integraledger.com",
   keywords: [
     "Legal Context Protocol",
     "LCP",

@@ -65,12 +65,24 @@ export default async function Page(props: PageProps) {
       />
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
-      <div className="flex flex-row items-center gap-2 border-b pb-6">
+      <div className="flex flex-row flex-wrap items-center gap-2 border-b pb-6">
         <MarkdownCopyButton markdownUrl={copyPath} />
         <ViewOptionsPopover
-          markdownUrl={absoluteUrl(copyPath)}
+          markdownUrl={absoluteUrl(markdownUrl(page.url))}
           {...(sourcePath === undefined ? {} : { githubUrl: repoFile(sourcePath) })}
         />
+        {/* For an agent whose fetch turns HTML into text and drops <head>, which names the same two addresses. */}
+        <p className="text-sm text-fd-muted-foreground">
+          For AI agents:{" "}
+          <a className="underline underline-offset-2" href={markdownUrl(page.url)}>
+            this page as Markdown
+          </a>
+          , and{" "}
+          <a className="underline underline-offset-2" href="/llms.txt">
+            llms.txt
+          </a>
+          , the index of every page.
+        </p>
       </div>
       <DocsBody>
         <MDX components={{ ...defaultMdxComponents, Mermaid, table: Table }} />

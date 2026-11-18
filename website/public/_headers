@@ -9,7 +9,11 @@
 # browser applies both, so a script runs only when both allow it, and an inline script only when its page's policy
 # names it. The hashes of one page run past the 2,000 characters a line of this file may hold, so this policy's
 # 'unsafe-inline' leaves inline scripts to each page's own.
+# Every response names /llms.txt, the index of every page for language models, in a Link header
+# (https://llmstxt.org): an agent that reads no HTML head, or a file that has none, still finds it. worker.js adds the
+# page's own links: a page's Markdown address on its HTML, and the page on its Markdown.
 /*
+  Link: </llms.txt>; rel="describedby"
   Strict-Transport-Security: max-age=63072000; includeSubDomains
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   X-Content-Type-Options: nosniff
@@ -30,8 +34,11 @@
   Content-Type: text/plain; charset=utf-8
 /llms-full.txt
   Content-Type: text/plain; charset=utf-8
+# The copies at /md/ are the addresses the pages' copy buttons fetch, not ones to index; a page's .md address, which
+# llms.txt lists, names the page as its canonical address instead (worker.js).
 /md/*
   Content-Type: text/markdown; charset=utf-8
+  X-Robots-Tag: noindex
 /.well-known/security.txt
   Content-Type: text/plain; charset=utf-8
 
@@ -57,4 +64,6 @@
 /sitemap.xml
   Content-Security-Policy: default-src 'none'; script-src 'none'
 /manifest.webmanifest
+  Content-Security-Policy: default-src 'none'; script-src 'none'
+/*.json
   Content-Security-Policy: default-src 'none'; script-src 'none'
