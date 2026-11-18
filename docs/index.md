@@ -52,9 +52,11 @@ the same payments.
 
 ## For AI agents
 
-The site publishes [`llms.txt`](https://agenticterms.integraledger.com/llms.txt), an index of every page, and
-[`llms-full.txt`](https://agenticterms.integraledger.com/llms-full.txt), every page in one file. Each page is also
-Markdown at its address with `.md` added, such as
-[`/getting-started.md`](https://agenticterms.integraledger.com/getting-started.md), or at its own address for a request
-whose `Accept` header prefers `text/markdown`. The protocol package the gate builds on is documented the same way at
-[lcp.integraledger.com/llms.txt](https://lcp.integraledger.com/llms.txt).
+The site publishes [`llms.txt`](https://agenticterms.integraledger.com/llms.txt), an index of every page with the
+versions it documents, and [`llms-full.txt`](https://agenticterms.integraledger.com/llms-full.txt), every page in one
+file, with one file for each section: [guides](https://agenticterms.integraledger.com/guides/llms-full.txt),
+[reference](https://agenticterms.integraledger.com/reference/llms-full.txt) and
+[API](https://agenticterms.integraledger.com/api/llms-full.txt). Each page is also Markdown at its address with `.md`
+added, such as [`/getting-started.md`](https://agenticterms.integraledger.com/getting-started.md), or at its own address
+for a request whose `Accept` header prefers `text/markdown`. The protocol package the gate builds on is documented the
+same way at [lcp.integraledger.com/llms.txt](https://lcp.integraledger.com/llms.txt).
