@@ -39,6 +39,7 @@
     "dist",
     "profiles",
     "vectors",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
