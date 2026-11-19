@@ -10,6 +10,9 @@ call before and after.
 
 ### Changed
 
+- The peer dependency on `@integraledger/lcp` is `~0.6.2` (was `~0.6.0`): the gate reads an agreement option's served
+  names with 0.6.2's `servesOf`, which reads `<slot>/<i>` for every ATR binding slot that holds charge options:
+  `ack/<i>`, `acp/<i>`, `ap2/<i>`, `card/<i>` and `ucp/<i>` beside `x402/<i>` and `mpp/<i>`.
 - On the return after an agreement, `transact` resolves each agreement option's served names against the ATR's bytes
   once it has fetched and parsed them (lcp profile `legal-context-return.md`, rule 6): an option naming a slot that is
   not the ATR's binding slot, or an index not below the number of charge options that slot holds, is declined

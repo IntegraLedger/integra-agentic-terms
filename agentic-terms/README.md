@@ -65,7 +65,7 @@ npm install @integraledger/terms@0.5.1 @integraledger/lcp@0.6.1
 ```
 
 - Node.js `>=24.22.1`. ESM only.
-- `@integraledger/lcp` is a peer dependency of this package (`~0.6.0`, any 0.6.x release): install it beside it, so
+- `@integraledger/lcp` is a peer dependency of this package (`~0.6.2`, 0.6.2 or a later 0.6.x release): install it beside it, so
   your application and the gate share one copy, and import from it the bindings you pass in.
 - Chain libraries are optional peers of `@integraledger/lcp`: `@mysten/sui`, `@solana/kit`, `@stellar/stellar-sdk`,
   `@ton/core`, `algosdk`, `borsh` and `ripple-binary-codec`, at the versions `@integraledger/lcp` names. Install the
@@ -852,7 +852,7 @@ languages compute the same hashes, build the same requests and give the same dec
 ## Versioning and upgrading
 
 The packages are at 0.x: a minor release may change the public API, so pin the exact version, as the install line does.
-0.5.x takes `@integraledger/lcp` `~0.6.0` as its peer (0.4.x took `~0.5.1`) and Node.js `>=24.22.1` (0.4.x `>=24`).
+0.5.x takes `@integraledger/lcp` `~0.6.2` as its peer (0.5.0 and 0.5.1 took `~0.6.0`, 0.4.x `~0.5.1`) and Node.js `>=24.22.1` (0.4.x `>=24`).
 Security fixes are released for the latest version only. 0.5.0 changed every call from 0.4.x: `transact` requires
 `approver` and `resourceRequest`, `confirm` takes `{ resourceRequest, inputs?, ceilings? }` in place of `inputs`, and
 every signed payment is held to a 600-second ceiling unless you raise it. The

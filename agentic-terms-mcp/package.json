@@ -55,7 +55,7 @@
     "zod": "4.6.7"
   },
   "peerDependencies": {
-    "@integraledger/lcp": "~0.6.0"
+    "@integraledger/lcp": "~0.6.2"
   },
   "devDependencies": {
     "@integraledger/lcp": "0.6.1",

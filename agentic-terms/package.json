@@ -48,7 +48,7 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@integraledger/lcp": "~0.6.0"
+    "@integraledger/lcp": "~0.6.2"
   },
   "devDependencies": {
     "@integraledger/lcp": "0.6.1",

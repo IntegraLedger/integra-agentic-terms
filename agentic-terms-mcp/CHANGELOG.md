@@ -10,6 +10,9 @@ shows each call before and after.
 
 ### Changed
 
+- The peer `@integraledger/lcp` is `~0.6.2` (was `~0.6.0`), whose `servesOf` reads `<slot>/<i>` for every ATR binding
+  slot that holds charge options: `ack/<i>`, `acp/<i>`, `ap2/<i>`, `card/<i>` and `ucp/<i>` beside `x402/<i>` and
+  `mpp/<i>`.
 - `atr_transact` resolves each agreement option's served names against the ATR's bytes as the gate does: an option
   naming a slot that is not the ATR's binding slot, or an index past the charge options that slot holds, is declined
   `offer-unreadable` with `return/serves-malformed`.

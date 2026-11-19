@@ -14,8 +14,8 @@ change of the release.
 - The three packages are released together, under one version number. This documentation is 0.5.0's.
 - At 0.x, a minor release may change the public API, as 0.5.0 changed 0.4.x's. Pin the exact version, as every install
   line here does, and read this page before you move to a new minor release.
-- `@integraledger/terms` and `@integraledger/terms-mcp` 0.5.x take `@integraledger/lcp` `~0.6.0`, any 0.6.x release, as
-  a peer dependency; 0.4.x took `~0.5.1`. Install it beside them, so your application and the gate share one copy, and
+- `@integraledger/terms` and `@integraledger/terms-mcp` 0.5.x take `@integraledger/lcp` `~0.6.2`, 0.6.2 or a later 0.6.x release, as
+  a peer dependency (0.5.0 and 0.5.1: `~0.6.0`); 0.4.x took `~0.5.1`. Install it beside them, so your application and the gate share one copy, and
   import the bindings you pass in from it. The Python package carries its own bindings and needs no protocol package.
 - Node.js `>=24.22.1` for both TypeScript packages (0.4.x: `>=24`). Python `>=3.11`, as before.
 - Security fixes are released for the latest published version of each package only.
