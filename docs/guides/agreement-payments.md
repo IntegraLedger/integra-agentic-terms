@@ -172,7 +172,11 @@ name for each binding slot that holds charge options, `x402/<i>` (`accepts`), `m
    charge is chosen by the option's own checks and checks 9 to 11 are left to the call that pays it: an
    `x402/exact/lnbtc/payment-hash` option, whose invoice the seller writes after the agreement (the protocol package's
    profile `x402-exact-lnbtc.md`), and every MPP challenge, which the slot holds as issued, without the id and the
-   members the seller places when it serves it;
+   members the seller places when it serves it. On a card or checkout pairing (`card`, `acp`, `ap2`, `ucp` or `ack`),
+   given with an x402 or MPP first response, it takes the first served option of the ATR's binding slot that the
+   pairing pays for your account, a CAIP-10 account: on `card` the option of the pairing's `scheme`, on `acp` its
+   handler option, on `ap2` and `ucp` a checkout (on a booking pairing a booking), on `ack` a payment option on your
+   account's network; checks 9 to 11 are left to the call that pays it;
 3. pays that agreement option as soon as your approver approves it with `act` `"agreement"`, without returning it to
    your agent first, and waits for its receipt as above. On
    MPP, it follows the agreement URL the agreement challenges carry and reads that resource's one `402`, its
@@ -197,6 +201,11 @@ refuses is declined `offer-unreadable` with its code (`return/header-malformed`)
 `hash-mismatch`. Repeat your request with the returned `legalContext`, and call `transact` again with the second
 response, which offers the charge: the agreement being recorded, that call pays the charge as any other. A response
 that offers no charge the gate can choose is `no-payable-option`.
+
+A card or checkout sale whose agreement the first response offers as an x402 or MPP option is paid by passing the
+charge's pairing, such as `card/visa-tap`, to both calls: the first pays the agreement and returns `charge` such as
+`card/0`, and the second reads the seller's card document or checkout, which names the agreement URL, and pays the
+charge.
 
 ## Example
 

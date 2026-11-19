@@ -7,7 +7,7 @@ import { MAX_JSON_DEPTH } from "@integraledger/lcp";
 import { canonicalJson } from "@integraledger/lcp/core";
 import { issuedDigest as mppIssuedDigest, type MppChallenge } from "@integraledger/lcp/mpp";
 import { requestCommitment, toolCallCommitment, type HttpRequest, type ToolCall } from "@integraledger/lcp/x402";
-import { isRefusal } from "./pairings/common.js";
+import { accountOf, isRefusal } from "./pairings/common.js";
 import { startOf, summaryOf, type Opened } from "./summary.js";
 import type {
   Approver,
@@ -243,7 +243,7 @@ export function parseAtr(bytes: Uint8Array): { value: unknown } | Declined {
 // ── The option chosen and the binding slot (rule 6).
 
 /** The member of each protocol's binding slot that lists the options offered. */
-const LISTING: { readonly [protocol: string]: string } = {
+export const LISTING: { readonly [protocol: string]: string } = {
   x402: "accepts",
   mpp: "challenges",
   acp: "options",
@@ -366,6 +366,39 @@ export async function slotHolds(binding: Binding, chosen: Chosen, atr: unknown):
   const want = unplaced === undefined ? undefined : canonical(unplaced);
   if (want === undefined) return notHeld;
   return members.some((m) => canonical(m) === want) ? undefined : notHeld;
+}
+
+/**
+ * Whether `option`, an option of the ATR's binding slot of the pairing's protocol, is one the pairing pays for
+ * `account`, in rule 6's form: on `card` an object whose `scheme` is the pairing's (`CARD_SCHEMES`); on `acp` the
+ * handler option, `{requires_delegate_payment}`, true on `acp/checkout/delegated`, by RFC 8785 form; on `ap2` a
+ * `{checkout}`, and on `ucp` a `{checkout}`, or a `{booking}` on a booking pairing, holding that one string member; on
+ * `ack` a payment option whose `network` is the account's CAIP-2. False where `account` is not a CAIP-10 account, and
+ * on any other protocol.
+ */
+export function servedBy(binding: Binding, option: unknown, account: string): boolean {
+  const at = accountOf(account);
+  if (at === undefined || !isObject(option)) return false;
+  const pairing = String(binding.id);
+  const protocol = pairing.split("/")[0]!;
+  const keys = Object.keys(option);
+  const only = (name: string): boolean => keys.length === 1 && keys[0] === name && typeof option[name] === "string";
+  switch (protocol) {
+    case "card":
+      return CARD_SCHEMES[pairing] !== undefined && option["scheme"] === CARD_SCHEMES[pairing];
+    case "acp": {
+      const want = canonical(chosenOption(pairing, protocol, {}));
+      return want !== undefined && canonical(option) === want;
+    }
+    case "ap2":
+      return only("checkout");
+    case "ucp":
+      return only(pairing.startsWith("ucp/booking/") ? "booking" : "checkout");
+    case "ack":
+      return option["network"] === at.network;
+    default:
+      return false;
+  }
 }
 
 // ── The buyer's request and the binding slot (rule 7).

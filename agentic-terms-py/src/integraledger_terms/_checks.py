@@ -27,6 +27,7 @@ from ._types import (
     Validity,
 )
 from .bindings._codec import canonical_or_none
+from .pieces._common import account_of
 
 MAX_SAFE_INTEGER = 2**53 - 1
 
@@ -142,6 +143,37 @@ def slot_holds(binding: Binding, chosen: Chosen, atr: object) -> Declined | None
     if text is None:
         return not_held
     return None if any(canonical_or_none(m) == text for m in members) else not_held
+
+
+def served_by(binding: Binding, option: object, account: str) -> bool:
+    """Whether option, an option of the ATR's binding slot of the pairing's protocol, is one the pairing pays for
+    account, in rule 6's form: on card a mapping whose scheme is the pairing's (_CARD_SCHEMES); on acp the handler
+    option, {"requires_delegate_payment"}, True on acp/checkout/delegated, by RFC 8785 form; on ap2 a {"checkout"}, and
+    on ucp a {"checkout"}, or a {"booking"} on a booking pairing, holding that one string member; on ack a payment
+    option whose network is the account's CAIP-2. False where account is not a CAIP-10 account, and on any other
+    protocol."""
+    at = account_of(account)
+    if at is None or not isinstance(option, Mapping):
+        return False
+    pairing = str(binding.id)
+    protocol = pairing.split("/", 1)[0]
+
+    def only(name: str) -> bool:
+        return list(option) == [name] and isinstance(option[name], str)
+
+    if protocol == "card":
+        scheme = _CARD_SCHEMES.get(pairing)
+        return scheme is not None and option.get("scheme") == scheme
+    if protocol == "acp":
+        want = canonical_or_none(_chosen_option(pairing, protocol, {}))
+        return want is not None and canonical_or_none(option) == want
+    if protocol == "ap2":
+        return only("checkout")
+    if protocol == "ucp":
+        return only("booking" if pairing.startswith("ucp/booking/") else "checkout")
+    if protocol == "ack":
+        return option.get("network") == at.network
+    return False
 
 
 # ── The buyer's request and the binding slot (rule 7).

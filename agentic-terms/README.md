@@ -458,6 +458,14 @@ its summary and its ceiling before its agreement is paid. Where the seller write
 is chosen by the option's own checks, and the call that pays it makes the rest: an `x402/exact/lnbtc/payment-hash`
 option, whose invoice comes later, and every MPP challenge, which the slot holds as issued.
 
+A card or checkout sale (`card`, `acp`, `ap2`, `ucp` or `ack`) whose agreement the first response offers as an x402
+or MPP option is paid the same way: pass `transact` that first response and the charge's pairing, such as
+`card/visa-tap`. The charge chosen is a served option of the ATR's binding slot that the pairing pays for your account, a
+CAIP-10 account: on `card` the option of the pairing's `scheme`, on `acp` its handler option, on `ap2` and `ucp` a
+checkout (on a booking pairing a booking), on `ack` a payment option on your account's network. Its build, summary and
+ceiling are left to the call that pays it, with the seller's document served after the return, which names the
+agreement URL; `charge` is then such as `card/0`.
+
 On MPP, `transact` follows the agreement URL the agreement challenges carry and reads its one `402`: it pays an x402
 agreement option there as on x402. Where that `402` offers only MPP agreement challenges, `transact` signs nothing and
 `ToReturn` holds them as `agreementChallenges`, in place of `agreement`, for your own MPP client to pay at the

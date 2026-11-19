@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from . import _agreement, _gate
-from ._checks import Approval, request_held
+from ._checks import Approval, request_held, served_by
 from ._core import AtrHash, atr_hash, hash_equals
 from ._parse import parse_atr
 from ._types import (
@@ -426,7 +426,30 @@ def mpp_agreement_options(challenges: object) -> list[Offered] | Refusal | None:
     return [Offered(option=c, read=read, serves=serves) for c, serves in zip(challenges, served) if isinstance(serves, tuple)]
 
 
-_SLOT_LISTING = {"x402": "accepts", "mpp": "challenges"}
+# The namespaces of the pairings whose own document offers no agreement option and whose charge an agreement serves.
+_SERVED_SLOTS = ("card", "acp", "ap2", "ucp", "ack")
+
+
+def agreement_offered(doc: Any, ns: str) -> tuple[list[Offered], str] | Refusal | None:
+    """The agreement options of a first response that offers the agreement and no charge option, and the protocol
+    offering them: on x402 agreement_options, on MPP mpp_agreement_options, and on a pairing of card, acp, ap2, ucp or
+    ack the first of the two that reads the response. None where neither reads it; the refusal where the read refuses
+    it."""
+    if ns == "x402":
+        reads: tuple[str, ...] = ("x402",)
+    elif ns == "mpp":
+        reads = ("mpp",)
+    elif ns in _SERVED_SLOTS:
+        reads = ("x402", "mpp")
+    else:
+        return None
+    for via in reads:
+        offers = agreement_options(doc) if via == "x402" else mpp_agreement_options(doc)
+        if isinstance(offers, Refusal):
+            return offers
+        if offers is not None:
+            return list(offers), via
+    return None
 
 
 async def to_return(
@@ -440,7 +463,7 @@ async def to_return(
     returned: tuple[AtrHash, bytes | None] | None,
     approval: Approval,
     signal: asyncio.Event | None,
-    ns: str = "x402",
+    via: str = "x402",
 ) -> ToReturn | Declined:
     """The return after an agreement: the ATR fetched from the response's link, compared with its H and with the return
     value's, and parsed; each agreement option's served names resolved against those bytes (serves_of), a name whose
@@ -448,22 +471,23 @@ async def to_return(
     declining the response offer-unreadable with return/serves-malformed; and the ATR's request commitment held to the
     buyer's request; then, for each agreement option in the seller's order and each charge it names as served,
     <slot>/<i>, the option at index i of the list the ATR's binding slot of the pairing's protocol holds (accepts in
-    x402, challenges in mpp), the first such charge the account can pay is chosen (_choice), and its agreement paid. On
-    x402 the agreement option is paid at the agreement URL as offered. On MPP, whose first response offers MPP agreement
-    challenges, which terms builds no credential for, the agreement URL is followed: an x402 agreement option its 402
-    offers is paid as on x402, and where it offers only MPP agreement challenges they are returned in
-    agreement_challenges for the caller's own MPP client, nothing signed. Each agreement payment, where the charge's
-    agreementOn admits it, is asked of the approver as the act agreement. No charge is signed, and no agreement is paid
-    for a charge checks 9 to 11 decline: the next served charge is tried, and where every one is declined there, the
-    first decline is returned. A pairing whose agreement is never a charge, or a response with no such charge, is
-    no-payable-option."""
+    x402, challenges in mpp, options in card, acp, ap2 and ucp, paymentOptions in ack), the first such charge the
+    account can pay is chosen (_choice), and its agreement paid. via is the protocol of the agreement options, the
+    pairing's own on x402 and MPP. On x402 the agreement option is paid at the agreement URL as offered. On MPP, whose
+    first response offers MPP agreement challenges, which terms builds no credential for, the agreement URL is
+    followed: an x402 agreement option its 402 offers is paid as on x402, and where it offers only MPP agreement
+    challenges they are returned in agreement_challenges for the caller's own MPP client, nothing signed. Each
+    agreement payment, where the charge's agreementOn admits it, is asked of the approver as the act agreement. No
+    charge is signed, and no agreement is paid for a charge checks 9 to 11 decline: the next served charge is tried,
+    and where every one is declined there, the first decline is returned. A pairing whose agreement is never a charge,
+    or a response with no such charge, is no-payable-option."""
     read = offers[0].read
     url = read.agreement
     if not isinstance(url, str):
         return Declined("agreement-not-offered", "The first response names no agreement URL.")
     if not is_https_link(read.link):
         fault = "link-not-https" if is_other_scheme_link(read.link) else "legal-context-malformed"
-        return Declined("link-not-https", f"{ns}/{fault}")
+        return Declined("link-not-https", f"{via}/{fault}")
     atr_bytes = await _gate._fetch(fetch, read.link)
     if isinstance(atr_bytes, Declined):
         return atr_bytes
@@ -480,11 +504,12 @@ async def to_return(
     other_request = request_held(binding, parsed.value, resource_request)
     if other_request is not None:
         return other_request
+    ns = _gate._namespace(binding)
     own = getattr(binding, "agreement", None)
     if getattr(own, "only", False) is True:
         return Declined("no-payable-option", f"{ns}/no-payable-option")
     slot = parsed.value.get(ns) if isinstance(parsed.value, Mapping) else None
-    listed = slot.get(_SLOT_LISTING[ns]) if isinstance(slot, Mapping) else None
+    listed = slot.get(_CHARGE_OPTIONS[ns]) if isinstance(slot, Mapping) else None
     charges: list[Any] = listed if isinstance(listed, list) else []
     header = to_legal_context_header(h, returned[1] if returned is not None else None)
     if isinstance(header, Refusal):
@@ -515,12 +540,12 @@ async def to_return(
                 fetch,
                 inputs=approval.inputs,
                 signal=signal,
-                ns=ns,
+                ns=via,
                 approval=approval,
                 chosen=chosen,
                 charge=binding,
             )
-            if ns == "x402":
+            if via == "x402":
                 agreed = await pay(approved=AgreementPayment(url=url, option=dict(offered.option), required=dict(doc)))
             else:
                 asked = await pay(approved=None)
@@ -557,7 +582,13 @@ def _choice(
     seller writes after the agreement, held to the pairing's before_carrier, the protocol package's checks of the offer
     before that carrier (an x402/exact/lnbtc/payment-hash option, whose invoice is issued after the agreement); and
     every MPP challenge, which the slot holds as issued, without the id and the members the seller places when it
-    serves it, held to the pairing's own checks of a challenge (pairings_of)."""
+    serves it, held to the pairing's own checks of a challenge (pairings_of). On card, acp, ap2, ucp and ack, whose
+    charge the second response offers, the choice is the slot's option, where the pairing pays it for the account
+    (served_by), and checks 9 to 11 are left to the call that pays the charge."""
+    if ns not in ("x402", "mpp"):
+        if not served_by(binding, charge, account):
+            return None
+        return Chosen(pairing=str(binding.id), choice=dict(charge), ref=_gate._ref())
     piece = _gate._piece(binding)
     assert piece is not None
 

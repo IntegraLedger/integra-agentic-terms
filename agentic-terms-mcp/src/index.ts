@@ -86,7 +86,9 @@ const DESCRIPTIONS = {
     "and the `charge` chosen, signing no charge: repeat your request with " +
     "`legalContext` as its Legal-Context header, or over MCP under `params._meta` \"" +
     LEGAL_CONTEXT_META +
-    "\", then call atr_transact with the second response. Pass as `legalContext` the first response's Legal-Context " +
+    "\", then call atr_transact with the second response. Pass as `pairing` the charge's pairing, a card or " +
+    "checkout pairing among them, even where the first response offers the agreement as an x402 or MPP option. " +
+    "Pass as `legalContext` the first response's Legal-Context " +
     "header, or its result's `_meta` \"" +
     LEGAL_CONTEXT_META +
     "\", where it carried one.",

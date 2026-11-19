@@ -12,13 +12,14 @@
 // x402 payment request, receipt and payer key buyer.json's; the Lightning option and request x402-exact-lnbtc.json's,
 // whose first response's agreement option, naming x402/0 alone, is that of legal-context-return.json's servesRefusals
 // row refusing it against the file's card ATR, which holds no x402 slot; and the x402 agreement option buyer-gate.json's
-// row "approved"'s.
-import { createHash } from "node:crypto";
+// row "approved"'s. Also a card sale whose agreement the first response offers as an x402 option.
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TypedDataDefinition } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { BINDINGS } from "@integraledger/lcp";
+import { visaTap } from "@integraledger/lcp/card";
 import { place, tie as mppTie, type MppChallenge } from "@integraledger/lcp/mpp";
 import { exactEip3009, requestCommitment, tie as x402Tie } from "@integraledger/lcp/x402";
 import { transact, type Binding, type Fetch, type SigningRequest, type ToSign } from "../src/index.js";
@@ -32,6 +33,7 @@ const RET: Loose = vectors("legal-context-return.json");
 const ET: Loose = vectors("mpp-charge-evm-transaction.json");
 const LN: Loose = vectors("x402-exact-lnbtc.json");
 const SC: Loose = vectors("mpp-server-checks.json");
+const CARD: Loose = vectors("card.json");
 const V: Loose = JSON.parse(readFileSync(new URL("../vectors/buyer-gate.json", import.meta.url), "utf8"));
 const AG = B.fixed.agreement;
 const LINK: string = B.fixed.link;
@@ -222,5 +224,67 @@ describe("an x402 charge whose slot option lacks the invoice its read needs", ()
     });
     expect("decline" in out && out.decline.code).toBe("not-approved");
     expect([asked.map((a) => [a.act, a.pairing]), node.requests.length, agreementSigner.requests.length]).toEqual([[["agreement", "x402/exact/eip155/eip3009"]], 0, 0]);
+  });
+});
+
+// lcp profile legal-context-return.md, rule 6, and terms' profile buyer-gate.md, rule 12: the caller passes the charge's
+// pairing, card/visa-tap. The ATR, the first response and its link are buyer-gate.json's row serves-card's: lcp's card
+// ATR, and the x402 agreement option serving card/0 and card/2. The second response is the pairing's own advertise of
+// the ATR's visa-tap option for H, with buyer.json's agreement URL. The agreement URL answers 402 before the agreement
+// is paid and 200 with buyer.json's receipt after. The TAP signer signs card.json C2's sig2 base, its nonce the
+// request's, under RFC 9421's test-key-ed25519 (B.1.4), here in its JWK form, which gives C2's sig2 over C2's base;
+// TAP signs no end, so the charge's ceiling is raised to "no-end" (the profile's rule 8).
+describe("a card sale whose agreement the first response offers as an x402 option", () => {
+  it("pays the x402 agreement, returns the charge card/0, then pays the card document", async () => {
+    Date.now = () => B.fixed.now * 1000;
+    const row = (V.rows as Loose[]).find((r) => r.name === "serves-card");
+    const bytes = fromHex(row.atr.hex);
+    const h = sha256(bytes);
+    let paid = 0;
+    const fetch = (async (url: string, init: { headers?: Record<string, string> }) => {
+      if (url === row.link) return new Response(new Uint8Array(bytes), { status: 200 });
+      if (url !== AG.url) return new Response(null, { status: 404 });
+      if (init.headers?.["PAYMENT-SIGNATURE"] !== undefined) paid++;
+      if (paid > 0) return new Response(JSON.stringify({ ...AG.receipt, atrHash: h }), { status: 200 });
+      const headers = new Headers({ "payment-required": Buffer.from(JSON.stringify(requiredFor(h))).toString("base64") });
+      return new Response(null, { status: 402, headers });
+    }) as unknown as Fetch;
+    const key = createPrivateKey({
+      key: { kty: "OKP", crv: "Ed25519", x: "JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs", d: "n4Ni-HpISpVObnQMW0wOhCKROaIKqKtW_2ZYb2p9KcU" },
+      format: "jwk",
+    });
+    const tap = counting(B.fixed.account, async (r: SigningRequest) => {
+      const base: string = CARD.C2.sig2Base.replace(CARD.C2.nonce, (r as { nonce: string }).nonce);
+      const params = base.slice(base.indexOf('"@signature-params": ') + '"@signature-params": '.length);
+      return { signatureInput: `sig2=${params}`, signature: `sig2=:${sign(null, Buffer.from(base), key).toString("base64")}:` };
+    });
+    const agreementSigner = counting(B.fixed.account, async (r: SigningRequest) => payer.signTypedData((r as { typedData: unknown }).typedData as TypedDataDefinition));
+    const asked: ToSign[] = [];
+    const approver = (t: ToSign): boolean => (asked.push(t), true);
+    const visa = bindingOf("card/visa-tap");
+
+    const first: Loose = await transact(structuredClone(row.document), visa, tap, fetch, { approver, resourceRequest: RESOURCE, agreementSigner });
+    expect(first.decline).toBeUndefined();
+    expect([first.charge, first.legalContext, first.agreement?.atrHash]).toEqual(["card/0", `lcp:sha256:${h}`, h]);
+    expect([asked.map((a) => [a.act, a.pairing]), agreementSigner.requests.length, tap.requests.length, paid]).toEqual([
+      [["agreement", "x402/exact/eip155/eip3009"]],
+      1,
+      0,
+      1,
+    ]);
+
+    const shown = visaTap.advertise({}, h as never, row.link, { scheme: "visa-tap", checkout: "chk_1001" }, AG.url);
+    if ("refused" in shown) throw new Error(shown.code);
+    const second: Loose = await transact(shown, visa, tap, fetch, {
+      approver,
+      resourceRequest: RESOURCE,
+      legalContext: first.legalContext,
+      ceilings: { "card/visa-tap": "no-end" },
+    });
+    expect(second.decline).toBeUndefined();
+    expect([second.h, second.agreement]).toEqual([h, { ...AG.receipt, atrHash: h, unpaid: true }]);
+    expect([asked.slice(1).map((a) => [a.act, a.pairing]), tap.requests.length, paid]).toEqual([[["payment", "card/visa-tap"]], 1, 1]);
+    expect(second.signed.signatureInput).toContain(`nonce="${(tap.requests[0] as { nonce: string }).nonce}"`);
+    expect(await visaTap.bound(second.signed)).toBe(h);
   });
 });

@@ -9,8 +9,9 @@ row naming x402/0 and mpp/1 (mpp-challenge.json's C_E), its opaque naming mpp/1 
 (base64url without padding of RFC 8785's form), since an ATR whose binding slot is mpp holds no x402/0 (lcp profile
 legal-context-return.md, rule 6); the charge mpp-charge-evm-transaction.json's B2 challenge as issued; the ATR is buyer.json's A with mpp, listing the challenges, as its binding slot in place of x402; the link,
 agreement URL, its x402 payment request, receipt and payer key are buyer.json's, the Lightning
-option x402-exact-lnbtc.json's, and the x402 agreement option buyer-gate.json's row "approved"'s. The TypeScript gate's
-tests run the same cases (mpp-return.test.ts)."""
+option x402-exact-lnbtc.json's, and the x402 agreement option buyer-gate.json's row "approved"'s. Also a card sale
+whose agreement the first response offers as an x402 option. The TypeScript gate's tests run the same cases
+(mpp-return.test.ts)."""
 
 import asyncio
 import base64
@@ -23,9 +24,10 @@ import httpx
 import pytest
 
 import integraledger_terms as terms
-from integraledger_terms import Declined, ToReturn, ToSign, _gate
+from integraledger_terms import Declined, ToReturn, ToSign, Transacted, _gate
 from integraledger_terms.bindings._mpp import parse_challenges
 
+import ed25519
 from mpp_docs import place
 from support import BUYER, EthAccountSigner, load
 from test_buyer_gate import SERVES_X402_0, V as GV, agreement_first, resource_request, APPROVED
@@ -240,3 +242,78 @@ def test_an_lnbtc_charge_without_its_invoice_is_chosen_by_its_own_checks(monkeyp
     out = asyncio.run(go())
     assert isinstance(out, Declined) and out.code == "not-approved", out
     assert ([(a.act, a.pairing) for a in asked], len(Node.requests), payer.calls) == ([("agreement", "x402/exact/eip155/eip3009")], 0, 0)
+
+
+# lcp profile legal-context-return.md, rule 6, and terms' profile buyer-gate.md, rule 12: the caller passes the charge's
+# pairing, card/visa-tap. The ATR, the first response and its link are buyer-gate.json's row serves-card's: lcp's card
+# ATR, and the x402 agreement option serving card/0 and card/2. The second response is the legal context lcp's advertise
+# of the ATR's visa-tap option writes for H, with buyer.json's agreement URL. The agreement URL answers 402 before the
+# agreement is paid and 200 with buyer.json's receipt after. The TAP signer signs card.json C2's sig2 base, its nonce
+# the request's, under RFC 9421's test-key-ed25519 (B.1.4), here in its JWK form's d, which gives C2's sig2 over C2's
+# base; TAP signs no end, so the charge's ceiling is raised to "no-end" (the profile's rule 8).
+def test_a_card_sale_whose_agreement_is_an_x402_option_is_paid_through_the_return(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_gate, "_now", lambda: NOW)
+    row = next(r for r in GV["rows"] if r["name"] == "serves-card")
+    atr = bytes.fromhex(row["atr"]["hex"])
+    h = "0x" + hashlib.sha256(atr).hexdigest()
+    paid = [0]
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url == row["link"]:
+            return httpx.Response(200, content=atr)
+        if url != AG["url"]:
+            return httpx.Response(404)
+        if "payment-signature" in request.headers:
+            paid[0] += 1
+        if paid[0] > 0:
+            return httpx.Response(200, json={**AG["receipt"], "atrHash": h})
+        return httpx.Response(402, headers=[("payment-required", base64.b64encode(json.dumps(required_for(h)).encode()).decode())])
+
+    c2 = load("card.json")["C2"]
+    seed = base64.urlsafe_b64decode("n4Ni-HpISpVObnQMW0wOhCKROaIKqKtW_2ZYb2p9KcU=")
+
+    class Tap:
+        account = BUYER["fixed"]["account"]
+        requests: list[Any] = []
+
+        async def sign(self, request: Any) -> dict[str, str]:
+            self.requests.append(request)
+            base: str = c2["sig2Base"].replace(c2["nonce"], request["nonce"])
+            params = base.split('"@signature-params": ', 1)[1]
+            signature = base64.b64encode(ed25519.sign(seed, base.encode())).decode()
+            return {"signatureInput": f"sig2={params}", "signature": f"sig2=:{signature}:"}
+
+    payer = EthAccountSigner()
+    asked: list[ToSign] = []
+
+    def approver(t: ToSign) -> bool:
+        asked.append(t)
+        return True
+
+    shown = {"legalContext": {"type": "sha256", "value": h, "legalContextUrl": row["link"], "legalContextAgreementUrl": AG["url"]}}
+
+    async def go() -> tuple[Any, Any]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            first = await terms.transact(
+                copy.deepcopy(row["document"]), terms.CARD_VISA_TAP, Tap(), client, approver=approver,
+                resource_request=resource_request(APPROVED), agreement_signer=payer,  # type: ignore[arg-type]
+            )
+            if not isinstance(first, ToReturn):
+                return first, None
+            second = await terms.transact(
+                shown, terms.CARD_VISA_TAP, Tap(), client, approver=approver, resource_request=resource_request(APPROVED),  # type: ignore[arg-type]
+                legal_context=first.legal_context, ceilings={"card/visa-tap": "no-end"},
+            )
+            return first, second
+
+    first, second = asyncio.run(go())
+    assert isinstance(first, ToReturn), first
+    assert (first.charge, first.legal_context, first.agreement and first.agreement.atr_hash) == ("card/0", "lcp:sha256:" + h, h)
+    assert isinstance(second, Transacted), second
+    assert second.h == h and second.agreement is not None and (second.agreement.atr_hash, second.agreement.unpaid) == (h, True)
+    assert ([(a.act, a.pairing) for a in asked], payer.calls, len(Tap.requests), paid[0]) == (
+        [("agreement", "x402/exact/eip155/eip3009"), ("payment", "card/visa-tap")], 1, 1, 1
+    )
+    assert second.signed is not None and f'nonce="{Tap.requests[0]["nonce"]}"' in second.signed["signatureInput"]
+    assert terms.CARD_VISA_TAP.bound(second.signed) == h

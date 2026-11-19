@@ -293,7 +293,9 @@ returns them as `agreementChallenges`, in place of `agreement`, and signs nothin
 at the agreement URL. `atr_transact` and `atr_agree` return `agreementChallenges` the same way, with nothing signed,
 where the agreement URL a charge names offers only MPP agreement challenges. The agent repeats its request with `legalContext`,
 over HTTP as its `Legal-Context` header and over MCP in its tool call's `params._meta` under
-`com.integraledger.lcp/legal-context`, then calls `atr_transact` with the second response. `legalContext` is the first
+`com.integraledger.lcp/legal-context`, then calls `atr_transact` with the second response. `pairing` is the charge's,
+in both calls: a card or checkout sale whose agreement the first response offers as an x402 or MPP option is paid with
+its card or checkout pairing, such as `card/visa-tap`, and `charge` is then such as `card/0`. `legalContext` is the first
 response's return value, its `Legal-Context` header or its result's `_meta["com.integraledger.lcp/legal-context"]`,
 where it carried one.
 

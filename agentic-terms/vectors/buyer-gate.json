@@ -1,5 +1,5 @@
 {
-  "about": "Vectors for the terms profile buyer-gate.md, every input a published row or a specification's own example, or built from published rows by lcp's own seller functions. rows: each decline code the profile adds that such an input shows, the declining case and the accepted case it differs from in one member (of names it), each run through transact with the row's pairing. A row's document is its own document, as written, where it has one, already advertising its atr.sha256 where its protocol places H, and otherwise fixed.documents[pairing] with extensions.legalContext.info.value set to the row's atr.sha256; the row's link, or else fixed.link, serves atr.hex's bytes with status 200 and no content coding; the account is the row's account, or else fixed.account; and the clock reads fixed.now. approves is what the approver answers. An accepted case whose approver answers false ends at the approver having called no signer, which shows every earlier check passed; floor-given and the option-held rows end earlier, at agreement-not-offered, after the option comparison: their pairings are paid only after their agreement, and their documents name no agreement URL. Each option-not-in-atr row declines a payment whose option the ATR's binding slot does not list, the slot holding its option-held row's (profile rule 6): on acp the other handler kind, on ap2 another checkout, on card another scheme, on ucp a booking where the slot lists a checkout of that id, and on ack an option of another amount. In approved the payer key fixed.payerKey signs, and the approver is handed act, pairing and step as asked lists them, its request equal to what the signer is handed and its summary's atr the ATR's bytes. expect counts the calls of the signer and of the approver. Sources: fixed.now, account, payerKey, link and the eip3009 document are lcp's buyer.json fixed (D), and A, the ATR every x402 row but atr-malformed serves, is its fixed.A; atr-malformed serves lcp's core-vectors.json refusals row V5b's bytes, two JSON values; resourceRequest is lcp's x402-request-commitment.json http[0].request, bodyUtf8 being the body's bytes as UTF-8; the erc7710-salt document is lcp's x402-exact-eip155-erc7710-salt.json buyer row B2's, a delegation, which signs no bound (lcp profile x402-exact-eip155-erc7710-salt.md, rule 9); the gateway-batched document is lcp's x402-exact-eip155-gateway-batched.json fixed resource, extensions and O2, and minValiditySeconds its fixed 604800, whose oracle is Circle's own client. The option rows' ATRs and documents are lcp's published ones where the row's from and documentFrom name them so, and otherwise are built from the published rows they name with lcp's own seller functions: assemble, tie and the pairing's advertise; their tokens and JWTs are written by their vector file's own recipe. The acp rows' inputs are the allowance values of acp-checkout.json's buyer row B2, and the ack rows' account is ack-payment-request.json's buyer row B2's. Every atr.sha256 is GNU coreutils sha256sum, which Python's hashlib matches. The serves rows are a card sale whose agreement is offered as an x402 option (lcp profile legal-context-return.md, rule 6), through x402/exact/eip155/erc7710, a pairing paid after its agreement: the link serves lcp's card ATR, whose binding slot card holds three charge options. In serves-card the option names card/0 and card/2, which resolve against those bytes, and none is a charge the ATR's x402 slot holds, since it holds none, so no-payable-option; in serves-not-in-atr it names x402/0, a slot that ATR does not hold, refused offer-unreadable with lcp's code, after the ATR is fetched and parsed and before any charge is chosen. Nothing here is terms' output.",
+  "about": "Vectors for the terms profile buyer-gate.md, every input a published row or a specification's own example, or built from published rows by lcp's own seller functions. rows: each decline code the profile adds that such an input shows, the declining case and the accepted case it differs from in one member (of names it), each run through transact with the row's pairing. A row's document is its own document, as written, where it has one, already advertising its atr.sha256 where its protocol places H, and otherwise fixed.documents[pairing] with extensions.legalContext.info.value set to the row's atr.sha256; the row's link, or else fixed.link, serves atr.hex's bytes with status 200 and no content coding; the account is the row's account, or else fixed.account; and the clock reads fixed.now. approves is what the approver answers. An accepted case whose approver answers false ends at the approver having called no signer, which shows every earlier check passed; floor-given and the option-held rows end earlier, at agreement-not-offered, after the option comparison: their pairings are paid only after their agreement, and their documents name no agreement URL. Each option-not-in-atr row declines a payment whose option the ATR's binding slot does not list, the slot holding its option-held row's (profile rule 6): on acp the other handler kind, on ap2 another checkout, on card another scheme, on ucp a booking where the slot lists a checkout of that id, and on ack an option of another amount. In approved the payer key fixed.payerKey signs, and the approver is handed act, pairing and step as asked lists them, its request equal to what the signer is handed and its summary's atr the ATR's bytes. expect counts the calls of the signer and of the approver. Sources: fixed.now, account, payerKey, link and the eip3009 document are lcp's buyer.json fixed (D), and A, the ATR every x402 row but atr-malformed serves, is its fixed.A; atr-malformed serves lcp's core-vectors.json refusals row V5b's bytes, two JSON values; resourceRequest is lcp's x402-request-commitment.json http[0].request, bodyUtf8 being the body's bytes as UTF-8; the erc7710-salt document is lcp's x402-exact-eip155-erc7710-salt.json buyer row B2's, a delegation, which signs no bound (lcp profile x402-exact-eip155-erc7710-salt.md, rule 9); the gateway-batched document is lcp's x402-exact-eip155-gateway-batched.json fixed resource, extensions and O2, and minValiditySeconds its fixed 604800, whose oracle is Circle's own client. The option rows' ATRs and documents are lcp's published ones where the row's from and documentFrom name them so, and otherwise are built from the published rows they name with lcp's own seller functions: assemble, tie and the pairing's advertise; their tokens and JWTs are written by their vector file's own recipe. The acp rows' inputs are the allowance values of acp-checkout.json's buyer row B2, and the ack rows' account is ack-payment-request.json's buyer row B2's. Every atr.sha256 is GNU coreutils sha256sum, which Python's hashlib matches. The serves rows are a card sale whose agreement is offered as an x402 option (lcp profile legal-context-return.md, rule 6), through x402/exact/eip155/erc7710, a pairing paid after its agreement: the link serves lcp's card ATR, whose binding slot card holds three charge options. In serves-card the option names card/0 and card/2, which resolve against those bytes, and none is a charge the ATR's x402 slot holds, since it holds none, so no-payable-option; in serves-not-in-atr it names x402/0, a slot that ATR does not hold, refused offer-unreadable with lcp's code, after the ATR is fetched and parsed and before any charge is chosen. serves-card-charge and serves-card-unserved run serves-card's response through a card pairing, the charge's own: in serves-card-charge, card/visa-tap, card/0 is the visa-tap option, the charge chosen, and its agreement, the x402 option, is asked of the approver as the act agreement through x402/exact/eip155/eip3009, the first x402 pairing whose read takes it, the approver answering false; in serves-card-unserved, card/mastercard-vi/immediate, the ATR holds its option at card/1, which the agreement option does not serve, so card/no-payable-option. Nothing here is terms' output.",
   "fixed": {
     "now": 1790000000,
     "account": "eip155:84532:0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
@@ -842,6 +842,177 @@
         "signerCalls": 0,
         "approverCalls": 0,
         "detail": "return/serves-malformed"
+      }
+    },
+    {
+      "name": "serves-card-charge",
+      "of": "serves-card",
+      "pairing": "card/visa-tap",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2237633861636661322d663830302d343139322d383965392d316365663938333331383066222c2263617264223a7b226f7074696f6e73223a5b7b22736368656d65223a22766973612d746170222c22636865636b6f7574223a2263686b5f31303031227d2c7b22736368656d65223a226d6173746572636172642d7669222c22636865636b6f7574223a2263686b5f31303031227d2c7b22736368656d65223a2273656c6c65722d7265666572656e6365222c22636865636b6f7574223a2263686b5f31303031227d5d7d2c227465726d73223a2250617920666f7220636865636b6f75742063686b5f3130303120617420746865206361726420636865636b6f75742e227d",
+        "sha256": "0xcccb0280ffc58d074dfe706d627457856f5d30223aadbd3eced0348b68b9e94e",
+        "from": "lcp legal-context-return.json atrs.card, its UTF-8 text"
+      },
+      "document": {
+        "x402Version": 2,
+        "resource": {
+          "url": "https://api.seller.example/v1/quote"
+        },
+        "accepts": [
+          {
+            "scheme": "exact",
+            "network": "eip155:84532",
+            "amount": "1",
+            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "maxTimeoutSeconds": 60,
+            "extra": {
+              "name": "USDC",
+              "version": "2",
+              "legalContextServes": [
+                "card/0",
+                "card/2"
+              ]
+            }
+          }
+        ],
+        "extensions": {
+          "legalContext": {
+            "info": {
+              "type": "sha256",
+              "value": "0xcccb0280ffc58d074dfe706d627457856f5d30223aadbd3eced0348b68b9e94e",
+              "legalContextUrl": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+              "legalContextAgreementUrl": "https://api.seller.example/agreement/b9d3d4b7-2c99-4d5f-9178-837645f75273"
+            },
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "sha256"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^0x[0-9a-f]{64}$"
+                },
+                "legalContextUrl": {
+                  "type": "string",
+                  "pattern": "^https://"
+                }
+              },
+              "required": [
+                "type",
+                "value",
+                "legalContextUrl"
+              ]
+            }
+          }
+        }
+      },
+      "documentFrom": "lcp legal-context-return.json's serves row naming card/0 and card/2 against the card ATR, its option the response's one, as lcp's exactEip3009 advertise writes it for atr.sha256 at the row's link and buyer.json's fixed.agreement.url",
+      "link": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "not-approved",
+        "signerCalls": 0,
+        "approverCalls": 1,
+        "asked": [
+          {
+            "act": "agreement",
+            "pairing": "x402/exact/eip155/eip3009",
+            "step": {
+              "index": 0,
+              "count": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "serves-card-unserved",
+      "of": "serves-card",
+      "pairing": "card/mastercard-vi/immediate",
+      "atr": {
+        "hex": "7b2261747256657273696f6e223a2231222c226964223a2237633861636661322d663830302d343139322d383965392d316365663938333331383066222c2263617264223a7b226f7074696f6e73223a5b7b22736368656d65223a22766973612d746170222c22636865636b6f7574223a2263686b5f31303031227d2c7b22736368656d65223a226d6173746572636172642d7669222c22636865636b6f7574223a2263686b5f31303031227d2c7b22736368656d65223a2273656c6c65722d7265666572656e6365222c22636865636b6f7574223a2263686b5f31303031227d5d7d2c227465726d73223a2250617920666f7220636865636b6f75742063686b5f3130303120617420746865206361726420636865636b6f75742e227d",
+        "sha256": "0xcccb0280ffc58d074dfe706d627457856f5d30223aadbd3eced0348b68b9e94e",
+        "from": "lcp legal-context-return.json atrs.card, its UTF-8 text"
+      },
+      "document": {
+        "x402Version": 2,
+        "resource": {
+          "url": "https://api.seller.example/v1/quote"
+        },
+        "accepts": [
+          {
+            "scheme": "exact",
+            "network": "eip155:84532",
+            "amount": "1",
+            "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            "payTo": "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+            "maxTimeoutSeconds": 60,
+            "extra": {
+              "name": "USDC",
+              "version": "2",
+              "legalContextServes": [
+                "card/0",
+                "card/2"
+              ]
+            }
+          }
+        ],
+        "extensions": {
+          "legalContext": {
+            "info": {
+              "type": "sha256",
+              "value": "0xcccb0280ffc58d074dfe706d627457856f5d30223aadbd3eced0348b68b9e94e",
+              "legalContextUrl": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+              "legalContextAgreementUrl": "https://api.seller.example/agreement/b9d3d4b7-2c99-4d5f-9178-837645f75273"
+            },
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "sha256"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^0x[0-9a-f]{64}$"
+                },
+                "legalContextUrl": {
+                  "type": "string",
+                  "pattern": "^https://"
+                }
+              },
+              "required": [
+                "type",
+                "value",
+                "legalContextUrl"
+              ]
+            }
+          }
+        }
+      },
+      "documentFrom": "lcp legal-context-return.json's serves row naming card/0 and card/2 against the card ATR, its option the response's one, as lcp's exactEip3009 advertise writes it for atr.sha256 at the row's link and buyer.json's fixed.agreement.url",
+      "link": "https://atr.seller.example/7c8acfa2-f800-4192-89e9-1cef9833180f",
+      "resourceRequest": {
+        "method": "POST",
+        "target": "/v1/quote?tier=1&x=%41",
+        "bodyUtf8": "{\"q\":\"latest market data\"}"
+      },
+      "approves": false,
+      "inputs": {},
+      "expect": {
+        "decline": "no-payable-option",
+        "signerCalls": 0,
+        "approverCalls": 0,
+        "detail": "card/no-payable-option"
       }
     }
   ],

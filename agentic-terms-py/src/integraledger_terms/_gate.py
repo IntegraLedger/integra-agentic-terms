@@ -711,12 +711,12 @@ async def transact(
     if floor is not None:
         return floor
 
-    ns = _namespace(binding)
-    if ns in ("x402", "mpp") and not _full(binding):
-        offers = _return.agreement_options(doc) if ns == "x402" else _return.mpp_agreement_options(doc)
-        if isinstance(offers, Refusal):
-            return Declined("offer-unreadable", offers.code)
-        if offers is not None:
+    if not _full(binding):
+        offered = _return.agreement_offered(doc, _namespace(binding))
+        if isinstance(offered, Refusal):
+            return Declined("offer-unreadable", offered.code)
+        if offered is not None:
+            offers, via = offered
             return await _return.to_return(
                 doc,
                 binding,
@@ -728,7 +728,7 @@ async def transact(
                 (returned, return_value) if returned is not None else None,
                 approval,
                 signal,
-                ns,
+                via,
             )
 
     again = None if chosen is None else _given_choice(chosen, str(binding.id))

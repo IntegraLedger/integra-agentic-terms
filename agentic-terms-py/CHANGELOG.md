@@ -8,6 +8,15 @@ and after.
 
 ## [Unreleased]
 
+### Added
+
+- `transact` pays a card or checkout sale whose agreement the first response offers as an x402 or MPP option (lcp
+  profile `legal-context-return.md`, rule 6): given the charge's pairing, of `card`, `acp`, `ap2`, `ucp` or `ack`, with
+  that response, it pays the agreement for a served option of the ATR's binding slot that the pairing pays for the
+  account and returns `ToReturn` with `charge` such as `card/0`; the second call, with the seller's document served
+  after the return, pays the charge. Such a response was declined `offer-unreadable`. The shared
+  `vectors/buyer-gate.json` holds `serves-card-charge` and `serves-card-unserved`.
+
 ### Fixed
 
 - The gate reads an agreement option's served names as `@integraledger/lcp` 0.6.2's `servesOf` does (lcp profile

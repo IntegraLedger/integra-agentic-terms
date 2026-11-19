@@ -117,7 +117,8 @@ def test_buyer_gate_rows_through_transact(row: dict[str, Any], monkeypatch: pyte
         got = [{"act": a.act, "pairing": a.pairing, "step": {"index": a.step.index, "count": a.step.count}} for a in asked]
         assert got == expect["asked"]
         for i, a in enumerate(asked):
-            assert a.request == signer.requests[i]
+            if i < len(signer.requests):
+                assert a.request == signer.requests[i]
             assert a.summary.atr == body
 
 

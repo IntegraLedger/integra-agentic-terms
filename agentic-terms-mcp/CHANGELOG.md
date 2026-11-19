@@ -8,6 +8,12 @@ shows each call before and after.
 
 ## [Unreleased]
 
+### Added
+
+- `atr_transact` pays a card or checkout sale whose agreement the first response offers as an x402 or MPP option, given
+  the charge's `pairing`, such as `card/visa-tap`, as the gate does; its description says to pass the charge's pairing
+  in both calls.
+
 ### Changed
 
 - The peer `@integraledger/lcp` is `~0.6.2` (was `~0.6.0`), whose `servesOf` reads `<slot>/<i>` for every ATR binding
