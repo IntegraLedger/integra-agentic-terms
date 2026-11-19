@@ -5,8 +5,10 @@ an x402 agreement option it finds there, and where the resource offers only MPP 
 signing nothing. Also the return of an x402 charge whose slot option lacks the invoice its read needs
 (x402/exact/lnbtc/payment-hash), and parse_challenges, the protocol package's parseChallenges, over mpp-challenge.json's
 MV9. Every input is a vector row of the protocol package: the agreement challenge is legal-context-return.json's serves
-row naming x402/0 and mpp/1 (mpp-challenge.json's C_E), the charge mpp-charge-evm-transaction.json's B2 challenge as
-issued; the ATR, link, agreement URL, its x402 payment request, receipt and payer key are buyer.json's, the Lightning
+row naming x402/0 and mpp/1 (mpp-challenge.json's C_E), its opaque naming mpp/1 alone, written by that file's recipe
+(base64url without padding of RFC 8785's form), since an ATR whose binding slot is mpp holds no x402/0 (lcp profile
+legal-context-return.md, rule 6); the charge mpp-charge-evm-transaction.json's B2 challenge as issued; the ATR is buyer.json's A with mpp, listing the challenges, as its binding slot in place of x402; the link,
+agreement URL, its x402 payment request, receipt and payer key are buyer.json's, the Lightning
 option x402-exact-lnbtc.json's, and the x402 agreement option buyer-gate.json's row "approved"'s. The TypeScript gate's
 tests run the same cases (mpp-return.test.ts)."""
 
@@ -34,7 +36,16 @@ LN = load("x402-exact-lnbtc.json")["fixed"]
 AG: dict[str, Any] = BUYER["fixed"]["agreement"]
 LINK: str = BUYER["fixed"]["link"]
 NOW: int = BUYER["fixed"]["now"]
-AGREEMENT: dict[str, Any] = next(r["option"] for r in RET["serves"] if "opaque" in r["option"] and "mpp/1" in (r["expect"] or []))
+C_E: dict[str, Any] = next(r["option"] for r in RET["serves"] if "opaque" in r["option"] and "mpp/1" in (r["expect"] or []))
+_MEMBERS: dict[str, str] = json.loads(base64.urlsafe_b64decode(C_E["opaque"] + "=" * (-len(C_E["opaque"]) % 4)))
+AGREEMENT: dict[str, Any] = {
+    **C_E,
+    "opaque": base64.urlsafe_b64encode(
+        json.dumps({**_MEMBERS, "legalContextServes": "mpp/1"}, separators=(",", ":"), sort_keys=True).encode()
+    )
+    .rstrip(b"=")
+    .decode(),
+}
 CHARGE: dict[str, Any] = {
     k: v for k, v in next(r for r in ET["buyer"]["rows"] if r["name"] == "B2")["input"]["doc"][0].items() if k not in ("id", "opaque")
 }
@@ -77,10 +88,13 @@ def required_for(h: str) -> dict[str, Any]:
     return r
 
 
-def mpp_atr() -> tuple[bytes, str]:
-    """buyer.json's A with an mpp slot listing the agreement challenge and the charge, as issued; and its H."""
+def mpp_atr(challenges: list[dict[str, Any]] | None = None) -> tuple[bytes, str]:
+    """buyer.json's A with mpp as its binding slot, the member after atrVersion and id, in place of x402, listing
+    challenges, as issued (the agreement challenge and the charge where none are given); and its H."""
     a = json.loads(bytes.fromhex(BUYER["fixed"]["A"]))
-    atr = json.dumps({**a, "mpp": {"challenges": [AGREEMENT, CHARGE]}}, separators=(",", ":")).encode()
+    rest = {k: v for k, v in a.items() if k not in ("atrVersion", "id", "x402")}
+    listed = [AGREEMENT, CHARGE] if challenges is None else challenges
+    atr = json.dumps({"atrVersion": a["atrVersion"], "id": a["id"], "mpp": {"challenges": listed}, **rest}, separators=(",", ":")).encode()
     return atr, "0x" + hashlib.sha256(atr).hexdigest()
 
 
@@ -160,9 +174,7 @@ def test_an_mpp_charge_naming_the_agreement_url_returns_mpp_agreement_challenges
 def test_an_mpp_lightning_charge_without_its_invoice_is_chosen_by_its_own_checks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_gate, "_now", lambda: NOW)
     issued = next(r for r in load("mpp-server-checks.json")["unplaced"]["rows"] if r["case"].startswith("mpp/charge/lightning:"))["issued"]
-    a = json.loads(bytes.fromhex(BUYER["fixed"]["A"]))
-    atr = json.dumps({**a, "mpp": {"challenges": [AGREEMENT, issued]}}, separators=(",", ":")).encode()
-    h = "0x" + hashlib.sha256(atr).hexdigest()
+    atr, h = mpp_atr([AGREEMENT, issued])
     agreement = placed([AGREEMENT], h, AGREEMENT)
     seller = Seller(atr, h, required_for(h), [agreement])
     asked: list[ToSign] = []

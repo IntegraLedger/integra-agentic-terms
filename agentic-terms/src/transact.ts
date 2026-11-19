@@ -6,7 +6,7 @@
  * anything is signed: the first call returns it in `approve`, and a second call with that payment as `approved` pays it
  * and then the resource.
  */
-import { fromLegalContextHeader, toLegalContextHeader, type LegalContextReturn } from "@integraledger/lcp";
+import { fromLegalContextHeader, servesOf, toLegalContextHeader, type LegalContextReturn } from "@integraledger/lcp";
 import { hash, hashEquals, isHttpsLink, isOtherSchemeLink, type AtrHash } from "@integraledger/lcp/core";
 import { pairingsOf, type MppChallenge } from "@integraledger/lcp/mpp";
 import { agreementOptions, exchange, mppAgreementOptions } from "./agreement.js";
@@ -154,17 +154,20 @@ const SLOT_LISTING = { x402: "accepts", mpp: "challenges" } as const;
 
 /**
  * The return after an agreement (the protocol package's profile `legal-context-return.md`): the ATR fetched from the
- * response's link, compared with its H and with the return value's, parsed, and its request commitment held to the
- * buyer's request; then, for each agreement option in the seller's order and each charge it names as served,
- * `<slot>/<i>`, the option at index `i` of the list the ATR's binding slot of the pairing's protocol holds (`accepts` in
- * `x402`, `challenges` in `mpp`), the first such charge the account can pay is chosen (`choice`), and its agreement
- * paid. On x402 the agreement option is paid at the agreement URL as offered. On MPP, whose first response offers MPP
- * agreement challenges, which terms builds no credential for, the agreement URL is followed: an x402 agreement option
- * its 402 offers is paid as on x402, and where it offers only MPP agreement challenges, they are returned in
- * `agreementChallenges` for the caller's own MPP client, nothing signed. Each agreement payment is asked of the approver
- * as the act `agreement`. No charge is signed, and no agreement is paid for a charge checks 9 to 11 decline: the next
- * served charge is tried, and where every one is declined there, the first decline is returned. A pairing whose
- * agreement is never a charge, or a response with no such charge, is `no-payable-option`.
+ * response's link, compared with its H and with the return value's, and parsed; each agreement option's served names
+ * resolved against those bytes (`servesOf`), a name whose slot is not the ATR's binding slot, or whose index is not
+ * below the number of charge options that slot holds, declining the response `offer-unreadable` with
+ * `return/serves-malformed`; and the ATR's request commitment held to the buyer's request; then, for each agreement
+ * option in the seller's order and each charge it names as served, `<slot>/<i>`, the option at index `i` of the list
+ * the ATR's binding slot of the pairing's protocol holds (`accepts` in `x402`, `challenges` in `mpp`), the first such
+ * charge the account can pay is chosen (`choice`), and its agreement paid. On x402 the agreement option is paid at the
+ * agreement URL as offered. On MPP, whose first response offers MPP agreement challenges, which terms builds no
+ * credential for, the agreement URL is followed: an x402 agreement option its 402 offers is paid as on x402, and where
+ * it offers only MPP agreement challenges, they are returned in `agreementChallenges` for the caller's own MPP client,
+ * nothing signed. Each agreement payment is asked of the approver as the act `agreement`. No charge is signed, and no
+ * agreement is paid for a charge checks 9 to 11 decline: the next served charge is tried, and where every one is
+ * declined there, the first decline is returned. A pairing whose agreement is never a charge, or a response with no
+ * such charge, is `no-payable-option`.
  */
 async function toReturn(
   doc: unknown,
@@ -187,6 +190,10 @@ async function toReturn(
   }
   const parsed = parseAtr(bytes);
   if ("decline" in parsed) return parsed;
+  for (const { option } of offers) {
+    const resolved = servesOf(option, bytes);
+    if (isRefusal(resolved)) return declined("offer-unreadable", resolved.code);
+  }
   const otherRequest = await requestHeld(binding, parsed.value, o.resourceRequest);
   if (otherRequest !== undefined) return otherRequest;
   if (isAgreementOnly(binding)) return declined("no-payable-option", `${ns}/no-payable-option`);

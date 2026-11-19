@@ -6,6 +6,20 @@ change the public API, so pin the exact version. A change a caller must make is 
 [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each call before
 and after.
 
+## [Unreleased]
+
+### Fixed
+
+- The gate reads an agreement option's served names as `@integraledger/lcp` 0.6.2's `servesOf` does (lcp profile
+  `legal-context-return.md`, rule 6): `<slot>/<i>` for every ATR binding slot that holds charge options, `ack/<i>`,
+  `acp/<i>`, `ap2/<i>`, `card/<i>` and `ucp/<i>` beside `x402/<i>` and `mpp/<i>`, 1 to 32 distinct names with an index
+  from 0 to 31. It read `x402/<i>` and `mpp/<i>` alone, and declined a card or checkout sale's agreement option
+  `offer-unreadable`.
+- On the return after an agreement, `transact` resolves each served name against the ATR's bytes once it has fetched
+  and parsed them: an option naming a slot that is not the ATR's binding slot, or an index not below the number of
+  charge options that slot holds, is declined `offer-unreadable` with `return/serves-malformed` before any charge is
+  chosen. The shared `vectors/buyer-gate.json` holds a card sale's pair, `serves-card` and `serves-not-in-atr`.
+
 ## [0.5.1] - 2026-11-18
 
 ### Added

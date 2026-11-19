@@ -445,7 +445,11 @@ the receipt, or declines `agreement-pending` again while it answers `202`, signi
 A seller may answer first with the agreement alone (the protocol package's profile `legal-context-return.md`): its
 first response offers the agreement option and no charge, each agreement option naming, by its `serves`
 (`extra.legalContextServes` on x402, the `opaque` member `legalContextServes` of an MPP agreement challenge), the
-charges it is for. `transact` then chooses the charge from the options the ATR's binding slot holds, pays the agreement
+charges it is for, each `<slot>/<i>`: the option at index `i` of the charge options the ATR's binding slot of that name
+holds (`x402/<i>`, `mpp/<i>`, `ack/<i>`, `acp/<i>`, `ap2/<i>`, `card/<i>` or `ucp/<i>`). The gate resolves each name
+against the ATR's bytes once it has fetched them, and declines `offer-unreadable`, `return/serves-malformed`, an
+option one of whose names is of another slot than the ATR's binding slot or past the options it holds. `transact` then
+chooses the charge from the options the ATR's binding slot holds, pays the agreement
 option that serves it as soon as your approver approves it with `act` `"agreement"`, without returning it to your agent
 first, ends at the agreement's receipt, signs no charge, and returns `ToReturn`.
 

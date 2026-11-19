@@ -4,10 +4,15 @@
 // option. transact pays an x402 agreement option it finds there, and where the resource offers only MPP agreement
 // challenges it returns them, signing nothing. Also the return of an x402 charge whose slot option lacks the invoice
 // its read needs (x402/exact/lnbtc/payment-hash). Every input is a vector row of the protocol package: the agreement
-// challenge is legal-context-return.json's serves row naming x402/0 and mpp/1 (mpp-challenge.json's C_E), the charge
-// mpp-charge-evm-transaction.json's B2 challenge as issued, placed as mpp-server-checks.json's place rows place them;
-// the ATR, link, agreement URL, its x402 payment request, receipt and payer key are buyer.json's, the Lightning option
-// and request x402-exact-lnbtc.json's, and the x402 agreement option buyer-gate.json's row "approved"'s.
+// challenge is legal-context-return.json's serves row naming x402/0 and mpp/1 (mpp-challenge.json's C_E), its opaque
+// naming mpp/1 alone, written by that file's recipe (base64url without padding of RFC 8785's form), since an ATR whose
+// binding slot is mpp holds no x402/0 (lcp profile legal-context-return.md, rule 6); the charge
+// mpp-charge-evm-transaction.json's B2 challenge as issued, placed as mpp-server-checks.json's place rows place them; the
+// ATR buyer.json's A with mpp, listing the challenges, as its binding slot in place of x402; the link, agreement URL, its
+// x402 payment request, receipt and payer key buyer.json's; the Lightning option and request x402-exact-lnbtc.json's,
+// whose first response's agreement option, naming x402/0 alone, is that of legal-context-return.json's servesRefusals
+// row refusing it against the file's card ATR, which holds no x402 slot; and the x402 agreement option buyer-gate.json's
+// row "approved"'s.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
@@ -74,14 +79,21 @@ function requiredFor(h: string): Loose {
   return r;
 }
 
-const AGREEMENT: MppChallenge = (RET.serves as Loose[]).find((r) => r.option.opaque !== undefined && r.expect?.includes("mpp/1")).option;
+const C_E: MppChallenge = (RET.serves as Loose[]).find((r) => r.option.opaque !== undefined && r.expect?.includes("mpp/1")).option;
+const MEMBERS: Record<string, string> = JSON.parse(Buffer.from(C_E.opaque as string, "base64url").toString("utf8"));
+const AGREEMENT: MppChallenge = {
+  ...C_E,
+  opaque: Buffer.from(JSON.stringify(Object.fromEntries(Object.entries({ ...MEMBERS, legalContextServes: "mpp/1" }).sort(([a], [b]) => (a < b ? -1 : 1))))).toString("base64url"),
+};
 const { id: _id, opaque: _opaque, ...CHARGE } = (ET.buyer.rows as Loose[]).find((r) => r.name === "B2").input.doc[0];
 
-/** The ATR: buyer.json's A with an mpp slot listing the agreement challenge and the charge, as issued; and its H. */
-function mppAtr(): { bytes: Uint8Array; h: `0x${string}` } {
-  const atr = JSON.parse(new TextDecoder().decode(fromHex(B.fixed.A)));
-  atr.mpp = mppTie([AGREEMENT, CHARGE as MppChallenge])[1];
-  const bytes = new TextEncoder().encode(JSON.stringify(atr));
+/**
+ * The ATR: buyer.json's A with mpp as its binding slot, the member after `atrVersion` and `id`, in place of x402, listing
+ * `challenges`, as issued (the agreement challenge and the charge where none are given); and its H.
+ */
+function mppAtr(challenges: MppChallenge[] = [AGREEMENT, CHARGE as MppChallenge]): { bytes: Uint8Array; h: `0x${string}` } {
+  const { atrVersion, id, x402: _x402, ...rest } = JSON.parse(new TextDecoder().decode(fromHex(B.fixed.A)));
+  const bytes = new TextEncoder().encode(JSON.stringify({ atrVersion, id, mpp: mppTie(challenges)[1], ...rest }));
   return { bytes, h: sha256(bytes) };
 }
 
@@ -158,10 +170,7 @@ describe("an MPP Lightning charge whose slot challenge lacks the invoice the sel
   it("is chosen by the challenge's own checks on the account's network, and its agreement paid", async () => {
     Date.now = () => B.fixed.now * 1000;
     const issued: MppChallenge = (SC.unplaced.rows as Loose[]).find((r) => r.case.startsWith("mpp/charge/lightning:")).issued;
-    const atr = JSON.parse(new TextDecoder().decode(fromHex(B.fixed.A)));
-    atr.mpp = mppTie([AGREEMENT, issued])[1];
-    const bytes = new TextEncoder().encode(JSON.stringify(atr));
-    const h = sha256(bytes);
+    const { bytes, h } = mppAtr([AGREEMENT, issued]);
     const agreement = placed(AGREEMENT, h, 0, "agreement");
     const fetch = seller(bytes, h, requiredFor(h), [agreement]);
     const node = counting(`${LN.fixed.offer.network}:${LN.fixed.payee}`, async () => {
@@ -196,7 +205,7 @@ describe("an x402 charge whose slot option lacks the invoice its read needs", ()
     atr.x402 = x402Tie([LN.fixed.offer], commitment)[1];
     const bytes = new TextEncoder().encode(JSON.stringify(atr));
     const h = sha256(bytes);
-    const option = (RET.serves as Loose[]).find((r) => r.expect?.[0] === "x402/0" && typeof r.option?.scheme === "string").option;
+    const option = (RET.servesRefusals as Loose[]).find((r) => r.atr !== undefined && r.option?.extra?.legalContextServes?.join(" ") === "x402/0").option;
     const doc = exactEip3009.advertise({ x402Version: 2, resource: LN.fixed.resource, accepts: [option] } as never, h, LINK, option, AG.url);
     if ("refused" in doc) throw new Error(doc.code);
     const node = counting(`${LN.fixed.offer.network}:${LN.fixed.payee}`, async () => {

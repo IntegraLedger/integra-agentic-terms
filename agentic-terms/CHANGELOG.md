@@ -6,6 +6,16 @@ The packages are at 0.x: a minor release may change the public API. A change a c
 **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each
 call before and after.
 
+## [Unreleased]
+
+### Changed
+
+- On the return after an agreement, `transact` resolves each agreement option's served names against the ATR's bytes
+  once it has fetched and parsed them (lcp profile `legal-context-return.md`, rule 6): an option naming a slot that is
+  not the ATR's binding slot, or an index not below the number of charge options that slot holds, is declined
+  `offer-unreadable` with `return/serves-malformed` before any charge is chosen. `vectors/buyer-gate.json` holds a card
+  sale's pair, `serves-card` and `serves-not-in-atr`, which both languages run.
+
 ## [0.5.1] - 2026-11-18
 
 ### Added

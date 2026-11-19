@@ -197,13 +197,14 @@ describe("ceilings of another form", () => {
 
 // A first response whose agreement option names the charges it serves in no form the protocol package's
 // legal-context-return.md admits is declined offer-unreadable with its code, return/serves-malformed, before any fetch,
-// never read as a charge. Each x402 option of legal-context-return.json's servesRefusals is the first response's one
-// option, in row "approved"'s document, paid through a pairing at coverage none (x402/exact/eip155/erc7710), the one
-// kind of pairing that is paid after its agreement.
+// never read as a charge. Each x402 option of legal-context-return.json's servesRefusals read without an ATR is the first
+// response's one option, in row "approved"'s document, paid through a pairing at coverage none
+// (x402/exact/eip155/erc7710), the one kind of pairing that is paid after its agreement. A name refused only against an
+// ATR's bytes is buyer-gate.json's row serves-not-in-atr.
 describe("an agreement option whose serves member is malformed", () => {
   const RETURN: Loose = vectors("legal-context-return.json");
   const row = (V.rows as Loose[]).find((r) => r.name === "approved");
-  for (const r of (RETURN.servesRefusals as Loose[]).filter((x) => typeof x.option?.scheme === "string")) {
+  for (const r of (RETURN.servesRefusals as Loose[]).filter((x) => typeof x.option?.scheme === "string" && x.atr === undefined)) {
     it(`servesRefusals "${r.case}": offer-unreadable, ${r.expect.code}, before any fetch`, async () => {
       Date.now = () => V.fixed.now * 1000;
       const doc = structuredClone(V.fixed.documents[row.pairing]);
@@ -257,9 +258,10 @@ describe("an approval answered after the clock moves", () => {
 
 // The return after an agreement makes checks 9 to 11 on the charge it chooses before it pays that charge's agreement
 // (the profile's rule 3: each check answers before the signer is called for the signing it concerns). The first
-// response's one option is the agreement option of the protocol package's legal-context-return.json serves row that
-// names x402/0, placed by the package's own seller half (`advertise`) for the ATR's hash, buyer.json's link and its
-// agreement URL. The ATR is buyer.json's fixed.A with its x402 slot as the package's `tie` writes it over
+// response's one option is the agreement option naming x402/0 alone of the protocol package's legal-context-return.json
+// servesRefusals row that refuses it against the file's card ATR, which holds no x402 slot; against this ATR, whose x402
+// slot holds the charge at index 0, it resolves. It is placed by the package's own seller half (`advertise`) for the
+// ATR's hash, buyer.json's link and its agreement URL. The ATR is buyer.json's fixed.A with its x402 slot as the package's `tie` writes it over
 // x402-exact-eip155-erc7710.json's option and row "no-end"'s request. That charge signs no end: with no ceiling raised it
 // is declined no-end, and the agreement is never fetched, asked or signed; with its ceiling raised to "no-end", the
 // agreement is asked of the approver, which here declines it.
@@ -268,7 +270,7 @@ describe("the return after an agreement checks the charge before paying the agre
   const BUYER: Loose = vectors("buyer.json");
   const E: Loose = vectors("x402-exact-eip155-erc7710.json");
   const row = (V.rows as Loose[]).find((r) => r.name === "no-end");
-  const agreementOption = (RETURN.serves as Loose[]).find((r) => r.expect?.[0] === "x402/0" && typeof r.option?.scheme === "string").option;
+  const agreementOption = (RETURN.servesRefusals as Loose[]).find((r) => r.atr !== undefined && isDeepStrictEqual(r.option?.extra?.legalContextServes, ["x402/0"])).option;
   const resourceRequest = { method: row.resourceRequest.method, target: row.resourceRequest.target, body: new TextEncoder().encode(row.resourceRequest.bodyUtf8) };
   const account = `${E.fixed.option.network}:${E.fixed.payer}`;
 

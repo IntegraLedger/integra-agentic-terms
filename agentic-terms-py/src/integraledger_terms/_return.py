@@ -6,6 +6,7 @@ the agreement and no charge option: it pays the agreement, chosen by the charge 
 import asyncio
 import base64
 import functools
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -42,8 +43,21 @@ LEGAL_CONTEXT_SERVES = "legalContextServes"
 RETURN_VALUE_BYTES = 32
 
 _LCP_TOKEN = re.compile(r"lcp:sha256:0x[0-9a-f]{64}")
-_SERVED = re.compile(r"(?:x402|mpp)/(?:[0-9]|[12][0-9]|3[01])")
+_SERVED = re.compile(r"(x402|mpp|ack|acp|ap2|card|ucp)/([0-9]|[12][0-9]|3[01])")
 _MAX_SERVED = 32
+_MAX_ATR_BYTES = 1_048_576
+# lcp's MAX_JSON_DEPTH plus one: the nesting the ATR's bytes may hold where a served name is resolved against them.
+_MAX_ATR_DEPTH = 65
+# The member of each ATR binding slot that holds its charge options, by the slot's name.
+_CHARGE_OPTIONS = {
+    "x402": "accepts",
+    "mpp": "challenges",
+    "ack": "paymentOptions",
+    "acp": "options",
+    "ap2": "options",
+    "card": "options",
+    "ucp": "options",
+}
 _BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 _TOKEN_CHAR = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z:/]")
 _KEY_CHAR = re.compile(r"[a-z0-9_\-.*]")
@@ -236,9 +250,14 @@ def to_legal_context_header(h: AtrHash, return_value: bytes | None = None) -> st
     return f"{to_lcp_string(normal)};rv=:{base64.b64encode(return_value).decode('ascii')}:"
 
 
-def serves_of(option: object) -> tuple[str, ...] | None | Refusal:
-    """lcp's servesOf: the charges an agreement option serves, from extra.legalContextServes on x402 and the opaque
-    member legalContextServes on MPP; None where it names none."""
+def serves_of(option: object, atr: bytes | None = None) -> tuple[str, ...] | None | Refusal:
+    """lcp's servesOf: the charges an agreement option serves, each <slot>/<i>, the option at index i of the charge
+    options the ATR binding slot of that name holds (accepts of x402, challenges of mpp, paymentOptions of ack, and
+    options of acp, ap2, card and ucp), from extra.legalContextServes on x402 and the opaque member legalContextServes
+    on MPP; None where it names none. Where atr, the ATR's bytes, is given, each name is also resolved against it: a
+    name whose slot is not the ATR's binding slot (its member after atrVersion and id), or whose index is not below the
+    number of charge options that slot holds, is return/serves-malformed, and so is every name where atr is not the
+    bytes of a UTF-8 JSON object of at most 1 MiB."""
     if not isinstance(option, Mapping):
         return Refusal("return/serves-malformed")
     listed: Any
@@ -267,7 +286,81 @@ def serves_of(option: object) -> tuple[str, ...] | None | Refusal:
         or len(set(listed)) != len(listed)
     ):
         return Refusal("return/serves-malformed")
+    if atr is not None:
+        held = _charge_options_of(atr)
+        for name in listed:
+            at = _SERVED.fullmatch(name)
+            assert at is not None
+            if held is None or at.group(1) != held[0] or int(at.group(2)) >= held[1]:
+                return Refusal("return/serves-malformed")
     return tuple(listed)
+
+
+class _Members(dict[str, Any]):
+    """A JSON object's members, with its member names in the text's order, a name given twice listed twice."""
+
+    names: list[str]
+
+
+def _members(pairs: list[tuple[str, Any]]) -> _Members:
+    out = _Members(pairs)
+    out.names = [name for name, _ in pairs]
+    return out
+
+
+def _constant(name: str) -> Any:
+    raise ValueError(name)
+
+
+def _within_depth(text: str) -> bool:
+    """True when no array or object in JSON text nests more than _MAX_ATR_DEPTH deep, brackets inside strings skipped."""
+    depth = 0
+    in_string = False
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if in_string:
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c in "[{":
+            depth += 1
+            if depth > _MAX_ATR_DEPTH:
+                return False
+        elif c in "]}":
+            depth -= 1
+        i += 1
+    return True
+
+
+def _charge_options_of(atr: bytes) -> tuple[str, int] | None:
+    """The ATR's binding slot, the member after atrVersion and id in the ATR's bytes, and the number of charge options
+    it holds; None where the bytes are not a UTF-8 JSON object of at most 1 MiB, nested at most _MAX_ATR_DEPTH deep, that
+    names atrVersion, id and a binding slot once each, in that order first, or where that slot holds no list of charge
+    options."""
+    if not isinstance(atr, bytes) or len(atr) > _MAX_ATR_BYTES:
+        return None
+    try:
+        text = atr.decode("utf-8")
+        if not _within_depth(text):
+            return None
+        value = json.loads(text, object_pairs_hook=_members, parse_constant=_constant, parse_int=float)
+    except ValueError:
+        return None
+    if not isinstance(value, _Members):
+        return None
+    names = value.names
+    if len(names) < 3 or names[0] != "atrVersion" or names[1] != "id" or names[2] not in _CHARGE_OPTIONS:
+        return None
+    slot = names[2]
+    if sum(1 for n in names if n in ("atrVersion", "id", slot)) != 3:
+        return None
+    bound = value[slot]
+    listed = bound.get(_CHARGE_OPTIONS[slot]) if isinstance(bound, dict) else None
+    return (slot, len(listed)) if isinstance(listed, list) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,7 +379,8 @@ def agreement_options(required: object) -> list[Offered] | Refusal | None:
     first, so the answer does not depend on their order: None where accepts is not a list of 1 to 32 options or an
     option names no charge it serves; else the protocol package's refusal of the first option whose serves it refuses
     (return/serves-malformed), which the gate declines rather than reading the response as a charge; else None unless
-    each option is read by such a pairing."""
+    each option is read by such a pairing. The names are read here without the ATR, whose link this read gives;
+    to_return resolves them against the ATR's bytes once it has fetched them."""
     accepts = required.get("accepts") if isinstance(required, Mapping) else None
     if not isinstance(accepts, list) or not 0 < len(accepts) <= MAX_OPTIONS:
         return None
@@ -314,7 +408,9 @@ def mpp_agreement_options(challenges: object) -> list[Offered] | Refusal | None:
     challenge, in the seller's order, with the charges it names as served (its opaque member legalContextServes) and the
     protocol package's MPP read of the response. None unless the response is a list of 1 to 32 challenges each of which
     names the charges it serves and all of which read finds placed for one H; the refusal of the first challenge whose
-    serves lcp refuses (return/serves-malformed), which the gate declines rather than reading the response as a charge."""
+    serves lcp refuses (return/serves-malformed), which the gate declines rather than reading the response as a charge.
+    The names are read here without the ATR, whose link this read gives; to_return resolves them against the ATR's
+    bytes once it has fetched them."""
     if not isinstance(challenges, list) or not 0 < len(challenges) <= MAX_OPTIONS:
         return None
     served = [serves_of(c) for c in challenges]
@@ -347,17 +443,20 @@ async def to_return(
     ns: str = "x402",
 ) -> ToReturn | Declined:
     """The return after an agreement: the ATR fetched from the response's link, compared with its H and with the return
-    value's, parsed, and its request commitment held to the buyer's request; then, for each agreement option in the
-    seller's order and each charge it names as served, <slot>/<i>, the option at index i of the list the ATR's binding
-    slot of the pairing's protocol holds (accepts in x402, challenges in mpp), the first such charge the account can pay
-    is chosen (_choice), and its agreement paid. On x402 the agreement option is paid at the agreement URL as offered.
-    On MPP, whose first response offers MPP agreement challenges, which terms builds no credential for, the agreement
-    URL is followed: an x402 agreement option its 402 offers is paid as on x402, and where it offers only MPP agreement
-    challenges they are returned in agreement_challenges for the caller's own MPP client, nothing signed. Each agreement
-    payment, where the charge's agreementOn admits it, is asked of the approver as the act agreement. No charge is
-    signed, and no agreement is paid for a charge checks 9 to 11 decline: the next served charge is tried, and where
-    every one is declined there, the first decline is returned. A pairing whose agreement is never a charge, or a
-    response with no such charge, is no-payable-option."""
+    value's, and parsed; each agreement option's served names resolved against those bytes (serves_of), a name whose
+    slot is not the ATR's binding slot, or whose index is not below the number of charge options that slot holds,
+    declining the response offer-unreadable with return/serves-malformed; and the ATR's request commitment held to the
+    buyer's request; then, for each agreement option in the seller's order and each charge it names as served,
+    <slot>/<i>, the option at index i of the list the ATR's binding slot of the pairing's protocol holds (accepts in
+    x402, challenges in mpp), the first such charge the account can pay is chosen (_choice), and its agreement paid. On
+    x402 the agreement option is paid at the agreement URL as offered. On MPP, whose first response offers MPP agreement
+    challenges, which terms builds no credential for, the agreement URL is followed: an x402 agreement option its 402
+    offers is paid as on x402, and where it offers only MPP agreement challenges they are returned in
+    agreement_challenges for the caller's own MPP client, nothing signed. Each agreement payment, where the charge's
+    agreementOn admits it, is asked of the approver as the act agreement. No charge is signed, and no agreement is paid
+    for a charge checks 9 to 11 decline: the next served charge is tried, and where every one is declined there, the
+    first decline is returned. A pairing whose agreement is never a charge, or a response with no such charge, is
+    no-payable-option."""
     read = offers[0].read
     url = read.agreement
     if not isinstance(url, str):
@@ -374,6 +473,10 @@ async def to_return(
     parsed = parse_atr(atr_bytes)
     if isinstance(parsed, Declined):
         return parsed
+    for offered in offers:
+        resolved = serves_of(offered.option, atr_bytes)
+        if isinstance(resolved, Refusal):
+            return Declined("offer-unreadable", resolved.code)
     other_request = request_held(binding, parsed.value, resource_request)
     if other_request is not None:
         return other_request

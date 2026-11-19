@@ -190,7 +190,8 @@ def test_a_refused_return_value_declines_before_any_fetch(r: dict[str, Any], mon
 
 
 # lcp's own functions of the return, mirrored in _return, held to legal-context-return.json's rows: write and its
-# refusals (to_legal_context_header), read (from_legal_context_header) and serves (serves_of), each row's expected value.
+# refusals (to_legal_context_header), read (from_legal_context_header), and serves and its refusals (serves_of, given the
+# bytes of the file's ATR a row names), each row's expected value.
 @pytest.mark.parametrize("r", RETURN["write"] + RETURN["writeRefusals"], ids=[r["case"] for r in RETURN["write"] + RETURN["writeRefusals"]])
 def test_the_return_header_is_written_as_lcp_writes_it(r: dict[str, Any]) -> None:
     rv = bytes.fromhex(r["returnValueHex"]) if "returnValueHex" in r else None
@@ -209,10 +210,14 @@ def test_the_return_header_is_read_as_lcp_reads_it(r: dict[str, Any]) -> None:
         assert (h, rv) == (r["expectH"], bytes.fromhex(r["expectReturnValueHex"]))
 
 
-@pytest.mark.parametrize("r", RETURN["serves"], ids=[r["case"] for r in RETURN["serves"]])
+@pytest.mark.parametrize("r", RETURN["serves"] + RETURN["servesRefusals"], ids=[r["case"] for r in RETURN["serves"] + RETURN["servesRefusals"]])
 def test_the_charges_an_agreement_option_serves_are_read_as_lcp_reads_them(r: dict[str, Any]) -> None:
-    out = _return.serves_of(r["option"])
-    assert (list(out) if isinstance(out, tuple) else out) == r["expect"]
+    out = _return.serves_of(r["option"], RETURN["atrs"][r["atr"]].encode("utf-8") if "atr" in r else None)
+    expect = r["expect"]
+    if isinstance(expect, dict):
+        assert isinstance(out, Refusal) and out.code == expect["code"], out
+    else:
+        assert (list(out) if isinstance(out, tuple) else out) == expect
 
 
 def test_a_return_value_naming_another_h_is_hash_mismatch_before_the_approver(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -286,10 +291,14 @@ def test_transact_given_confirms_chosen_5_s_later_signs_the_request_confirm_buil
 
 
 # Rule 12: a first response whose agreement option names the charges it serves in a form lcp's servesOf refuses (each
-# of legal-context-return.json's servesRefusals rows as the response's one option) is declined offer-unreadable with
-# that code, before any fetch, approver or signer call, through a pairing paid after its agreement (row "approved"'s
-# pairing at coverage none); it is not read as a charge.
-@pytest.mark.parametrize("r", RETURN["servesRefusals"], ids=[r["case"] for r in RETURN["servesRefusals"]])
+# of legal-context-return.json's servesRefusals rows read without an ATR as the response's one option) is declined
+# offer-unreadable with that code, before any fetch, approver or signer call, through a pairing paid after its agreement
+# (row "approved"'s pairing at coverage none); it is not read as a charge. A name refused only against an ATR's bytes is
+# buyer-gate.json's row serves-not-in-atr.
+UNRESOLVED = [r for r in RETURN["servesRefusals"] if "atr" not in r]
+
+
+@pytest.mark.parametrize("r", UNRESOLVED, ids=[r["case"] for r in UNRESOLVED])
 def test_a_refused_serves_is_declined_not_read_as_a_charge(r: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     binding = StubBinding(inner=BINDINGS[APPROVED["pairing"]], id=APPROVED["pairing"], coverage="none")
     signer = Payer(False)
@@ -357,11 +366,15 @@ def test_an_option_naming_no_served_charge_makes_a_charge_offer_in_either_order(
 
 
 # Rule 12, the return after an agreement (lcp profile legal-context-return.md): a first response offering the agreement
-# alone, its options naming x402/0 in extra.legalContextServes as legal-context-return.json's serves rows do, and an ATR
-# whose x402 slot lists the charge option at index 0. The ATR is row "approved"'s A with that list added to its slot, its
-# SHA-256 from hashlib; the document is row "approved"'s, advertising that hash and buyer.json's agreement URL.
+# alone, its options naming x402/0 alone in extra.legalContextServes (the option of legal-context-return.json's
+# servesRefusals row naming x402/0, refused there against the file's card ATR, which holds no x402 slot), and an ATR
+# whose x402 slot lists the charge option at index 0, against which that name resolves. The ATR is row "approved"'s A
+# with that list added to its slot, its SHA-256 from hashlib; the document is row "approved"'s, advertising that hash and
+# buyer.json's agreement URL.
 AGREEMENT_URL: str = load("buyer.json")["fixed"]["agreement"]["url"]
-SERVES_X402_0: dict[str, Any] = RETURN["serves"][0]["option"]
+SERVES_X402_0: dict[str, Any] = next(
+    r["option"] for r in RETURN["servesRefusals"] if "atr" in r and r["option"]["extra"]["legalContextServes"] == ["x402/0"]
+)
 
 
 def agreement_first(charge: dict[str, Any], options: list[dict[str, Any]]) -> tuple[dict[str, Any], bytes]:
@@ -414,8 +427,8 @@ class SolanaPayer:
 # The charge follows only an agreement option its pairing's agreementOn admits, on the return path as on the ordinary one.
 # The charge is row "approved"'s option through a stub of its pairing at coverage none stating agreementOn same-network;
 # an agreement option on another network, buyer.json BA9's requiredMixed's first, x402-exact-solana.json's option, with
-# that file's B2 payer and inputs, is declined no-payable-option before the approver; lcp's serves row on the charge's own
-# network is asked of the approver as the agreement.
+# that file's B2 payer and inputs, is declined no-payable-option before the approver; the agreement option naming x402/0
+# alone (SERVES_X402_0), on the charge's own network, is asked of the approver as the agreement.
 def test_the_return_pays_only_an_agreement_option_the_charges_agreement_on_admits(monkeypatch: pytest.MonkeyPatch) -> None:
     charge = V["fixed"]["documents"][APPROVED["pairing"]]["accepts"][0]
     binding = StubBinding(inner=BINDINGS[APPROVED["pairing"]], id=APPROVED["pairing"], coverage="none", agreement_on="same-network")
@@ -437,7 +450,8 @@ def test_the_return_pays_only_an_agreement_option_the_charges_agreement_on_admit
 # signer is called for the signing it concerns), so no agreement is paid for a charge the gate then declines. The charge
 # is x402-exact-eip155-erc7710.json's fixed option, a delegation, which signs no end (lcp profile
 # x402-exact-eip155-erc7710.md): declined no-end before the approver or the signer; with its ceiling raised to no-end,
-# the one member it differs in, lcp's serves row is asked of the approver as the agreement.
+# the one member it differs in, the agreement option naming x402/0 alone (SERVES_X402_0) is asked of the approver as
+# the agreement.
 def test_the_return_checks_the_charge_before_it_pays_the_agreement(monkeypatch: pytest.MonkeyPatch) -> None:
     charge = load("x402-exact-eip155-erc7710.json")["fixed"]["option"]
     binding = BINDINGS["x402/exact/eip155/erc7710"]

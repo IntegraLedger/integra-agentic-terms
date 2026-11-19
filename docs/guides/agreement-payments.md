@@ -158,10 +158,14 @@ agreement payment.
 A seller may answer first with the agreement alone (the protocol package's profile `legal-context-return.md`): its first
 response offers the agreement option and no charge, and each agreement option names, by its `serves`
 (`extra.legalContextServes` on x402, the `opaque` member `legalContextServes` of an MPP agreement challenge), the
-charges it is for, `<slot>/<i>`, such as `x402/0` or `mpp/1`, the option at that index of the ATR's binding slot.
-`transact` then:
+charges it is for, `<slot>/<i>`, such as `x402/0` or `mpp/1`, the option at that index of the ATR's binding slot: one
+name for each binding slot that holds charge options, `x402/<i>` (`accepts`), `mpp/<i>` (`challenges`), `ack/<i>`
+(`paymentOptions`), and `acp/<i>`, `ap2/<i>`, `card/<i>` and `ucp/<i>` (`options`). `transact` then:
 
-1. compares and parses the ATR, and holds the buyer's request to its request commitment, as for any payment;
+1. compares and parses the ATR, resolves each served name against its bytes, and holds the buyer's request to its
+   request commitment, as for any payment. An agreement option one of whose names is of another slot than the ATR's
+   binding slot, or names an index past the options that slot holds, is declined `offer-unreadable` with
+   `return/serves-malformed`;
 2. for each agreement option in document order and each charge it serves, takes the first charge the pairing reads,
    your account can pay and checks 9 to 11 pass on (its build with H, its summary and its ceiling). Where the slot
    holds the charge without what its read needs, because the seller writes it only when it serves the charge, the

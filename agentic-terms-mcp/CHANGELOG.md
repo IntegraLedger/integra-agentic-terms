@@ -6,6 +6,14 @@ release may change the tools, their arguments and their results, so pin the exac
 is marked **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md)
 shows each call before and after.
 
+## [Unreleased]
+
+### Changed
+
+- `atr_transact` resolves each agreement option's served names against the ATR's bytes as the gate does: an option
+  naming a slot that is not the ATR's binding slot, or an index past the charge options that slot holds, is declined
+  `offer-unreadable` with `return/serves-malformed`.
+
 ## [0.5.1] - 2026-11-18
 
 ### Added

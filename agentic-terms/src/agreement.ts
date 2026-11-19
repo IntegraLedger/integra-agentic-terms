@@ -459,7 +459,8 @@ async function paying(
  * protocol package's order, that reads it. Undefined unless `accepts` is a list of 1 to 32 options each of which names
  * the charges it serves and is read by such a pairing. A response none of whose options lacks the member, and one of
  * whose options `servesOf` refuses, is declined `offer-unreadable` with that refusal's code: it offers no charge, and
- * an agreement option that names its charges in no admitted form is never read as a charge.
+ * an agreement option that names its charges in no admitted form is never read as a charge. The names are read here
+ * without the ATR, whose link this read gives; `transact` resolves them against the ATR's bytes once it has fetched them.
  */
 export function agreementOptions(
   required: unknown,
@@ -488,7 +489,8 @@ export function agreementOptions(
  * those it serves (`servesOf`, its `opaque` member `legalContextServes`) and the protocol package's MPP `read` of the
  * response. Undefined unless the response is a list of 1 to 32 challenges each of which names the charges it serves and
  * all of which `read` finds placed for one H. A response none of whose challenges lacks the member, and one of whose
- * challenges `servesOf` refuses, is declined `offer-unreadable` with that refusal's code.
+ * challenges `servesOf` refuses, is declined `offer-unreadable` with that refusal's code. The names are read here
+ * without the ATR, whose link this read gives; `transact` resolves them against the ATR's bytes once it has fetched them.
  */
 export function mppAgreementOptions(
   challenges: unknown,

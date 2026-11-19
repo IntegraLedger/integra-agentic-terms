@@ -68,6 +68,13 @@ function hostOf(row: Loose): { ceilings: Loose; floors: Floors } {
 const endOf = (row: Loose): string | null =>
   !PIECES.has(row.pairing) ? "pairing-not-supported" : row.expect.approverCalls === 0 ? row.expect.decline : null;
 
+/**
+ * Whether the row's first response offers the agreement alone, its every option naming the charges it serves: the return
+ * after an agreement, which `transact` alone takes (profile rule 12), and which `confirm` reads as a charge offer.
+ */
+const agreementAlone = (row: Loose): boolean =>
+  Array.isArray(row.document?.accepts) && row.document.accepts.every((o: Loose) => o?.extra?.legalContextServes !== undefined);
+
 const call = (c: { request(method: string, params?: object): Promise<unknown> }, name: string, args: object) =>
   c.request("tools/call", { name, arguments: args, _meta: M }) as Promise<Message>;
 const code = (m: Message) => at(m, "result.structuredContent.decline.code");
@@ -80,7 +87,7 @@ describe("buyer-gate.json rows through the tools", () => {
   afterEach(() => vi.useRealTimers());
 
   // atr_confirm makes the checks before the signer; a row the gate passes them on returns the request and its summary.
-  for (const row of V.rows as Loose[]) {
+  for (const row of (V.rows as Loose[]).filter((r) => !agreementAlone(r))) {
     const declined = endOf(row);
     it(`atr_confirm, ${row.name}: ${declined ?? "the request and its summary"}`, async () => {
       const fetch = serving(row);
