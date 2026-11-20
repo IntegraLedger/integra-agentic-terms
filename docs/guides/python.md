@@ -117,7 +117,8 @@ uv run --locked --python 3.14 mypy --strict src tests
 ## Versions and upgrading
 
 `integraledger-terms` is at 0.x: a minor release may change the public API. Pin the exact version, as the install line
-above does. 0.5.x builds and reads the forms of `@integraledger/lcp` 0.6.0 and needs Python `>=3.11`.
+above does. 0.5.x builds and reads the forms of `@integraledger/lcp` 0.6.2 (0.5.0 and 0.5.1: 0.6.0) and needs Python
+`>=3.11`.
 
 From 0.4.x, `confirm` takes `resource_request=` (required) and `inputs=` as keywords, and `transact` requires
 `approver=` and `resource_request=`: a 0.4.x call raises `TypeError`. `transact` may also return `ToReturn` and

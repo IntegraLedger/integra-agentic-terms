@@ -929,8 +929,8 @@ places it in a checkout, so they run from a checkout after `pnpm install`, not f
 ## Versions and upgrading
 
 This package is at 0.x: a minor release may change the public API. Pin the exact version, as the install line above
-does. 0.5.x builds and reads the forms of `@integraledger/lcp` 0.6.0, whose vectors its tests run, and needs Python
-`>=3.11`.
+does. 0.5.x builds and reads the forms of `@integraledger/lcp` 0.6.2 (0.5.0 and 0.5.1: 0.6.0), whose vectors its tests
+run, and needs Python `>=3.11`.
 
 From 0.4.x, a caller changes this:
 
