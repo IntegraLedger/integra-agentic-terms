@@ -22,7 +22,7 @@ Most MCP clients take a configuration like this:
   "mcpServers": {
     "terms": {
       "command": "npx",
-      "args": ["-y", "@integraledger/terms-mcp@0.5.1"]
+      "args": ["-y", "@integraledger/terms-mcp@0.5.2"]
     }
   }
 }
@@ -37,7 +37,7 @@ The skill is `skills/confirming-the-atr-hash-before-paying/SKILL.md` in the pack
 skills directory (for Claude Code, `.claude/skills/`), or paste the file into the agent's instructions:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.1
+npm install @integraledger/terms-mcp@0.5.2
 cp -r node_modules/@integraledger/terms-mcp/skills/confirming-the-atr-hash-before-paying .claude/skills/
 ```
 
@@ -194,7 +194,7 @@ sample imports; `@integraledger/lcp` is a peer dependency (`~0.6.2`), and `creat
 `@modelcontextprotocol/server` 2.3.1, the version to serve it with:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.1 @integraledger/terms@0.5.1 @integraledger/lcp@0.6.1 @modelcontextprotocol/server@2.3.1
+npm install @integraledger/terms-mcp@0.5.2 @integraledger/terms@0.5.2 @integraledger/lcp@0.6.2 @modelcontextprotocol/server@2.3.1
 ```
 
 ```ts no-run
@@ -261,7 +261,7 @@ The [tools reference](../reference/mcp.md) lists every tool's arguments, results
 ## Versions and upgrading
 
 `@integraledger/terms-mcp` is at 0.x: a minor release may change the tools, their arguments and their results. Pin the
-exact version, as the configuration above does. 0.5.x takes `@integraledger/terms` 0.5.0 and the peer
+exact version, as the configuration above does. 0.5.x takes `@integraledger/terms` of the same version and the peer
 `@integraledger/lcp` `~0.6.2` (0.5.0 and 0.5.1: `~0.6.0`), and needs Node.js `>=24.22.1`.
 
 From 0.4.x, `atr_confirm` and `atr_transact` require `resourceRequest`; `atr_transact` returns `approve`,

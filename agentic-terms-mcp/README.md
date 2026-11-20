@@ -4,7 +4,7 @@ The buyer gate as Model Context Protocol tools, with a skill that teaches an age
 it pays.
 
 ```sh
-npx -y @integraledger/terms-mcp@0.5.1
+npx -y @integraledger/terms-mcp@0.5.2
 ```
 
 ## What it is
@@ -54,7 +54,7 @@ Add the server to your MCP client. Most clients take a configuration like this:
   "mcpServers": {
     "terms": {
       "command": "npx",
-      "args": ["-y", "@integraledger/terms-mcp@0.5.1"]
+      "args": ["-y", "@integraledger/terms-mcp@0.5.2"]
     }
   }
 }
@@ -67,7 +67,7 @@ Then give your agent the skill. The package ships it at
 Claude Code, `.claude/skills/`), or paste the file into your agent's instructions:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.1
+npm install @integraledger/terms-mcp@0.5.2
 cp -r node_modules/@integraledger/terms-mcp/skills/confirming-the-atr-hash-before-paying .claude/skills/
 ```
 
@@ -92,7 +92,7 @@ To call `createBuyerServer` in your own code, as the [Quickstart](#quickstart) a
 [Serving with your own signer](#serving-with-your-own-signer) do, install the packages their samples import:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.1 @integraledger/terms@0.5.1 @integraledger/lcp@0.6.1 @modelcontextprotocol/server@2.3.1
+npm install @integraledger/terms-mcp@0.5.2 @integraledger/terms@0.5.2 @integraledger/lcp@0.6.2 @modelcontextprotocol/server@2.3.1
 ```
 
 `@integraledger/lcp` is a peer dependency (`~0.6.2`). `createBuyerServer` returns an `McpServer` of
@@ -561,8 +561,8 @@ expect the gate's own results.
 ## Versions and upgrading
 
 This package is at 0.x: a minor release may change the tools, their arguments and their results. Pin the exact version,
-as the configuration above does. 0.5.x takes `@integraledger/terms` 0.5.0 and the peer `@integraledger/lcp` `~0.6.2`
-(0.5.0 and 0.5.1: `~0.6.0`), and needs Node.js `>=24.22.1`.
+as the configuration above does. 0.5.x takes `@integraledger/terms` of the same version and the peer
+`@integraledger/lcp` `~0.6.2` (0.5.0 and 0.5.1: `~0.6.0`), and needs Node.js `>=24.22.1`.
 
 From 0.4.x, an agent or a host changes this:
 

@@ -11,7 +11,7 @@ This guide is for a developer who pays from Python. By its end you know where th
 TypeScript one, how to write a signer, and which call runs each flow.
 
 ```sh
-pip install integraledger-terms==0.5.1
+pip install integraledger-terms==0.5.2
 ```
 
 Python `>=3.11`. It depends on `httpx` (`>=0.28.1,<0.29`) and `cryptography` (`==50.0.2`, an exact pin: install it in an
