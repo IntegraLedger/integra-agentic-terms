@@ -1,0 +1,65 @@
+{
+  "about": "A Masumi lock's option, x402/exact/cardano/lock with extra.assetTransferMethod \"masumi\", issued by the stock @x402/cardano 2.31.0 issuer, issueMasumiRequirements, on Node 26: network cardano:preprod, asset lovelace, amount 5000000, maxTimeoutSeconds 600; the seller toMasumiSellerSigner's over BIP-39's published English test mnemonic, eleven words \"abandon\" then \"about\", whose CIP-8 authorization signs the terms; the request commitment one jcs part, body, x402's Cardano scheme's own example content {\"days\": 3, \"units\": \"metric\"} (scheme_exact_cardano.md, Masumi assetTransferMethod Schema); sellerNonce 33 x 32; payByTime 2026-11-20T07:44:00Z plus maxTimeoutSeconds, and the other three deadlines payByTime plus DEFAULT_MASUMI_DEADLINE_OFFSETS (15, 35 and 55 minutes); payTo, the escrow, the issuer's own, derived from the canonical deployment. expect is the summary of the request the lock's buyer piece builds from that option, read from the option alone as lcp's profile x402-exact-cardano.md, rule 9, names the payee: the seller terms.sellerAddress names, with the amount, the escrow being payTo; the request names no TTL, so the validity is none to none, in slots.",
+  "option": {
+    "scheme": "exact",
+    "network": "cardano:preprod",
+    "asset": "lovelace",
+    "amount": "5000000",
+    "payTo": "addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g",
+    "maxTimeoutSeconds": 600,
+    "extra": {
+      "assetTransferMethod": "masumi",
+      "inputCommitment": {
+        "version": "1",
+        "algorithm": "sha256",
+        "parts": [
+          {
+            "name": "body",
+            "canonicalization": "jcs",
+            "mediaType": "application/json",
+            "content": {
+              "days": 3,
+              "units": "metric"
+            },
+            "digest": "e33986d62ef871de151b8258eb9624fbfa220b6f9a4fe170bf168dfa2c957440"
+          }
+        ],
+        "digest": "f336fadcc1b29faacba71b6e0ec7f80bc5bc4673db6b8fc93f59e5f9fb3c49c7"
+      },
+      "terms": {
+        "version": "1",
+        "paymentType": "Web3CardanoV2",
+        "sellerAddress": "addr_test1qq8ac7qqy0vtulyl7wntmsxc6wex80gvcyjy33qffrhm7sh927ysx5sftuw0dlft05dz3c7revpf7jx0xnlcjz3g69mqkt5dmn",
+        "sellerNonce": "3333333333333333333333333333333333333333333333333333333333333333",
+        "buyerNonce": "",
+        "inputHash": "f336fadcc1b29faacba71b6e0ec7f80bc5bc4673db6b8fc93f59e5f9fb3c49c7",
+        "payByTime": "1795161240000",
+        "submitResultTime": "1795162140000",
+        "unlockTime": "1795163340000",
+        "externalDisputeUnlockTime": "1795164540000"
+      },
+      "referenceKey": "a40101032720062158207ea09a34aebb13c9841c71397b1cabfec5ddf950405293dee496cac2f437480a",
+      "referenceSignature": "845846a2012767616464726573735839000fdc780023d8be7c9ff3a6bdc0d8d3b263bd0cc12448c40948efbf42e557890352095f1cf6fd2b7d1a28e3c3cb029f48cf34ff890a28d176a166686173686564f458201eec55348b80b851b323f760c4386ff660ef7c34b52d125143e12a3f88616c585840663b378c0a6f6208b58d90e9f5406a9e3f6dcb970f8d2fad31167b09d30efe720be1777802ebd948a769105b5d80e4a30d9c6b5c44a606d6f0028a19a1b52108",
+      "blockchainIdentifier": "330d7c6574f41d1c01c01602b0a06c04301300180461c0760d4823652e270d563807d6004e3dd80cc013018d8c5d8e605d1002300a6c478b0e1d8160ca379e115d828daeab9e1e3c8b264887b23c2d0f88ea23b21ce353d446d82a7c2d507023c3866e394712e025c4471601e30d13c1c19432f606459473c60c0d22c0a0c0c440c02062cba4a6b747c0271711e7b78b101514454025160210e521d64606cd94cbc0b2978d117409c7af6f1222c600e446c8a0aba943c4cf54623649f0c7c31742e36711954136c1650ef5e5116623c29ae1c0e2c35020a624896351e8e497c095ce27e28f1251991058520b008785400c443d6404c542c1e22950c658461165c1f2098104163a4063870620e05813383c14d1a3b03604629e188e22c29826b0806880861160a13cc47645cd93c2c159caa82e170386e3c0985c2c61195902c0c00a78b776b110cc96268a004e007d000bb8800ce7a82001dc005e86e438830a6e92a00016006b53789cd001b5d000ad4d2c002d970006e00473c16ac38680398003c30e6a77c4b08180039eb23130e1a600768c537212340000"
+    }
+  },
+  "expect": {
+    "amount": "5000000",
+    "payees": [
+      {
+        "account": "addr_test1qq8ac7qqy0vtulyl7wntmsxc6wex80gvcyjy33qffrhm7sh927ysx5sftuw0dlft05dz3c7revpf7jx0xnlcjz3g69mqkt5dmn",
+        "amount": "5000000"
+      }
+    ],
+    "asset": "lovelace",
+    "network": "cardano:preprod",
+    "validity": {
+      "notBefore": null,
+      "notAfter": null,
+      "unit": "slot"
+    },
+    "grant": {
+      "escrow": "addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g"
+    }
+  }
+}

@@ -15,7 +15,7 @@ import { tempoOpen } from "./summary/tempo-call.js";
 import { evmSessionOpen, sessionVoucher } from "./summary/session-voucher.js";
 import { algorandTransfer } from "./summary/algorand-txn.js";
 import { hederaExecutor, hederaTransfer } from "./summary/hedera-body.js";
-import { solanaSessionOpen, solanaTransfer, solanaUptoOpen } from "./summary/solana-message.js";
+import { solanaBatchOpening, solanaSessionOpen, solanaTransfer, solanaUptoOpen } from "./summary/solana-message.js";
 import { stacksTransfer } from "./summary/stacks-contract-call.js";
 import { xrplPayment, xrplSessionOpen } from "./summary/xrpl-tx.js";
 import { casperTransferWithAuthorization } from "./summary/casper-eip712.js";
@@ -151,6 +151,7 @@ export const SUMMARIES: ReadonlyMap<string, SummaryEntry> = new Map<string, Summ
   ["mpp/charge/solana", { show: solanaTransfer }],
   ["mpp/charge/solana/unsponsored", { show: solanaTransfer }],
   ["mpp/charge/usdc/solana", { show: solanaTransfer }],
+  ["x402/batch-settlement/solana", { show: solanaBatchOpening }],
   ["x402/upto/solana", { show: solanaUptoOpen }],
   ["mpp/session/solana/memo", { show: solanaSessionOpen }],
   ["x402/exact/xrpl", { show: xrplPayment }],

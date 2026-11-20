@@ -31,9 +31,8 @@ after your approver answered `true` for it; at most twice for one payment (a fun
 the payment of a pairing whose build gives the buyer nothing to sign (it may sign that pairing's agreement payment).
 Where the wallet builds the transaction and picks its expiry itself, the request carries the latest deadline it may
 sign (`maxExpirationTimestampSecs`, `maxTtl`, `maxEpoch` or `maxEraPeriod`); a payment signed past it is discarded and
-declined `past-ceiling`. A request the gate cannot summarize is never handed over: today the opening of
-`x402/batch-settlement/solana` and a Masumi lock of `x402/exact/cardano/lock` are declined `summary-missing` before the
-signer is called.
+declined `past-ceiling`. A request the gate cannot summarize is never handed over: it is declined `summary-missing`
+before the signer is called.
 
 ## Requests and answers
 

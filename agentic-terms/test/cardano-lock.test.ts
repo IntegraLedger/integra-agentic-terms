@@ -1,12 +1,15 @@
 // x402/exact/cardano/lock's buyer piece over the protocol package's x402-exact-cardano.json, the file of both Cardano
 // pairings. The lock's document is the file's B2 document for the lock, the `script` method's option fixed.OLock
 // advertising H; the wallet answers with V2's transaction, whose body commits to V1's auxiliary data, and fixed.nonce,
-// the input it spends. Every expected value, and every input, is the file's.
+// the input it spends. Every expected value, and every input, is the file's. A Masumi lock's option is
+// cardano-masumi.json's, issued by the stock @x402/cardano issuer, as its `about` states.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { exactCardanoLock } from "@integraledger/lcp/cardano";
 import type { PaymentRequired, PaymentRequirements } from "@integraledger/lcp/x402";
 import type { Binding, Presented, SigningRequest } from "../src/index.js";
-import { buildAndSign, code, counting, piecePay, toHex, vectors, type Pairing } from "./support.js";
+import { summaryOf } from "../src/summary.js";
+import { ABC, buildAndSign, code, counting, isDeclined, pieceConfirm, piecePay, toHex, vectors, type Pairing } from "./support.js";
 
 interface BuyerRow {
   name: string;
@@ -80,4 +83,16 @@ describe("x402/exact/cardano/lock", () => {
       const detail = "decline" in out ? out.decline.detail : undefined;
       expect([code(out), detail]).toEqual(["signed-not-bound", "x402/signed-not-bound"]);
     }));
+
+  it("a Masumi lock: cardano-masumi.json's option, the stock issuer's, shows the seller its terms name as payee, beside the escrow", async () => {
+    const masumi = JSON.parse(readFileSync(new URL("./cardano-masumi.json", import.meta.url), "utf8")) as {
+      option: PaymentRequirements;
+      expect: object;
+    };
+    const doc = { ...B2.input.doc!, accepts: [masumi.option] };
+    const out = await pieceConfirm(doc, binding, B2.input.account!);
+    if (isDeclined(out)) throw new Error(`${out.decline.code}: ${out.decline.detail}`);
+    if (out.request === null) throw new Error("nothing to sign");
+    expect(await summaryOf(LOCK, out.request, ABC)).toEqual({ ...masumi.expect, atr: ABC });
+  });
 });

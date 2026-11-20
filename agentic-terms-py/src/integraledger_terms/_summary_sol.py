@@ -1,7 +1,8 @@
 """The approval summaries of the Solana, XRP Ledger, Algorand, Stacks and Hedera requests (terms' profile buyer-gate.md,
-rule 13), as summary/solana-message.ts, xrpl-tx.ts, algorand-txn.ts, stacks-contract-call.ts and hedera-body.ts read
-them in the TypeScript package. Each reads the request as the gate hands it to the signer, every byte string as 0x and
-lowercase hex, and answers None for a request it cannot read, so the gate declines it summary-missing."""
+rule 13), the batch of x402's batch-settlement opening on Solana among them, as summary/solana-message.ts, xrpl-tx.ts,
+algorand-txn.ts, stacks-contract-call.ts and hedera-body.ts read them in the TypeScript package. Each reads the request
+as the gate hands it to the signer, every byte string as 0x and lowercase hex, and answers None for a request it cannot
+read, so the gate declines it summary-missing."""
 
 import base64
 import re
@@ -40,7 +41,7 @@ def _is_safe_index(v: object) -> bool:
     return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= MAX_SAFE_INTEGER
 
 
-# ── Solana: solana-message and solana-session-open ──────────────────────────────────────────────────────────────────
+# ── Solana: solana-message, solana-session-open and the batch-settlement opening ──────────────────────────────────────
 
 # The version byte of a version-1 message (SIMD-0385).
 _V1 = 0x81
@@ -80,6 +81,10 @@ class _Open:
 
     payee: str
     mint: str
+    # The key the channel's vouchers are signed with, the open's fifth account.
+    signer: str
+    # The channel's account, the open's sixth.
+    channel: str
     deposit: int
     recipients: tuple[tuple[str, int], ...]
 
@@ -129,19 +134,28 @@ def _read_message(message: bytes) -> tuple[list[_Transfer], list[_Open]] | None:
             recipients = tuple(
                 (b58_encode(d[33 + 34 * i : 65 + 34 * i]), _uint_le(d, 65 + 34 * i, 2)) for i in range(count)
             )
-            opens.append(_Open(payee=at(2), mint=at(3), deposit=_uint_le(d, 9, 8), recipients=recipients))
+            opens.append(
+                _Open(payee=at(2), mint=at(3), signer=at(4), channel=at(5), deposit=_uint_le(d, 9, 8), recipients=recipients)
+            )
         else:
             return None
     return transfers, opens
 
 
 def _shares(open_: _Open, total: int) -> tuple[Payee, ...] | None:
-    """Each payee's part of total: the distribution's shares where it names any, which must sum to 10,000 bps."""
+    """Each payee's part of total: each recipient of the distribution its bps of total, rounded down, and the channel's
+    payee the rest where the distribution's bps sum to less than 10,000, as the payment-channels program pays the
+    remainder to the payee; the payee alone, with the whole, where the distribution names no recipient. A recipient of
+    0 bps, or bps that sum past 10,000, which the program's open refuses, gives none."""
     if not open_.recipients:
         return (Payee(account=open_.payee, amount=str(total)),)
-    if sum(bps for _, bps in open_.recipients) != 10_000:
+    bps = sum(b for _, b in open_.recipients)
+    if any(b == 0 for _, b in open_.recipients) or bps > 10_000:
         return None
-    return tuple(Payee(account=r, amount=str(total * bps // 10_000)) for r, bps in open_.recipients)
+    parts = [(r, total * b // 10_000) for r, b in open_.recipients]
+    if bps < 10_000:
+        parts.append((open_.payee, total - sum(a for _, a in parts)))
+    return tuple(Payee(account=r, amount=str(a)) for r, a in parts)
 
 
 def solana_transfer(request: Mapping[str, Any], network: str | None = None, opened: object = None) -> Summary | None:
@@ -201,6 +215,37 @@ def solana_session_open(request: Mapping[str, Any], network: str | None = None, 
     if open_ is None or payees is None:
         return None
     return Summary(payees=payees, deposit=str(open_.deposit), asset=open_.mint, network=net, validity=_BLOCKS, atr=b"")
+
+
+def solana_batch_opening(request: Mapping[str, Any], network: str | None = None, opened: object = None) -> Summary | None:
+    """x402/batch-settlement/solana's opening, a batch of the open message, then the first voucher, for the open's
+    authorized signer, over the channel the open opens and with no expiry, as x402's scheme writes every voucher
+    (scheme_batch_settlement_svm.md: expiresAt "MUST be 0"): the amount and each payee's part are the voucher's amount,
+    split by the open's distribution; the deposit the open's; the asset its mint. A voucher of another channel or
+    signer, or with an expiry, gives none. The voucher's 50 bytes are 56 01, the channel id, the amount as a u64 and
+    the expiry as an i64."""
+    net = _network_in("solana", network)
+    requests = request.get("requests")
+    if request.get("kind") != "batch" or not isinstance(requests, list) or len(requests) != 2 or net is None:
+        return None
+    tx, voucher = requests
+    if not isinstance(tx, Mapping) or not isinstance(voucher, Mapping):
+        return None
+    if tx.get("kind") != "solana-message" or voucher.get("kind") != "ed25519-raw":
+        return None
+    open_ = _open_of(tx.get("message"))
+    v = hex_bytes(voucher.get("message"))
+    if open_ is None or v is None or len(v) != 50 or v[:2] != b"\x56\x01":
+        return None
+    if b58_encode(v[2:34]) != open_.channel or voucher.get("signer") != open_.signer or _uint_le(v, 42, 8) != 0:
+        return None
+    amount = _uint_le(v, 34, 8)
+    payees = _shares(open_, amount)
+    if payees is None:
+        return None
+    return Summary(
+        amount=str(amount), payees=payees, deposit=str(open_.deposit), asset=open_.mint, network=net, validity=_BLOCKS, atr=b""
+    )
 
 
 # ── XRP Ledger: xrpl-tx and xrpl-session-open ───────────────────────────────────────────────────────────────────────

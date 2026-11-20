@@ -36,8 +36,8 @@ The gate follows that shape:
    that opening to its summary and its ceiling before it was signed (**Open**, above), so every voucher in a channel
    opened through the gate is bounded by an opening the gate checked. `within` computes no summary of a voucher because
    the hold keeps the signed opening and no copy of the opening's request, which a voucher's summary is read with. A
-   caller that wants each later voucher shown shows it before it calls `within`. A Solana batch channel, opened outside
-   the gate (below), is bounded by what you checked of its opening.
+   caller that wants each later voucher shown shows it before it calls `within`. A channel opened outside the gate is
+   bounded by what you checked of its opening.
 4. **Record the charge.** When the seller reports its cumulative charge, `recordCharge(hold, charged)` records it. The
    charge may not fall below the last one recorded, nor rise above the largest amount you signed.
 
@@ -46,14 +46,12 @@ The gate follows that shape:
 | Pairing | Opening | Within (handed to the signer as a `batch` of) |
 | --- | --- | --- |
 | `x402/batch-settlement/eip155` | A deposit authorization and the first voucher, signed as a `batch` | A voucher (`eip712`) |
-| `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch`. Not yet payable through the gate: `transact` and `confirm` decline its opening `summary-missing`, since the gate has no summary of a Solana `batch` | A voucher (`ed25519-raw`), for a channel opened outside the gate |
+| `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch`, shown with the voucher's amount, the `open`'s distribution, deposit and mint | A voucher (`ed25519-raw`) |
 | `mpp/session/evm` | The funding, then the first voucher | A voucher |
 | `mpp/session/tempo` | The signed open transaction, then the first voucher | A voucher |
 | `mpp/session/xrpl` | A `PaymentChannelCreate` and the first claim | A claim |
 
-`within` signs in-channel payments for these five pairings. The gate opens four of them. It declines an
-`x402/batch-settlement/solana` opening `summary-missing`, because it shows nothing it cannot summarize, so open a Solana
-batch channel with the protocol package's build directly; `openChannel` and `within` then take it. For any other pairing
+`within` signs in-channel payments for these five pairings, and the gate opens each of them. For any other pairing
 `within` declines `pairing-not-supported`. It hands your signer every in-channel payment as a `batch`: answer a `batch`
 with a list, one answer per request, in order.
 

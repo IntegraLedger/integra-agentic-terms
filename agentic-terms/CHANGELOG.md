@@ -6,6 +6,23 @@ The packages are at 0.x: a minor release may change the public API. A change a c
 **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each
 call before and after.
 
+## [Unreleased]
+
+### Fixed
+
+- The gate shows and signs an `x402/batch-settlement/solana` opening: the profile `buyer-gate.md`, rule 13, fills its
+  row, the `batch` of the `open` message and the first voucher, which must be for the `open`'s authorized signer, over
+  the channel the `open` opens, with no expiry. The summary holds the voucher's amount, split by the `open`'s
+  distribution, the deposit and the mint. Such an opening was declined `summary-missing`.
+- The summary of a payment channel's `open` on Solana (`x402/upto/solana`, `mpp/session/solana/memo` and the
+  `x402/batch-settlement/solana` opening) shows the channel's payee with the rest of the amount where the
+  distribution's basis points sum to less than 10,000, as the payment-channels program pays it; a share of 0 points, or
+  points that sum past 10,000, gives no summary. An opening with splits, such as an MPP session challenge's `splits`,
+  was declined `summary-missing`.
+- The gate shows and signs a Masumi lock of `x402/exact/cardano/lock`: its payee is the seller the option's
+  `extra.terms.sellerAddress` names, as lcp's reference names it, with the amount, and its `grant` is `{escrow}`,
+  `payTo`, the escrow that holds the deposit. Such a lock was declined `summary-missing`.
+
 ## [0.5.2] - 2026-11-20
 
 ### Added

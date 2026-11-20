@@ -6,15 +6,23 @@ lowercase hex. A request whose bytes name no network is shown with the signer's 
 option or challenge."""
 
 import base64
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
 import pytest
-from breadth import offered
+from breadth import H, LINK, offered, x402_doc
+from mpp_docs import b64u, place
 from support import load, piece_confirm
 
-from integraledger_terms import MPP_CHARGE_USDC_STACKS, Confirmed, Refusal
+from integraledger_terms import (
+    MPP_CHARGE_USDC_STACKS,
+    MPP_SESSION_SOLANA_MEMO,
+    X402_BATCH_SETTLEMENT_SOLANA,
+    Confirmed,
+    Refusal,
+)
 from integraledger_terms._gate import json_form
 from integraledger_terms._summary import SUMMARIES, summary_of
 from integraledger_terms._summary_sol import (
@@ -363,3 +371,58 @@ def test_the_summary_of_a_request_the_vectors_hold(row: Row) -> None:
         # A request that names its own network is summarised by the gate's registry as it stands.
         atr = b"{}"
         assert summary_of(row.pairing, request, atr) == replace(row.expect, atr=atr)
+
+
+# x402/batch-settlement/solana's opening, a batch of the open message and the first voucher, built by the pairing's own
+# build on x402-batch-settlement.json's fixed.svm inputs; and mpp/session/solana/memo's opening under the challenge whose
+# request carries mpp-session-solana.json's fixed.splits8, whose built size is the file's memo.eightSplitsSize. Each
+# expected member is read from the file: the deposit, the mint, the payee and the voucher's amount, the option's; the
+# shares, each split's bps of the deposit and the payee the rest (the payment-channels program: "Each shareBps must be
+# non-zero and Σbps must be at most 10_000", the channel's payee keeping the remainder). These are summary-sol.test.ts's.
+BATCH = load("x402-batch-settlement.json")
+
+
+def test_x402_batch_settlement_solana_the_openings_open_and_first_voucher_built_on_fixed_svm() -> None:
+    s = BATCH["fixed"]["svm"]
+    option = s["option"]
+    doc = x402_doc({**option, "extra": {**option["extra"], "memo": "lcp:sha256:" + H}}, BATCH["fixed"]["resource"])
+    inputs = {k: s[v] for k, v in (("payerAuthorizer", "payer"), ("deposit", "deposit"), ("openSlot", "openSlot"),
+              ("tokenProgram", "tokenProgram"), ("recentBlockhash", "blockhash"), ("salt", "salt"))}
+    confirmed = piece_confirm(doc, X402_BATCH_SETTLEMENT_SOLANA, f"{option['network']}:{s['payer']}", inputs)
+    assert isinstance(confirmed, Confirmed) and confirmed.request is not None, confirmed
+    atr = b"{}"
+    assert summary_of("x402/batch-settlement/solana", confirmed.request, atr, option["network"]) == Summary(
+        amount=option["amount"],
+        payees=one(option["payTo"], option["amount"]),
+        deposit=s["deposit"],
+        asset=option["asset"],
+        network=option["network"],
+        validity=BLOCKS,
+        atr=atr,
+    )
+
+
+def test_mpp_session_solana_memo_an_opening_whose_distribution_holds_the_eight_splits_of_100_bps() -> None:
+    row = b2(SESSION, "mpp/session/solana/memo")
+    challenge = {k: v for k, v in row["doc"][0].items() if k not in ("id", "opaque")}
+    request = json.loads(base64.urlsafe_b64decode(challenge["request"] + "=" * (-len(challenge["request"]) % 4)))
+    challenge["request"] = b64u(json.dumps({**request, "splits": SESSION["fixed"]["splits8"]}, separators=(",", ":")))
+    doc = place([challenge], H, LINK, challenge)
+    assert not isinstance(doc, Refusal), doc
+    choice = {k: v for k, v in SESSION["memo"]["choice"].items() if k != "payer"}
+    confirmed = piece_confirm(doc, MPP_SESSION_SOLANA_MEMO, row["account"], choice)
+    assert isinstance(confirmed, Confirmed) and confirmed.request is not None, confirmed
+    assert confirmed.request["kind"] == "solana-session-open"
+    assert confirmed.request["size"] == SESSION["memo"]["eightSplitsSize"]
+    cap = int(SESSION["fixed"]["memoRequest"]["cap"])
+    shares = [(s["recipient"], cap * s["bps"] // 10_000) for s in SESSION["fixed"]["splits8"]]
+    rest = cap - sum(a for _, a in shares)
+    atr = b"{}"
+    assert summary_of("mpp/session/solana/memo", confirmed.request, atr, DEVNET) == Summary(
+        payees=tuple(Payee(account=r, amount=str(a)) for r, a in shares) + one(SESSION["fixed"]["memoRequest"]["recipient"], str(rest)),
+        deposit=SESSION["fixed"]["memoRequest"]["cap"],
+        asset=SESSION["fixed"]["memoRequest"]["currency"],
+        network=DEVNET,
+        validity=BLOCKS,
+        atr=atr,
+    )

@@ -14,7 +14,7 @@ import { hederaExecutor, hederaTransfer } from "../src/summary/hedera-body.js";
 import { solanaSessionOpen, solanaTransfer, solanaUptoOpen } from "../src/summary/solana-message.js";
 import { stacksTransfer } from "../src/summary/stacks-contract-call.js";
 import { xrplPayment, xrplSessionOpen } from "../src/summary/xrpl-tx.js";
-import { built, fromHex, vectors } from "./support.js";
+import { built, fromHex, H, LINK, vectors } from "./support.js";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type V = any;
@@ -324,4 +324,58 @@ describe("the summaries of the Solana, XRP Ledger, Algorand, Stacks and Hedera r
       }
     });
   }
+});
+
+// x402/batch-settlement/solana's opening, a `batch` of the `open` message and the first voucher, built by the pairing's
+// own build on x402-batch-settlement.json's fixed.svm inputs; and mpp/session/solana/memo's opening under the challenge
+// whose request carries mpp-session-solana.json's fixed.splits8, whose built size is the file's memo.eightSplitsSize.
+// Each expected member is read from the file: the deposit, the mint, the payee and the voucher's amount, the option's;
+// the shares, each split's bps of the deposit and the payee the rest (the payment-channels program: "Each shareBps
+// must be non-zero and Σbps must be at most 10_000", the channel's payee keeping the remainder).
+describe("the summaries of a Solana batch opening and of a session opening with splits", () => {
+  const batch: V = vectors("x402-batch-settlement.json");
+  it("x402/batch-settlement/solana: the opening's open and first voucher, built on x402-batch-settlement.json fixed.svm", async () => {
+    const S = batch.fixed.svm;
+    const binding = bindingOf("x402/batch-settlement/solana");
+    const base = { x402Version: 2, resource: batch.fixed.resource, accepts: [S.option] };
+    const doc = (binding as unknown as { advertise(...a: unknown[]): unknown }).advertise(base, H, LINK, S.option);
+    const inputs = { payerAuthorizer: S.payer, deposit: S.deposit, openSlot: S.openSlot, tokenProgram: S.tokenProgram, recentBlockhash: S.blockhash, salt: S.salt };
+    const { request } = await built(binding, doc, `${S.option.network}:${S.payer}`, inputs);
+    if (request === null) throw new Error("nothing to sign");
+    const atr = Uint8Array.of(0x7b, 0x7d);
+    expect(await summaryOf("x402/batch-settlement/solana", request, atr, S.option.network)).toEqual({
+      amount: S.option.amount,
+      payees: [{ account: S.option.payTo, amount: S.option.amount }],
+      deposit: S.deposit,
+      asset: S.option.asset,
+      network: S.option.network,
+      validity: BLOCKS,
+      atr,
+    });
+  });
+
+  it("mpp/session/solana/memo: an opening whose distribution holds mpp-session-solana.json's eight splits of 100 bps", async () => {
+    const row = session.buyer.rows.find((r: V) => r.name === "B2" && r.pairing === "mpp/session/solana/memo").input;
+    const binding = bindingOf("mpp/session/solana/memo");
+    const { id: _id, opaque: _opaque, ...challenge } = row.doc[0];
+    const request = JSON.parse(Buffer.from(challenge.request, "base64url").toString("utf8"));
+    const issued = { ...challenge, request: Buffer.from(JSON.stringify({ ...request, splits: session.fixed.splits8 }), "utf8").toString("base64url") };
+    const doc = (binding as unknown as { advertise(...a: unknown[]): unknown }).advertise([issued], H, LINK, issued, 0);
+    const { payer: _payer, ...choice } = session.memo.choice;
+    const out = await built(binding, doc, row.account, choice);
+    if (out.request?.kind !== "solana-session-open") throw new Error("not a session opening");
+    expect(out.request.size).toBe(session.memo.eightSplitsSize);
+    const cap = BigInt(session.fixed.memoRequest.cap);
+    const shares = session.fixed.splits8.map((s: V) => ({ account: s.recipient, amount: ((cap * BigInt(s.bps)) / 10_000n).toString() }));
+    const rest = cap - shares.reduce((sum: bigint, s: V) => sum + BigInt(s.amount), 0n);
+    const atr = Uint8Array.of(0x7b, 0x7d);
+    expect(await summaryOf("mpp/session/solana/memo", out.request, atr, DEVNET)).toEqual({
+      payees: [...shares, { account: session.fixed.memoRequest.recipient, amount: rest.toString() }],
+      deposit: session.fixed.memoRequest.cap,
+      asset: session.fixed.memoRequest.currency,
+      network: DEVNET,
+      validity: BLOCKS,
+      atr,
+    });
+  });
 });

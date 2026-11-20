@@ -66,9 +66,7 @@ function fromHexBytes(h: string): Uint8Array {
  * silently; whoever fills a kind's summary removes its pairings here, and the test then pays them through the gate in
  * full.
  */
-export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([
-  ["batch", ["x402/batch-settlement/solana"]],
-]);
+export const SUMMARY_PENDING: ReadonlyMap<string, readonly string[]> = new Map<string, readonly string[]>([]);
 
 /** Whether the gate has no summary yet of the request `pairing`'s build hands the signer: SUMMARY_PENDING lists it. */
 export function summaryPending(pairing: string): boolean {

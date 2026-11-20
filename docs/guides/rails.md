@@ -74,7 +74,7 @@ transaction your client signed.
 | --- | --- | --- |
 | `x402/exact/solana` | `solana-message` | `decimals` (integer) and `tokenProgram` (string): the mint's; `recentBlockhash` (string, required unless the option's `extra.recentBlockhash` is a base58 key of 32 bytes); `computeUnitLimit` (integer, optional); `computeUnitPrice` (decimal, optional) |
 | `x402/upto/solana` | `solana-message` | `openSlot` (decimal), `tokenProgram` (string), `recentBlockhash` (string); `nonce` (decimal, optional: a random u64 otherwise); `computeUnitLimit`, `computeUnitPrice` (optional) |
-| `x402/batch-settlement/solana` | `batch`: the opening's `solana-message`, then the first voucher's `ed25519-raw`. The gate has no summary of this request yet: `transact` and `confirm` decline it `summary-missing`, and nothing is signed | `payerAuthorizer` (string), `openSlot` (decimal), `tokenProgram` (string); `recentBlockhash` (unless the option names one); `deposit` (unless `extra.minDeposit` sets it); `salt`, `computeUnitLimit`, `computeUnitPrice` (optional) |
+| `x402/batch-settlement/solana` | `batch`: the opening's `solana-message`, then the first voucher's `ed25519-raw`, shown with the voucher's amount, the `open`'s distribution, deposit and mint | `payerAuthorizer` (string), `openSlot` (decimal), `tokenProgram` (string); `recentBlockhash` (unless the option names one); `deposit` (unless `extra.minDeposit` sets it); `salt`, `computeUnitLimit`, `computeUnitPrice` (optional) |
 | `mpp/charge/solana` | `solana-message` | `decimals`, `tokenProgram`, `recentBlockhash`, each required only where the request's `methodDetails` leaves it out (none for native SOL besides the blockhash); `computeUnitLimit`, `computeUnitPrice` (optional) |
 | `mpp/charge/solana/unsponsored` | `solana-message`, the payer being the message's fee payer | as `mpp/charge/solana` |
 | `mpp/charge/usdc/solana` | `solana-message` | as `mpp/charge/solana`, read from `methodDetails.solana` |
@@ -134,7 +134,7 @@ sign, point or leading zero, does not offer the pairing (`mpp/request-malformed`
 | `x402/exact/tron/lcp-trc20-memo` | `tron-txid` | `refBlock` (object: `{ number, id }` of a recent block), `feeLimit` (decimal) |
 | `x402/exact/tvm` | `ton-w5` | `walletId` (integer), `seqno` (integer), `jettonWallet` (string), `attachNanotons` (decimal); `stateInit` (base64 BoC, for a wallet not yet deployed) |
 | `x402/exact/cardano` | `cardano-transaction`, with `maxTtl`, the latest TTL the wallet may set | `currentSlot` (integer: the slot you read) |
-| `x402/exact/cardano/lock` | `cardano-transaction` for a lock, `extra.assetTransferMethod` `"script"`: a deposit into a contract the seller defines, a charge and never an agreement. A Masumi lock (`"masumi"`), a deposit into the escrow every seller of a deployment shares, has no summary yet and is declined `summary-missing` | `currentSlot` (integer) |
+| `x402/exact/cardano/lock` | `cardano-transaction` for a lock, a charge and never an agreement: `extra.assetTransferMethod` `"script"`, a deposit into a contract the seller defines, shown with `payTo` as its payee; or `"masumi"`, a deposit into the escrow every seller of a deployment shares, shown with the seller its `extra.terms.sellerAddress` names as its payee and the escrow, `payTo`, as `grant` | `currentSlot` (integer) |
 | `x402/exact/casper` | `casper-eip712` | none |
 | `x402/exact/ccd` | `ccd-transfer` | none |
 | `mpp/charge/usdc/stacks` | `stacks-contract-call` | none |

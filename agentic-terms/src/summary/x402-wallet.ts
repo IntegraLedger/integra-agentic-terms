@@ -65,14 +65,24 @@ export const cardanoTransaction = (request: SigningRequest): Shown | undefined =
   );
 
 /**
- * `x402/exact/cardano/lock`, a script lock (`accepted.extra.assetTransferMethod` `"script"`): the address method's
- * members, its payee `payTo`, the contract the seller defines, as the protocol package's reference names it. A Masumi
- * lock, whose `payTo` is the escrow every seller of a deployment shares, has no summary here.
+ * `x402/exact/cardano/lock`, as the protocol package's reference names the payee: on a script lock
+ * (`accepted.extra.assetTransferMethod` `"script"`) the address method's members, its payee `payTo`, the contract the
+ * seller defines; on a Masumi lock (`"masumi"`) the same members but the payee, the seller `accepted.extra.terms`
+ * names in `sellerAddress`, with the amount, and the grant `{escrow}`, `payTo`, the escrow every seller of a deployment
+ * shares, which holds the deposit.
  */
 export function cardanoLock(request: SigningRequest): Shown | undefined {
   const accepted = (request as { accepted?: unknown }).accepted;
   const extra = isObject(accepted) ? accepted["extra"] : undefined;
-  return isObject(extra) && extra["assetTransferMethod"] === "script" ? cardanoTransaction(request) : undefined;
+  if (!isObject(extra)) return undefined;
+  if (extra["assetTransferMethod"] === "script") return cardanoTransaction(request);
+  if (extra["assetTransferMethod"] !== "masumi") return undefined;
+  const terms = extra["terms"];
+  const seller = isObject(terms) ? terms["sellerAddress"] : undefined;
+  const shown = cardanoTransaction(request);
+  if (shown === undefined || !text(seller)) return undefined;
+  const escrow = shown.payees[0]!.account;
+  return { ...shown, payees: [{ account: seller, amount: shown.payees[0]!.amount }], grant: { escrow } };
 }
 
 /**

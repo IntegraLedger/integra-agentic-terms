@@ -1,17 +1,23 @@
 """x402/exact/cardano/lock's buyer half over the protocol package's x402-exact-cardano.json, the file of both Cardano
 pairings. The lock's document is the file's B2 document for the lock, the script method's option fixed.OLock advertising
 H; the wallet answers with V2's transaction, whose body commits to V1's auxiliary data, and fixed.nonce, the input it
-spends. Every expected value, and every input, is the file's."""
+spends. Every expected value, and every input, is the file's. A Masumi lock's option is cardano-masumi.json's
+(agentic-terms/test/cardano-masumi.json, which the TypeScript tests run too), issued by the stock @x402/cardano issuer,
+as its about states."""
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from integraledger_terms import X402_EXACT_CARDANO_LOCK, Refusal, _gate
+from integraledger_terms import X402_EXACT_CARDANO_LOCK, Confirmed, Refusal, _gate
+from integraledger_terms._summary import summary_of
+from integraledger_terms._types import Payee, Summary, Validity
 from integraledger_terms.bindings.x402_exact_cardano import address_bytes
 
 from breadth import H, Pairing, build_and_sign
-from support import load
+from support import STAND_IN, load, piece_confirm
 
 ADA = load("x402-exact-cardano.json")
 F: dict[str, Any] = ADA["fixed"]
@@ -57,3 +63,23 @@ def test_v8_a_bech32_address_decodes_to_the_files_bytes() -> None:
     reference decoder, as the file's about states."""
     got = address_bytes(ADA["V8"]["payTo"])
     assert got is not None and got.hex() == ADA["V8"]["addressHex"]
+
+
+def test_a_masumi_lock_shows_the_seller_its_terms_name_as_payee_beside_the_escrow() -> None:
+    """cardano-masumi.json's option, the stock issuer's, offered in the B2 document: the request the lock's piece builds
+    shows the seller extra.terms.sellerAddress names as the payee, with the amount, and payTo, the escrow, as the
+    grant."""
+    masumi = json.loads((Path(__file__).resolve().parents[2] / "agentic-terms" / "test" / "cardano-masumi.json").read_text("utf-8"))
+    given = B2["input"]
+    confirmed = piece_confirm({**given["doc"], "accepts": [masumi["option"]]}, X402_EXACT_CARDANO_LOCK, given["account"])
+    assert isinstance(confirmed, Confirmed) and confirmed.request is not None, confirmed
+    e = masumi["expect"]
+    assert summary_of(LOCK, confirmed.request, STAND_IN) == Summary(
+        amount=e["amount"],
+        payees=tuple(Payee(account=p["account"], amount=p["amount"]) for p in e["payees"]),
+        asset=e["asset"],
+        network=e["network"],
+        validity=Validity(not_before=e["validity"]["notBefore"], not_after=e["validity"]["notAfter"], unit=e["validity"]["unit"]),
+        grant=e["grant"],
+        atr=STAND_IN,
+    )

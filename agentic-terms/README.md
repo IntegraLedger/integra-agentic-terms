@@ -267,7 +267,7 @@ seller's option, so a request that grants more than the offer is shown granting 
 | `period`, `limitPerPeriod`, `end` | A recurring grant: a subscription's key authorization or a Spend Permission. |
 | `operator`, `authorizationExpiry`, `refundExpiry` | An authorization and capture. |
 | `deposit`, `closableBy` | A session's or a channel's deposit, and who may close it. |
-| `grant` | What a delegation, a checkout, a session's opening (its escrow and the key that signs its vouchers) or a Circle Gateway burn intent (the network the payee is paid on, and the most Gateway may take as its fee) grants, as JSON. |
+| `grant` | What a delegation, a checkout, a session's opening (its escrow and the key that signs its vouchers), a Masumi lock (the escrow that holds the deposit) or a Circle Gateway burn intent (the network the payee is paid on, and the most Gateway may take as its fee) grants, as JSON. |
 | `atr` | The ATR's bytes the gate hashed, parsed and compared. |
 
 A request of a kind the gate has no summary for is declined `summary-missing`: nothing is signed unshown. The profile's
@@ -624,7 +624,7 @@ calling again without `approved`, as [Pay the agreement first](#pay-the-agreemen
 | `atr-malformed` | The ATR's bytes are not one JSON text the gate reads alike in both languages: not UTF-8, a byte-order mark, a repeated member name, a number past a double or an integer past 2^53 − 1, or nesting past 64 levels. | Do not pay. |
 | `option-not-in-atr` | The ATR's binding slot lists the options offered (`accepts` in `x402`, `challenges` in `mpp`, `options` in `acp`, `ap2`, `card` and `ucp`, `paymentOptions` in `ack`), and none is the option chosen. | Do not pay. |
 | `request-mismatch` | The ATR's `x402` slot holds a request commitment that is not your request's. | Check that `resourceRequest` is the request as sent, its `target` origin-form; otherwise do not pay. |
-| `summary-missing` | The request for the signer is of a kind the gate cannot summarize, so it is not signed unshown: today every `x402/batch-settlement/solana` opening and every Masumi lock of `x402/exact/cardano/lock`. | None: this release cannot show that request, and signs nothing unshown. |
+| `summary-missing` | The request for the signer is of a kind the gate cannot summarize, or one its summary cannot read as the profile's row for it states, so it is not signed unshown. | None: this release cannot show that request, and signs nothing unshown. |
 | `past-ceiling` | The signed payment would stay payable longer than its pairing's ceiling. | Raise that pairing's ceiling in `ceilings` only if you accept the longer window. |
 | `no-end` | The form signs no end, and `ceilings` does not map its pairing to `"no-end"`. | Map the pairing to `"no-end"` in `ceilings` only if you accept a payment with no end. |
 | `floor-missing` | The rail has a served floor and `inputs` lacks its input; `detail` is the input's name. | Read the floor the rail's service serves and give it in `inputs` under the name in `detail`. |

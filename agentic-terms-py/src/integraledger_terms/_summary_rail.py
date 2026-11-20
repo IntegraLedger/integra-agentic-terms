@@ -4,6 +4,7 @@ hex, and answering None for a request it cannot read, so the gate declines it su
 
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from ._types import Payee, Summary, Validity
@@ -315,14 +316,26 @@ def cardano_transaction(request: Mapping[str, Any], network: str | None = None, 
 
 
 def cardano_lock(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
-    """x402/exact/cardano/lock, a script lock (accepted.extra.assetTransferMethod "script"): the address method's
-    members, its payee payTo, the contract the seller defines, as the protocol package's reference names it. A Masumi
-    lock, whose payTo is the escrow every seller of a deployment shares, has no summary here."""
+    """x402/exact/cardano/lock, as the protocol package's reference names the payee: on a script lock
+    (accepted.extra.assetTransferMethod "script") the address method's members, its payee payTo, the contract the
+    seller defines; on a Masumi lock ("masumi") the same members but the payee, the seller accepted.extra.terms names
+    in sellerAddress, with the amount, and the grant {escrow}, payTo, the escrow every seller of a deployment shares,
+    which holds the deposit."""
     a = request.get("accepted")
     extra = a.get("extra") if isinstance(a, Mapping) else None
-    if not isinstance(extra, Mapping) or extra.get("assetTransferMethod") != "script":
+    if not isinstance(extra, Mapping):
         return None
-    return cardano_transaction(request, network, opened)
+    if extra.get("assetTransferMethod") == "script":
+        return cardano_transaction(request, network, opened)
+    if extra.get("assetTransferMethod") != "masumi":
+        return None
+    terms = extra.get("terms")
+    seller = terms.get("sellerAddress") if isinstance(terms, Mapping) else None
+    shown = cardano_transaction(request, network, opened)
+    if shown is None or not isinstance(seller, str) or not _text(seller):
+        return None
+    escrow, amount = shown.payees[0].account, shown.payees[0].amount
+    return replace(shown, payees=(Payee(account=seller, amount=amount),), grant={"escrow": escrow})
 
 
 def sui_transaction(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:

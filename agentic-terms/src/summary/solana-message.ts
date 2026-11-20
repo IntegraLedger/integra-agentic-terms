@@ -1,8 +1,9 @@
 /**
- * The summary of a Solana message handed to the signer, `solana-message` and `solana-session-open`: the message is read
- * with the protocol package's own transaction decoder, and every instruction in it must be one the summary can state,
- * or there is no summary. A message names no cluster, so its network is the signer's account's; its blockhash bounds
- * it for the rail's life, so its validity names no height.
+ * The summary of a Solana message handed to the signer, `solana-message` and `solana-session-open`, and of the `batch`
+ * of x402's `batch-settlement` opening on Solana: the message is read with the protocol package's own transaction
+ * decoder, and every instruction in it must be one the summary can state, or there is no summary. A message names no
+ * cluster, so its network is the signer's account's; its blockhash bounds it for the rail's life, so its validity
+ * names no height.
  */
 import {
   COMPUTE_BUDGET,
@@ -55,6 +56,10 @@ interface Transfer {
 interface Open {
   readonly payee: string;
   readonly mint: string;
+  /** The key the channel's vouchers are signed with, the `open`'s fifth account. */
+  readonly signer: string;
+  /** The channel's account, the `open`'s sixth. */
+  readonly channel: string;
   readonly deposit: bigint;
   readonly recipients: readonly { recipient: string; bps: number }[];
 }
@@ -93,7 +98,7 @@ function read(message: Uint8Array): { transfers: Transfer[]; opens: Open[] } | u
         recipient: base58(d.subarray(33 + 34 * i, 65 + 34 * i)),
         bps: Number(uintLe(d, 65 + 34 * i, 2)),
       }));
-      opens.push({ payee: at(2), mint: at(3), deposit: uintLe(d, 9, 8), recipients });
+      opens.push({ payee: at(2), mint: at(3), signer: at(4), channel: at(5), deposit: uintLe(d, 9, 8), recipients });
     } else {
       return undefined;
     }
@@ -101,11 +106,20 @@ function read(message: Uint8Array): { transfers: Transfer[]; opens: Open[] } | u
   return { transfers, opens };
 }
 
-/** Each payee's part of `total`: the distribution's shares where it names any, which must sum to 10,000 bps. */
+/**
+ * Each payee's part of `total`: each recipient of the distribution its bps of `total`, rounded down, and the channel's
+ * payee the rest where the distribution's bps sum to less than 10,000, as the payment-channels program pays the
+ * remainder to the payee; the payee alone, with the whole, where the distribution names no recipient. A recipient of
+ * 0 bps, or bps that sum past 10,000, which the program's `open` refuses, gives none.
+ */
 function shares(open: Open, total: bigint): Payee[] | undefined {
   if (open.recipients.length === 0) return [{ account: open.payee, amount: total.toString() }];
-  if (open.recipients.reduce((s, r) => s + r.bps, 0) !== 10_000) return undefined;
-  return open.recipients.map((r) => ({ account: r.recipient, amount: ((total * BigInt(r.bps)) / 10_000n).toString() }));
+  const bps = open.recipients.reduce((s, r) => s + r.bps, 0);
+  if (open.recipients.some((r) => r.bps === 0) || bps > 10_000) return undefined;
+  const payees = open.recipients.map((r) => ({ account: r.recipient, amount: (total * BigInt(r.bps)) / 10_000n }));
+  const rest = total - payees.reduce((s, p) => s + p.amount, 0n);
+  const all = bps < 10_000 ? [...payees, { account: open.payee, amount: rest }] : payees;
+  return all.map((p) => ({ account: p.account, amount: p.amount.toString() }));
 }
 
 /**
@@ -164,4 +178,28 @@ export function solanaSessionOpen(request: SigningRequest, network?: string): Sh
   const payees = open === undefined ? undefined : shares(open, open.deposit);
   if (open === undefined || payees === undefined) return undefined;
   return { payees, deposit: open.deposit.toString(), asset: open.mint, network: net, validity: VALIDITY };
+}
+
+/**
+ * `x402/batch-settlement/solana`'s opening, a `batch` of the `open` message, then the first voucher, for the `open`'s
+ * authorized signer, over the channel the `open` opens and with no expiry, as x402's scheme writes every voucher
+ * (`scheme_batch_settlement_svm.md`: `expiresAt` "MUST be `0`"): the amount and each payee's part are the voucher's
+ * amount, split by the `open`'s distribution; the deposit the `open`'s; the asset its mint. A voucher of another
+ * channel or signer, or with an expiry, gives none. A voucher signs 50 bytes: `56 01`, the channel id, the amount as a
+ * u64 and the expiry as an i64, little-endian.
+ */
+export function solanaBatchOpening(request: SigningRequest, network?: string): Shown | undefined {
+  const r = request as { kind?: unknown; requests?: unknown };
+  const net = networkIn("solana", network);
+  if (r.kind !== "batch" || !Array.isArray(r.requests) || r.requests.length !== 2 || net === undefined) return undefined;
+  const [tx, voucher] = r.requests as { kind?: unknown; message?: unknown; signer?: unknown }[];
+  if (tx?.kind !== "solana-message" || voucher?.kind !== "ed25519-raw") return undefined;
+  const open = openOf(tx.message);
+  const v = voucher.message;
+  if (open === undefined || !(v instanceof Uint8Array) || v.length !== 50 || v[0] !== 0x56 || v[1] !== 0x01) return undefined;
+  if (base58(v.subarray(2, 34)) !== open.channel || voucher.signer !== open.signer || uintLe(v, 42, 8) !== 0n) return undefined;
+  const amount = uintLe(v, 34, 8);
+  const payees = shares(open, amount);
+  if (payees === undefined) return undefined;
+  return { amount: amount.toString(), payees, deposit: open.deposit.toString(), asset: open.mint, network: net, validity: VALIDITY };
 }
