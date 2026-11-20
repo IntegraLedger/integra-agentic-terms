@@ -19,7 +19,7 @@ This page documents `@integraledger/terms` 0.5.2:
 npm install @integraledger/terms@0.5.2 @integraledger/lcp@0.6.2
 ```
 
-- `@integraledger/lcp` is a peer dependency, `~0.6.2`: 0.6.2 or a later 0.6.x release. Import the bindings you pass in from that one
+- `@integraledger/lcp` is a peer dependency, `~0.6.3`: 0.6.3 or a later 0.6.x release. Import the bindings you pass in from that one
   installed copy, the one the gate itself imports.
 - Node.js `>=24.22.1`.
 - At 0.x a minor release may change a public call, so pin the exact version. [Upgrading](../upgrading.md) lists each

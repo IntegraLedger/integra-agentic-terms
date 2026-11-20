@@ -8,6 +8,12 @@ call before and after.
 
 ## [Unreleased]
 
+### Changed
+
+- The peer dependency on `@integraledger/lcp` is `~0.6.3` (was `~0.6.2`): the gate shows the `approve` call 0.6.3's
+  v1 Tempo session build hands the wallet before the `open`, and reads `mpp/subscription/solana` in the form 0.6.3
+  reads it.
+
 ### Fixed
 
 - The gate shows and signs an `x402/batch-settlement/solana` opening: the profile `buyer-gate.md`, rule 13, fills its

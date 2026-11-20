@@ -95,7 +95,7 @@ To call `createBuyerServer` in your own code, as the [Quickstart](#quickstart) a
 npm install @integraledger/terms-mcp@0.5.2 @integraledger/terms@0.5.2 @integraledger/lcp@0.6.2 @modelcontextprotocol/server@2.3.1
 ```
 
-`@integraledger/lcp` is a peer dependency (`~0.6.2`). `createBuyerServer` returns an `McpServer` of
+`@integraledger/lcp` is a peer dependency (`~0.6.3`). `createBuyerServer` returns an `McpServer` of
 `@modelcontextprotocol/server` 2.3.1, the version this package depends on: serve it with that version's `serveStdio`.
 
 ## Quickstart
@@ -556,13 +556,13 @@ expect the gate's own results.
 
 - Node.js `>=24.22.1`.
 - An MCP client that speaks stdio.
-- To call `createBuyerServer` in your own code: `@integraledger/lcp` `~0.6.2` beside it, a peer dependency.
+- To call `createBuyerServer` in your own code: `@integraledger/lcp` `~0.6.3` beside it, a peer dependency.
 
 ## Versions and upgrading
 
 This package is at 0.x: a minor release may change the tools, their arguments and their results. Pin the exact version,
 as the configuration above does. 0.5.x takes `@integraledger/terms` of the same version and the peer
-`@integraledger/lcp` `~0.6.2` (0.5.0 and 0.5.1: `~0.6.0`), and needs Node.js `>=24.22.1`.
+`@integraledger/lcp` `~0.6.3` (0.5.0 and 0.5.1: `~0.6.0`; 0.5.2: `~0.6.2`), and needs Node.js `>=24.22.1`.
 
 From 0.4.x, an agent or a host changes this:
 

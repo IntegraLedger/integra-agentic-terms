@@ -8,6 +8,10 @@ and after.
 
 ## [Unreleased]
 
+### Changed
+
+- The package builds and reads the forms of `@integraledger/lcp` 0.6.3 (was 0.6.2), whose vectors its tests run.
+
 ### Fixed
 
 - The gate shows and signs an `x402/batch-settlement/solana` opening: the profile `buyer-gate.md`, rule 13, fills its

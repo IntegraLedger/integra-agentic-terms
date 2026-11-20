@@ -6,6 +6,15 @@ release may change the tools, their arguments and their results, so pin the exac
 is marked **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md)
 shows each call before and after.
 
+## [Unreleased]
+
+### Changed
+
+- The peer `@integraledger/lcp` is `~0.6.3` (was `~0.6.2`), and the tools take `@integraledger/terms` of the same
+  version, whose gate shows and signs an `x402/batch-settlement/solana` opening, a Solana channel's `open` whose
+  splits leave the payee a remainder, a Masumi lock with every party that can move its funds, and a v1 Tempo session's
+  `approve`, each where it was declined `summary-missing` or shown without that call (its CHANGELOG states each).
+
 ## [0.5.2] - 2026-11-20
 
 ### Added
