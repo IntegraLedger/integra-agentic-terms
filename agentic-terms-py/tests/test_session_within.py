@@ -55,8 +55,8 @@ def b6(v: dict[str, Any]) -> dict[str, Any]:
     return presented
 
 
-def build(binding: Any, opening: dict[str, Any], amount: int) -> BatchUnsigned:
-    w = {"challenge": opening["challenge"], "opening": opening, "cumulativeAmount": amount, "action": "voucher"}
+def build(binding: Any, opening: dict[str, Any], amount: int, action: str = "voucher") -> BatchUnsigned:
+    w = {"challenge": opening["challenge"], "opening": opening, "cumulativeAmount": amount, "action": action}
     unsigned = binding.build_within(w, H)
     assert isinstance(unsigned, BatchUnsigned), unsigned
     return unsigned
@@ -107,14 +107,26 @@ def agreed(prefix: str) -> str:
 
 
 def test_xrpl_build_within_at_100_is_xs3s_claim_on_xs2s_channel() -> None:
+    # The credential names the channel's payer, XS2's account, the opening's Account, by source, as the opening's
+    # credential does, on the within challenge's network, testnet (xrpl:1), as @integraledger/lcp 0.6.3's buildWithin
+    # writes it; the stock xrpl-mpp-sdk 0.1.0-beta.4 channel server refuses a voucher or a close without it ("credential
+    # source is required").
     unsigned = build(MPP_SESSION_XRPL, XRPL_OPENING, int(HS["XS3"]["drops"]))
     channel = HS["XS2"]["expectChannel"]
+    source = f"did:pkh:xrpl:1:{HS['XS2']['account']}"
     assert unsigned.requests == [
         {"kind": "xrpl-claim", "channelId": channel, "drops": int(HS["XS3"]["drops"]), "bytes": bytes.fromhex(HS["XS3"]["expect"])}
     ]
     assert unsigned.complete(["C0" * 64]) == {
         "challenge": XRPL_OPENING["challenge"],
+        "source": source,
         "payload": {"action": "voucher", "channelId": channel, "amount": HS["XS3"]["drops"], "signature": "C0" * 64},
+    }
+    closed = build(MPP_SESSION_XRPL, XRPL_OPENING, 200, "close")
+    assert closed.complete(["C0" * 64]) == {
+        "challenge": XRPL_OPENING["challenge"],
+        "source": source,
+        "payload": {"action": "close", "channelId": channel, "amount": "200", "signature": "C0" * 64},
     }
     assert unsigned.complete(["0x" + "C0" * 64]) == Refusal("mpp/credential-malformed")
 

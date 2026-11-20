@@ -286,8 +286,10 @@ class MppSessionXrpl:
     def build_within(self, w: Mapping[str, Any], h: AtrHash) -> BatchUnsigned | Refusal:
         """A claim, or a close's final claim, on the channel the held opening created: one xrpl-claim request over the
         claim bytes (CLM\\0, the channel id, the drops), for the channel's key, with the channel id derived from the
-        opening's signed blob. draft-xrpl-session-00 defines open, voucher and close: any other action, a topUp among
-        them, is mpp/session-action."""
+        opening's signed blob. The credential names the channel's payer, the opening's Account, by source,
+        did:pkh:xrpl:{network}:{address}, on the network the within challenge names, in the form build writes the
+        opening's. draft-xrpl-session-00 defines open, voucher and close: any other action, a topUp among them, is
+        mpp/session-action."""
         held = within_checks(w, h, "session/xrpl", lambda c: within_details(c, "xrpl"), _opening, U64_LIMIT, ())
         if isinstance(held, Refusal):
             return held
@@ -300,12 +302,13 @@ class MppSessionXrpl:
             return claim
         challenge = held.challenge
         action = w["action"]
+        source = f"did:pkh:xrpl:{held.within.network[len('xrpl:'):]}:{held.opening.tx['Account']}"
 
         def complete(signatures: Any) -> dict[str, Any] | Refusal:
             signature = signatures[0] if isinstance(signatures, (list, tuple)) and len(signatures) == 1 else None
             if not is_blob_hex(signature):
                 return Refusal("mpp/credential-malformed")
             payload = {"action": action, "channelId": channel, "amount": str(drops), "signature": signature}
-            return measured({"challenge": challenge, "payload": payload})
+            return measured({"challenge": challenge, "source": source, "payload": payload})
 
         return BatchUnsigned(requests=[{"kind": "xrpl-claim", "channelId": channel, "drops": drops, "bytes": claim}], complete=complete)

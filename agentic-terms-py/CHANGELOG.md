@@ -41,6 +41,10 @@ and after.
   names the plan as `planAddress` and the program as `subscriptionProgram`, both required, and `splits`, where present,
   is an array of objects each with a finite number `bps` and a key `recipient`. A request with `planId` and no
   `planAddress`, or without `subscriptionProgram`, is `mpp/request-malformed`.
+- `mpp/session/xrpl`'s `build_within` names the channel's payer, the opening's `Account`, by `source`,
+  `did:pkh:xrpl:{network}:{address}`, on the voucher and the close, on the network the within challenge names, as the
+  opening's credential does and as the protocol package's `buildWithin` writes it. The stock `xrpl-mpp-sdk`
+  0.1.0-beta.4 channel server refuses a voucher or a close without it ("credential source is required").
 
 ## [0.5.2] - 2026-11-20
 
