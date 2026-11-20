@@ -22,6 +22,9 @@ call before and after.
 - The gate shows and signs a Masumi lock of `x402/exact/cardano/lock`: its payee is the seller the option's
   `extra.terms.sellerAddress` names, as lcp's reference names it, with the amount, and its `grant` is `{escrow}`,
   `payTo`, the escrow that holds the deposit. Such a lock was declined `summary-missing`.
+- The profile `buyer-gate.md`, rule 8, states how a subscription's expiry is held: on `mpp/subscription/tempo` the
+  window is the key authorization's `expiry`, the challenge's `subscriptionExpires`, less the gate's clock, and a
+  subscription longer than 600 seconds is paid once `ceilings` raises the pairing's ceiling to that window.
 
 ## [0.5.2] - 2026-11-20
 

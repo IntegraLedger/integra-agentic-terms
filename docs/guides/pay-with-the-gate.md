@@ -157,6 +157,10 @@ source); and, where the payer signs no deadline and the rail itself bounds the p
   holds. An id the call does not pay is not read.
 - A form that signs no end (a delegation, a card checkout, a transaction with no validity) is past every ceiling and is
   declined `no-end`, unless `ceilings` maps its pairing to `"no-end"`.
+- A subscription stays payable until its expiry. On `mpp/subscription/tempo` the root key signs a key authorization
+  whose `expiry` is the challenge's `subscriptionExpires`, and the gate holds the time from its clock to that expiry to
+  the ceiling, so a subscription is paid only once you raise its pairing's ceiling to at least that time:
+  `{ "mpp/subscription/tempo": 2592000 }` for an expiry 30 days away.
 - On the XRP Ledger the request signs its deadline, `LastLedgerSequence`, and no start: give `ledgerIndex` in
   `inputs`, the index of the validated ledger you read. On Cardano and Sui give `currentSlot` and `currentEpoch`. A
   signing without it is declined `no-payable-option` with `xrpl/input-missing`, `cardano/input-missing` (or
