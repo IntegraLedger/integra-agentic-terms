@@ -2,6 +2,7 @@
 offers, and the value checks they share: decimal strings, positive integers, RFC 3339 times, strict base64url JSON,
 Solana keys, XRPL and Stellar forms, and each method's network names."""
 
+import math
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -579,14 +580,14 @@ def _is_byte(value: object) -> bool:
     return (isinstance(value, int) or (isinstance(value, float) and value.is_integer())) and 0 <= value <= 255
 
 
-# The most hours a Solana subscription's period maps to, as @solana/mpp 0.7.0 maps it (src/shared/subscription.ts).
+# The most hours a Solana subscription's period maps to, as @solana/pay-kit 0.13.1 maps it (dist/chunk-SSATEZ72.js).
 _MAX_PERIOD_HOURS = 8760
 _U64_TEXT = re.compile(r"[0-9]{1,20}")
 _SUBSCRIPTION_COUNT = re.compile(r"[1-9][0-9]{0,2}")
 
 
 def _period_hours(r: Obj) -> int | None:
-    """A Solana subscription's period in hours, as @solana/mpp 0.7.0 maps it (src/shared/subscription.ts:14-31):
+    """A Solana subscription's period in hours, as @solana/pay-kit 0.13.1 maps it (dist/chunk-SSATEZ72.js:2166-2184):
     periodCount a positive integer, at most 365 days or 52 weeks; None otherwise."""
     count = r.get("periodCount")
     if not isinstance(count, str) or _SUBSCRIPTION_COUNT.fullmatch(count) is None:
@@ -600,13 +601,23 @@ def _period_hours(r: Obj) -> int | None:
     return None
 
 
+def _is_split(x: object) -> bool:
+    """A split as @solana/pay-kit 0.13.1's request holds it: an object with a finite number bps and a key recipient."""
+    if not isinstance(x, Mapping):
+        return False
+    bps = x.get("bps")
+    return isinstance(bps, (int, float)) and not isinstance(bps, bool) and math.isfinite(bps) and is_key(x.get("recipient"))
+
+
 def solana_subscription_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
-    """subscription on solana: amount a positive u64; currency and recipient keys; periodUnit day or week and
-    periodCount a decimal integer that maps to 1 to 8,760 hours as the stock client maps it; externalId absent or a
-    string of at most 566 bytes; subscriptionExpires, when present, an RFC 3339 date-time; and in methodDetails:
-    decimals an integer from 0 to 255, mint, planId and puller keys, tokenProgram Token or Token-2022, programId and
-    recentBlockhash keys where present, network one of MPP Solana's names (absent: mainnet), and feePayer a boolean,
-    true only with a feePayerKey key. Else mpp/request-malformed."""
+    """subscription on solana, as @solana/pay-kit 0.13.1's request holds it (dist/chunk-SSATEZ72.js:2017-2063): amount
+    a positive u64; currency and recipient keys; periodUnit day or week and periodCount a decimal integer that maps to
+    1 to 8,760 hours as the stock client maps it; externalId absent or a string of at most 566 bytes;
+    subscriptionExpires, when present, an RFC 3339 date-time; and in methodDetails: decimals an integer from 0 to 255,
+    mint, planAddress, puller and subscriptionProgram keys, tokenProgram Token or Token-2022, recentBlockhash a key
+    where present, splits where present an array of objects each with a finite number bps and a key recipient, network
+    one of MPP Solana's names (absent: mainnet), and feePayer a boolean, true only with a feePayerKey key. Else
+    mpp/request-malformed."""
     network = solana_network_of(d, False)
     if isinstance(network, Refusal):
         return network
@@ -623,11 +634,16 @@ def solana_subscription_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     decimals = d.get("decimals")
     if not is_number(decimals) or not _is_byte(decimals):
         return Refusal("mpp/request-malformed")
-    if not is_key(d.get("mint")) or not is_key(d.get("planId")) or not is_key(d.get("puller")):
+    if not is_key(d.get("mint")) or not is_key(d.get("planAddress")) or not is_key(d.get("puller")):
+        return Refusal("mpp/request-malformed")
+    if not is_key(d.get("subscriptionProgram")):
         return Refusal("mpp/request-malformed")
     if d.get("tokenProgram") not in (TOKEN, TOKEN_2022) or not isinstance(d.get("tokenProgram"), str):
         return Refusal("mpp/request-malformed")
-    if (_has(d, "programId") and not is_key(d["programId"])) or (_has(d, "recentBlockhash") and not is_key(d["recentBlockhash"])):
+    if _has(d, "recentBlockhash") and not is_key(d["recentBlockhash"]):
+        return Refusal("mpp/request-malformed")
+    splits = d.get("splits")
+    if _has(d, "splits") and (not isinstance(splits, list) or not all(_is_split(x) for x in splits)):
         return Refusal("mpp/request-malformed")
     if _has(d, "feePayer") and not isinstance(d["feePayer"], bool):
         return Refusal("mpp/request-malformed")

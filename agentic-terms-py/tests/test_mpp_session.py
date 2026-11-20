@@ -301,6 +301,18 @@ def tempo_built(request_text: str, payer: str = TF["payer"]) -> Any:
     return unsigned
 
 
+def test_mpp_session_tempo_the_v1_funding_approves_the_escrow_before_the_open() -> None:
+    """build's v1 funding for fixed.requestV1 and fixed.deposit: its first call is the currency's approve of TS5's
+    calldata, approve(fixed.escrowV1, deposit), which the escrow's transferFrom of the deposit needs (TS5.chain: the open
+    alone reverts openAlone, InsufficientAllowance(); after the approve it opens TS5's channel); then the open. A v2
+    funding holds no approve."""
+    v1, v2 = tempo_built(TF["requestV1"]).funding, tempo_built(TF["requestV2"]).funding
+    currency = json.loads(TF["requestV1"])["currency"]
+    assert v1["approve"] == {"to": currency, "data": TEMPO["TS5"]["expectApproveCalldata"]}
+    assert list(v1) == ["kind", "chainId", "approve", "call", "validBefore", "broadcast"]
+    assert "approve" not in v2
+
+
 def carrying(opening: dict[str, Any], wire: str) -> dict[str, Any]:
     """The opening, carrying wire in place of its transaction."""
     return {**opening, "payload": {**opening["payload"], "transaction": wire}}

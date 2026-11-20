@@ -3,7 +3,10 @@ signs in a Tempo transaction on chain chainId, payable until validBefore. The su
 payment channel's open to the escrow call.to and nothing else, the call the protocol package's Tempo session build
 writes: the TIP-20 channel reserve's open(address payee, address operator, address token, uint96 deposit, bytes32 salt,
 address authorizedSigner) or the earlier escrow's open(address payee, address token, uint128 deposit, bytes32 salt,
-address authorizedSigner). Any other call has no summary."""
+address authorizedSigner). Any other call has no summary. Before the earlier escrow's open the request may hold approve,
+{to, data}, the currency's approve(address spender, uint256 amount), the wallet's first call, which the escrow's
+transferFrom of the deposit needs; it is read only where its token is the open's, its spender the escrow and its amount
+at most the deposit."""
 
 import re
 from collections.abc import Mapping
@@ -24,6 +27,8 @@ _OPEN_V1 = re.compile(f"0x(?:c79ea485){_ADDRESS_WORD}{_ADDRESS_WORD}{_WORD}{_WOR
 _DECIMAL = re.compile(r"[0-9]{1,78}")
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 _ZERO = "0x" + "0" * 40
+# A token's approve(address spender, uint256 amount): selector 0x095ea7b3, then spender and amount.
+_APPROVE = re.compile(f"0x(?:095ea7b3){_ADDRESS_WORD}{_WORD}", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,13 +85,32 @@ def open_of(data: str) -> Open | None:
     )
 
 
+def _allowance_of(approve: object, found: Open, escrow: str) -> dict[str, str] | None:
+    """The allowance a v1 opening's approve grants, {token, spender, amount}, each address in lower-case hex: None
+    where approve is not {to, data} of that call, or its token is not the open's, its spender not the escrow, or its
+    amount more than the deposit. An allowance past the deposit, or to another spender, lets an account other than the
+    channel draw the payer's tokens."""
+    if not isinstance(approve, Mapping) or sorted(approve) != ["data", "to"]:
+        return None
+    token, data = approve.get("to"), approve.get("data")
+    a = _APPROVE.fullmatch(data) if isinstance(data, str) else None
+    if not isinstance(token, str) or _ADDRESS.fullmatch(token) is None or a is None:
+        return None
+    spender, amount = "0x" + a.group(1).lower(), int(a.group(2), 16)
+    if token.lower() != found.token or spender != escrow.lower() or amount > found.deposit:
+        return None
+    return {"token": found.token, "spender": spender, "amount": str(amount)}
+
+
 def tempo_open(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
     """mpp/session/tempo's opening: the deposit moves from the payer to the escrow call.to, and the channel's payee may
     draw on it with vouchers, which are signed apart, so the summary names no amount. The one payee is the open's payee,
     with the deposit; the asset its token; the network eip155: and chainId; the validity none to validBefore, in
     seconds. deposit is the deposit, operator the TIP-20 channel reserve's operator where it is not the zero address,
     and grant {escrow, authorizedSigner}: the contract that holds the deposit and the key the open names to sign the
-    channel's vouchers. Who may close the channel is the escrow's rule, which the call does not state."""
+    channel's vouchers, with approve, the allowance a v1 opening's approve grants, where the request holds one; a
+    request holding one beside the TIP-20 channel reserve's open, which takes no allowance, has no summary. Who may
+    close the channel is the escrow's rule, which the call does not state."""
     call = request.get("call")
     # A call of any other member moves what this summary does not read.
     if request.get("kind") != "tempo-call" or not isinstance(call, Mapping) or sorted(call) != ["data", "to"]:
@@ -98,6 +122,14 @@ def tempo_open(request: Mapping[str, Any], network: str | None = None, opened: "
     found = open_of(data)
     if chain is None or before is None or before == "0" or found is None:
         return None
+    allowance = None
+    if "approve" in request:
+        allowance = _allowance_of(request["approve"], found, escrow) if found.version == "v1" else None
+        if allowance is None:
+            return None
+    grant: dict[str, Any] = {"escrow": escrow, "authorizedSigner": found.authorized_signer}
+    if allowance is not None:
+        grant["approve"] = allowance
     deposit = str(found.deposit)
     return Summary(
         payees=(Payee(account=found.payee, amount=deposit),),
@@ -106,6 +138,6 @@ def tempo_open(request: Mapping[str, Any], network: str | None = None, opened: "
         validity=Validity(not_before=None, not_after=before, unit="seconds"),
         deposit=deposit,
         operator=found.operator,
-        grant={"escrow": escrow, "authorizedSigner": found.authorized_signer},
+        grant=grant,
         atr=b"",
     )

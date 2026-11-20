@@ -32,6 +32,15 @@ and after.
 - The summary of a payment channel's `open` on Solana (`x402/upto/solana`, `mpp/session/solana/memo` and the
   `x402/batch-settlement/solana` opening) holds `closableBy`: the `open`'s payee and its payer, as the payment-channels
   program lets each close.
+- The `mpp/session/tempo` build's v1 funding carries `approve`, the currency's `approve(escrow, deposit)`, before the
+  escrow's `open`, as the protocol package's build writes it; the v1 escrow takes the deposit with `transferFrom`, so an
+  `open` sent alone reverts with `InsufficientAllowance()`. The gate shows it as `grant.approve`, `{token, spender,
+  amount}`, and has no summary where that `approve` names another token or spender than the `open`'s, or more than its
+  deposit.
+- `mpp/subscription/solana` reads `@solana/pay-kit` 0.13.1's challenge, as the protocol package does: `methodDetails`
+  names the plan as `planAddress` and the program as `subscriptionProgram`, both required, and `splits`, where present,
+  is an array of objects each with a finite number `bps` and a key `recipient`. A request with `planId` and no
+  `planAddress`, or without `subscriptionProgram`, is `mpp/request-malformed`.
 
 ## [0.5.2] - 2026-11-20
 

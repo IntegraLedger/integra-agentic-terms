@@ -202,6 +202,10 @@ def _rail_session_resume(c: Any) -> ChannelRef | None | Refusal:
     return hedera if isinstance(hedera, Refusal) else ChannelRef(hedera, channel)
 
 
+# approve(address,uint256), the TIP-20 allowance call a v1 opening makes before its open.
+APPROVE_SELECTOR = "0x095ea7b3"
+
+
 def _words(selector: str, parts: list[bytes]) -> str:
     return selector + b"".join(parts).hex()
 
@@ -711,7 +715,9 @@ def _tempo_bound(presented: Any) -> AtrHash | Refusal:
 
 
 def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
-    """The open call for the buyer's signer, and the voucher and credential of the signed transaction. That
+    """The open call for the buyer's signer, after, on v1, the currency's approve(escrow, deposit), the wallet's first
+    call, since the v1 escrow takes the deposit with transferFrom, and the voucher and credential of the signed
+    transaction. That
     transaction is read as bound reads it: one that is not hex bytes, or is over 64 KiB, is mpp/credential-malformed;
     one that does not decode, an empty one among them, gives decode_tempo_tx's refusal, tempo/tx-malformed; and one
     signed for a chain other than the challenge's, methodDetails.chainId, one whose signature gives no sender
@@ -814,13 +820,13 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
             return Refusal("mpp/credential-malformed")
         return c
 
-    funding = {
-        "kind": "tempo-call",
-        "chainId": p.chain_id,
-        "call": {"to": p.escrow, "data": data},
-        "validBefore": valid_before,
-        "broadcast": False,
-    }
+    funding: dict[str, Any] = {"kind": "tempo-call", "chainId": p.chain_id}
+    if p.version == "v1":
+        # The v1 escrow takes the deposit with the currency's transferFrom, so the wallet's first call allows it.
+        funding["approve"] = {"to": currency, "data": _words(APPROVE_SELECTOR, [address_word(p.escrow), uint_word(deposit)])}
+    funding["call"] = {"to": p.escrow, "data": data}
+    funding["validBefore"] = valid_before
+    funding["broadcast"] = False
     return SessionUnsigned(funding, voucher, complete)
 
 

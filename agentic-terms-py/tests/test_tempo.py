@@ -104,6 +104,50 @@ def test_the_tempo_call_summary_of_l1_is_its_receipts() -> None:
     )
 
 
+def test_the_tempo_call_summary_of_l2_shows_the_approve_before_the_v1_open() -> None:
+    """L2, a live v1 open on the escrow fixed.escrowV1: the sender signed the token's approve(escrow, deposit), then the
+    escrow's open. The summary's allowance is the receipt's Approval (owner, spender; value), its payee, deposit, token
+    and signer the escrow's ChannelOpened (topics: event, channel id, payer, payee; data: token, authorizedSigner, salt,
+    deposit). An approve to another spender, or for one more than the deposit, has no summary. As tempo.test.ts."""
+    l2 = load("mpp-session-tempo.json")["L2"]
+    tx = decode_tempo_tx(bytes.fromhex(l2["raw"][2:]))
+    assert isinstance(tx, TempoTx) and len(tx.calls) == 2, tx
+    approve, open_ = tx.calls
+    request = {
+        "kind": "tempo-call",
+        "chainId": tx.chain_id,
+        "approve": {"to": approve.to, "data": "0x" + approve.input.hex()},
+        "call": {"to": open_.to, "data": "0x" + open_.input.hex()},
+        "validBefore": tx.valid_before,
+        "broadcast": False,
+    }
+    approval, _, opened = l2["receipt"]["logs"][:3]
+
+    def address(w: str) -> str:
+        return "0x" + w[-40:]
+
+    def word(i: int) -> str:
+        data: str = opened["data"][2:]
+        return data[64 * i : 64 * i + 64]
+
+    deposit = str(int(word(3), 16))
+    allowance = {"token": approval["address"], "spender": address(approval["topics"][2]), "amount": str(int(approval["data"], 16))}
+    assert summary_of("mpp/session/tempo", request, A) == Summary(
+        payees=(Payee(account=address(opened["topics"][3]), amount=deposit),),
+        asset=address(word(0)),
+        network="eip155:42431",
+        validity=Validity(not_before=None, not_after=str(tx.valid_before), unit="seconds"),
+        deposit=deposit,
+        grant={"escrow": opened["address"], "authorizedSigner": address(word(1)), "approve": allowance},
+        atr=A,
+    )
+    data = "0x" + approve.input.hex()
+    other = {**request, "approve": {"to": approve.to, "data": data[:34] + "11" * 20 + data[74:]}}
+    more = {**request, "approve": {"to": approve.to, "data": data[:74] + format(int(deposit) + 1, "064x")}}
+    assert summary_of("mpp/session/tempo", other, A) is None
+    assert summary_of("mpp/session/tempo", more, A) is None
+
+
 # mpp/session/tempo's voucher, shown from the opening the gate hands its summary with the signer's account: L1's live v2
 # open, whose receipt's ChannelOpened names the channel id (topic 1) the protocol package's tempoChannelId gives over the
 # opening's call, L1's recorded sender and the expiring nonce hash of L1's signed bytes; and TS5's v1 opening on the

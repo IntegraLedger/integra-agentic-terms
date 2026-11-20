@@ -32,6 +32,12 @@ call before and after.
 - The summary of a payment channel's `open` on Solana (`x402/upto/solana`, `mpp/session/solana/memo` and the
   `x402/batch-settlement/solana` opening) holds `closableBy`: the `open`'s payee and its payer, as the payment-channels
   program lets each close.
+- `mpp/session/tempo`'s v1 opening shows the currency's `approve(escrow, deposit)` that precedes the escrow's `open`
+  in the `tempo-call` request, as `grant.approve`, `{token, spender, amount}`, and has no summary where that `approve`
+  names another token or spender than the `open`'s, or more than its deposit. A v1 escrow takes the deposit with
+  `transferFrom`, so an `open` sent alone reverts with `InsufficientAllowance()`.
+- `mpp/subscription/solana` follows the protocol package's reading of `@solana/pay-kit` 0.13.1's challenge: the guide
+  names `planAddress` and `subscriptionProgram`.
 
 ## [0.5.2] - 2026-11-20
 

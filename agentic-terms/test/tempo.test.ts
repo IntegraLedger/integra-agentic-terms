@@ -91,6 +91,46 @@ describe("mpp/session/tempo's opening: the tempo-call summary", () => {
   const word = (data: string, i: number): string => data.slice(2 + 64 * i, 66 + 64 * i);
   const addressOf = (w: string): string => `0x${w.slice(-40)}`;
 
+  // L2, a live v1 open on the escrow fixed.escrowV1: the sender signed the token's approve(escrow, deposit), then the
+  // escrow's open. The summary's allowance is the receipt's Approval (owner, spender; value), its payee, deposit, token
+  // and signer the escrow's ChannelOpened (topics: event, channel id, payer, payee; data: token, authorizedSigner, salt,
+  // deposit). An approve to another spender, or for one more than the deposit, has no summary.
+  it("L2 (v1): the approve before the open is shown, its spender and amount the receipt's Approval", async () => {
+    const L2 = vectors<Loose>("mpp-session-tempo.json").L2;
+    const tx = decodeTempoTx(fromHex(L2.raw));
+    if ("code" in tx) throw new Error(tx.code);
+    expect(tx.calls.length).toBe(2);
+    const [approve, open] = tx.calls;
+    const request = {
+      kind: "tempo-call",
+      chainId: Number(tx.chainId),
+      approve: { to: approve!.to, data: toHex(approve!.input) },
+      call: { to: open!.to, data: toHex(open!.input) },
+      validBefore: Number(tx.validBefore),
+      broadcast: false,
+    } as unknown as SigningRequest;
+    const [approval, , opened] = L2.receipt.logs as { address: string; topics: string[]; data: string }[];
+    const deposit = BigInt(`0x${word(opened!.data, 3)}`).toString();
+    expect(await summaryOf("mpp/session/tempo", request, A)).toEqual({
+      payees: [{ account: addressOf(opened!.topics[3]!), amount: deposit }],
+      asset: addressOf(word(opened!.data, 0)),
+      network: "eip155:42431",
+      validity: { notBefore: null, notAfter: String(tx.validBefore), unit: "seconds" },
+      deposit,
+      grant: {
+        escrow: opened!.address,
+        authorizedSigner: addressOf(word(opened!.data, 1)),
+        approve: { token: approval!.address, spender: addressOf(approval!.topics[2]!), amount: BigInt(approval!.data).toString() },
+      },
+      atr: A,
+    });
+    const data = toHex(approve!.input);
+    const other = { ...request, approve: { to: approve!.to, data: `${data.slice(0, 34)}${"11".repeat(20)}${data.slice(74)}` } };
+    const more = { ...request, approve: { to: approve!.to, data: `${data.slice(0, 74)}${(BigInt(deposit) + 1n).toString(16).padStart(64, "0")}` } };
+    expect(await summaryOf("mpp/session/tempo", other as unknown as SigningRequest, A)).toBeUndefined();
+    expect(await summaryOf("mpp/session/tempo", more as unknown as SigningRequest, A)).toBeUndefined();
+  });
+
   it("L1: the payee, token, deposit, escrow and signer the summary shows are the receipt's", async () => {
     const tx = decodeTempoTx(fromHex(L1.raw));
     if ("code" in tx) throw new Error(tx.code);

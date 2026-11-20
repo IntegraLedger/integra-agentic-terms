@@ -1,8 +1,8 @@
 """The buyer half of the pairing mpp/subscription/solana: read and bound. MPP's subscription intent under the stock
-solana method (@solana/mpp 0.7.0, src/Methods.ts:129-201). The sale is the activation, the transaction that subscribes
-the payer to the plan and collects the first period. The stock client writes the request's externalId, H's LCP string,
-as the activation's Memo instruction (src/client/Subscription.ts:240-242) and the stock server never reads it, so bound
-checks it. The protocol package builds nothing for this pairing: the buyer's stock client composes and signs the
+solana method, as @solana/pay-kit 0.13.1 defines it. The sale is the activation, the transaction that subscribes the
+payer to the plan and collects the first period. The stock client writes the request's externalId, H's LCP string, as
+the activation's Memo instruction, after transfer_subscription (dist/chunk-SSATEZ72.js:2444-2447, :2534-2544), and the
+stock server never reads it, so bound checks it. The protocol package builds nothing for this pairing: the buyer's stock client composes and signs the
 activation. Nothing here fetches, hashes an ATR or signs.
 """
 
@@ -17,8 +17,8 @@ from ._svm import SvmTx, decode_svm_tx, static_nonce, wire_of
 from .mpp_charge_solana import mpp_svm_carrier
 
 ID = "mpp/subscription/solana"
-# The activation's transfer_subscription takes the challenge's puller, the seller's key, as a signer
-# (src/client/Subscription.ts:230), so the seller's server co-signs and submits it.
+# The activation's transfer_subscription takes the challenge's puller, the seller's key, as a signer (@solana/pay-kit
+# 0.13.1 dist/chunk-SSATEZ72.js:2393-2394, :2431-2443), so the seller's server co-signs and submits it.
 _TYPES: Mapping[str, Broadcaster] = {"transaction": "payee"}
 
 
