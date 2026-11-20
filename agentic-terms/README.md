@@ -714,42 +714,42 @@ the inputs each build reads.
 | Rail | Pairing | Binding export | Coverage | Confirmed | Agreement payment first | Pays an agreement |
 | --- | --- | --- | --- | --- | --- | --- |
 | EVM | `mpp/charge/evm/authorization` | `evmAuthorization` from `@integraledger/lcp/mpp` | full | yes | no | no |
-| EVM | `mpp/charge/evm/hash` | `evmHash` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
+| EVM | `mpp/charge/evm/hash` | `evmHash` from `@integraledger/lcp/mpp` | none | yes | yes, any network | no |
 | EVM | `mpp/charge/evm/permit2` | `evmPermit2` from `@integraledger/lcp/mpp` | full | no | no | no |
-| EVM | `mpp/charge/evm/transaction` | `evmTransaction` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
-| EVM | `mpp/charge/usdc/evm` | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | full | no | no | no |
+| EVM | `mpp/charge/evm/transaction` | `evmTransaction` from `@integraledger/lcp/mpp` | none | yes | yes, any network | no |
+| EVM | `mpp/charge/usdc/evm` | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | full | yes | no | no |
 | EVM | `mpp/charge/usdc/gateway` | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | none | no | yes, any network | no |
 | EVM | `mpp/session/evm` | `sessionEvm` from `@integraledger/lcp/mpp` | full | no | no | no |
 | EVM | `spend-permissions/eip155` | `spendPermissionsEip155` from `@integraledger/lcp/spend-permissions` | full | yes | no | only |
-| EVM | `x402/auth-capture/eip155/eip3009` | `authCaptureEip3009` from `@integraledger/lcp/x402` | full | no | no | no |
-| EVM | `x402/auth-capture/eip155/permit2` | `authCapturePermit2` from `@integraledger/lcp/x402` | full | no | no | no |
-| EVM | `x402/batch-settlement/eip155` | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no | no |
+| EVM | `x402/auth-capture/eip155/eip3009` | `authCaptureEip3009` from `@integraledger/lcp/x402` | full | yes | no | no |
+| EVM | `x402/auth-capture/eip155/permit2` | `authCapturePermit2` from `@integraledger/lcp/x402` | full | yes | no | no |
+| EVM | `x402/batch-settlement/eip155` | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | full | yes | no | no |
 | EVM | `x402/exact/eip155/eip3009` | `exactEip3009` from `@integraledger/lcp/x402` | full | yes | no | yes |
-| EVM | `x402/exact/eip155/erc7710` | `exactErc7710` from `@integraledger/lcp/x402` | none | no | yes, any network | no |
-| EVM | `x402/exact/eip155/erc7710-salt` | `exactErc7710Salt` from `@integraledger/lcp/x402` | full | no | no | no |
+| EVM | `x402/exact/eip155/erc7710` | `exactErc7710` from `@integraledger/lcp/x402` | none | yes | yes, any network | no |
+| EVM | `x402/exact/eip155/erc7710-salt` | `exactErc7710Salt` from `@integraledger/lcp/x402` | full | yes | no | no |
 | EVM | `x402/exact/eip155/gateway-batched` | `exactGatewayBatched` from `@integraledger/lcp/x402` | none | yes | yes, its network | no |
-| EVM | `x402/exact/eip155/permit2` | `exactPermit2` from `@integraledger/lcp/x402` | full | no | no | yes |
-| EVM | `x402/upto/eip155/permit2` | `uptoPermit2` from `@integraledger/lcp/x402` | full | no | no | no |
+| EVM | `x402/exact/eip155/permit2` | `exactPermit2` from `@integraledger/lcp/x402` | full | yes | no | yes |
+| EVM | `x402/upto/eip155/permit2` | `uptoPermit2` from `@integraledger/lcp/x402` | full | yes | no | no |
 | Tempo | `mpp/charge/tempo/split-memo` | `tempoSplitMemo` from `@integraledger/lcp/mpp` | full | yes | no | no |
-| Tempo | `mpp/charge/tempo/split-memo/push` | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | full | no | no | no |
-| Tempo | `mpp/session/tempo` | `sessionTempo` from `@integraledger/lcp/mpp` | full | no | no | no |
-| Tempo | `mpp/subscription/tempo` | `subscriptionTempo` from `@integraledger/lcp/mpp` | full | no | no | no |
-| Solana | `mpp/charge/solana` | `chargeSolana` from `@integraledger/lcp/mpp` | full | no | no | no |
-| Solana | `mpp/charge/solana/unsponsored` | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | full | no | no | no |
-| Solana | `mpp/charge/usdc/solana` | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | full | no | no | no |
+| Tempo | `mpp/charge/tempo/split-memo/push` | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | full | yes | no | no |
+| Tempo | `mpp/session/tempo` | `sessionTempo` from `@integraledger/lcp/mpp` | full | yes | no | no |
+| Tempo | `mpp/subscription/tempo` | `subscriptionTempo` from `@integraledger/lcp/mpp` | full | yes | no | no |
+| Solana | `mpp/charge/solana` | `chargeSolana` from `@integraledger/lcp/mpp` | full | yes | no | no |
+| Solana | `mpp/charge/solana/unsponsored` | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | full | yes | no | no |
+| Solana | `mpp/charge/usdc/solana` | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | full | yes | no | no |
 | Solana | `mpp/session/solana/memo` | `sessionSolanaMemo` from `@integraledger/lcp/mpp` | full | no | no | no |
-| Solana | `mpp/session/solana/stock` | `sessionSolanaStock` from `@integraledger/lcp/mpp` | none | no | yes, its network | no |
+| Solana | `mpp/session/solana/stock` | `sessionSolanaStock` from `@integraledger/lcp/mpp` | none | yes | yes, its network | no |
 | Solana | `mpp/subscription/solana` | `subscriptionSolana` from `@integraledger/lcp/mpp` | full | no | no | no |
 | Solana | `x402/batch-settlement/solana` | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | full | no | no | no |
 | Solana | `x402/exact/solana` | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | full | yes | no | yes |
 | Solana | `x402/upto/solana` | `uptoSvm` from `@integraledger/lcp/x402-upto-solana` | full | no | no | no |
 | Stellar | `x402/exact/stellar/precondition` | `exactStellarPrecondition` from `@integraledger/lcp/x402-exact-stellar` | full | yes | no | only |
-| XRP Ledger | `mpp/charge/xrpl` | `chargeXrpl` from `@integraledger/lcp/mpp` | full | no | no | no |
+| XRP Ledger | `mpp/charge/xrpl` | `chargeXrpl` from `@integraledger/lcp/mpp` | full | yes | no | no |
 | XRP Ledger | `mpp/session/xrpl` | `sessionXrpl` from `@integraledger/lcp/mpp` | full | no | no | no |
 | XRP Ledger | `mpp/session/xrpl/stock` | `sessionXrplStock` from `@integraledger/lcp/mpp` | none | no | yes, its network | no |
 | XRP Ledger | `x402/exact/xrpl` | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | full | yes | no | yes |
-| XRP Ledger | `x402/upto/xrpl` | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | none | no | yes, its network | no |
-| Hedera | `mpp/charge/lcp/hedera` | `chargeLcpHedera` from `@integraledger/lcp/mpp` | full | no | no | no |
+| XRP Ledger | `x402/upto/xrpl` | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | none | yes | yes, its network | no |
+| Hedera | `mpp/charge/lcp/hedera` | `chargeLcpHedera` from `@integraledger/lcp/mpp` | full | yes | no | no |
 | Hedera | `mpp/session/hedera/stock` | `sessionHederaStock` from `@integraledger/lcp/mpp` | none | no | yes, its network | no |
 | Hedera | `x402/exact/hedera` | `exactHedera` from `@integraledger/lcp/hedera` | full | yes | no | yes |
 | Hedera | `x402/exact/hedera/transfer-executor` | `exactHederaExecutor` from `@integraledger/lcp/hedera` | none | no | yes, any network | no |
@@ -763,7 +763,7 @@ the inputs each build reads.
 | TRON | `x402/exact/tron/lcp-trc20-memo` | `exactTronMemo` from `@integraledger/lcp/tron` | full | yes | no | yes |
 | TON | `x402/exact/tvm` | `exactTvm` from `@integraledger/lcp/tvm` | full | yes | no | yes |
 | Cardano | `x402/exact/cardano` | `exactCardano` from `@integraledger/lcp/cardano` | full | yes | no | yes |
-| Cardano | `x402/exact/cardano/lock` | `exactCardanoLock` from `@integraledger/lcp/cardano` | full | no | no | no |
+| Cardano | `x402/exact/cardano/lock` | `exactCardanoLock` from `@integraledger/lcp/cardano` | full | yes | no | no |
 | Casper | `x402/exact/casper` | `exactCasper` from `@integraledger/lcp/casper` | full | no | no | yes |
 | Concordium | `x402/exact/ccd` | `exactCcd` from `@integraledger/lcp/ccd` | full | no | no | no |
 | Stacks | `mpp/charge/usdc/stacks` | `chargeUsdcStacks` from `@integraledger/lcp/mpp` | full | no | no | no |

@@ -37,22 +37,22 @@ network and transaction.
 | Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/evm/authorization` | full | yes | no | no | `evmAuthorization` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_AUTHORIZATION` |
-| `mpp/charge/evm/hash` | none | no | yes, any network | no | `evmHash` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_HASH` |
+| `mpp/charge/evm/hash` | none | yes | yes, any network | no | `evmHash` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_HASH` |
 | `mpp/charge/evm/permit2` | full | no | no | no | `evmPermit2` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_PERMIT2` |
-| `mpp/charge/evm/transaction` | none | no | yes, any network | no | `evmTransaction` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_TRANSACTION` |
-| `mpp/charge/usdc/evm` | full | no | no | no | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_EVM` |
+| `mpp/charge/evm/transaction` | none | yes | yes, any network | no | `evmTransaction` from `@integraledger/lcp/mpp` | `MPP_CHARGE_EVM_TRANSACTION` |
+| `mpp/charge/usdc/evm` | full | yes | no | no | `chargeUsdcEvm` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_EVM` |
 | `mpp/charge/usdc/gateway` | none | no | yes, any network | no | `chargeUsdcGateway` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_GATEWAY` |
 | `mpp/session/evm` | full | no | no | no | `sessionEvm` from `@integraledger/lcp/mpp` | `MPP_SESSION_EVM` |
 | `spend-permissions/eip155` | full | yes | no | only | `spendPermissionsEip155` from `@integraledger/lcp/spend-permissions` | `SPEND_PERMISSIONS_EIP155` |
-| `x402/auth-capture/eip155/eip3009` | full | no | no | no | `authCaptureEip3009` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_EIP3009` |
-| `x402/auth-capture/eip155/permit2` | full | no | no | no | `authCapturePermit2` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` |
-| `x402/batch-settlement/eip155` | full | no | no | no | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_EIP155` |
+| `x402/auth-capture/eip155/eip3009` | full | yes | no | no | `authCaptureEip3009` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_EIP3009` |
+| `x402/auth-capture/eip155/permit2` | full | yes | no | no | `authCapturePermit2` from `@integraledger/lcp/x402` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` |
+| `x402/batch-settlement/eip155` | full | yes | no | no | `batchEvm` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_EIP155` |
 | `x402/exact/eip155/eip3009` | full | yes | no | yes | `exactEip3009` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_EIP3009` |
-| `x402/exact/eip155/erc7710` | none | no | yes, any network | no | `exactErc7710` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710` |
-| `x402/exact/eip155/erc7710-salt` | full | no | no | no | `exactErc7710Salt` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710_SALT` |
+| `x402/exact/eip155/erc7710` | none | yes | yes, any network | no | `exactErc7710` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710` |
+| `x402/exact/eip155/erc7710-salt` | full | yes | no | no | `exactErc7710Salt` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_ERC7710_SALT` |
 | `x402/exact/eip155/gateway-batched` | none | yes | yes, its network | no | `exactGatewayBatched` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_GATEWAY_BATCHED` |
-| `x402/exact/eip155/permit2` | full | no | no | yes | `exactPermit2` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_PERMIT2` |
-| `x402/upto/eip155/permit2` | full | no | no | no | `uptoPermit2` from `@integraledger/lcp/x402` | `X402_UPTO_EIP155_PERMIT2` |
+| `x402/exact/eip155/permit2` | full | yes | no | yes | `exactPermit2` from `@integraledger/lcp/x402` | `X402_EXACT_EIP155_PERMIT2` |
+| `x402/upto/eip155/permit2` | full | yes | no | no | `uptoPermit2` from `@integraledger/lcp/x402` | `X402_UPTO_EIP155_PERMIT2` |
 
 **`mpp/charge/evm/authorization`**: The payer signed an EIP-3009 transfer authorization whose nonce is keccak256 of this challenge's id and realm, and the id is this ATR's hash in base64url with the challenge's position. The token contract verified the signature when it executed the transfer, and the nonce is on chain as the nonce topic of its AuthorizationUsed event. A holder of the ATR and the realm can confirm the hash from that nonce; the chain alone does not reveal it. This does not show that amount, payee, asset or timing match the ATR's content.
 
@@ -93,9 +93,9 @@ network and transaction.
 | Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `mpp/charge/tempo/split-memo` | full | yes | no | no | `tempoSplitMemo` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_SPLIT_MEMO` |
-| `mpp/charge/tempo/split-memo/push` | full | no | no | no | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` |
-| `mpp/session/tempo` | full | no | no | no | `sessionTempo` from `@integraledger/lcp/mpp` | `MPP_SESSION_TEMPO` |
-| `mpp/subscription/tempo` | full | no | no | no | `subscriptionTempo` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_TEMPO` |
+| `mpp/charge/tempo/split-memo/push` | full | yes | no | no | `tempoSplitMemoPush` from `@integraledger/lcp/mpp` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` |
+| `mpp/session/tempo` | full | yes | no | no | `sessionTempo` from `@integraledger/lcp/mpp` | `MPP_SESSION_TEMPO` |
+| `mpp/subscription/tempo` | full | yes | no | no | `subscriptionTempo` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_TEMPO` |
 
 **`mpp/charge/tempo/split-memo`**: The ATR's hash is in the MPP Tempo charge challenge the payer answered: its id is the hash in base64url with the challenge's position, and one of its splits carries the hash as its memo. The payer's own signed Tempo transaction carries all of the hash as the memo of a `transferWithMemo` call, and the chain verified the payer's signature when it executed the call. The record states "paid" where value moved, with the account it reached, and "signed" where nothing moved. This does not show that amount, payee, asset or timing match the ATR's content.
 
@@ -109,11 +109,11 @@ network and transaction.
 
 | Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
-| `mpp/charge/solana` | full | no | no | no | `chargeSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA` |
-| `mpp/charge/solana/unsponsored` | full | no | no | no | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA_UNSPONSORED` |
-| `mpp/charge/usdc/solana` | full | no | no | no | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_SOLANA` |
+| `mpp/charge/solana` | full | yes | no | no | `chargeSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA` |
+| `mpp/charge/solana/unsponsored` | full | yes | no | no | `chargeSolanaUnsponsored` from `@integraledger/lcp/mpp` | `MPP_CHARGE_SOLANA_UNSPONSORED` |
+| `mpp/charge/usdc/solana` | full | yes | no | no | `chargeUsdcSolana` from `@integraledger/lcp/mpp` | `MPP_CHARGE_USDC_SOLANA` |
 | `mpp/session/solana/memo` | full | no | no | no | `sessionSolanaMemo` from `@integraledger/lcp/mpp` | `MPP_SESSION_SOLANA_MEMO` |
-| `mpp/session/solana/stock` | none | no | yes, its network | no | `sessionSolanaStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_SOLANA_STOCK` |
+| `mpp/session/solana/stock` | none | yes | yes, its network | no | `sessionSolanaStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_SOLANA_STOCK` |
 | `mpp/subscription/solana` | full | no | no | no | `subscriptionSolana` from `@integraledger/lcp/mpp` | `MPP_SUBSCRIPTION_SOLANA` |
 | `x402/batch-settlement/solana` | full | no | no | no | `batchSvm` from `@integraledger/lcp/x402-batch-settlement` | `X402_BATCH_SETTLEMENT_SOLANA` |
 | `x402/exact/solana` | full | yes | no | yes | `exactSvm` from `@integraledger/lcp/x402-exact-solana` | `X402_EXACT_SOLANA` |
@@ -125,17 +125,17 @@ network and transaction.
 
 **`mpp/charge/usdc/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose one LCP-form Memo instruction is the hash's LCP string, final at `finalized` with no error. It paid each transfer it made from the buyer's account, recorded with its mint or lamports, amount and recipient, one of zero included, the recipient being the owner the transaction's token balances name; as a payment, one of them reached an account the option's payee owns. The memo is in the transaction's instruction data on chain. It compares no amount, mint or time with the ATR's terms.
 
-**`mpp/session/solana/memo`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose one LCP-form Memo instruction in the `open` the seller's operator co-signed and submitted is the hash's LCP string, final at `finalized` with no error, which deposited the amount its `open` names into a payment channel whose distribution names the option's payee, recorded with its mint and amount. The memo is in the transaction's instruction data on chain. Vouchers and the close do not carry the hash. It compares no amount, mint or time with the ATR's terms.
+**`mpp/session/solana/memo`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose one LCP-form Memo instruction in the `open` the seller's operator co-signed and submitted is the hash's LCP string, final at `finalized` with no error, which deposited the amount its `open` names into a payment channel whose payee or distribution names the option's payee, recorded with its mint and amount. The memo is in the transaction's instruction data on chain. Vouchers and the close do not carry the hash. It compares no amount, mint or time with the ATR's terms.
 
-**`mpp/session/solana/stock`**: Before this opening was taken, an account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>. The opening, a stock MPP session's payment-channel open that its payer broadcast and that carries no hash, came after it and deposited the amount its `open` names into a channel whose distribution names the option's payee. This does not show that the account that signed the agreement is the opening's payer, nor that amount, recipient, mint or timing match the ATR's content.
+**`mpp/session/solana/stock`**: Before this opening was taken, an account signed an agreement transaction carrying this ATR's hash on \<network>, recorded in \<transaction>. The opening, a stock MPP session's payment-channel open that its payer broadcast and that carries no hash, came after it and deposited the amount its `open` names into a channel whose payee or distribution names the option's payee. This does not show that the account that signed the agreement is the opening's payer, nor that amount, recipient, mint or timing match the ATR's content.
 
 **`mpp/subscription/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, a subscription's activation, whose one LCP-form Memo instruction is the hash's LCP string, final at `finalized` with no error, which paid the first period to an account the option's payee owns, recorded with its mint and amount. The memo is in the transaction's instruction data on chain. Renewals are the seller's later pulls, which do not carry the hash. It compares no amount, mint, period or time with the ATR's terms.
 
-**`x402/batch-settlement/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose seller Memo instruction (`extra.memo`), beside the scheme's receiver-authorizer memo, is the hash's LCP string, final at `finalized` with no error, which deposited the amount its `open` names into a payment channel whose distribution names the option's payee, recorded with its mint and amount. The memo is in the transaction's instruction data on chain. It compares no amount, mint or time with the ATR's terms.
+**`x402/batch-settlement/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose seller Memo instruction (`extra.memo`), beside the scheme's receiver-authorizer memo, is the hash's LCP string, final at `finalized` with no error, which deposited the amount its `open` names into a payment channel whose payee or distribution names the option's payee, recorded with its mint and amount. The memo is in the transaction's instruction data on chain. It compares no amount, mint or time with the ATR's terms.
 
 **`x402/exact/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose one LCP-form Memo instruction is the hash's LCP string, final at `finalized` with no error. It paid each transfer it made from the buyer's account, recorded with its mint or lamports, amount and recipient, one of zero included, the recipient being the owner the transaction's token balances name; as a payment, one of them reached an account the option's payee owns. The memo is in the transaction's instruction data on chain. It compares no amount, mint or time with the ATR's terms.
 
-**`x402/upto/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose one Memo instruction is the hash's LCP string, final at `finalized` with no error, which deposited the amount its `open` names into a payment channel whose distribution names the option's payee, recorded with its mint and amount. The memo is in the transaction's instruction data on chain. The deposit is the signed maximum a one-request channel escrows; the amount charged from it, which may be zero, is the seller's metering, settled in a later transaction that does not carry the hash, and the rest returns to the payer. It compares no amount, mint or time with the ATR's terms.
+**`x402/upto/solana`**: The payer's own signed act carries this ATR's hash: a Solana transaction the buyer's account signed, whose one Memo instruction is the hash's LCP string, final at `finalized` with no error, which deposited the amount its `open` names into a payment channel whose payee or distribution names the option's payee, recorded with its mint and amount. The memo is in the transaction's instruction data on chain. The deposit is the signed maximum a one-request channel escrows; the amount charged from it, which may be zero, is the seller's metering, settled in a later transaction that does not carry the hash, and the rest returns to the payer. It compares no amount, mint or time with the ATR's terms.
 
 ## Stellar
 
@@ -149,11 +149,11 @@ network and transaction.
 
 | Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
-| `mpp/charge/xrpl` | full | no | no | no | `chargeXrpl` from `@integraledger/lcp/mpp` | `MPP_CHARGE_XRPL` |
+| `mpp/charge/xrpl` | full | yes | no | no | `chargeXrpl` from `@integraledger/lcp/mpp` | `MPP_CHARGE_XRPL` |
 | `mpp/session/xrpl` | full | no | no | no | `sessionXrpl` from `@integraledger/lcp/mpp` | `MPP_SESSION_XRPL` |
 | `mpp/session/xrpl/stock` | none | no | yes, its network | no | `sessionXrplStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_XRPL_STOCK` |
 | `x402/exact/xrpl` | full | yes | no | yes | `exactXrpl` from `@integraledger/lcp/x402-exact-xrpl` | `X402_EXACT_XRPL` |
-| `x402/upto/xrpl` | none | no | yes, its network | no | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | `X402_UPTO_XRPL` |
+| `x402/upto/xrpl` | none | yes | yes, its network | no | `uptoXrpl` from `@integraledger/lcp/x402-upto-xrpl` | `X402_UPTO_XRPL` |
 
 **`mpp/charge/xrpl`**: The payer signed an XRPL Payment whose InvoiceID is this ATR's hash, and it is in a validated ledger with tesSUCCESS: it paid the amount meta.delivered_amount states to the account its Destination names. This does not show that amount, destination, asset or timing match the ATR's content.
 
@@ -169,7 +169,7 @@ network and transaction.
 
 | Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
-| `mpp/charge/lcp/hedera` | full | no | no | no | `chargeLcpHedera` from `@integraledger/lcp/mpp` | `MPP_CHARGE_LCP_HEDERA` |
+| `mpp/charge/lcp/hedera` | full | yes | no | no | `chargeLcpHedera` from `@integraledger/lcp/mpp` | `MPP_CHARGE_LCP_HEDERA` |
 | `mpp/session/hedera/stock` | none | no | yes, its network | no | `sessionHederaStock` from `@integraledger/lcp/mpp` | `MPP_SESSION_HEDERA_STOCK` |
 | `x402/exact/hedera` | full | yes | no | yes | `exactHedera` from `@integraledger/lcp/hedera` | `X402_EXACT_HEDERA` |
 | `x402/exact/hedera/transfer-executor` | none | no | yes, any network | no | `exactHederaExecutor` from `@integraledger/lcp/hedera` | `X402_EXACT_HEDERA_TRANSFER_EXECUTOR` |
@@ -254,7 +254,7 @@ network and transaction.
 | Pairing | Coverage | Confirmed | Agreement payment first | Pays an agreement | TypeScript | Python |
 | --- | --- | --- | --- | --- | --- | --- |
 | `x402/exact/cardano` | full | yes | no | yes | `exactCardano` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO` |
-| `x402/exact/cardano/lock` | full | no | no | no | `exactCardanoLock` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO_LOCK` |
+| `x402/exact/cardano/lock` | full | yes | no | no | `exactCardanoLock` from `@integraledger/lcp/cardano` | `X402_EXACT_CARDANO_LOCK` |
 
 **`x402/exact/cardano`**: The payer, the payment credential that holds the input the payment names, signed a Cardano transaction whose body commits through its auxiliary_data_hash to a CIP-20 message (label 674) carrying this ATR's hash, and the ledger included it as valid at the mark read. It paid: the read names each output it created, to which payment credential and in what asset and amount, as observed, and on a payment one output reached the payee's payment credential. A transaction with fewer confirmations than the ledger's security parameter (2160 on mainnet) can be rolled back. The read compares no amount, asset or time with the ATR's terms.
 

@@ -781,42 +781,42 @@ the seller's MPP agreement challenges in `AgreementChallenges` for your own MPP 
 | Rail | Pairing | Python binding | Coverage | Confirmed | Agreement payment first | Pays an agreement |
 | --- | --- | --- | --- | --- | --- | --- |
 | EVM | `mpp/charge/evm/authorization` | `MPP_CHARGE_EVM_AUTHORIZATION` | full | yes | no | no |
-| EVM | `mpp/charge/evm/hash` | `MPP_CHARGE_EVM_HASH` | none | no | yes, any network | no |
+| EVM | `mpp/charge/evm/hash` | `MPP_CHARGE_EVM_HASH` | none | yes | yes, any network | no |
 | EVM | `mpp/charge/evm/permit2` | `MPP_CHARGE_EVM_PERMIT2` | full | no | no | no |
-| EVM | `mpp/charge/evm/transaction` | `MPP_CHARGE_EVM_TRANSACTION` | none | no | yes, any network | no |
-| EVM | `mpp/charge/usdc/evm` | `MPP_CHARGE_USDC_EVM` | full | no | no | no |
+| EVM | `mpp/charge/evm/transaction` | `MPP_CHARGE_EVM_TRANSACTION` | none | yes | yes, any network | no |
+| EVM | `mpp/charge/usdc/evm` | `MPP_CHARGE_USDC_EVM` | full | yes | no | no |
 | EVM | `mpp/charge/usdc/gateway` | `MPP_CHARGE_USDC_GATEWAY` | none | no | yes, any network | no |
 | EVM | `mpp/session/evm` | `MPP_SESSION_EVM` | full | no | no | no |
 | EVM | `spend-permissions/eip155` | `SPEND_PERMISSIONS_EIP155` | full | yes | no | only |
-| EVM | `x402/auth-capture/eip155/eip3009` | `X402_AUTH_CAPTURE_EIP155_EIP3009` | full | no | no | no |
-| EVM | `x402/auth-capture/eip155/permit2` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` | full | no | no | no |
-| EVM | `x402/batch-settlement/eip155` | `X402_BATCH_SETTLEMENT_EIP155` | full | no | no | no |
+| EVM | `x402/auth-capture/eip155/eip3009` | `X402_AUTH_CAPTURE_EIP155_EIP3009` | full | yes | no | no |
+| EVM | `x402/auth-capture/eip155/permit2` | `X402_AUTH_CAPTURE_EIP155_PERMIT2` | full | yes | no | no |
+| EVM | `x402/batch-settlement/eip155` | `X402_BATCH_SETTLEMENT_EIP155` | full | yes | no | no |
 | EVM | `x402/exact/eip155/eip3009` | `X402_EXACT_EIP155_EIP3009` | full | yes | no | yes |
-| EVM | `x402/exact/eip155/erc7710` | `X402_EXACT_EIP155_ERC7710` | none | no | yes, any network | no |
-| EVM | `x402/exact/eip155/erc7710-salt` | `X402_EXACT_EIP155_ERC7710_SALT` | full | no | no | no |
+| EVM | `x402/exact/eip155/erc7710` | `X402_EXACT_EIP155_ERC7710` | none | yes | yes, any network | no |
+| EVM | `x402/exact/eip155/erc7710-salt` | `X402_EXACT_EIP155_ERC7710_SALT` | full | yes | no | no |
 | EVM | `x402/exact/eip155/gateway-batched` | `X402_EXACT_EIP155_GATEWAY_BATCHED` | none | yes | yes, its network | no |
-| EVM | `x402/exact/eip155/permit2` | `X402_EXACT_EIP155_PERMIT2` | full | no | no | yes |
-| EVM | `x402/upto/eip155/permit2` | `X402_UPTO_EIP155_PERMIT2` | full | no | no | no |
+| EVM | `x402/exact/eip155/permit2` | `X402_EXACT_EIP155_PERMIT2` | full | yes | no | yes |
+| EVM | `x402/upto/eip155/permit2` | `X402_UPTO_EIP155_PERMIT2` | full | yes | no | no |
 | Tempo | `mpp/charge/tempo/split-memo` | `MPP_CHARGE_TEMPO_SPLIT_MEMO` | full | yes | no | no |
-| Tempo | `mpp/charge/tempo/split-memo/push` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` | full | no | no | no |
-| Tempo | `mpp/session/tempo` | `MPP_SESSION_TEMPO` | full | no | no | no |
-| Tempo | `mpp/subscription/tempo` | `MPP_SUBSCRIPTION_TEMPO` | full | no | no | no |
-| Solana | `mpp/charge/solana` | `MPP_CHARGE_SOLANA` | full | no | no | no |
-| Solana | `mpp/charge/solana/unsponsored` | `MPP_CHARGE_SOLANA_UNSPONSORED` | full | no | no | no |
-| Solana | `mpp/charge/usdc/solana` | `MPP_CHARGE_USDC_SOLANA` | full | no | no | no |
+| Tempo | `mpp/charge/tempo/split-memo/push` | `MPP_CHARGE_TEMPO_SPLIT_MEMO_PUSH` | full | yes | no | no |
+| Tempo | `mpp/session/tempo` | `MPP_SESSION_TEMPO` | full | yes | no | no |
+| Tempo | `mpp/subscription/tempo` | `MPP_SUBSCRIPTION_TEMPO` | full | yes | no | no |
+| Solana | `mpp/charge/solana` | `MPP_CHARGE_SOLANA` | full | yes | no | no |
+| Solana | `mpp/charge/solana/unsponsored` | `MPP_CHARGE_SOLANA_UNSPONSORED` | full | yes | no | no |
+| Solana | `mpp/charge/usdc/solana` | `MPP_CHARGE_USDC_SOLANA` | full | yes | no | no |
 | Solana | `mpp/session/solana/memo` | `MPP_SESSION_SOLANA_MEMO` | full | no | no | no |
-| Solana | `mpp/session/solana/stock` | `MPP_SESSION_SOLANA_STOCK` | none | no | yes, its network | no |
+| Solana | `mpp/session/solana/stock` | `MPP_SESSION_SOLANA_STOCK` | none | yes | yes, its network | no |
 | Solana | `mpp/subscription/solana` | `MPP_SUBSCRIPTION_SOLANA` | full | no | no | no |
 | Solana | `x402/batch-settlement/solana` | `X402_BATCH_SETTLEMENT_SOLANA` | full | no | no | no |
 | Solana | `x402/exact/solana` | `X402_EXACT_SOLANA` | full | yes | no | yes |
 | Solana | `x402/upto/solana` | `X402_UPTO_SOLANA` | full | no | no | no |
 | Stellar | `x402/exact/stellar/precondition` | `X402_EXACT_STELLAR_PRECONDITION` | full | yes | no | only |
-| XRP Ledger | `mpp/charge/xrpl` | `MPP_CHARGE_XRPL` | full | no | no | no |
+| XRP Ledger | `mpp/charge/xrpl` | `MPP_CHARGE_XRPL` | full | yes | no | no |
 | XRP Ledger | `mpp/session/xrpl` | `MPP_SESSION_XRPL` | full | no | no | no |
 | XRP Ledger | `mpp/session/xrpl/stock` | `MPP_SESSION_XRPL_STOCK` | none | no | yes, its network | no |
 | XRP Ledger | `x402/exact/xrpl` | `X402_EXACT_XRPL` | full | yes | no | yes |
-| XRP Ledger | `x402/upto/xrpl` | `X402_UPTO_XRPL` | none | no | yes, its network | no |
-| Hedera | `mpp/charge/lcp/hedera` | `MPP_CHARGE_LCP_HEDERA` | full | no | no | no |
+| XRP Ledger | `x402/upto/xrpl` | `X402_UPTO_XRPL` | none | yes | yes, its network | no |
+| Hedera | `mpp/charge/lcp/hedera` | `MPP_CHARGE_LCP_HEDERA` | full | yes | no | no |
 | Hedera | `mpp/session/hedera/stock` | `MPP_SESSION_HEDERA_STOCK` | none | no | yes, its network | no |
 | Hedera | `x402/exact/hedera` | `X402_EXACT_HEDERA` | full | yes | no | yes |
 | Hedera | `x402/exact/hedera/transfer-executor` | `X402_EXACT_HEDERA_TRANSFER_EXECUTOR` | none | no | yes, any network | no |
@@ -830,7 +830,7 @@ the seller's MPP agreement challenges in `AgreementChallenges` for your own MPP 
 | TRON | `x402/exact/tron/lcp-trc20-memo` | `X402_EXACT_TRON_LCP_TRC20_MEMO` | full | yes | no | yes |
 | TON | `x402/exact/tvm` | `X402_EXACT_TVM` | full | yes | no | yes |
 | Cardano | `x402/exact/cardano` | `X402_EXACT_CARDANO` | full | yes | no | yes |
-| Cardano | `x402/exact/cardano/lock` | `X402_EXACT_CARDANO_LOCK` | full | no | no | no |
+| Cardano | `x402/exact/cardano/lock` | `X402_EXACT_CARDANO_LOCK` | full | yes | no | no |
 | Casper | `x402/exact/casper` | `X402_EXACT_CASPER` | full | no | no | yes |
 | Concordium | `x402/exact/ccd` | `X402_EXACT_CCD` | full | no | no | no |
 | Stacks | `mpp/charge/usdc/stacks` | `MPP_CHARGE_USDC_STACKS` | full | no | no | no |
