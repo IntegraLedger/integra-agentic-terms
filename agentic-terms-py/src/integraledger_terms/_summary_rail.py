@@ -315,12 +315,60 @@ def cardano_transaction(request: Mapping[str, Any], network: str | None = None, 
     return _wallet_built(request, "cardano-transaction", _CARDANO_NETWORK, "slot", "maxTtl")
 
 
+# The admins of the canonical Masumi V2 deployment, where the option names no extra.deployment (x402's
+# scheme_exact_cardano.md, Deployment and escrow address): two of these three key hashes settle a disputed escrow.
+# Preview has no canonical deployment.
+_MASUMI_ADMINS: Mapping[str, Any] = {
+    "requiredAdmins": "2",
+    "adminVkeys": [
+        "fc16a1fcf309aed03ec18bb2176f5ea29acea70bb79145ebaffa8e75",
+        "7f78161369549d8e2b138fee724c9fa606d6107a66720bdb4c48ada6",
+        "89eef9ea84e0ee7fe4921fa93eb2873ff6e34473f751d5d52cb75aa6",
+    ],
+}
+_PREVIEW = frozenset({"cardano:preview", "cip34:0-2"})
+# A positive canonical decimal, as the scheme writes a time in POSIX milliseconds and requiredAdmins.
+_POSITIVE = re.compile(r"[1-9][0-9]{0,19}")
+_KEY_HASH = re.compile(r"[0-9a-f]{56}")
+
+
+def _seconds_of(v: object) -> str | None:
+    """A POSIX-millisecond time as Unix seconds, rounded down, as a decimal string; else None."""
+    return str(int(v) // 1000) if isinstance(v, str) and _POSITIVE.fullmatch(v) is not None else None
+
+
+def _masumi_admins(extra: Mapping[str, Any], network: str) -> dict[str, Any] | None:
+    """The admins who may settle a disputed Masumi escrow: the option's extra.deployment, or the canonical
+    deployment's where it names none and the network has one. Each distinct key hash with its weight, the times it
+    appears, as the contract counts it, and the weight required, as decimal strings; None for a deployment of another
+    form."""
+    declared = extra.get("deployment")
+    if declared is None and "deployment" not in extra and network in _PREVIEW:
+        return None
+    d = _MASUMI_ADMINS if "deployment" not in extra else declared
+    if not isinstance(d, Mapping):
+        return None
+    keys, required = d.get("adminVkeys"), d.get("requiredAdmins")
+    if not isinstance(keys, list) or not keys or not all(isinstance(k, str) and _KEY_HASH.fullmatch(k) for k in keys):
+        return None
+    if not isinstance(required, str) or _POSITIVE.fullmatch(required) is None or int(required) > len(keys):
+        return None
+    weights: dict[str, int] = {}
+    for k in keys:
+        weights[k] = weights.get(k, 0) + 1
+    return {"required": required, "weights": [{"key": k, "weight": str(w)} for k, w in weights.items()]}
+
+
 def cardano_lock(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:
     """x402/exact/cardano/lock, as the protocol package's reference names the payee: on a script lock
     (accepted.extra.assetTransferMethod "script") the address method's members, its payee payTo, the contract the
     seller defines; on a Masumi lock ("masumi") the same members but the payee, the seller accepted.extra.terms names
-    in sellerAddress, with the amount, and the grant {escrow}, payTo, the escrow every seller of a deployment shares,
-    which holds the deposit."""
+    in sellerAddress, with the amount, and the grant: every party that can move the locked funds, and when, as the
+    vested_pay escrow gates each (masumi-payment-service d74b2c31, the blueprint x402's scheme_exact_cardano.md names,
+    vested_pay.ak): escrow, payTo, which holds the deposit; seller, its account and, where the terms name one, its
+    returnAddress, which may withdraw after unlockTime (Withdraw); buyer, whose refund may be withdrawn refundAfter
+    submitResultTime (WithdrawRefund); and admins, who may settle a disputed escrow after externalDisputeUnlockTime
+    (WithdrawDisputed), with their weights and the weight required. Each time is in Unix seconds, rounded down."""
     a = request.get("accepted")
     extra = a.get("extra") if isinstance(a, Mapping) else None
     if not isinstance(extra, Mapping):
@@ -330,12 +378,27 @@ def cardano_lock(request: Mapping[str, Any], network: str | None = None, opened:
     if extra.get("assetTransferMethod") != "masumi":
         return None
     terms = extra.get("terms")
-    seller = terms.get("sellerAddress") if isinstance(terms, Mapping) else None
     shown = cardano_transaction(request, network, opened)
-    if shown is None or not isinstance(seller, str) or not _text(seller):
+    if shown is None or shown.network is None or not isinstance(terms, Mapping):
         return None
-    escrow, amount = shown.payees[0].account, shown.payees[0].amount
-    return replace(shown, payees=(Payee(account=seller, amount=amount),), grant={"escrow": escrow})
+    seller, return_address = terms.get("sellerAddress"), terms.get("sellerReturnAddress")
+    unlock, refund, dispute = (_seconds_of(terms.get(k)) for k in ("unlockTime", "submitResultTime", "externalDisputeUnlockTime"))
+    admins = _masumi_admins(extra, shown.network)
+    if not isinstance(seller, str) or not _text(seller) or ("sellerReturnAddress" in terms and not _text(return_address)):
+        return None
+    if unlock is None or refund is None or dispute is None or admins is None:
+        return None
+    seller_grant: dict[str, Any] = {"account": seller}
+    if "sellerReturnAddress" in terms:
+        seller_grant["returnAddress"] = return_address
+    seller_grant["after"] = unlock
+    grant = {
+        "escrow": shown.payees[0].account,
+        "seller": seller_grant,
+        "buyer": {"refundAfter": refund},
+        "admins": {**admins, "after": dispute},
+    }
+    return replace(shown, payees=(Payee(account=seller, amount=shown.payees[0].amount),), grant=grant)
 
 
 def sui_transaction(request: Mapping[str, Any], network: str | None = None, opened: "Opened | None" = None) -> Summary | None:

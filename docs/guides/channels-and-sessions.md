@@ -46,7 +46,7 @@ The gate follows that shape:
 | Pairing | Opening | Within (handed to the signer as a `batch` of) |
 | --- | --- | --- |
 | `x402/batch-settlement/eip155` | A deposit authorization and the first voucher, signed as a `batch` | A voucher (`eip712`) |
-| `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch`, shown with the voucher's amount, the `open`'s distribution, deposit and mint | A voucher (`ed25519-raw`) |
+| `x402/batch-settlement/solana` | The opening's message and first voucher, signed as a `batch`, shown with the voucher's amount, the `open`'s distribution, deposit and mint, and who may close the channel | A voucher (`ed25519-raw`) |
 | `mpp/session/evm` | The funding, then the first voucher | A voucher |
 | `mpp/session/tempo` | The signed open transaction, then the first voucher | A voucher |
 | `mpp/session/xrpl` | A `PaymentChannelCreate` and the first claim | A claim |

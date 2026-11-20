@@ -79,6 +79,8 @@ class _Transfer:
 class _Open:
     """A payment-channels open the message signs."""
 
+    # The account that funds the deposit, the open's first.
+    payer: str
     payee: str
     mint: str
     # The key the channel's vouchers are signed with, the open's fifth account.
@@ -135,7 +137,7 @@ def _read_message(message: bytes) -> tuple[list[_Transfer], list[_Open]] | None:
                 (b58_encode(d[33 + 34 * i : 65 + 34 * i]), _uint_le(d, 65 + 34 * i, 2)) for i in range(count)
             )
             opens.append(
-                _Open(payee=at(2), mint=at(3), signer=at(4), channel=at(5), deposit=_uint_le(d, 9, 8), recipients=recipients)
+                _Open(payer=at(0), payee=at(2), mint=at(3), signer=at(4), channel=at(5), deposit=_uint_le(d, 9, 8), recipients=recipients)
             )
         else:
             return None
@@ -156,6 +158,13 @@ def _shares(open_: _Open, total: int) -> tuple[Payee, ...] | None:
     if bps < 10_000:
         parts.append((open_.payee, total - sum(a for _, a in parts)))
     return tuple(Payee(account=r, amount=str(a)) for r, a in parts)
+
+
+def _closers(open_: _Open) -> tuple[str, ...]:
+    """Who may close the channel an open opens, by the payment-channels program's rule (x402's
+    scheme_batch_settlement_svm.md, its lifecycle): its payee at any time, by settle_and_seal, and its payer, by
+    request_close, which returns the deposit's rest once the grace period has passed (withdraw_payer)."""
+    return (open_.payee,) if open_.payee == open_.payer else (open_.payee, open_.payer)
 
 
 def solana_transfer(request: Mapping[str, Any], network: str | None = None, opened: object = None) -> Summary | None:
@@ -192,7 +201,8 @@ def _open_of(message: object) -> _Open | None:
 
 def solana_upto_open(request: Mapping[str, Any], network: str | None = None, opened: object = None) -> Summary | None:
     """A one-request channel's open (upto): the deposit escrows the maximum the payee may charge, split by the
-    distribution, or the channel's payee's whole where it names none; the asset is its mint."""
+    distribution, or the channel's payee's whole where it names none; who may close it, its payee and its payer; the
+    asset is its mint."""
     net = _network_in("solana", network)
     if request.get("kind") != "solana-message" or net is None:
         return None
@@ -201,12 +211,22 @@ def solana_upto_open(request: Mapping[str, Any], network: str | None = None, ope
     if open_ is None or payees is None:
         return None
     deposit = str(open_.deposit)
-    return Summary(maximum=deposit, payees=payees, deposit=deposit, asset=open_.mint, network=net, validity=_BLOCKS, atr=b"")
+    return Summary(
+        maximum=deposit,
+        payees=payees,
+        deposit=deposit,
+        closable_by=_closers(open_),
+        asset=open_.mint,
+        network=net,
+        validity=_BLOCKS,
+        atr=b"",
+    )
 
 
 def solana_session_open(request: Mapping[str, Any], network: str | None = None, opened: object = None) -> Summary | None:
     """A session's open (solana-session-open): the deposit, split by the distribution, or the channel's payee's whole
-    where it names none; the asset is its mint. The vouchers that later charge it are signed apart."""
+    where it names none; who may close it, its payee and its payer; the asset is its mint. The vouchers that later
+    charge it are signed apart."""
     net = _network_in("solana", network)
     if request.get("kind") != "solana-session-open" or net is None:
         return None
@@ -214,14 +234,22 @@ def solana_session_open(request: Mapping[str, Any], network: str | None = None, 
     payees = None if open_ is None else _shares(open_, open_.deposit)
     if open_ is None or payees is None:
         return None
-    return Summary(payees=payees, deposit=str(open_.deposit), asset=open_.mint, network=net, validity=_BLOCKS, atr=b"")
+    return Summary(
+        payees=payees,
+        deposit=str(open_.deposit),
+        closable_by=_closers(open_),
+        asset=open_.mint,
+        network=net,
+        validity=_BLOCKS,
+        atr=b"",
+    )
 
 
 def solana_batch_opening(request: Mapping[str, Any], network: str | None = None, opened: object = None) -> Summary | None:
     """x402/batch-settlement/solana's opening, a batch of the open message, then the first voucher, for the open's
     authorized signer, over the channel the open opens and with no expiry, as x402's scheme writes every voucher
     (scheme_batch_settlement_svm.md: expiresAt "MUST be 0"): the amount and each payee's part are the voucher's amount,
-    split by the open's distribution; the deposit the open's; the asset its mint. A voucher of another channel or
+    split by the open's distribution; the deposit and who may close the channel the open's; the asset its mint. A voucher of another channel or
     signer, or with an expiry, gives none. The voucher's 50 bytes are 56 01, the channel id, the amount as a u64 and
     the expiry as an i64."""
     net = _network_in("solana", network)
@@ -244,7 +272,14 @@ def solana_batch_opening(request: Mapping[str, Any], network: str | None = None,
     if payees is None:
         return None
     return Summary(
-        amount=str(amount), payees=payees, deposit=str(open_.deposit), asset=open_.mint, network=net, validity=_BLOCKS, atr=b""
+        amount=str(amount),
+        payees=payees,
+        deposit=str(open_.deposit),
+        closable_by=_closers(open_),
+        asset=open_.mint,
+        network=net,
+        validity=_BLOCKS,
+        atr=b"",
     )
 
 

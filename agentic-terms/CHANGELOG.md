@@ -25,6 +25,13 @@ call before and after.
 - The profile `buyer-gate.md`, rule 8, states how a subscription's expiry is held: on `mpp/subscription/tempo` the
   window is the key authorization's `expiry`, the challenge's `subscriptionExpires`, less the gate's clock, and a
   subscription longer than 600 seconds is paid once `ceilings` raises the pairing's ceiling to that window.
+- A Masumi lock's summary shows, in its `grant`, every party that can move the locked funds, and when, as the
+  `vested_pay` escrow gates each: the seller after `unlockTime`, the buyer's refund after `submitResultTime`, and the
+  deployment's admins, each distinct key hash with its weight and the weight required, after
+  `externalDisputeUnlockTime`, the canonical deployment's where the option names none.
+- The summary of a payment channel's `open` on Solana (`x402/upto/solana`, `mpp/session/solana/memo` and the
+  `x402/batch-settlement/solana` opening) holds `closableBy`: the `open`'s payee and its payer, as the payment-channels
+  program lets each close.
 
 ## [0.5.2] - 2026-11-20
 

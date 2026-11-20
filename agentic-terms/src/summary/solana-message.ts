@@ -54,6 +54,8 @@ interface Transfer {
 
 /** A payment-channels `open` the message signs. */
 interface Open {
+  /** The account that funds the deposit, the `open`'s first. */
+  readonly payer: string;
   readonly payee: string;
   readonly mint: string;
   /** The key the channel's vouchers are signed with, the `open`'s fifth account. */
@@ -98,7 +100,7 @@ function read(message: Uint8Array): { transfers: Transfer[]; opens: Open[] } | u
         recipient: base58(d.subarray(33 + 34 * i, 65 + 34 * i)),
         bps: Number(uintLe(d, 65 + 34 * i, 2)),
       }));
-      opens.push({ payee: at(2), mint: at(3), signer: at(4), channel: at(5), deposit: uintLe(d, 9, 8), recipients });
+      opens.push({ payer: at(0), payee: at(2), mint: at(3), signer: at(4), channel: at(5), deposit: uintLe(d, 9, 8), recipients });
     } else {
       return undefined;
     }
@@ -120,6 +122,15 @@ function shares(open: Open, total: bigint): Payee[] | undefined {
   const rest = total - payees.reduce((s, p) => s + p.amount, 0n);
   const all = bps < 10_000 ? [...payees, { account: open.payee, amount: rest }] : payees;
   return all.map((p) => ({ account: p.account, amount: p.amount.toString() }));
+}
+
+/**
+ * Who may close the channel an `open` opens, by the payment-channels program's rule (x402's
+ * `scheme_batch_settlement_svm.md`, its lifecycle): its payee at any time, by `settle_and_seal`, and its payer, by
+ * `request_close`, which returns the deposit's rest once the grace period has passed (`withdraw_payer`).
+ */
+function closers(open: Open): string[] {
+  return open.payee === open.payer ? [open.payee] : [open.payee, open.payer];
 }
 
 /**
@@ -153,7 +164,8 @@ function openOf(message: unknown): Open | undefined {
 
 /**
  * A one-request channel's `open` (`upto`): the deposit escrows the maximum the payee may charge, split by the
- * distribution, or the channel's payee's whole where it names none; the asset is its mint.
+ * distribution, or the channel's payee's whole where it names none; who may close it, its payee and its payer; the asset
+ * is its mint.
  */
 export function solanaUptoOpen(request: SigningRequest, network?: string): Shown | undefined {
   const r = request as { kind?: unknown; message?: unknown };
@@ -163,12 +175,12 @@ export function solanaUptoOpen(request: SigningRequest, network?: string): Shown
   const payees = open === undefined ? undefined : shares(open, open.deposit);
   if (open === undefined || payees === undefined) return undefined;
   const deposit = open.deposit.toString();
-  return { maximum: deposit, payees, deposit, asset: open.mint, network: net, validity: VALIDITY };
+  return { maximum: deposit, payees, deposit, closableBy: closers(open), asset: open.mint, network: net, validity: VALIDITY };
 }
 
 /**
  * A session's `open` (`solana-session-open`): the deposit, split by the distribution, or the channel's payee's whole
- * where it names none; the asset is its mint. The vouchers that later charge it are signed apart.
+ * where it names none; who may close it, its payee and its payer; the asset is its mint. The vouchers that later charge it are signed apart.
  */
 export function solanaSessionOpen(request: SigningRequest, network?: string): Shown | undefined {
   const r = request as { kind?: unknown; message?: unknown };
@@ -177,14 +189,14 @@ export function solanaSessionOpen(request: SigningRequest, network?: string): Sh
   const open = openOf(r.message);
   const payees = open === undefined ? undefined : shares(open, open.deposit);
   if (open === undefined || payees === undefined) return undefined;
-  return { payees, deposit: open.deposit.toString(), asset: open.mint, network: net, validity: VALIDITY };
+  return { payees, deposit: open.deposit.toString(), closableBy: closers(open), asset: open.mint, network: net, validity: VALIDITY };
 }
 
 /**
  * `x402/batch-settlement/solana`'s opening, a `batch` of the `open` message, then the first voucher, for the `open`'s
  * authorized signer, over the channel the `open` opens and with no expiry, as x402's scheme writes every voucher
  * (`scheme_batch_settlement_svm.md`: `expiresAt` "MUST be `0`"): the amount and each payee's part are the voucher's
- * amount, split by the `open`'s distribution; the deposit the `open`'s; the asset its mint. A voucher of another
+ * amount, split by the `open`'s distribution; the deposit and who may close the channel the `open`'s; the asset its mint. A voucher of another
  * channel or signer, or with an expiry, gives none. A voucher signs 50 bytes: `56 01`, the channel id, the amount as a
  * u64 and the expiry as an i64, little-endian.
  */
@@ -201,5 +213,13 @@ export function solanaBatchOpening(request: SigningRequest, network?: string): S
   const amount = uintLe(v, 34, 8);
   const payees = shares(open, amount);
   if (payees === undefined) return undefined;
-  return { amount: amount.toString(), payees, deposit: open.deposit.toString(), asset: open.mint, network: net, validity: VALIDITY };
+  return {
+    amount: amount.toString(),
+    payees,
+    deposit: open.deposit.toString(),
+    closableBy: closers(open),
+    asset: open.mint,
+    network: net,
+    validity: VALIDITY,
+  };
 }

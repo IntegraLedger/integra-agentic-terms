@@ -267,7 +267,7 @@ seller's option, so a request that grants more than the offer is shown granting 
 | `period`, `limitPerPeriod`, `end` | A recurring grant: a subscription's key authorization or a Spend Permission. |
 | `operator`, `authorizationExpiry`, `refundExpiry` | An authorization and capture. |
 | `deposit`, `closableBy` | A session's or a channel's deposit, and who may close it. |
-| `grant` | What a delegation, a checkout, a session's opening (its escrow and the key that signs its vouchers), a Masumi lock (the escrow that holds the deposit) or a Circle Gateway burn intent (the network the payee is paid on, and the most Gateway may take as its fee) grants, as JSON. |
+| `grant` | What a delegation, a checkout, a session's opening (its escrow and the key that signs its vouchers), a Masumi lock (the escrow that holds the deposit, and who besides the seller can move it, and when) or a Circle Gateway burn intent (the network the payee is paid on, and the most Gateway may take as its fee) grants, as JSON. |
 | `atr` | The ATR's bytes the gate hashed, parsed and compared. |
 
 A request of a kind the gate has no summary for is declined `summary-missing`: nothing is signed unshown. The profile's

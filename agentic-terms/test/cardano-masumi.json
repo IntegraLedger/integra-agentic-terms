@@ -1,5 +1,5 @@
 {
-  "about": "A Masumi lock's option, x402/exact/cardano/lock with extra.assetTransferMethod \"masumi\", issued by the stock @x402/cardano 2.31.0 issuer, issueMasumiRequirements, on Node 26: network cardano:preprod, asset lovelace, amount 5000000, maxTimeoutSeconds 600; the seller toMasumiSellerSigner's over BIP-39's published English test mnemonic, eleven words \"abandon\" then \"about\", whose CIP-8 authorization signs the terms; the request commitment one jcs part, body, x402's Cardano scheme's own example content {\"days\": 3, \"units\": \"metric\"} (scheme_exact_cardano.md, Masumi assetTransferMethod Schema); sellerNonce 33 x 32; payByTime 2026-11-20T07:44:00Z plus maxTimeoutSeconds, and the other three deadlines payByTime plus DEFAULT_MASUMI_DEADLINE_OFFSETS (15, 35 and 55 minutes); payTo, the escrow, the issuer's own, derived from the canonical deployment. expect is the summary of the request the lock's buyer piece builds from that option, read from the option alone as lcp's profile x402-exact-cardano.md, rule 9, names the payee: the seller terms.sellerAddress names, with the amount, the escrow being payTo; the request names no TTL, so the validity is none to none, in slots.",
+  "about": "A Masumi lock's option, x402/exact/cardano/lock with extra.assetTransferMethod \"masumi\", issued by the stock @x402/cardano 2.31.0 issuer, issueMasumiRequirements, on Node 26: network cardano:preprod, asset lovelace, amount 5000000, maxTimeoutSeconds 600; the seller toMasumiSellerSigner's over BIP-39's published English test mnemonic, eleven words \"abandon\" then \"about\", whose CIP-8 authorization signs the terms; the request commitment one jcs part, body, x402's Cardano scheme's own example content {\"days\": 3, \"units\": \"metric\"} (scheme_exact_cardano.md, Masumi assetTransferMethod Schema); sellerNonce 33 x 32; payByTime 2026-11-20T07:44:00Z plus maxTimeoutSeconds, and the other three deadlines payByTime plus DEFAULT_MASUMI_DEADLINE_OFFSETS (15, 35 and 55 minutes); payTo, the escrow, the issuer's own, derived from the canonical deployment. expect is the summary of the request the lock's buyer piece builds from that option, read from the option alone as lcp's profile x402-exact-cardano.md, rule 9, names the payee: the seller terms.sellerAddress names, with the amount; and its grant every party that can move the locked funds, and when, as the vested_pay escrow gates each (masumi-payment-service d74b2c31, the blueprint x402's scheme_exact_cardano.md names, smart-contracts/payment-v2/validators/vested_pay.ak: Withdraw, the seller's, must_start_after unlock_time; WithdrawRefund, the buyer's, must_start_after submit_result_time; WithdrawDisputed, the admins', must_start_after external_dispute_unlock_time): the escrow, payTo; the seller after terms.unlockTime; the buyer's refund after terms.submitResultTime; and the admins after terms.externalDisputeUnlockTime, the option naming no extra.deployment, so the canonical deployment's, its required 2 over its three admin key hashes as the scheme's Deployment and escrow address table lists them, each of weight 1; each time the terms' POSIX milliseconds as Unix seconds, rounded down. The request names no TTL, so the validity is none to none, in slots.",
   "option": {
     "scheme": "exact",
     "network": "cardano:preprod",
@@ -59,7 +59,32 @@
       "unit": "slot"
     },
     "grant": {
-      "escrow": "addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g"
+      "escrow": "addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g",
+      "seller": {
+        "account": "addr_test1qq8ac7qqy0vtulyl7wntmsxc6wex80gvcyjy33qffrhm7sh927ysx5sftuw0dlft05dz3c7revpf7jx0xnlcjz3g69mqkt5dmn",
+        "after": "1795163340"
+      },
+      "buyer": {
+        "refundAfter": "1795162140"
+      },
+      "admins": {
+        "required": "2",
+        "weights": [
+          {
+            "key": "fc16a1fcf309aed03ec18bb2176f5ea29acea70bb79145ebaffa8e75",
+            "weight": "1"
+          },
+          {
+            "key": "7f78161369549d8e2b138fee724c9fa606d6107a66720bdb4c48ada6",
+            "weight": "1"
+          },
+          {
+            "key": "89eef9ea84e0ee7fe4921fa93eb2873ff6e34473f751d5d52cb75aa6",
+            "weight": "1"
+          }
+        ],
+        "after": "1795164540"
+      }
     }
   }
 }

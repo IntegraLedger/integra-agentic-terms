@@ -177,7 +177,8 @@ ROWS = [
     ),
     Row(
         "x402/upto/solana",
-        "x402-upto-solana.json EU3.wireBase64 (solders 0.26.0); amount, payTo, asset, network: fixed.option",
+        "x402-upto-solana.json EU3.wireBase64 (solders 0.26.0); amount, payTo, asset, network: fixed.option; who may "
+        "close: its feePayer and fixed.payer",
         solana_upto_open,
         lambda: {"kind": "solana-message", "message": message_of(UPTO["EU3"]["wireBase64"])},
         UPTO["fixed"]["option"]["network"],
@@ -185,6 +186,7 @@ ROWS = [
             maximum=UPTO["fixed"]["option"]["amount"],
             payees=one(UPTO["fixed"]["option"]["payTo"], UPTO["fixed"]["option"]["amount"]),
             deposit=UPTO["fixed"]["option"]["amount"],
+            closable_by=(UPTO["fixed"]["option"]["extra"]["feePayer"], UPTO["fixed"]["payer"]),
             asset=UPTO["fixed"]["option"]["asset"],
             network=UPTO["fixed"]["option"]["network"],
             validity=BLOCKS,
@@ -194,7 +196,7 @@ ROWS = [
     Row(
         "mpp/session/solana/memo",
         "mpp-session-solana.json memo.expectMessageBase64 and expectChannel; cap (the deposit), recipient, currency: "
-        "fixed.memoRequest",
+        "fixed.memoRequest; who may close: its recipient and fixed.payer",
         solana_session_open,
         lambda: {
             "kind": "solana-session-open",
@@ -206,6 +208,7 @@ ROWS = [
         Summary(
             payees=one(SESSION["fixed"]["memoRequest"]["recipient"], SESSION["fixed"]["memoRequest"]["cap"]),
             deposit=SESSION["fixed"]["memoRequest"]["cap"],
+            closable_by=(SESSION["fixed"]["memoRequest"]["recipient"], SESSION["fixed"]["payer"]),
             asset=SESSION["fixed"]["memoRequest"]["currency"],
             network=DEVNET,
             validity=BLOCKS,
@@ -395,6 +398,7 @@ def test_x402_batch_settlement_solana_the_openings_open_and_first_voucher_built_
         amount=option["amount"],
         payees=one(option["payTo"], option["amount"]),
         deposit=s["deposit"],
+        closable_by=(s["feePayer"], s["payer"]),
         asset=option["asset"],
         network=option["network"],
         validity=BLOCKS,
@@ -421,6 +425,7 @@ def test_mpp_session_solana_memo_an_opening_whose_distribution_holds_the_eight_s
     assert summary_of("mpp/session/solana/memo", confirmed.request, atr, DEVNET) == Summary(
         payees=tuple(Payee(account=r, amount=str(a)) for r, a in shares) + one(SESSION["fixed"]["memoRequest"]["recipient"], str(rest)),
         deposit=SESSION["fixed"]["memoRequest"]["cap"],
+        closable_by=(SESSION["fixed"]["memoRequest"]["recipient"], SESSION["fixed"]["payer"]),
         asset=SESSION["fixed"]["memoRequest"]["currency"],
         network=DEVNET,
         validity=BLOCKS,

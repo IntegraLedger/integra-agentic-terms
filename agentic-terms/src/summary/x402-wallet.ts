@@ -6,6 +6,7 @@
  * the gate hands it the latest it may sign (`maxExpirationTimestampSecs`, `maxTtl`, `maxEpoch`), which the summary shows
  * as the validity's end, and a request without one signs no end.
  */
+import type { Json } from "@integraledger/lcp/core";
 import type { Shown } from "../summary.js";
 import type { SigningRequest } from "../types.js";
 import { decimal, isObject } from "./evm-fields.js";
@@ -65,11 +66,56 @@ export const cardanoTransaction = (request: SigningRequest): Shown | undefined =
   );
 
 /**
+ * The admins of the canonical Masumi V2 deployment, where the option names no `extra.deployment` (x402's
+ * `scheme_exact_cardano.md`, *Deployment and escrow address*): two of these three key hashes settle a disputed escrow.
+ * Preview has no canonical deployment.
+ */
+const MASUMI_ADMINS = {
+  requiredAdmins: "2",
+  adminVkeys: [
+    "fc16a1fcf309aed03ec18bb2176f5ea29acea70bb79145ebaffa8e75",
+    "7f78161369549d8e2b138fee724c9fa606d6107a66720bdb4c48ada6",
+    "89eef9ea84e0ee7fe4921fa93eb2873ff6e34473f751d5d52cb75aa6",
+  ],
+} as const;
+const PREVIEW = new Set(["cardano:preview", "cip34:0-2"]);
+/** A positive canonical decimal, as the scheme writes a time in POSIX milliseconds and `requiredAdmins`. */
+const POSITIVE = /^[1-9][0-9]{0,19}$/;
+const KEY_HASH = /^[0-9a-f]{56}$/;
+
+/** A POSIX-millisecond time as Unix seconds, rounded down, as a decimal string; else undefined. */
+const secondsOf = (v: unknown): string | undefined => (typeof v === "string" && POSITIVE.test(v) ? (BigInt(v) / 1000n).toString() : undefined);
+
+/**
+ * The admins who may settle a disputed Masumi escrow: the option's `extra.deployment`, or the canonical deployment's
+ * where it names none and the network has one. Each distinct key hash with its weight, the times it appears, as the
+ * contract counts it, and the weight required, as decimal strings; undefined for a deployment of another form.
+ */
+function masumiAdmins(extra: Record<string, unknown>, network: string): Json | undefined {
+  const declared = extra["deployment"];
+  if (declared === undefined && PREVIEW.has(network)) return undefined;
+  const d = declared === undefined ? MASUMI_ADMINS : declared;
+  if (!isObject(d)) return undefined;
+  const keys: unknown = d["adminVkeys"];
+  const required = typeof d["requiredAdmins"] === "string" && POSITIVE.test(d["requiredAdmins"]) ? d["requiredAdmins"] : undefined;
+  if (!Array.isArray(keys) || keys.length === 0 || !keys.every((k) => typeof k === "string" && KEY_HASH.test(k))) return undefined;
+  if (required === undefined || BigInt(required) > BigInt(keys.length)) return undefined;
+  const weights = new Map<string, number>();
+  for (const k of keys as string[]) weights.set(k, (weights.get(k) ?? 0) + 1);
+  return { required, weights: [...weights].map(([key, weight]) => ({ key, weight: String(weight) })) };
+}
+
+/**
  * `x402/exact/cardano/lock`, as the protocol package's reference names the payee: on a script lock
  * (`accepted.extra.assetTransferMethod` `"script"`) the address method's members, its payee `payTo`, the contract the
  * seller defines; on a Masumi lock (`"masumi"`) the same members but the payee, the seller `accepted.extra.terms`
- * names in `sellerAddress`, with the amount, and the grant `{escrow}`, `payTo`, the escrow every seller of a deployment
- * shares, which holds the deposit.
+ * names in `sellerAddress`, with the amount, and the grant: every party that can move the locked funds, and when, as
+ * the `vested_pay` escrow gates each (`masumi-payment-service` `d74b2c31`, the blueprint x402's
+ * `scheme_exact_cardano.md` names, `vested_pay.ak`): `escrow`, `payTo`, which holds the deposit; `seller`, its
+ * `account` and, where the terms name one, its `returnAddress`, which may withdraw `after` `unlockTime` (`Withdraw`);
+ * `buyer`, whose refund may be withdrawn `refundAfter` `submitResultTime` (`WithdrawRefund`); and `admins`, who may
+ * settle a disputed escrow `after` `externalDisputeUnlockTime` (`WithdrawDisputed`), with their weights and the weight
+ * `required`. Each time is in Unix seconds, rounded down.
  */
 export function cardanoLock(request: SigningRequest): Shown | undefined {
   const accepted = (request as { accepted?: unknown }).accepted;
@@ -78,11 +124,21 @@ export function cardanoLock(request: SigningRequest): Shown | undefined {
   if (extra["assetTransferMethod"] === "script") return cardanoTransaction(request);
   if (extra["assetTransferMethod"] !== "masumi") return undefined;
   const terms = extra["terms"];
-  const seller = isObject(terms) ? terms["sellerAddress"] : undefined;
   const shown = cardanoTransaction(request);
-  if (shown === undefined || !text(seller)) return undefined;
-  const escrow = shown.payees[0]!.account;
-  return { ...shown, payees: [{ account: seller, amount: shown.payees[0]!.amount }], grant: { escrow } };
+  if (shown === undefined || !isObject(terms)) return undefined;
+  const seller = terms["sellerAddress"];
+  const returnAddress = terms["sellerReturnAddress"];
+  const [unlock, refund, dispute] = [terms["unlockTime"], terms["submitResultTime"], terms["externalDisputeUnlockTime"]].map(secondsOf);
+  const admins = masumiAdmins(extra, shown.network!);
+  if (!text(seller) || (returnAddress !== undefined && !text(returnAddress))) return undefined;
+  if (unlock === undefined || refund === undefined || dispute === undefined || admins === undefined) return undefined;
+  const grant: Json = {
+    escrow: shown.payees[0]!.account,
+    seller: { account: seller, ...(returnAddress === undefined ? {} : { returnAddress }), after: unlock },
+    buyer: { refundAfter: refund },
+    admins: { ...(admins as Record<string, Json>), after: dispute },
+  };
+  return { ...shown, payees: [{ account: seller, amount: shown.payees[0]!.amount }], grant };
 }
 
 /**

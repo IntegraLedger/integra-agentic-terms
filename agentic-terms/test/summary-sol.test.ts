@@ -116,7 +116,7 @@ const ROWS: Row[] = [
   },
   {
     pairing: "x402/upto/solana",
-    source: "x402-upto-solana.json EU3.wireBase64 (solders 0.26.0); amount, payTo, asset, network: fixed.option",
+    source: "x402-upto-solana.json EU3.wireBase64 (solders 0.26.0); amount, payTo, asset, network: fixed.option; who may close: its feePayer and fixed.payer",
     show: solanaUptoOpen,
     request: async () => ({ kind: "solana-message", message: messageOf(upto.EU3.wireBase64) }),
     network: upto.fixed.option.network,
@@ -124,6 +124,7 @@ const ROWS: Row[] = [
       maximum: upto.fixed.option.amount,
       payees: [{ account: upto.fixed.option.payTo, amount: upto.fixed.option.amount }],
       deposit: upto.fixed.option.amount,
+      closableBy: [upto.fixed.option.extra.feePayer, upto.fixed.payer],
       asset: upto.fixed.option.asset,
       network: upto.fixed.option.network,
       validity: BLOCKS,
@@ -131,7 +132,7 @@ const ROWS: Row[] = [
   },
   {
     pairing: "mpp/session/solana/memo",
-    source: "mpp-session-solana.json memo.expectMessageBase64 and expectChannel; cap (the deposit), recipient, currency: fixed.memoRequest",
+    source: "mpp-session-solana.json memo.expectMessageBase64 and expectChannel; cap (the deposit), recipient, currency: fixed.memoRequest; who may close: its recipient and fixed.payer",
     show: solanaSessionOpen,
     request: async () => ({
       kind: "solana-session-open",
@@ -143,6 +144,7 @@ const ROWS: Row[] = [
     expect: {
       payees: [{ account: session.fixed.memoRequest.recipient, amount: session.fixed.memoRequest.cap }],
       deposit: session.fixed.memoRequest.cap,
+      closableBy: [session.fixed.memoRequest.recipient, session.fixed.payer],
       asset: session.fixed.memoRequest.currency,
       network: DEVNET,
       validity: BLOCKS,
@@ -347,6 +349,7 @@ describe("the summaries of a Solana batch opening and of a session opening with 
       amount: S.option.amount,
       payees: [{ account: S.option.payTo, amount: S.option.amount }],
       deposit: S.deposit,
+      closableBy: [S.feePayer, S.payer],
       asset: S.option.asset,
       network: S.option.network,
       validity: BLOCKS,
@@ -372,6 +375,7 @@ describe("the summaries of a Solana batch opening and of a session opening with 
     expect(await summaryOf("mpp/session/solana/memo", out.request, atr, DEVNET)).toEqual({
       payees: [...shares, { account: session.fixed.memoRequest.recipient, amount: rest.toString() }],
       deposit: session.fixed.memoRequest.cap,
+      closableBy: [session.fixed.memoRequest.recipient, session.fixed.payer],
       asset: session.fixed.memoRequest.currency,
       network: DEVNET,
       validity: BLOCKS,
