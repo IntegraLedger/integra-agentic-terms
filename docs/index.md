@@ -31,9 +31,9 @@ declines are fixed, for both languages, by the profile
 
 | Package | For | Install |
 | --- | --- | --- |
-| `@integraledger/terms` | TypeScript agents | `npm install @integraledger/terms@0.5.2 @integraledger/lcp@0.6.2` |
-| `@integraledger/terms-mcp` | Any agent with an MCP client: the gate as tools, and a skill | `npx -y @integraledger/terms-mcp@0.5.2` |
-| `integraledger-terms` | Python agents | `pip install integraledger-terms==0.5.2` |
+| `@integraledger/terms` | TypeScript agents | `npm install @integraledger/terms@0.5.3 @integraledger/lcp@0.6.3` |
+| `@integraledger/terms-mcp` | Any agent with an MCP client: the gate as tools, and a skill | `npx -y @integraledger/terms-mcp@0.5.3` |
+| `integraledger-terms` | Python agents | `pip install integraledger-terms==0.5.3` |
 
 The TypeScript and Python gates are two implementations of the same rules. They run the same shared vectors and build
 the same payments.

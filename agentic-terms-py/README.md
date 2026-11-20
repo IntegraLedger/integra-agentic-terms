@@ -4,7 +4,7 @@ The buyer gate for agents that pay, in Python: before your wallet signs anything
 serves hashes to the value the payment will carry, and builds the payment with that hash.
 
 ```sh
-pip install integraledger-terms==0.5.2
+pip install integraledger-terms==0.5.3
 ```
 
 ## What it is
@@ -63,7 +63,7 @@ the profile
 ## Install
 
 ```sh
-pip install integraledger-terms==0.5.2
+pip install integraledger-terms==0.5.3
 ```
 
 Python `>=3.11`. The package depends on `httpx` (`>=0.28.1,<0.29`) and `cryptography` (`==50.0.2`, an exact pin:

@@ -6,7 +6,7 @@ change the public API, so pin the exact version. A change a caller must make is 
 [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each call before
 and after.
 
-## [Unreleased]
+## [0.5.3] - 2026-11-20
 
 ### Changed
 

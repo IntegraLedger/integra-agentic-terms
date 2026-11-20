@@ -4,7 +4,7 @@ The buyer gate as Model Context Protocol tools, with a skill that teaches an age
 it pays.
 
 ```sh
-npx -y @integraledger/terms-mcp@0.5.2
+npx -y @integraledger/terms-mcp@0.5.3
 ```
 
 ## What it is
@@ -54,7 +54,7 @@ Add the server to your MCP client. Most clients take a configuration like this:
   "mcpServers": {
     "terms": {
       "command": "npx",
-      "args": ["-y", "@integraledger/terms-mcp@0.5.2"]
+      "args": ["-y", "@integraledger/terms-mcp@0.5.3"]
     }
   }
 }
@@ -67,7 +67,7 @@ Then give your agent the skill. The package ships it at
 Claude Code, `.claude/skills/`), or paste the file into your agent's instructions:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.2
+npm install @integraledger/terms-mcp@0.5.3
 cp -r node_modules/@integraledger/terms-mcp/skills/confirming-the-atr-hash-before-paying .claude/skills/
 ```
 
@@ -92,7 +92,7 @@ To call `createBuyerServer` in your own code, as the [Quickstart](#quickstart) a
 [Serving with your own signer](#serving-with-your-own-signer) do, install the packages their samples import:
 
 ```sh
-npm install @integraledger/terms-mcp@0.5.2 @integraledger/terms@0.5.2 @integraledger/lcp@0.6.2 @modelcontextprotocol/server@2.3.1
+npm install @integraledger/terms-mcp@0.5.3 @integraledger/terms@0.5.3 @integraledger/lcp@0.6.3 @modelcontextprotocol/server@2.3.1
 ```
 
 `@integraledger/lcp` is a peer dependency (`~0.6.3`). `createBuyerServer` returns an `McpServer` of

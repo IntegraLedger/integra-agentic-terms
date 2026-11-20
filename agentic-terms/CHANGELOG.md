@@ -6,7 +6,7 @@ The packages are at 0.x: a minor release may change the public API. A change a c
 **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each
 call before and after.
 
-## [Unreleased]
+## [0.5.3] - 2026-11-20
 
 ### Changed
 

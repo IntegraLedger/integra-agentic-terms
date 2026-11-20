@@ -11,7 +11,7 @@ change of the release.
 
 ## Versions
 
-- The three packages are released together, under one version number. This documentation is 0.5.2's.
+- The three packages are released together, under one version number. This documentation is 0.5.3's.
 - At 0.x, a minor release may change the public API, as 0.5.0 changed 0.4.x's. Pin the exact version, as every install
   line here does, and read this page before you move to a new minor release.
 - `@integraledger/terms` and `@integraledger/terms-mcp` 0.5.x take `@integraledger/lcp` `~0.6.3`, 0.6.3 or a later 0.6.x release, as
@@ -21,9 +21,9 @@ change of the release.
 - Security fixes are released for the latest published version of each package only.
 
 ```sh
-npm install @integraledger/terms@0.5.2 @integraledger/lcp@0.6.2
-npx -y @integraledger/terms-mcp@0.5.2
-pip install integraledger-terms==0.5.2
+npm install @integraledger/terms@0.5.3 @integraledger/lcp@0.6.3
+npx -y @integraledger/terms-mcp@0.5.3
+pip install integraledger-terms==0.5.3
 ```
 
 ## From 0.4.x to 0.5.0
