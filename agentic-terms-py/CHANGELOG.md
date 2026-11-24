@@ -6,6 +6,24 @@ change the public API, so pin the exact version. A change a caller must make is 
 [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each call before
 and after.
 
+## [Unreleased]
+
+### Fixed
+
+- `mpp/session/tempo` against the stock server (mppx 0.17.6 and 0.21.1), which refused every session the package
+  built: the opening's voucher is signed at the challenge's `amount`, the request the opening pays (it was 0; a deposit
+  below the amount is `mpp/input-malformed`, an amount that is not a decimal `mpp/request-malformed`);
+  `funding.validBefore` is the challenge's `expires` or the choice's `now` plus 240 seconds, whichever is earlier, since
+  a Tempo node refuses a `validBefore` more than 300 seconds past the block's timestamp; the voucher and close
+  credentials carry `source`, the payer's DID, the opening transaction's sender; and a v2 close is two signing requests,
+  the final voucher and then `CloseAuthorization(bytes32 channelId,uint96 cumulativeAmount)`, whose signature the
+  credential carries as `closeSignature`. As the protocol package's next release builds them.
+- `open_channel` starts the hold of an MPP session's opening at the cumulative amount its voucher signs, as `charged`
+  and `signedMax` (both were "0"), so the first `within` voucher adds the next request's amount to the opening's and
+  `record_charge` takes the stock server's receipt for the opening.
+- `tempo_sender` reads Tempo T14's configurable account signature (type `0x05`) as the account it names, which a node
+  with T14 active includes (Moderato from 2026-11-24, mainnet from 2026-12-08); it was `tempo/tx-malformed`.
+
 ## [0.5.3] - 2026-11-20
 
 ### Changed

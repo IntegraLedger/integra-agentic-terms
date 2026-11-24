@@ -270,11 +270,16 @@ def tempo_signed(
     return "0x76" + rlp_list([*fields, rlp_bytes(signed)]).hex(), signing
 
 
+# The validBefore TS2's wire signs (mpp-session-tempo.json TS2.wire), the challenge's expires. A build at fixed.now
+# gives the challenge's expires, earlier than fixed.now + 240; the wallet may sign any validBefore, and bound reads none.
+TS2_VALID_BEFORE = 1790000060
+
+
 def open_wire(request: Any, signature: Any = None) -> str:
-    """TS2's wire: the open call in a 0x76 transaction, signed by the payer over keccak256(0x76 ‖ rlp(fields)); or
-    with the signature bytes signature(that hash) gives."""
+    """TS2's wire: the open call in a 0x76 transaction with TS2's validBefore, signed by the payer over
+    keccak256(0x76 ‖ rlp(fields)); or with the signature bytes signature(that hash) gives."""
     assert request["kind"] == "tempo-call", request
-    return tempo_signed([(request["call"]["to"], request["call"]["data"])], request["chainId"], request["validBefore"], signature)[0]
+    return tempo_signed([(request["call"]["to"], request["call"]["data"])], request["chainId"], TS2_VALID_BEFORE, signature)[0]
 
 
 class TempoAnswer:
@@ -295,10 +300,63 @@ VOUCHER_SIGNATURE = "0x" + "66" * 65  # a test value: build's complete reads its
 def tempo_built(request_text: str, payer: str = TF["payer"]) -> Any:
     """The binding's build for a challenge of request_text and payer."""
     unsigned = MPP_SESSION_TEMPO.build(
-        {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": payer, "deposit": int(TF["deposit"])}, H
+        {"challenge": placed_doc(issued("tempo", "session", request_text), H, LINK)[0], "from": payer, "now": TF["now"], "deposit": int(TF["deposit"])},
+        H,
     )
     assert not isinstance(unsigned, Refusal), unsigned
     return unsigned
+
+
+def tempo_build_with(amount: Any = "100", deposit: int = int(TF["deposit"]), now: Any = TF["now"]) -> Any:
+    """The binding's build for fixed.requestV2 with its amount replaced (absent where amount is None), deposit and now."""
+    request = json.loads(TF["requestV2"])
+    if amount is None:
+        del request["amount"]
+    else:
+        request["amount"] = amount
+    challenge = placed_doc(issued("tempo", "session", json.dumps(request)), H, LINK)[0]
+    return MPP_SESSION_TEMPO.build({"challenge": challenge, "from": TF["payer"], "now": now, "deposit": deposit}, H)
+
+
+def test_mpp_session_tempo_the_opening_voucher_is_at_the_requests_amount() -> None:
+    """The stock server refuses an opening whose voucher is below the request's amount (mppx 0.17.6 and 0.21.1,
+    assertOpenCredentialCoversRequest: "voucher amount is less than request amount"), and its client signs the opening's
+    voucher at that amount (createOpenPayload, initialAmount). A deposit below the amount, which could not pay the request
+    the opening is for, is mpp/input-malformed, one equal to it builds; an amount that is not a decimal is
+    mpp/request-malformed."""
+    for amount in ("100", "0", "250"):
+        unsigned = tempo_build_with(amount)
+        assert not isinstance(unsigned, Refusal), unsigned
+        wire = open_wire(unsigned.funding)
+        voucher = unsigned.voucher(wire)
+        assert voucher["message"]["cumulativeAmount"] == int(amount)
+        credential = unsigned.complete(wire, sign_typed(voucher))
+        assert credential["payload"]["cumulativeAmount"] == amount
+        assert MPP_SESSION_TEMPO.bound(credential) == H
+    assert not isinstance(tempo_build_with("100", deposit=100), Refusal)
+    assert tempo_build_with("100", deposit=99) == Refusal("mpp/input-malformed")
+    for bad in (None, 100, "-1", "01", "1.5", "0x64", ""):
+        assert tempo_build_with(bad) == Refusal("mpp/request-malformed"), bad
+
+
+def test_mpp_session_tempo_funding_valid_before_is_the_earlier_of_expires_and_now_plus_240() -> None:
+    """Tempo's node refuses an expiring-nonce transaction whose validBefore is more than 300 s after the block's
+    timestamp; the choice's now is read before the funding is approved and signed, so the window is counted from it:
+    240 s, capped at the challenge's expiry. A now that is not a non-negative safe integer is mpp/input-malformed."""
+    expires = 1790000060
+
+    def at(now: Any) -> Any:
+        unsigned = tempo_build_with(now=now)
+        return unsigned if isinstance(unsigned, Refusal) else unsigned.funding["validBefore"]
+
+    assert at(TF["now"]) == expires
+    assert at(TF["now"] - 300) == TF["now"] - 60
+    assert at(expires - 241) == expires - 1
+    assert at(expires - 240) == expires
+    assert at(expires + 3600) == expires
+    assert at(0) == 240
+    for bad in (-1, 1.5, 2**53, "1790000000", None, True):
+        assert at(bad) == Refusal("mpp/input-malformed"), bad
 
 
 def test_mpp_session_tempo_the_v1_funding_approves_the_escrow_before_the_open() -> None:
@@ -589,7 +647,7 @@ def faulted(v1: bool, faults: list[str]) -> dict[str, Any]:
     call = (TF["recipient"] if "noOpen" in faults else escrow, data)
     signature = (lambda d: k1(d, lambda p: 29)) if "sender" in faults else None
     chain = 4217 if "chain" in faults else TF["chainId"]
-    wire, signing = tempo_signed([call, call] if "twoOpens" in faults else [call], chain, unsigned.funding["validBefore"], signature)
+    wire, signing = tempo_signed([call, call] if "twoOpens" in faults else [call], chain, TS2_VALID_BEFORE, signature)
     payload = {**own["payload"], "transaction": wire}
     if not v1:
         descriptor = {**own["payload"]["descriptor"], "expiringNonceHash": "0x" + keccak(signing + bytes.fromhex(TF["payer"][2:])).hex()}
@@ -615,7 +673,7 @@ def test_mpp_session_tempo_rows_with_two_faults_are_refused_for_the_one_the_draf
         assert MPP_SESSION_TEMPO.bound(faulted(v1, [])) == H
     ts1 = tempo_built(TF["requestV2"]).funding
     assert ts1["call"]["data"] == TEMPO["TS1"]["expectCalldata"]
-    signing = tempo_signed([(TF["escrowV2"], ts1["call"]["data"])], TF["chainId"], ts1["validBefore"])[1]
+    signing = tempo_signed([(TF["escrowV2"], ts1["call"]["data"])], TF["chainId"], TS2_VALID_BEFORE)[1]
     assert "0x" + keccak(signing + bytes.fromhex(TF["payer"][2:])).hex() == TEMPO["TS2"]["expectNonceHash"]
     for row in rows:
         assert set(row) <= {"case", "sessionProtocol", "faults", "expect"}, row["case"]
@@ -673,7 +731,7 @@ def test_mpp_session_tempo_build_refuses_a_transaction_with_the_code_bound_gives
         calls = [(call["to"], call["data"])]
         if "padding" in row:
             calls.append((TF["recipient"], "0x" + "00" * row["padding"]))
-        wire = tempo_signed(calls, by_payer.funding["chainId"], by_payer.funding["validBefore"])[0]
+        wire = tempo_signed(calls, by_payer.funding["chainId"], TS2_VALID_BEFORE)[0]
         refused = Refusal(row["expect"])
         assert unsigned.voucher(wire) == refused, row["case"]
         assert unsigned.complete(wire, VOUCHER_SIGNATURE) == refused, row["case"]
@@ -748,7 +806,7 @@ def test_mpp_session_tempo_rows_whose_transaction_carries_a_0x03_keychain_signat
             def sign(digest: bytes) -> bytes:
                 return keychain(as_form(row["senderSignature"]), digest, row["accessKey"])
 
-            return tempo_signed([call], TF["chainId"], unsigned.funding["validBefore"], sign, listed)
+            return tempo_signed([call], TF["chainId"], TS2_VALID_BEFORE, sign, listed)
 
         control, control_signing = transaction(lambda form: "keychain-v2")
         completed = unsigned.complete(control, VOUCHER_SIGNATURE)
@@ -776,7 +834,7 @@ def test_mpp_session_tempo_an_authorization_list_entry_is_read_for_its_signature
     entry_signature = bytes.fromhex(sig65(entry_hash(entry), TF["payerKey"])[2:])
     starting_with_03 = b"\x03" + entry_signature[1:]
     assert len(starting_with_03) == 65
-    wire, signing = tempo_signed([call], TF["chainId"], unsigned.funding["validBefore"], None, [rlp_list([*entry_tuple(entry), rlp_bytes(starting_with_03)])])
+    wire, signing = tempo_signed([call], TF["chainId"], TS2_VALID_BEFORE, None, [rlp_list([*entry_tuple(entry), rlp_bytes(starting_with_03)])])
     assert unsigned.complete(wire, VOUCHER_SIGNATURE) == opened_carrying(own, wire, signing)
     assert MPP_SESSION_TEMPO.bound(opened_carrying(own, wire, signing)) == H
     malformed = Refusal("tempo/tx-malformed")
@@ -785,7 +843,7 @@ def test_mpp_session_tempo_an_authorization_list_entry_is_read_for_its_signature
         ("a list in place of the signature", rlp_list([*entry_tuple(entry), rlp_list([rlp_bytes(entry_signature)])])),
         ("a byte string in place of the entry", rlp_bytes(entry_signature)),
     ):
-        wire, signing = tempo_signed([call], TF["chainId"], unsigned.funding["validBefore"], None, [listed])
+        wire, signing = tempo_signed([call], TF["chainId"], TS2_VALID_BEFORE, None, [listed])
         assert unsigned.voucher(wire) == malformed, name
         assert unsigned.complete(wire, VOUCHER_SIGNATURE) == malformed, name
         assert MPP_SESSION_TEMPO.bound(opened_carrying(own, wire, signing)) == malformed, name
@@ -816,7 +874,12 @@ def test_mpp_session_tempo_b6_ts1_open_ts2_wire_then_ts4_voucher_over_ts3() -> N
     signed, _ = build_and_sign(tempo_pairing(answer), inspect)
     voucher = answer.seen[1]
     assert voucher["kind"] == "eip712"
-    assert digest(voucher["typedData"]) == TEMPO["TS4"]["expectVoucher0"]
+    # The opening's voucher is at the request's amount, 100, as mppx's client signs it (the stock server refuses one
+    # below it); the same voucher at 0 is TS4's expectVoucher0.
+    assert voucher["typedData"]["message"]["cumulativeAmount"] == int(json.loads(TF["requestV2"])["amount"]) == 100
+    assert signed["payload"]["cumulativeAmount"] == "100"
+    zero = {**voucher["typedData"], "message": {**voucher["typedData"]["message"], "cumulativeAmount": 0}}
+    assert digest(zero) == TEMPO["TS4"]["expectVoucher0"]
     assert signed["payload"]["channelId"] == TEMPO["TS3"]["expectChannelId"]
     channel = MPP_SESSION_TEMPO.channel  # type: ignore[attr-defined]
     assert channel.kind(signed) == "open"
@@ -982,7 +1045,9 @@ def test_mpp_session_tempo_the_channel_hold_and_a_pairing_with_no_build_within()
     p, hold = tempo_hold()
     assert hold["network"] == "eip155:42431"
     assert hold["channel"] == TEMPO["TS3"]["expectChannelId"]
-    assert (hold["h"], hold["charged"], hold["signedMax"]) == (H, "0", "0")
+    # The opening's voucher pays the request it opens for, 100: the hold starts charged and signed at it, so the first
+    # in-channel voucher adds the next request's amount to it.
+    assert (hold["h"], hold["charged"], hold["signedMax"]) == (H, "100", "100")
     signer = Recording(p.account, p.answer)
     out = asyncio.run(within(p.doc, hold, WithoutWithin(MPP_SESSION_TEMPO), signer))
     assert isinstance(out, Declined) and out.code == "pairing-not-supported"

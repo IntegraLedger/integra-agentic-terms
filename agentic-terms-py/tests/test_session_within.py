@@ -34,7 +34,7 @@ from integraledger_terms.bindings.mpp_session_xrpl import MppSessionXrpl
 
 from breadth import H, LINK, Recording, offered
 from mpp_docs import b64u, issued, placed_doc
-from support import STAND_IN, digest, load, piece_transact, sign_typed
+from support import STAND_IN, digest, load, piece_transact, recover, sign_typed
 
 EVM = load("mpp-session-evm.json")
 TEMPO = load("mpp-session-tempo.json")
@@ -92,6 +92,59 @@ def test_tempo_v2_build_within_at_0_and_250_are_ts4s_vouchers() -> None:
     credential = zero.complete([sign_typed(zero.requests[0]["typedData"])])
     assert isinstance(credential, dict)
     assert credential["payload"]["descriptor"] == opening["payload"]["descriptor"]
+
+
+# mppx's client writes source, the payer's DID, on every session credential (0.17.6 and 0.21.1,
+# tempo/session/client/ChannelOps.js serializeCredential); its server reads the payer from it, refuses a voucher or close
+# without it ("credential source does not match channel"), and 0.21.1 one naming the authorized signer.
+def test_tempo_every_voucher_and_close_carries_source_the_payers_did() -> None:
+    opening = tempo_opened().signed
+    assert opening is not None
+    for action in ("voucher", "close"):
+        unsigned = build(MPP_SESSION_TEMPO, opening, 250, action)
+        credential = unsigned.complete([sign_typed(r["typedData"]) for r in unsigned.requests])
+        assert isinstance(credential, dict), credential
+        assert credential["source"] == f"did:pkh:eip155:42431:{TF['payer'].lower()}"
+        assert list(credential) == ["challenge", "source", "payload"]
+
+
+# mppx 0.17.6 and 0.21.1: the v2 close credential's schema requires closeSignature (tempo/Methods.js), and
+# verifyCloseAuthorization holds it to the payer or the authorized signer over CloseAuthorization(bytes32 channelId,uint96
+# cumulativeAmount) under the voucher's domain.
+def test_tempo_v2_close_is_the_final_voucher_then_the_close_authorization() -> None:
+    opening = tempo_opened().signed
+    assert opening is not None
+    unsigned = build(MPP_SESSION_TEMPO, opening, 250, "close")
+    assert [r["kind"] for r in unsigned.requests] == ["eip712", "eip712"]
+    voucher, close = (r["typedData"] for r in unsigned.requests)
+    assert digest(voucher).startswith(TEMPO["TS4"]["expectVoucher250"]["prefix"])
+    assert close == {
+        "domain": {"name": "TIP20 Channel Reserve", "version": "1", "chainId": 42431, "verifyingContract": TF["escrowV2"]},
+        "primaryType": "CloseAuthorization",
+        "types": {"CloseAuthorization": [{"name": "channelId", "type": "bytes32"}, {"name": "cumulativeAmount", "type": "uint96"}]},
+        "message": {"channelId": TEMPO["TS3"]["expectChannelId"], "cumulativeAmount": 250},
+    }
+    signature, close_signature = sign_typed(voucher), sign_typed(close)
+    # The close authorization is another typed data than the voucher: its signature differs, and recovers the payer.
+    assert close_signature != signature
+    assert recover(close, close_signature).lower() == TF["payer"].lower()
+    assert recover(close, signature).lower() != TF["payer"].lower()
+    credential = unsigned.complete([signature, close_signature])
+    assert isinstance(credential, dict), credential
+    assert credential["payload"] == {
+        "action": "close",
+        "channelId": TEMPO["TS3"]["expectChannelId"],
+        "cumulativeAmount": "250",
+        "signature": signature,
+        "closeSignature": close_signature,
+        "descriptor": opening["payload"]["descriptor"],
+    }
+    channel = MPP_SESSION_TEMPO.channel  # type: ignore[attr-defined]
+    assert channel.kind(credential) == "close"
+    assert channel.bound_within(credential) == H
+    for sigs in ([signature], [signature, close_signature, signature], [signature, "0x"], ["0x", close_signature], [signature, "close"]):
+        assert unsigned.complete(sigs) == Refusal("mpp/credential-malformed"), sigs
+    assert len(build(MPP_SESSION_TEMPO, opening, 250).requests) == 1
 
 
 XRPL_OPENING = {

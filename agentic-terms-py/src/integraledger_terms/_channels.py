@@ -113,11 +113,22 @@ def _is_hold(value: object) -> bool:
 
 
 def _opening_max(signed: object) -> str:
-    """The opening voucher's maxClaimableAmount, where the payment carries one, else "0"."""
+    """The largest amount the opening signs: its voucher's maxClaimableAmount, where the payment carries one (x402's
+    batch channels), else its own voucher's cumulative amount (_opening_charged)."""
     payload = signed.get("payload") if isinstance(signed, Mapping) else None
     voucher = payload.get("voucher") if isinstance(payload, Mapping) else None
     most = voucher.get("maxClaimableAmount") if isinstance(voucher, Mapping) else None
-    return most if isinstance(most, str) and _DECIMAL.fullmatch(most) is not None else "0"
+    return most if isinstance(most, str) and _DECIMAL.fullmatch(most) is not None else _opening_charged(signed)
+
+
+def _opening_charged(signed: object) -> str:
+    """The cumulative amount an MPP session's opening voucher signs, payload.cumulativeAmount, where the payment
+    carries one as a decimal, else "0". The opening pays the request it opens for (mppx's server takes the opening's
+    voucher as that request's charge, and refuses a later voucher that adds nothing to it), so the hold starts charged
+    with it."""
+    payload = signed.get("payload") if isinstance(signed, Mapping) else None
+    amount = payload.get("cumulativeAmount") if isinstance(payload, Mapping) else None
+    return amount if isinstance(amount, str) and _DECIMAL.fullmatch(amount) is not None else "0"
 
 
 def _atr_of(hold: Mapping[str, Any]) -> bytes | None:
@@ -179,7 +190,7 @@ def open_channel(atr_bytes: bytes, opened: Json, binding: Any, landed: Json | No
         "atr": base64.b64encode(atr_bytes).decode("ascii"),
         "opening": opening,
         **({} if read is None else {"landed": read}),
-        "charged": "0",
+        "charged": _opening_charged(signed),
         "signedMax": _opening_max(signed),
     }
 

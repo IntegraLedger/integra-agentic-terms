@@ -6,6 +6,26 @@ The packages are at 0.x: a minor release may change the public API. A change a c
 **Breaking**; [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each
 call before and after.
 
+## [Unreleased]
+
+### Fixed
+
+- `openChannel` starts the hold of an MPP session's opening at the cumulative amount the opening's own voucher signs,
+  `payload.cumulativeAmount`, as both `charged` and `signedMax`; it started both at "0". The stock server (mppx 0.17.6
+  and 0.21.1) takes the opening's voucher as the charge for the request the opening pays and refuses a later voucher
+  that adds nothing to it ("voucher does not add new funds for this request"), and `recordCharge` could not record the
+  receipt's spent for the opening, above the hold's `signedMax`. An opening whose voucher is 0, as `@integraledger/lcp`
+  0.6.3's Tempo and EVM session builds sign it, gives the hold it gave before; lcp's next release signs the Tempo
+  opening at the request's amount.
+- `integraledger-terms`: the Tempo session binding follows the protocol package's next release
+  (IntegraLedger/integra-protocol, the Tempo session fix): the opening's voucher is signed at the challenge's `amount`
+  (a deposit below it is `mpp/input-malformed`, an amount that is not a decimal `mpp/request-malformed`);
+  `funding.validBefore` is the challenge's `expires` or the choice's `now` plus 240 seconds, whichever is earlier; the
+  voucher and close credentials carry `source`, the payer's DID; a v2 close has a second signing request, the
+  `CloseAuthorization`, whose signature the credential carries as `closeSignature`; and `tempo_sender` reads Tempo T14's
+  configurable account signature (`0x05`) as the account it names. Each is what the stock server (mppx 0.17.6 and
+  0.21.1) and a Tempo node with T14 active require; without them it refused every session the package built.
+
 ## [0.5.3] - 2026-11-20
 
 ### Changed
