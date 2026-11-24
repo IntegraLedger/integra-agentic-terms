@@ -67,6 +67,15 @@ MAX_SIGNATURE = 8192
 MAX_WIRE = 65_536
 # The shortest voucher signature, one byte: a voucher answers what complete gives with it.
 SHORTEST_SIGNATURE = "0x00"
+# How long after the buyer's clock (the choice's now) a Tempo opening's validBefore is set, at most, in seconds. Tempo's
+# node refuses an expiring-nonce transaction whose validBefore is more than 300 seconds after the including block's
+# timestamp, or less than about 3 seconds after it. now is read when the payment is chosen, before the funding and the
+# voucher are approved and signed (a gate may sign much later, with an external signer), so the window is counted from
+# the choice and kept well below the node's 300: 240 seconds leaves 60 for a buyer's clock ahead of the node's and a
+# block that lags the second, and the whole rest for the signing and the broadcast.
+TEMPO_VALIDITY_SECONDS = 240
+# A request amount: a decimal integer without leading zeros, at most 78 digits.
+_DECIMAL_AMOUNT = re.compile(r"0|[1-9][0-9]{0,77}")
 U96 = 1 << 96
 U128 = 1 << 128
 KEY_TYPES: Mapping[str, int] = {"secp256k1": 0, "p256": 1, "webAuthn": 2}
@@ -675,7 +684,10 @@ def _tempo_opened(presented: Mapping[str, Any]) -> Echoed | Refusal:
 def _tempo_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
     """A voucher, or a close's final voucher, on the channel the held opening opened: under "Tempo Stream Channel"
     with uint128 on v1, and under "TIP20 Channel Reserve" with uint96 on v2, whose credential also carries the
-    opening's descriptor. The channel id, the escrow, the chain and the descriptor come from the opening. The within
+    opening's descriptor. Every credential carries source, the DID of the payer, the opening transaction's sender. A v2
+    close has a second request, the close authorization, whose signature the credential carries as closeSignature
+    (_tempo_close_unsigned); a v1 close is its final voucher alone. The channel id, the escrow, the chain and the
+    descriptor come from the opening. The within
     challenge is read as channel.bound_within reads it beside that payload: under v2, its escrow, chain and operator
     must give the opening's channel id with the opening's descriptor (_descriptor_salt), else tempo/descriptor-mismatch
     (so a v2 within challenge over a v1 opening, whose payment carries no descriptor, too); under v1 over a v2 opening,
@@ -699,11 +711,58 @@ def _tempo_build_within(w: Any, h: AtrHash) -> BatchUnsigned | Refusal:
             return salt
     elif p.version == "v2":
         return Refusal("mpp/not-bound-within")
+    # The payer, the opening transaction's sender, as the reference client writes it on every session credential
+    # (mppx serializeCredential); mppx 0.21.1 refuses a voucher or close whose source is not the channel's payer.
+    sender = tempo_sender(bytes.fromhex(w["opening"]["payload"]["transaction"][2:]))
+    if isinstance(sender, Refusal):
+        return sender
+    source = f"did:pkh:eip155:{p.chain_id}:{sender.lower()}"
     if p.version == "v2":
         typed = _voucher_data("TIP20 Channel Reserve", "uint96", p.chain_id, p.escrow, channel, w["cumulativeAmount"])
-        return within_unsigned(held.challenge, w, typed, channel, descriptor)
+        if w["action"] == "close":
+            return _tempo_close_unsigned(held.challenge, w, typed, channel, descriptor, source)
+        return within_unsigned(held.challenge, w, typed, channel, descriptor, source)
     typed = _voucher_data("Tempo Stream Channel", "uint128", p.chain_id, p.escrow, channel, w["cumulativeAmount"])
-    return within_unsigned(held.challenge, w, typed, channel)
+    return within_unsigned(held.challenge, w, typed, channel, None, source)
+
+
+def _tempo_close_unsigned(
+    challenge: dict[str, Any], w: Mapping[str, Any], typed: dict[str, Any], channel: str, descriptor: Any, source: str
+) -> BatchUnsigned:
+    """A Tempo v2 close: two eip712 requests, the final voucher and then CloseAuthorization(bytes32 channelId,uint96
+    cumulativeAmount) under the voucher's domain with the voucher's message, and the credential of the voucher's
+    members with the second signature as closeSignature, and source, the payer's DID. The reference server refuses a
+    v2 close without closeSignature: mppx 0.17.6's and 0.21.1's credential schema requires it (tempo/Methods.js), and
+    verifyCloseAuthorization holds it to the payer or the authorized signer over that type, so the voucher's
+    signature in its place is refused too."""
+    amount = w["cumulativeAmount"]
+    authorization = {
+        "domain": dict(typed["domain"]),
+        "primaryType": "CloseAuthorization",
+        "types": {"CloseAuthorization": [{"name": "channelId", "type": "bytes32"}, {"name": "cumulativeAmount", "type": "uint96"}]},
+        "message": {"channelId": channel, "cumulativeAmount": amount},
+    }
+
+    def complete(signatures: Any) -> dict[str, Any] | Refusal:
+        if not isinstance(signatures, (list, tuple)) or len(signatures) != 2:
+            return Refusal("mpp/credential-malformed")
+        signature, close_signature = signatures
+        if not is_hex_bytes(signature, 1, MAX_SIGNATURE) or not is_hex_bytes(close_signature, 1, MAX_SIGNATURE):
+            return Refusal("mpp/credential-malformed")
+        payload: dict[str, Any] = {
+            "action": "close",
+            "channelId": channel,
+            "cumulativeAmount": str(amount),
+            "signature": signature,
+            "closeSignature": close_signature,
+        }
+        if descriptor is not None:
+            payload["descriptor"] = descriptor
+        return measured({"challenge": challenge, "source": source, "payload": payload})
+
+    return BatchUnsigned(
+        requests=[{"kind": "eip712", "typedData": typed}, {"kind": "eip712", "typedData": authorization}], complete=complete
+    )
 
 
 def _tempo_bound(presented: Any) -> AtrHash | Refusal:
@@ -724,18 +783,38 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
     (tempo_sender: a keychain signature of type 0x03 among them), and one whose aa_authorization_list holds an entry that
     is not a list of four items ending in a signature or one signed with a keychain signature of type 0x03
     (authorization_signatures) are tempo/tx-malformed. The sender is not compared with the buyer's from, nor the
-    transaction's calls with the open call: bound reads those."""
+    transaction's calls with the open call: bound reads those.
+
+    The opening's voucher is signed at the challenge's amount, the price of the request the opening pays, as the
+    reference client signs it (mppx createOpenPayload, initialAmount): the stock server refuses an opening whose voucher
+    is below it ("voucher amount is less than request amount"). A request whose amount is not a decimal is
+    mpp/request-malformed, and a deposit below it, which could not pay the request it opens for, mpp/input-malformed.
+    funding.validBefore is the challenge's expires, or 240 seconds after the choice's now where that is earlier
+    (TEMPO_VALIDITY_SECONDS), and a now that is not a non-negative safe integer is mpp/input-malformed: Tempo's node
+    refuses an expiring-nonce transaction whose validBefore is more than 300 seconds after the block's timestamp, so a
+    300-second challenge's expires is refused whenever the block's timestamp is behind the second the challenge was
+    issued."""
     o = offer_for(choice, h, SESSION_TEMPO)
     if isinstance(o, Refusal):
         return o
-    valid_before = expires_of(o)
-    if isinstance(valid_before, Refusal):
-        return valid_before
+    expires = expires_of(o)
+    if isinstance(expires, Refusal):
+        return expires
+    now = safe_int(choice.get("now"))
+    if now is None or now < 0:
+        return Refusal("mpp/input-malformed")
+    valid_before = min(expires, now + TEMPO_VALIDITY_SECONDS)
     p = params_of(o.challenge)
     if isinstance(p, Refusal):
         return p
+    price = o.request.get("amount")
+    if not isinstance(price, str) or _DECIMAL_AMOUNT.fullmatch(price) is None:
+        return Refusal("mpp/request-malformed")
+    initial_amount = int(price)
     deposit = _deposit_of(choice, U96 if p.version == "v2" else U128)
     if deposit is None:
+        return Refusal("mpp/input-malformed")
+    if deposit < initial_amount:
         return Refusal("mpp/input-malformed")
     signer = _signer_of(choice)
     if signer is None:
@@ -795,7 +874,7 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
         payload["authorizedSigner"] = signer
         if not isinstance(c, Refusal) and "descriptor" in c:
             payload["descriptor"] = c["descriptor"]
-        payload["cumulativeAmount"] = "0"
+        payload["cumulativeAmount"] = str(initial_amount)
         payload["signature"] = voucher_signature
         credential = {"challenge": challenge, "source": source, "payload": payload}
         o = _tempo_opened(credential)
@@ -809,8 +888,8 @@ def _tempo_build(choice: Any, h: AtrHash) -> SessionUnsigned | Refusal:
             return c
         channel_id = c["payload"]["channelId"]
         if p.version == "v2":
-            return _voucher_data("TIP20 Channel Reserve", "uint96", p.chain_id, p.escrow, channel_id)
-        return _voucher_data("Tempo Stream Channel", "uint128", p.chain_id, p.escrow, channel_id)
+            return _voucher_data("TIP20 Channel Reserve", "uint96", p.chain_id, p.escrow, channel_id, initial_amount)
+        return _voucher_data("Tempo Stream Channel", "uint128", p.chain_id, p.escrow, channel_id, initial_amount)
 
     def complete(signed_tx: Any, voucher_signature: Any) -> dict[str, Any] | Refusal:
         c = held(signed_tx, voucher_signature)

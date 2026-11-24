@@ -118,10 +118,16 @@ def within_details(challenge: dict[str, Any], method: str) -> WithinDetails | Re
 
 
 def within_unsigned(
-    challenge: dict[str, Any], w: Mapping[str, Any], typed_data: dict[str, Any], channel_id: str, descriptor: Any = None
+    challenge: dict[str, Any],
+    w: Mapping[str, Any],
+    typed_data: dict[str, Any],
+    channel_id: str,
+    descriptor: Any = None,
+    source: str | None = None,
 ) -> BatchUnsigned:
     """The one eip712 voucher request, and the credential of the drafts' members: action, channel, amount, signature,
-    and the opening's descriptor where it has one. Its challenge is the snapshot within_checks holds."""
+    and the opening's descriptor where it has one. Its challenge is the snapshot within_checks holds, and its source,
+    where given, the payer's DID."""
     action = w["action"]
     amount = str(w["cumulativeAmount"])
 
@@ -134,7 +140,11 @@ def within_unsigned(
         payload: dict[str, Any] = {"action": action, "channelId": channel_id, "cumulativeAmount": amount, "signature": signature}
         if descriptor is not None:
             payload["descriptor"] = descriptor
-        return measured({"challenge": challenge, "payload": payload})
+        credential: dict[str, Any] = {"challenge": challenge}
+        if source is not None:
+            credential["source"] = source
+        credential["payload"] = payload
+        return measured(credential)
 
     return BatchUnsigned(requests=[{"kind": "eip712", "typedData": typed_data}], complete=complete)
 

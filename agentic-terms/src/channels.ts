@@ -56,7 +56,11 @@ export interface ChannelHold {
    * `bound` reads it.
    */
   landed?: Json;
-  /** The server's cumulative charge last recorded, decimal; "0" at the opening. */
+  /**
+   * The server's cumulative charge last recorded, decimal. At the opening, the cumulative amount the opening's own
+   * voucher signs, where the payment carries one as `payload.cumulativeAmount` (an MPP session's opening, which pays
+   * the request it opens for); else "0".
+   */
   charged: string;
   /** The largest `maxClaimableAmount` signed in this channel, decimal. */
   signedMax: string;
@@ -227,12 +231,26 @@ function newRef(): string {
   return toBase64Url(crypto.getRandomValues(new Uint8Array(REF_BYTES)));
 }
 
-/** The opening voucher's `maxClaimableAmount`, where the payment carries one, else "0". */
+/**
+ * The largest amount the opening signs: its voucher's `maxClaimableAmount`, where the payment carries one (x402's batch
+ * channels), else its own voucher's cumulative amount (`openingCharged`).
+ */
 function openingMax(signed: unknown): string {
   const payload = isObject(signed) ? signed["payload"] : undefined;
   const voucher = isObject(payload) ? payload["voucher"] : undefined;
   const max = isObject(voucher) ? voucher["maxClaimableAmount"] : undefined;
-  return typeof max === "string" && DECIMAL.test(max) ? max : "0";
+  return typeof max === "string" && DECIMAL.test(max) ? max : openingCharged(signed);
+}
+
+/**
+ * The cumulative amount an MPP session's opening voucher signs, `payload.cumulativeAmount`, where the payment carries
+ * one as a decimal, else "0". The opening pays the request it opens for (mppx's server takes the opening's voucher as
+ * that request's charge, and refuses a later voucher that adds nothing to it), so the hold starts charged with it.
+ */
+function openingCharged(signed: unknown): string {
+  const payload = isObject(signed) ? signed["payload"] : undefined;
+  const amount = isObject(payload) ? payload["cumulativeAmount"] : undefined;
+  return typeof amount === "string" && DECIMAL.test(amount) ? amount : "0";
 }
 
 /**
@@ -294,7 +312,7 @@ export async function openChannel(
     atr: toBase64(bytes),
     opening,
     ...(read === undefined ? {} : { landed: read }),
-    charged: "0",
+    charged: openingCharged(signed),
     signedMax: openingMax(signed),
   };
 }

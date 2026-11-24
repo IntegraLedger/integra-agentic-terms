@@ -45,6 +45,10 @@ _P256 = 0x01
 _WEBAUTHN = 0x02
 _KEYCHAIN_V1 = 0x03
 _KEYCHAIN_V2 = 0x04
+# A configurable account's signature (Tempo T14): 0x05 ‖ rlp([account, config, approvals]).
+_CONFIGURABLE = 0x05
+# The most owner approvals a configurable account signature carries, as read here.
+_MAX_OWNER_APPROVALS = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,22 +216,63 @@ def _primitive_signer(signature: bytes, digest: bytes) -> str | Refusal:
     return bad
 
 
+def _configurable_account(signature: bytes) -> str | Refusal:
+    """The account a configurable account signature names: 0x05 ‖ rlp([account, config, approvals]), the account 20
+    bytes not all zero, the config a list, the approvals one to eight byte strings, each a primitive signature by its
+    form (65 bytes; 0x01 and 129 bytes; 0x02 and 128 to 2,048 bytes). Any other form is tempo/tx-malformed. Tempo's
+    node returns that account as the signer once the owners' approvals reach the embedded config's threshold and the
+    config matches the account's stored commitment (tempoxyz/tempo f80ab3c7,
+    crates/primitives/src/transaction/configurable_account/mod.rs: ConfigurableAccountSignature, recover_account,
+    validate_account_commitment). Neither the approvals nor the commitment is checked here, as a keychain signature's
+    key is not checked against the account's keychain: the account is the one the signature names, and the node decides
+    whether its owners approved."""
+    bad = Refusal("tempo/tx-malformed")
+    top = rlp_decode(signature[1:], _MAX_WIRE_DEPTH)
+    if top is None or top.items is None or len(top.items) != 3:
+        return bad
+    account, config, approvals = top.items
+    if account.is_list or len(account.data) != 20 or not any(account.data):
+        return bad
+    if not config.is_list or approvals.items is None:
+        return bad
+    if not 0 < len(approvals.items) <= _MAX_OWNER_APPROVALS:
+        return bad
+    for a in approvals.items:
+        if a.is_list:
+            return bad
+        n = len(a.data)
+        primitive = (
+            n == _SECP256K1_LENGTH
+            or (a.data[:1] == bytes([_P256]) and n == 1 + _P256_LENGTH)
+            or (a.data[:1] == bytes([_WEBAUTHN]) and 1 + _WEBAUTHN_MIN <= n <= 1 + _WEBAUTHN_MAX)
+        )
+        if not primitive:
+            return bad
+    return to_hex(account.data)
+
+
+def _account_signer(signature: bytes, digest: bytes) -> str | Refusal:
+    """The signer of an account signature over digest: a primitive signature's signer, or the account a 0x05 names."""
+    if len(signature) != _SECP256K1_LENGTH and signature[:1] == bytes([_CONFIGURABLE]):
+        return _configurable_account(signature)
+    return _primitive_signer(signature, digest)
+
+
 def tempo_sender(signed_tx: bytes) -> str | Refusal:
     """The sender of a signed 0x76 transaction, or of the 0x78 form, as Tempo recovers it from the sender's signature
     over what the sender signed (_sender_signed), a 0x78 envelope whose item 11 names another account being
     tempo/tx-malformed: a primitive signature's signer, or for a keychain signature (0x04, a 20-byte account and a
-    primitive signature over keccak256(0x04 ‖ that hash ‖ the account)) that account. A keychain signature of type 0x03
+    primitive signature over keccak256(0x04 ‖ that hash ‖ the account)) that account, or for a configurable account
+    signature (0x05, Tempo T14) the account it names (_configurable_account). A keychain signature of type 0x03
     is tempo/tx-malformed: Tempo's transaction specification rejects that format from T1C onward ("Keychain";
     "Transaction Validation", step 1), and Tempo's node refuses it once T1C is active (tempoxyz/tempo 7d4fd03,
     crates/revm/src/handler.rs: validate_version(cfg.spec().is_t1c()), which answers LegacyKeychainSignature), from
     timestamp 1773327600 on chain 4217 and 1773068400 on chain 42431 (crates/hardfork/src/constants.rs,
-    MAINNET_T1C_TIMESTAMP and MODERATO_T1C_TIMESTAMP). Any other signature is tempo/tx-malformed, a 0x05 type byte
-    among them: Tempo's transaction specification lists the secp256k1, P256, WebAuthn and keychain signature types and
-    no other ("Signature Types"), and its signature validation takes any other format as invalid ("Transaction
-    Validation", step 1: "Otherwise invalid"). Tempo's node answers any other type byte "Unknown signature type
-    identifier" (tempoxyz/tempo 7d4fd03, crates/primitives/src/transaction/tt_signature.rs: TempoSignature::from_bytes
-    reads 0x03 and 0x04 and passes every other signature to PrimitiveSignature::from_bytes, which reads 65 bytes, 0x01
-    and 0x02)."""
+    MAINNET_T1C_TIMESTAMP and MODERATO_T1C_TIMESTAMP). Any other signature is tempo/tx-malformed. The 0x05 type is
+    read because Tempo's node includes it once T14 is active ("accounts with multiple signers sign with the 0x05
+    multisig signature… If you parse or verify Tempo transaction signatures yourself, handle this type", Tempo's T14
+    upgrade notes; scheduled on chain 42431 from 2026-11-24 15:00 UTC and on chain 4217 from 2026-12-08 15:00 UTC);
+    before T14 the node answers it "Unknown signature type identifier", so no such transaction lands."""
     items = _envelope(signed_tx)
     if isinstance(items, Refusal):
         return items
@@ -248,7 +293,7 @@ def _signer_of(items: list[RlpItem]) -> str | Refusal:
             return Refusal("tempo/tx-malformed")
         inner = _primitive_signer(signature[21:], keccak256(bytes([_KEYCHAIN_V2]) + digest + account))
         return inner if isinstance(inner, Refusal) else to_hex(account)
-    return _primitive_signer(signature, digest)
+    return _account_signer(signature, digest)
 
 
 def authorization_signatures(signed_tx: bytes) -> list[bytes] | Refusal:

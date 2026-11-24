@@ -888,6 +888,23 @@ describe("mpp/session/tempo: the channel hold", () => {
       expect(signer.requests.length).toBe(0);
     }));
 
+  // The opening pays the request it opens for: mppx's server refuses an opening whose voucher is below the request's
+  // amount, takes it as that request's charge, and refuses a later voucher that adds nothing to it ("voucher does not add
+  // new funds for this request"). So the hold starts charged and signed at the opening voucher's cumulative amount.
+  it("openChannel starts the hold charged and signed at the opening voucher's cumulative amount, a decimal; else 0", () =>
+    at(f.now, async () => {
+      const opened = unwrap(await piecePay(doc, sessionTempo, counting(account, walletAnswer), { deposit: f.deposit }));
+      const signed = opened.signed as unknown as { payload: Record<string, unknown> };
+      const at = (amount: unknown) => openChannel(opened.bytes, { ...signed, payload: { ...signed.payload, cumulativeAmount: amount } } as never, sessionTempo);
+      expect(unwrap(await at("100"))).toMatchObject({ charged: "100", signedMax: "100" });
+      expect(unwrap(await at("0"))).toMatchObject({ charged: "0", signedMax: "0" });
+      for (const amount of [100, "1e2", "-1", "", null]) expect(unwrap(await at(amount))).toMatchObject({ charged: "0", signedMax: "0" });
+      // recordCharge then takes the server's receipt for the opening, 100, and no less than it.
+      const hold = unwrap(await at("100"));
+      expect(unwrap(recordCharge(hold, "100")).charged).toBe("100");
+      expect(code(recordCharge(hold, "99"))).toBe("offer-unreadable");
+    }));
+
   it("within hands buildWithin the within challenge, the held opening, the charge plus the amount, and the voucher action", () =>
     at(f.now, async () => {
       const opened = unwrap(await piecePay(doc, sessionTempo, counting(account, walletAnswer), { deposit: f.deposit }));
