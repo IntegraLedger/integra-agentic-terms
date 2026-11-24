@@ -432,8 +432,9 @@ def tempo_session_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
 
 def subscription_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     """subscription on tempo: an access key with an address and a key type Tempo defines; subscriptionExpires an RFC
-    3339 date-time from 1970, the key authorization's uint64 expiry; chainId a positive safe integer; currency and
-    recipient addresses and amount a decimal; and a period of 1 to 10^16 - 1 days or weeks that is below 2^64 seconds,
+    3339 date-time whose Unix second (a fraction dropped) is above 0, the key authorization's uint64 expiry, which Tempo
+    reads as no expiry at 0 and draft-tempo-subscription-00 requires explicit; chainId a positive safe integer;
+    currency and recipient addresses and amount a decimal; and a period of 1 to 10^16 - 1 days or weeks that is below 2^64 seconds,
     the key authorization's uint64 period. Else mpp/request-malformed."""
     key = d.get("accessKey")
     if not is_object(key) or not is_address(key.get("accessKeyAddress")):
@@ -441,7 +442,7 @@ def subscription_pairings(r: Obj, d: Obj, c: Obj) -> list[str] | Refusal:
     if key.get("keyType") not in ("p256", "secp256k1", "webAuthn") or not isinstance(key.get("keyType"), str):
         return Refusal("mpp/access-key-malformed")
     until = unix_of(r["subscriptionExpires"]) if isinstance(r.get("subscriptionExpires"), str) else None
-    if until is None or until < 0:
+    if until is None or until <= 0:
         return Refusal("mpp/request-malformed")
     if positive_int(d.get("chainId")) is None:
         return Refusal("mpp/chain-id-required")

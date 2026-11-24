@@ -6,6 +6,17 @@ change the public API, so pin the exact version. A change a caller must make is 
 [Upgrading](https://github.com/IntegraLedger/integra-agentic-terms/blob/main/docs/upgrading.md) shows each call before
 and after.
 
+## [Unreleased]
+
+### Fixed
+
+These follow the protocol package's fixes of the same rows (integra-protocol `berger/small-rows`), so the Python gate
+and lcp agree.
+
+- `pairings_of` refuses a Tempo `subscription` challenge whose `subscriptionExpires` falls in Unix
+  second 0 or before (a fraction of a second dropped), `mpp/request-malformed`: a key authorization expiry of 0 is no expiry on Tempo, and
+  draft-tempo-subscription-00 requires an explicit one. A date one second later is placed as before.
+
 ## [0.5.3] - 2026-11-20
 
 ### Changed
