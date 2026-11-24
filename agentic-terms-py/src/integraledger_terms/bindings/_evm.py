@@ -86,6 +86,18 @@ def keccak_hex(data: bytes) -> str:
     return hex_of(keccak256(data))
 
 
+def signable_address(address: str) -> str:
+    """An address in a spelling every EIP-712 signer and verifier takes, as the protocol package's signableAddress
+    writes it: as given when it is all lower case, else its EIP-55 checksummed form, the form the stock x402 client
+    writes. viem refuses an address that is neither lower case nor correctly checksummed. The caller has checked it is
+    an address."""
+    if address == address.lower():
+        return address
+    lower = address[2:].lower()
+    digest = keccak256(lower.encode("ascii")).hex()
+    return "0x" + "".join(c.upper() if c in "abcdef" and int(digest[i], 16) >= 8 else c for i, c in enumerate(lower))
+
+
 def is_uint256(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < UINT256_LIMIT
 

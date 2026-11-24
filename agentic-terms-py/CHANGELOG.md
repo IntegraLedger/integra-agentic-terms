@@ -19,6 +19,9 @@ and lcp agree.
 - `parse_challenges` reads several challenges joined into one `WWW-Authenticate` value, as fetch's `Headers.get`
   returns a 402's lines: 8,192 UTF-16 code units per `Payment` challenge and 65,536 per value, where it bounded each
   value at 8,192 and refused ten challenges of about 900 characters joined.
+- `x402/exact/eip155/eip3009`'s `build` writes the authorization's `from` and `to`, and the typed data's addresses, as
+  given when lower case and EIP-55 checksummed otherwise, as the stock client writes them. An option naming its
+  `payTo` or asset in capitals gave a payment the stock facilitator refuses (viem refuses an all-capitals address).
 
 ## [0.5.3] - 2026-11-20
 
