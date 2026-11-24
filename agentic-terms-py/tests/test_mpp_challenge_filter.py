@@ -217,6 +217,9 @@ CASES: list[Case] = [
     # draft-tempo-subscription-00: the key authorization's uint64 expiry and period.
     ("periodCount 10^16 - 1 weeks", "mpp/subscription/tempo", lambda c: with_request(c, lambda r: r.update(periodCount="9999999999999999", periodUnit="week")), "mpp/request-malformed", None),
     ("subscriptionExpires in 1969", "mpp/subscription/tempo", lambda c: with_request(c, set_in(["subscriptionExpires"], "1969-12-31T23:59:59Z")), "mpp/request-malformed", None),
+    # Row 7: an expiry of Unix second 0 is a key authorization with no expiry on Tempo; the draft requires an explicit one.
+    ("subscriptionExpires Unix second 0", "mpp/subscription/tempo", lambda c: with_request(c, set_in(["subscriptionExpires"], "1970-01-01T00:00:00Z")), "mpp/request-malformed", None),
+    ("subscriptionExpires within Unix second 0", "mpp/subscription/tempo", lambda c: with_request(c, set_in(["subscriptionExpires"], "1970-01-01T00:00:00.999Z")), "mpp/request-malformed", None),
 ]
 
 
@@ -284,3 +287,11 @@ def test_the_evm_charges_without_a_signed_place_hold_the_filter(pairing: str) ->
     permit2 = {**r, "amount": "1", MD: {**r[MD], "credentialTypes": ["permit2"]}}
     other = {**credential, "challenge": {**credential["challenge"], "request": b64u_encode(canonical_json(permit2).encode("utf-8"))}}
     assert BINDINGS[pairing].bound(other) == Refusal("mpp/not-this-pairing")
+
+
+def test_a_tempo_subscription_expiring_one_second_after_1970_is_placed() -> None:
+    """Row 7's twin: one second after Unix second 0 is an explicit expiry, and the subscription is placed."""
+    mine = own("mpp/subscription/tempo")
+    for at in ("1970-01-01T00:00:01Z", "1970-01-01T01:00:01+01:00"):
+        changed = with_request(mine, set_in(["subscriptionExpires"], at))
+        assert pairings_of(issued(changed)) == ("mpp/subscription/tempo",), at

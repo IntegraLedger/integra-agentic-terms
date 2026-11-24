@@ -134,6 +134,30 @@ def test_parse_challenges_reads_mpp_challenge_json_mv9() -> None:
         assert not isinstance(out, terms.Refusal) and [c["id"] for c in out] == mv9["expectIds"]
 
 
+def test_parse_challenges_reads_challenges_joined_into_one_value_each_within_8192() -> None:
+    """Row 8: fetch's Headers.get joins a 402's WWW-Authenticate lines into one value; the 8,192 bound is per Payment
+    challenge, the value's 65,536."""
+    mv9 = load("mpp-challenge.json")["MV9"]
+    line = mv9["fieldValues"][0]
+    lines = [line.replace(mv9["expectIds"][0], f"id-{k}") + f', description="{"d" * 600}"' for k in range(32)]
+    joined = ", ".join(lines)
+    assert len(joined) > 8192
+    out = parse_challenges([joined])
+    assert not isinstance(out, terms.Refusal) and [c["id"] for c in out] == [f"id-{k}" for k in range(32)]
+
+    def sized(length: int) -> str:
+        head = f'{lines[0]}, pad="'
+        return head + "a" * (length - len(head) - 1) + '"'
+
+    assert len(sized(8192)) == 8192
+    assert len(parse_challenges([sized(8192)])) == 1  # type: ignore[arg-type]
+    assert len(parse_challenges([f"{sized(8192)}, {lines[1]}"])) == 2  # type: ignore[arg-type]
+    assert len(parse_challenges([f"{lines[1]},  ,{sized(8192)}"])) == 2  # type: ignore[arg-type]
+    for over in ([sized(8193)], [f"{lines[1]}, {sized(8193)}"], [f"{sized(8193)}, {lines[1]}"]):
+        assert parse_challenges(over) == terms.Refusal("mpp/header-malformed")
+    assert parse_challenges([f"{lines[0]}, Basic {'a' * 65_536}"]) == terms.Refusal("mpp/header-malformed")
+
+
 def test_an_mpp_first_response_pays_the_x402_agreement_option_at_the_agreement_url(monkeypatch: pytest.MonkeyPatch) -> None:
     atr, h = mpp_atr()
     agreement = placed([AGREEMENT], h, AGREEMENT)

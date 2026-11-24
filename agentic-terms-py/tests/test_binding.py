@@ -155,3 +155,35 @@ def test_ag_the_agreement_signs_the_agreements_own_value_and_bound_reads_it_give
     assert binding.bound(presented) == ag["expectBound"]
     assert binding.bound(presented, given=given) == ag["expectBoundAsAgreement"]
     assert binding.bound(V2["expectPayload"], given=given) == Refusal(ag["paymentAsAgreement"]["code"])
+
+
+def test_row_21_an_all_capitals_pay_to_or_asset_is_written_checksummed_as_the_stock_client_writes_it() -> None:
+    """Row 21: viem, which the stock facilitator hashes the authorization with, refuses an address neither lower case
+    nor EIP-55; the stock client writes getAddress(payTo). Build writes it checksummed, and the digest is the
+    checksummed option's. The twins: a lower-case or checksummed address is written as given. The vector's fixed
+    addresses are the EIP-55 forms (checked by its own tests), so they are the expected spellings."""
+
+    def caps(a: str) -> str:
+        return "0x" + a[2:].upper()
+
+    def to_checksum_address(a: str) -> str:
+        expected: dict[str, str] = {str(x).lower(): str(x) for x in (FIXED["payer"], O["payTo"], O["asset"])}
+        return expected[a.lower()]
+
+    option = {**copy.deepcopy(O), "payTo": caps(O["payTo"]), "asset": caps(O["asset"])}
+    upper = BINDING.build(choice(option, **{"from": caps(FIXED["payer"])}), H)
+    plain = BINDING.build(choice(), H)
+    assert not isinstance(upper, Refusal) and not isinstance(plain, Refusal)
+    assert upper.typed_data["domain"]["verifyingContract"] == to_checksum_address(O["asset"])
+    assert (upper.typed_data["message"]["from"], upper.typed_data["message"]["to"]) == (
+        to_checksum_address(FIXED["payer"]), to_checksum_address(O["payTo"]))
+    presented = upper.complete(V1["expectSignature"])
+    assert not isinstance(presented, Refusal)
+    authorization = presented["payload"]["authorization"]
+    assert (authorization["from"], authorization["to"]) == (to_checksum_address(FIXED["payer"]), to_checksum_address(O["payTo"]))
+    assert digest(upper.typed_data) == digest(plain.typed_data)
+    lower = {**copy.deepcopy(O), "payTo": O["payTo"].lower(), "asset": O["asset"].lower()}
+    low = BINDING.build(choice(lower, **{"from": FIXED["payer"].lower()}), H)
+    assert not isinstance(low, Refusal)
+    assert (low.typed_data["message"]["from"], low.typed_data["message"]["to"], low.typed_data["domain"]["verifyingContract"]) == (
+        FIXED["payer"].lower(), O["payTo"].lower(), O["asset"].lower())

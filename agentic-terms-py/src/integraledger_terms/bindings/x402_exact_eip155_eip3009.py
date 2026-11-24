@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from .._core import AtrHash, agreement_value, is_hash
 from .._types import Act, Advertised, AgreementData, Broadcaster, Coverage, Json, Refusal
+from ._evm import signable_address
 from ._lcp import chain_id_of, is_address, safe_int, uint256_of
 from ._x402 import accepted_by, carried_as, chosen, filter_of, is_amount, read_for, timeout_seconds, x402_broadcaster
 
@@ -162,6 +163,9 @@ class X402ExactEip155Eip3009:
         value = uint256_of(amount)
         max_timeout = safe_int(accepted["maxTimeoutSeconds"])
         assert chain_id is not None and value is not None and max_timeout is not None
+        # The protocol package's signableAddress: as given when lower case, else EIP-55, as the stock client writes
+        # them; the stock facilitator hashes the authorization's addresses with viem, which refuses an all-capitals one.
+        asset, pay_to, payer = signable_address(asset), signable_address(pay_to), signable_address(payer)
         typed_data: dict[str, Any] = {
             "domain": {"name": name, "version": version, "chainId": chain_id, "verifyingContract": asset},
             "types": {
