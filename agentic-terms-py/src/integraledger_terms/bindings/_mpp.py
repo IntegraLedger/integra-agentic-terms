@@ -244,8 +244,10 @@ def checked_for(c: object, pairing: str) -> Checked | Refusal:
 # ── The buyer's reading.
 
 
-# The WWW-Authenticate field, as the protocol package's parseChallenges reads it.
+# The WWW-Authenticate field, as the protocol package's parseChallenges reads it: at most MAX_FIELD UTF-16 code units
+# per Payment challenge and MAX_HEADER_BYTES per value, which may join several challenges (fetch's Headers.get).
 MAX_FIELD = 8192
+MAX_VALUE = 65_536
 _PARAMS = ("id", "realm", "method", "intent", "request", "expires", "digest", "description", "header", "opaque")
 _REQUIRED = ("id", "realm", "method", "intent", "request")
 _TCHAR = frozenset("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&'*+-.^_`|~")
@@ -258,12 +260,18 @@ def _qdtext(c: int, escaped: bool) -> bool:
     return c in (0x09, 0x20, 0x21) or 0x23 <= c <= 0x7E or 0x80 <= c <= 0xFF
 
 
-def _parse_field(s: str) -> list[tuple[str, dict[str, str], bool]] | None:
-    """One field value as a list of challenges, each its scheme, its known parameters and whether one repeats; None
-    when it does not follow RFC 9110's challenge grammar (section 11.6.1)."""
-    out: list[tuple[str, dict[str, str], list[bool]]] = []
+def _parse_field(s: str) -> list[tuple[str, dict[str, str], bool, str]] | None:
+    """One field value as a list of challenges, each its scheme, its known parameters, whether one repeats and its text
+    from its scheme to its last character; None when it does not follow RFC 9110's challenge grammar (section 11.6.1)."""
+    out: list[tuple[str, dict[str, str], list[bool], list[int]]] = []
     n = len(s)
     i = 0
+
+    def trimmed_end(e: int) -> int:
+        """Where the challenge running up to e ends: before the separators (OWS and commas) that follow it."""
+        while e > 0 and s[e - 1] in " \t,":
+            e -= 1
+        return e
 
     def at(j: int) -> str:
         return s[j] if j < n else ""
@@ -316,7 +324,7 @@ def _parse_field(s: str) -> list[tuple[str, dict[str, str], bool]] | None:
             j += 1
         return j < n and (s[j] == '"' or s[j] in _TCHAR)
 
-    def add(c: tuple[str, dict[str, str], list[bool]], name: str, v: str) -> None:
+    def add(c: tuple[str, dict[str, str], list[bool], list[int]], name: str, v: str) -> None:
         k = name.lower()
         if k not in _PARAMS:
             return
@@ -329,12 +337,15 @@ def _parse_field(s: str) -> list[tuple[str, dict[str, str], bool]] | None:
         ows()
         return i == n or s[i] == ","
 
-    current: tuple[str, dict[str, str], list[bool]] | None = None
+    current: tuple[str, dict[str, str], list[bool], list[int]] | None = None
     while True:
         while i < n and s[i] in " \t,":
             i += 1
         if i == n:
-            return [(scheme, params, dup[0]) for scheme, params, dup in out]
+            if current is not None:
+                current[3][1] = trimmed_end(n)
+            return [(scheme, params, dup[0], s[span[0] : span[1]]) for scheme, params, dup, span in out]
+        at_ = i
         t = token()
         if t is None:
             return None
@@ -350,7 +361,9 @@ def _parse_field(s: str) -> list[tuple[str, dict[str, str], bool]] | None:
             if not element_end():
                 return None
             continue
-        current = (t, {}, [False])
+        if current is not None:
+            current[3][1] = trimmed_end(at_)
+        current = (t, {}, [False], [at_, n])
         out.append(current)
         if i == n or s[i] == ",":
             continue
@@ -383,21 +396,24 @@ def _parse_field(s: str) -> list[tuple[str, dict[str, str], bool]] | None:
 
 def parse_challenges(field_values: object) -> list[dict[str, str]] | Refusal:
     """lcp's parseChallenges: WWW-Authenticate field values read by RFC 9110's challenge grammar, keeping the Payment
-    challenges with their quoted-strings unescaped and their unknown parameters dropped; at most 8 KiB per value and 32
-    Payment challenges (mpp/header-malformed); a Payment challenge that repeats a parameter or lacks a required one is
-    mpp/challenge-malformed."""
+    challenges with their quoted-strings unescaped and their unknown parameters dropped; at most 8,192 UTF-16 code units
+    per Payment challenge, from its scheme to its last character, at most 65,536 per value, which may join several
+    challenges as fetch's Headers.get returns a 402's lines, and at most 32 Payment challenges (mpp/header-malformed); a
+    Payment challenge that repeats a parameter or lacks a required one is mpp/challenge-malformed."""
     if not isinstance(field_values, (list, tuple)):
         return Refusal("mpp/header-malformed")
     out: list[dict[str, str]] = []
     for value in field_values:
-        if not isinstance(value, str) or js_length(value) > MAX_FIELD:
+        if not isinstance(value, str) or js_length(value) > MAX_VALUE:
             return Refusal("mpp/header-malformed")
         parsed = _parse_field(value)
         if parsed is None:
             return Refusal("mpp/header-malformed")
-        for scheme, params, duplicate in parsed:
+        for scheme, params, duplicate, text in parsed:
             if scheme.lower() != "payment":
                 continue
+            if js_length(text) > MAX_FIELD:
+                return Refusal("mpp/header-malformed")
             if duplicate:
                 return Refusal("mpp/challenge-malformed")
             if any(params.get(k) in (None, "") for k in _REQUIRED):

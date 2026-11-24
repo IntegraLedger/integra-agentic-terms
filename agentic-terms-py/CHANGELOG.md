@@ -16,6 +16,9 @@ and lcp agree.
 - `pairings_of` refuses a Tempo `subscription` challenge whose `subscriptionExpires` falls in Unix
   second 0 or before (a fraction of a second dropped), `mpp/request-malformed`: a key authorization expiry of 0 is no expiry on Tempo, and
   draft-tempo-subscription-00 requires an explicit one. A date one second later is placed as before.
+- `parse_challenges` reads several challenges joined into one `WWW-Authenticate` value, as fetch's `Headers.get`
+  returns a 402's lines: 8,192 UTF-16 code units per `Payment` challenge and 65,536 per value, where it bounded each
+  value at 8,192 and refused ten challenges of about 900 characters joined.
 
 ## [0.5.3] - 2026-11-20
 
